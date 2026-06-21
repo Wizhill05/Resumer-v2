@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: A4;
+      margin: {{ page_margin_mm }}mm;
+    }
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: {{ font_size }}pt;
+      line-height: 1.4;
+      color: #333333;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      font-size: 1.8em;
+      margin: 0 0 5px 0;
+      color: #111111;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .subtitle {
+      font-size: 1em;
+      margin: 0 0 10px 0;
+      color: #555555;
+    }
+    .contact-info {
+      font-size: 0.9em;
+      margin-bottom: 15px;
+      color: #666666;
+    }
+    .contact-info span {
+      margin-right: 15px;
+    }
+    .section-title {
+      font-size: 1.1em;
+      font-weight: bold;
+      color: #111111;
+      border-bottom: 1px solid #cccccc;
+      margin-top: 15px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .summary {
+      margin-bottom: 12px;
+      text-align: justify;
+    }
+    .skills-grid {
+      margin-bottom: 12px;
+    }
+    .skills-category {
+      margin-bottom: 4px;
+    }
+    .skills-category strong {
+      color: #222222;
+    }
+    .item {
+      margin-bottom: 10px;
+    }
+    .item-header {
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      color: #222222;
+    }
+    .item-subheader {
+      font-style: italic;
+      display: flex;
+      justify-content: space-between;
+      color: #555555;
+      margin-bottom: 4px;
+    }
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    li {
+      margin-bottom: 3px;
+    }
+  </style>
+</head>
+<body>
+
+  <div style="text-align: center;">
+    <h1>{{ profile.full_name }}</h1>
+    <div class="contact-info">
+      {% if profile.email %}<span>{{ profile.email }}</span>{% endif %}
+      {% if profile.phone %}<span>{{ profile.phone }}</span>{% endif %}
+      {% if profile.location %}<span>{{ profile.location }}</span>{% endif %}
+    </div>
+    {% if profile.linkedin_url or profile.github_url or profile.portfolio_url %}
+    <div class="contact-info" style="margin-top: -10px;">
+      {% if profile.linkedin_url %}<span>LinkedIn: {{ profile.linkedin_url }}</span>{% endif %}
+      {% if profile.github_url %}<span>GitHub: {{ profile.github_url }}</span>{% endif %}
+      {% if profile.portfolio_url %}<span>Portfolio: {{ profile.portfolio_url }}</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if resume.summary %}
+  <div class="section-title">Professional Summary</div>
+  <div class="summary">
+    {{ resume.summary }}
+  </div>
+  {% endif %}
+
+  {% if resume.skills %}
+  <div class="section-title">Skills</div>
+  <div class="skills-grid">
+    {% for category, items in resume.skills.items() %}
+    <div class="skills-category">
+      <strong>{{ category }}:</strong> {{ items | join(', ') }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if resume.experiences %}
+  <div class="section-title">Professional Experience</div>
+  {% for exp in resume.experiences %}
+  <div class="item">
+    <div class="item-header">
+      <span>{{ exp.role }}</span>
+      <span>{{ exp.start_date }} &ndash; {{ exp.end_date or 'Present' }}</span>
+    </div>
+    <div class="item-subheader">
+      <span>{{ exp.organization }}</span>
+      <span>{{ exp.location }}</span>
+    </div>
+    <ul>
+      {% for bullet in exp.bullet_points %}
+      <li>{{ bullet }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if resume.projects %}
+  <div class="section-title">Projects</div>
+  {% for proj in resume.projects %}
+  <div class="item">
+    <div class="item-header">
+      <span>{{ proj.name }}</span>
+      {% if proj.start_date %}
+      <span>{{ proj.start_date }} &ndash; {{ proj.end_date or 'Present' }}</span>
+      {% endif %}
+    </div>
+    {% if proj.technologies %}
+    <div class="item-subheader">
+      <span>{{ proj.technologies | join(', ') }}</span>
+    </div>
+    {% endif %}
+    <ul>
+      {% for bullet in proj.bullet_points %}
+      <li>{{ bullet }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if resume.education %}
+  <div class="section-title">Education</div>
+  {% for edu in resume.education %}
+  <div class="item">
+    <div class="item-header">
+      <span>{{ edu.institution }}</span>
+      <span>{{ edu.start_date }} &ndash; {{ edu.end_date }}</span>
+    </div>
+    <div class="item-subheader">
+      <span>{{ edu.degree }}</span>
+      {% if edu.gpa %}<span>GPA: {{ edu.gpa }}</span>{% endif %}
+    </div>
+    {% if edu.coursework %}
+    <div style="font-size: 0.9em; margin-top: 2px;">
+      <strong>Coursework:</strong> {{ edu.coursework | join(', ') }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+</body>
+</html>
