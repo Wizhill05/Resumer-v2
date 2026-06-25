@@ -1,0 +1,192 @@
+@font-face {
+    font-family: 'Computer Modern Serif';
+    src: url('https://cdn.jsdelivr.net/gh/dreampulse/computer-modern-web-font@master/font/Serif/cmunrm.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Computer Modern Serif';
+    src: url('https://cdn.jsdelivr.net/gh/dreampulse/computer-modern-web-font@master/font/Serif/cmunbx.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Computer Modern Serif';
+    src: url('https://cdn.jsdelivr.net/gh/dreampulse/computer-modern-web-font@master/font/Serif/cmunti.ttf') format('truetype');
+    font-weight: normal;
+    font-style: italic;
+}
+
+@font-face {
+    font-family: 'Computer Modern Serif';
+    src: url('https://cdn.jsdelivr.net/gh/dreampulse/computer-modern-web-font@master/font/Serif/cmunbi.ttf') format('truetype');
+    font-weight: bold;
+    font-style: italic;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: 'Computer Modern Serif', serif;
+    text-align: justify;
+    line-height: 1.5;
+    margin: 0;
+    padding: 0;
+    color: black;
+    background: white;
+}
+
+a { color: #1a0dab; text-decoration: none; }
+
+h1 {
+    font-size: 2.8em;
+    font-weight: bold;
+    margin: 0 0 8px 0;
+    line-height: 1;
+}
+
+h2, h3 {
+    font-weight: bold;
+}
+
+h2 {
+    font-size: 1.2em;
+    border-bottom: 1px solid currentColor;
+    margin-top: 0.95em;
+    margin-bottom: 5px;
+    padding-bottom: 2px;
+}
+
+h3 {
+    font-size: 1.2em;
+    margin-bottom: 5px;
+}
+
+p, li, dl {
+    margin: 0;
+}
+
+p, dl, table {
+    margin-left: 0.12in;
+}
+
+.body-indent {
+    margin-left: 0.12in;
+}
+
+ul, ol {
+    padding-left: 0.18in;
+    margin: 0.16em 0 0.22em 0.12in;
+}
+
+ul {
+    list-style-type: circle;
+}
+
+li {
+    padding-left: 0.03in;
+    margin-bottom: 0.28em;
+    color: #333333;
+    text-align: justify;
+}
+
+strong {
+    font-weight: 700;
+}
+
+dl {
+    display: flex;
+    align-items: baseline;
+    gap: 0.18in;
+    margin-top: 0.18em;
+}
+
+ul + dl, ol + dl, dl + dl {
+    margin-top: 0.7em;
+}
+
+dl dt {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+dl dd {
+    flex: 0 0 auto;
+    margin-left: auto;
+    text-align: right;
+    white-space: nowrap;
+}
+
+dl + ul {
+    margin-top: 0.1em;
+}
+
+h2 + ul {
+    margin-top: 0.24em;
+}
+
+.skills-table {
+    width: calc(100% - 0.12in);
+    border-collapse: collapse;
+    margin-top: 5px;
+    margin-left: 0.12in;
+}
+
+.skills-table td {
+    vertical-align: top;
+    padding: 1px 0;
+}
+
+.skills-table td:first-child {
+    font-weight: bold;
+    width: 28%;
+    padding-right: 0.12in;
+}
+
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 4px;
+}
+
+.header-left {
+    text-align: left;
+}
+
+.subtitle {
+    font-size: 1.45em;
+    font-weight: normal;
+    font-style: italic;
+    color: #333333;
+    margin-top: -4px;
+    margin-bottom: 4px;
+}
+
+.header-right {
+    text-align: right;
+    font-size: 0.88em;
+    line-height: 1.6;
+}
+
+.extracurriculars-section {
+    color: #333333;
+    margin-left: 0.12in;
+}
+
+.extracurriculars-section strong,
+.extracurriculars-section li strong {
+    font-weight: normal !important;
+}
+
+.extracurriculars-section ul {
+    padding-left: 0.18in;
+    margin: 0.16em 0 0.22em 0;
+}
+
+.extracurriculars-section li {
+    color: #333333;
+    margin-bottom: 0.28em;
+}
