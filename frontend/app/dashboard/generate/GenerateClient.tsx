@@ -172,9 +172,9 @@ export function GenerateClient() {
     return (
       <div className="flex justify-center items-center py-20">
         <div className="flex gap-2">
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-1" />
-          <span className="w-3 h-3 bg-zinc-300 rounded-full pulse-dot-2" />
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-3" />
+          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
+          <span className="w-4 h-4 bg-yellow-400 border-2 border-black pixel-bounce-2" />
+          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
         </div>
       </div>
     )
@@ -185,9 +185,9 @@ export function GenerateClient() {
   return (
     <div className="space-y-8">
       {error && (
-        <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex gap-3 items-center">
+        <div className="p-4 bg-red-100 border-3 border-black text-black shadow-[4px_4px_0px_#000000] flex gap-3 items-center">
           <AlertCircle className="shrink-0 text-red-600" />
-          <p className="text-sm font-semibold">{error}</p>
+          <p className="text-sm font-bold">{error}</p>
         </div>
       )}
 
@@ -195,23 +195,23 @@ export function GenerateClient() {
         <form onSubmit={handleGenerate} className="space-y-8">
           {/* Template Selection */}
           <div className="space-y-4">
-            <Label className="text-sm font-bold uppercase tracking-wider text-zinc-500">1. Choose Layout Template</Label>
+            <Label className="text-lg font-extrabold uppercase tracking-tight">1. Choose Template</Label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {templates.map((tpl) => (
                 <div
                   key={tpl.id}
                   onClick={() => setSelectedTemplate(tpl.id)}
-                  className={`p-5 cursor-pointer rounded-2xl border transition-all duration-300 ${
+                  className={`p-5 cursor-pointer border-3 border-black transition-all ${
                     selectedTemplate === tpl.id
-                      ? "border-[#ff4e26] bg-orange-50/30 shadow-sm"
-                      : "border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-sm"
+                      ? "bg-[#ff4e26] text-white shadow-[4px_4px_0px_#000000]"
+                      : "bg-white text-black shadow-[3px_3px_0px_#000000] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#000000]"
                   }`}
                 >
                   <div className="flex gap-4">
-                    <FileText className={`shrink-0 ${selectedTemplate === tpl.id ? "text-[#ff4e26]" : "text-zinc-400"}`} />
+                    <FileText className="shrink-0" />
                     <div>
-                      <h4 className="font-extrabold text-sm uppercase tracking-wide text-zinc-900">{tpl.name}</h4>
-                      <p className="text-xs mt-1 text-zinc-500">
+                      <h4 className="font-extrabold text-sm uppercase tracking-wider">{tpl.name}</h4>
+                      <p className={`text-xs mt-1 ${selectedTemplate === tpl.id ? "text-white/80" : "text-zinc-600"}`}>
                         {tpl.description}
                       </p>
                     </div>
@@ -223,7 +223,7 @@ export function GenerateClient() {
 
           {/* Job Description Textarea */}
           <div className="space-y-3">
-            <Label htmlFor="job" className="text-sm font-bold uppercase tracking-wider text-zinc-500">2. Paste Job Description</Label>
+            <Label htmlFor="job" className="text-lg font-extrabold uppercase tracking-tight">2. Paste Job Description</Label>
             <Textarea
               id="job"
               required
@@ -231,7 +231,7 @@ export function GenerateClient() {
               placeholder="Paste the full job post details here..."
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
-              className="bg-white border border-zinc-200 text-zinc-900"
+              className="bg-white border-2 border-black text-black"
             />
           </div>
 
@@ -244,7 +244,7 @@ export function GenerateClient() {
                 placeholder="Python, AWS, Next.js"
                 value={keywords}
                 onChange={(e) => setKeywords(e.target.value)}
-                className="bg-white border border-zinc-200 text-zinc-900"
+                className="bg-white border-2 border-black text-black"
               />
             </div>
 
@@ -255,7 +255,7 @@ export function GenerateClient() {
                 placeholder="e.g. emphasize my backend capabilities"
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
-                className="bg-white border border-zinc-200 text-zinc-900"
+                className="bg-white border-2 border-black text-black"
               />
             </div>
           </div>
@@ -267,30 +267,30 @@ export function GenerateClient() {
       )}
 
       {step === "generating" && (
-        <div className="space-y-8 py-10 flex flex-col items-center bg-white border border-zinc-100 rounded-3xl p-8 shadow-sm">
-          {/* Custom Modern Loading Animation */}
-          <div className="flex gap-2.5 mb-2">
-            <span className="w-3.5 h-3.5 bg-[#ff4e26] rounded-full pulse-dot-1" />
-            <span className="w-3.5 h-3.5 bg-zinc-300 rounded-full pulse-dot-2" />
-            <span className="w-3.5 h-3.5 bg-[#ff4e26] rounded-full pulse-dot-3" />
+        <div className="space-y-8 py-10 flex flex-col items-center">
+          {/* Custom Pixel Animation */}
+          <div className="flex gap-3 mb-6">
+            <span className="w-6 h-6 bg-[#ff4e26] border-3 border-black pixel-bounce-1" />
+            <span className="w-6 h-6 bg-yellow-400 border-3 border-black pixel-bounce-2" />
+            <span className="w-6 h-6 bg-[#ff4e26] border-3 border-black pixel-bounce-3" />
           </div>
 
-          <div className="text-center space-y-2 max-w-md w-full">
-            <h3 className="font-heading text-xl font-bold uppercase tracking-wider text-zinc-900">Tailoring Resume</h3>
-            <p className="text-sm font-semibold text-zinc-500 bg-zinc-50 border border-zinc-100 rounded-full px-6 py-2.5 inline-block">
+          <div className="text-center space-y-3 max-w-md w-full">
+            <h3 className="font-extrabold text-xl uppercase tracking-wider">Tailoring Resume...</h3>
+            <p className="text-sm font-bold text-zinc-700 bg-yellow-200 border-2 border-black px-4 py-2 shadow-[2px_2px_0px_#000000]">
               {progress.text}
             </p>
           </div>
 
-          {/* Thin Progress Bar */}
+          {/* 8-bit Progress Bar */}
           <div className="w-full max-w-lg mt-6">
-            <div className="modern-progress-bar">
+            <div className="pixel-progress-bar">
               <div
-                className="modern-progress-fill"
+                className="pixel-progress-fill"
                 style={{ width: `${progress.percent}%` }}
               />
             </div>
-            <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400 mt-3 uppercase tracking-wider">
+            <div className="flex justify-between items-center text-xs font-bold mt-2">
               <span>INITIALIZING</span>
               <span>COMPILING</span>
               <span>COMPLETE</span>
@@ -300,8 +300,8 @@ export function GenerateClient() {
       )}
 
       {step === "result" && (
-        <div className="space-y-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 border border-zinc-100 rounded-3xl gap-4 shadow-sm">
+        <div className="space-y-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 border-3 border-black shadow-[4px_4px_0px_#000000] gap-4">
             <div className="flex gap-4 items-start">
               {pipelineStatus === "failed" ? (
                 <AlertCircle className="text-red-500 shrink-0 w-8 h-8" />
@@ -309,13 +309,13 @@ export function GenerateClient() {
                 <CheckCircle2 className="text-[#ff4e26] shrink-0 w-8 h-8" />
               )}
               <div>
-                <h3 className="font-heading text-lg font-bold uppercase tracking-tight text-zinc-900">
-                  {pipelineStatus === "failed" ? "Pipeline Failed" : "Resume Tailored!"}
+                <h3 className="font-extrabold text-lg uppercase tracking-tight">
+                  {pipelineStatus === "failed" ? "Pipeline Failed" : "Resume Tailored Successfully!"}
                 </h3>
-                <p className="text-sm text-zinc-500 mt-1 font-semibold">
+                <p className="text-sm text-zinc-700 mt-1 font-medium">
                   {pipelineStatus === "failed"
                     ? "An error occurred during the generation. Please try again."
-                    : "Your tailored resume has been created."}
+                    : "Your resume has been adapted to match the job criteria."}
                 </p>
               </div>
             </div>
@@ -328,7 +328,7 @@ export function GenerateClient() {
               <Button
                 variant="outline"
                 onClick={() => setStep("input")}
-                className="w-full md:w-auto bg-transparent text-zinc-700"
+                className="w-full md:w-auto bg-transparent text-black"
               >
                 <ArrowLeft size={16} /> Start Over
               </Button>
@@ -337,7 +337,7 @@ export function GenerateClient() {
 
           {/* PDF Preview Container */}
           {generationId && pipelineStatus === "completed" && (
-            <div className="border border-zinc-150 bg-white rounded-3xl overflow-hidden shadow-sm h-[650px] relative">
+            <div className="border-3 border-black bg-white shadow-[6px_6px_0px_#000000] h-[650px] relative">
               <iframe
                 src={`/api/backend/generate/${generationId}/preview`}
                 className="w-full h-full border-none"

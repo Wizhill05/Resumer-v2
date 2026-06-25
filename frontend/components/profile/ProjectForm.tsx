@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Plus, Trash2, Edit2, X } from "lucide-react"
 
 const schema = z.object({
@@ -132,9 +131,9 @@ export function ProjectForm() {
     return (
       <div className="flex justify-center p-8">
         <div className="flex gap-2">
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-1" />
-          <span className="w-3 h-3 bg-zinc-350 rounded-full pulse-dot-2" />
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-3" />
+          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
+          <span className="w-3 h-3 bg-yellow-400 border-2 border-black pixel-bounce-2" />
+          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
         </div>
       </div>
     )
@@ -143,8 +142,8 @@ export function ProjectForm() {
   return (
     <div className="space-y-6">
       {!isAdding && (
-        <div className="flex justify-between items-center bg-[#fdfbf7] p-4 border border-zinc-200/60 rounded-2xl">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+        <div className="flex justify-between items-center bg-white p-4 border-2 border-black shadow-[2px_2px_0px_#000000]">
+          <h3 className="text-sm font-extrabold uppercase tracking-wider text-zinc-700">
             {projects.length} project entries
           </h3>
           <Button
@@ -165,23 +164,23 @@ export function ProjectForm() {
             }}
             size="sm"
           >
-            <Plus size={14} /> Add Project
+            <Plus size={16} /> Add Project
           </Button>
         </div>
       )}
 
       {isAdding && (
-        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-6 p-6 border border-zinc-100 rounded-3xl bg-[#fdfbf7]/50">
-          <div className="flex justify-between items-center mb-2 border-b border-zinc-150 pb-3">
-            <h3 className="font-heading text-lg font-bold text-zinc-900 uppercase">
+        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-6 p-5 border-3 border-black bg-white shadow-[3px_3px_0px_#000000]">
+          <div className="flex justify-between items-center mb-2 border-b-2 border-black pb-2">
+            <h3 className="font-semibold text-black uppercase tracking-tight">
               {editingId ? "Edit Project" : "Add Project"}
             </h3>
-            <Button type="button" variant="ghost" size="icon-sm" onClick={handleCancel} className="border-none hover:bg-zinc-200/50">
+            <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
               <X size={16} />
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Project Name</Label>
               <Input id="name" {...register("name")} />
@@ -236,7 +235,7 @@ export function ProjectForm() {
             />
           </div>
 
-          <div className="flex gap-3 pt-4 border-t border-zinc-150">
+          <div className="flex gap-3 pt-2 border-t-2 border-black">
             <Button type="submit" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save"}
             </Button>
@@ -249,34 +248,34 @@ export function ProjectForm() {
 
       <div className="space-y-4">
         {projects.map((proj) => (
-          <div key={proj.id} className="editorial-card p-6 flex justify-between items-start bg-white">
+          <div key={proj.id} className="p-5 border-3 border-black bg-white flex justify-between items-start shadow-[3px_3px_0px_#000000] hover:shadow-[4px_4px_0px_#000000] hover:-translate-y-0.5 transition-all">
             <div className="space-y-2">
-              <h4 className="font-heading text-lg font-bold text-zinc-900 uppercase tracking-tight">{proj.name}</h4>
+              <h4 className="font-extrabold text-black text-lg uppercase tracking-tight">{proj.name}</h4>
               {proj.technologies && proj.technologies.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1">
                   {proj.technologies.map((t: string) => (
-                    <Badge key={t} variant="secondary" className="text-[9px] font-bold py-0 px-2 tracking-wider">
+                    <span key={t} className="brutalist-tag py-0.5 px-2 text-[10px] font-bold">
                       {t}
-                    </Badge>
+                    </span>
                   ))}
                 </div>
               )}
-              <p className="text-sm font-semibold text-zinc-650 mt-2">{proj.description}</p>
+              <p className="text-sm font-semibold text-zinc-700 mt-2">{proj.description}</p>
               {proj.bullet_points && proj.bullet_points.length > 0 && (
-                <ul className="list-disc list-inside mt-3 text-xs font-semibold text-zinc-600 space-y-1">
+                <ul className="list-disc list-inside mt-3 text-xs font-semibold text-zinc-700 space-y-1">
                   {proj.bullet_points.map((b: string, i: number) => (
                     <li key={i}>{b}</li>
                   ))}
                 </ul>
               )}
-              <div className="flex gap-4 mt-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+              <div className="flex gap-4 mt-3 text-xs font-bold uppercase tracking-wider text-zinc-600">
                 {proj.github_url && <a href={proj.github_url} target="_blank" rel="noreferrer" className="underline hover:text-[#ff4e26]">GitHub</a>}
                 {proj.live_url && <a href={proj.live_url} target="_blank" rel="noreferrer" className="underline hover:text-[#ff4e26]">Live Site</a>}
               </div>
             </div>
             <div className="flex gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(proj)} className="border-none hover:bg-zinc-100">
-                <Edit2 size={14} className="text-zinc-700" />
+              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(proj)} className="border-transparent hover:border-black">
+                <Edit2 size={14} className="text-black" />
               </Button>
               <Button
                 size="icon-sm"
@@ -284,7 +283,7 @@ export function ProjectForm() {
                 onClick={() => {
                   if (confirm("Are you sure?")) deleteMutation.mutate(proj.id)
                 }}
-                className="border-none hover:bg-red-50 hover:text-red-500"
+                className="border-transparent hover:border-red-500 hover:text-red-500"
               >
                 <Trash2 size={14} />
               </Button>

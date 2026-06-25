@@ -1,31 +1,37 @@
-import { auth, signOut } from "@/lib/auth"
+import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import Link from "next/link"
 import { ProfileClient } from "./ProfileClient"
-import { Navigation } from "@/components/Navigation"
 
 export default async function ProfilePage() {
   const session = await auth()
   if (!session) redirect("/")
 
-  async function handleSignOut() {
-    "use server"
-    await signOut({ redirectTo: "/" })
-  }
-
   return (
-    <Navigation signOutAction={handleSignOut}>
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <h1 className="font-heading text-4xl font-extrabold tracking-tight text-zinc-900 uppercase">
-            Your Profile
-          </h1>
-          <p className="text-zinc-500 font-semibold">
-            Fill in your details. The AI pipeline uses this data to tailor your resumes.
+    <main className="min-h-screen bg-[#fbfbf3] text-black">
+      <nav className="border-b-3 border-black px-6 py-4 bg-white">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <Link href="/dashboard" className="text-xl font-extrabold uppercase border-2 border-black bg-yellow-400 px-3 py-1 shadow-[2px_2px_0px_#000000]">
+            Resumer
+          </Link>
+          <div className="flex items-center gap-4 text-sm font-bold">
+            <Link href="/dashboard" className="text-black hover:text-[#ff4e26]">Dashboard</Link>
+            <Link href="/profile" className="text-[#ff4e26] underline decoration-2">Profile</Link>
+            <Link href="/dashboard/history" className="text-black hover:text-[#ff4e26]">History</Link>
+          </div>
+        </div>
+      </nav>
+
+      <div className="max-w-6xl mx-auto px-6 py-12 space-y-6">
+        <div className="border-3 border-black bg-white p-6 shadow-[4px_4px_0px_#000000] space-y-2">
+          <h1 className="text-3xl font-extrabold uppercase tracking-tight">Your Profile</h1>
+          <p className="text-zinc-700 font-medium">
+            Fill in your details. The AI pipeline uses this data to build tailored resumes.
           </p>
         </div>
 
         <ProfileClient />
       </div>
-    </Navigation>
+    </main>
   )
 }

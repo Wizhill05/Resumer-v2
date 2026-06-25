@@ -122,9 +122,9 @@ export function ExtracurricularForm() {
     return (
       <div className="flex justify-center p-8">
         <div className="flex gap-2">
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-1" />
-          <span className="w-3 h-3 bg-zinc-355 rounded-full pulse-dot-2" />
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-3" />
+          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
+          <span className="w-3 h-3 bg-yellow-400 border-2 border-black pixel-bounce-2" />
+          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
         </div>
       </div>
     )
@@ -133,8 +133,8 @@ export function ExtracurricularForm() {
   return (
     <div className="space-y-6">
       {!isAdding && (
-        <div className="flex justify-between items-center bg-[#fdfbf7] p-4 border border-zinc-200/60 rounded-2xl">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+        <div className="flex justify-between items-center bg-white p-4 border-2 border-black shadow-[2px_2px_0px_#000000]">
+          <h3 className="text-sm font-extrabold uppercase tracking-wider text-zinc-700">
             {extracurriculars.length} entries
           </h3>
           <Button
@@ -153,23 +153,23 @@ export function ExtracurricularForm() {
             }}
             size="sm"
           >
-            <Plus size={14} /> Add Activity
+            <Plus size={16} /> Add Activity / Achievement
           </Button>
         </div>
       )}
 
       {isAdding && (
-        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-6 p-6 border border-zinc-100 rounded-3xl bg-[#fdfbf7]/50">
-          <div className="flex justify-between items-center mb-2 border-b border-zinc-150 pb-3">
+        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-6 p-5 border-3 border-black bg-white shadow-[3px_3px_0px_#000000]">
+          <div className="flex justify-between items-center mb-2 border-b-2 border-black pb-2">
             <h3 className="font-semibold text-black uppercase tracking-tight">
               {editingId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
             </h3>
-            <Button type="button" variant="ghost" size="icon-sm" onClick={handleCancel} className="border-none hover:bg-zinc-200/50">
+            <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
               <X size={16} />
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="title">Title / Activity / Award</Label>
               <Input id="title" {...register("title")} />
@@ -216,7 +216,7 @@ export function ExtracurricularForm() {
             />
           </div>
 
-          <div className="flex gap-3 pt-4 border-t border-zinc-150">
+          <div className="flex gap-3 pt-2 border-t-2 border-black">
             <Button type="submit" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save"}
             </Button>
@@ -229,22 +229,22 @@ export function ExtracurricularForm() {
 
       <div className="space-y-4">
         {extracurriculars.map((ex) => (
-          <div key={ex.id} className="editorial-card p-6 flex justify-between items-start bg-white">
+          <div key={ex.id} className="p-5 border-3 border-black bg-white flex justify-between items-start shadow-[3px_3px_0px_#000000] hover:shadow-[4px_4px_0px_#000000] hover:-translate-y-0.5 transition-all">
             <div className="space-y-2">
-              <h4 className="font-heading text-lg font-bold text-zinc-900 uppercase tracking-tight">{ex.title}</h4>
+              <h4 className="font-extrabold text-black text-lg uppercase tracking-tight">{ex.title}</h4>
               {ex.organization && (
-                <p className="text-sm font-bold text-zinc-600 uppercase tracking-wide">
+                <p className="text-sm font-bold text-zinc-700 uppercase tracking-wide">
                   {ex.organization}
                 </p>
               )}
-              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+              <p className="text-xs font-bold text-zinc-500 uppercase">
                 {ex.start_date || "N/A"} to {ex.end_date || "Present"}
               </p>
               {ex.description && (
-                <p className="text-xs font-semibold text-[#ff4e26] mt-1 italic">{ex.description}</p>
+                <p className="text-xs font-semibold text-zinc-600 mt-1 italic">{ex.description}</p>
               )}
               {ex.bullet_points && ex.bullet_points.length > 0 && (
-                <ul className="list-disc list-inside mt-3 text-xs font-semibold text-zinc-600 space-y-1">
+                <ul className="list-disc list-inside mt-3 text-xs font-semibold text-zinc-700 space-y-1">
                   {ex.bullet_points.map((b: string, i: number) => (
                     <li key={i}>{b}</li>
                   ))}
@@ -252,8 +252,8 @@ export function ExtracurricularForm() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(ex)} className="border-none hover:bg-zinc-100">
-                <Edit2 size={14} className="text-zinc-700" />
+              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(ex)} className="border-transparent hover:border-black">
+                <Edit2 size={14} className="text-black" />
               </Button>
               <Button
                 size="icon-sm"
@@ -261,7 +261,7 @@ export function ExtracurricularForm() {
                 onClick={() => {
                   if (confirm("Are you sure?")) deleteMutation.mutate(ex.id)
                 }}
-                className="border-none hover:bg-red-50 hover:text-red-500"
+                className="border-transparent hover:border-red-500 hover:text-red-500"
               >
                 <Trash2 size={14} />
               </Button>

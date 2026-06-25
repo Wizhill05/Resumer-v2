@@ -2,128 +2,146 @@
 @import "tw-animate-css";
 
 @theme {
-  --font-sans: var(--font-inter), sans-serif;
-  --font-heading: var(--font-syne), sans-serif;
+  --font-sans: var(--font-space-grotesk), sans-serif;
   --color-brand-orange: #ff4e26;
   --color-brand-orange-hover: #e03d16;
-  --color-brand-bg: #fdfbf7;
+  --color-brand-bg: #fbfbf3;
   --color-brand-card: #ffffff;
-  --color-brand-text: #121212;
-  --color-brand-border: #e5e5e0;
+  --color-brand-border: #000000;
 }
 
 @layer base {
+  * {
+    border-color: #000000;
+  }
   body {
-    background-color: #fdfbf7;
-    color: #121212;
-    font-family: var(--font-inter), sans-serif;
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-syne), sans-serif;
-    font-weight: 700;
+    background-color: #fbfbf3;
+    color: #000000;
+    font-family: var(--font-space-grotesk), sans-serif;
   }
 }
 
-/* modern editorial components */
-.editorial-card {
+/* Neo-brutalist utility components */
+.brutalist-card {
   background-color: #ffffff;
-  border: 1px solid #e5e5e0;
-  border-radius: 1.5rem;
-  box-shadow: 0 4px 20px -2px rgba(18, 18, 18, 0.03), 0 2px 6px -1px rgba(18, 18, 18, 0.02);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 3px solid #000000;
+  box-shadow: 4px 4px 0px #000000;
+  border-radius: 0px;
+  transition: all 0.15s ease-in-out;
 }
 
-.editorial-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 30px -4px rgba(18, 18, 18, 0.06), 0 4px 12px -2px rgba(18, 18, 18, 0.03);
+.brutalist-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0px #000000;
 }
 
-.pill-button {
-  border-radius: 9999px;
+.brutalist-button {
+  background-color: #ff4e26;
+  color: #ffffff;
+  border: 2px solid #000000;
+  box-shadow: 3px 3px 0px #000000;
   font-weight: 700;
-  padding: 0.75rem 1.75rem;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-radius: 0px;
+  cursor: pointer;
+  transition: all 0.1s ease-in-out;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
-.pill-input {
+.brutalist-button:hover:not(:disabled) {
+  background-color: #e03d16;
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px #000000;
+}
+
+.brutalist-button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.brutalist-button:disabled {
+  background-color: #d1d5db;
+  color: #6b7280;
+  border-color: #9ca3af;
+  box-shadow: 2px 2px 0px #9ca3af;
+  cursor: not-allowed;
+}
+
+.brutalist-input {
   background-color: #ffffff;
-  border: 1px solid #e5e5e0;
-  border-radius: 9999px;
-  padding: 0.75rem 1.25rem;
+  border: 2px solid #000000;
+  padding: 8px 12px;
   font-family: inherit;
-  color: #121212;
+  font-weight: 500;
+  color: #000000;
   outline: none;
+  border-radius: 0px;
   width: 100%;
-  transition: all 0.2s ease-in-out;
+  transition: all 0.15s ease-in-out;
 }
 
-.pill-input:focus {
-  border-color: #ff4e26;
-  box-shadow: 0 0 0 3px rgba(255, 78, 38, 0.15);
+.brutalist-input:focus {
+  box-shadow: 3px 3px 0px #ff4e26;
+  transform: translate(-1px, -1px);
 }
 
-.modern-textarea {
-  background-color: #ffffff;
-  border: 1px solid #e5e5e0;
-  border-radius: 1rem;
-  padding: 0.75rem 1.25rem;
-  font-family: inherit;
-  color: #121212;
-  outline: none;
-  width: 100%;
-  transition: all 0.2s ease-in-out;
-}
-
-.modern-textarea:focus {
-  border-color: #ff4e26;
-  box-shadow: 0 0 0 3px rgba(255, 78, 38, 0.15);
-}
-
-.pill-badge {
-  border-radius: 9999px;
-  font-weight: 700;
-  padding: 0.25rem 0.75rem;
+.brutalist-tag {
+  background-color: #f3f4f6;
+  border: 2px solid #000000;
+  color: #000000;
+  font-weight: 600;
+  padding: 2px 8px;
   font-size: 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  box-shadow: 2px 2px 0px #000000;
+  display: inline-block;
 }
 
-/* Custom modern loading states */
-@keyframes smooth-pulse {
-  0%, 100% { opacity: 0.3; transform: scale(0.95); }
-  50% { opacity: 1; transform: scale(1.05); }
+/* Custom Pixel Animations */
+@keyframes pixel-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 
-.pulse-dot-1 {
-  animation: smooth-pulse 1.4s infinite ease-in-out;
+.pixel-bounce-1 {
+  animation: pixel-bounce 0.8s infinite steps(4) both;
 }
-.pulse-dot-2 {
-  animation: smooth-pulse 1.4s infinite ease-in-out 0.2s;
+.pixel-bounce-2 {
+  animation: pixel-bounce 0.8s infinite steps(4) both 0.2s;
 }
-.pulse-dot-3 {
-  animation: smooth-pulse 1.4s infinite ease-in-out 0.4s;
+.pixel-bounce-3 {
+  animation: pixel-bounce 0.8s infinite steps(4) both 0.4s;
 }
 
-/* Thin pill progress bar */
-.modern-progress-bar {
-  height: 8px;
-  border-radius: 9999px;
-  background-color: #f1f0ea;
+/* 8-bit style progress bar */
+.pixel-progress-bar {
+  image-rendering: pixelated;
+  height: 24px;
+  border: 3px solid #000000;
+  background: #ffffff;
+  box-shadow: 4px 4px 0px #000000;
   position: relative;
   overflow: hidden;
 }
 
-.modern-progress-fill {
+.pixel-progress-fill {
   height: 100%;
-  border-radius: 9999px;
   background-color: #ff4e26;
-  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    #e03d16 10px,
+    #e03d16 20px
+  );
+  animation: progress-slide 1s linear infinite;
+  transition: width 0.4s steps(10);
+}
+
+@keyframes progress-slide {
+  from { background-position: 0 0; }
+  to { background-position: 28px 0; }
 }

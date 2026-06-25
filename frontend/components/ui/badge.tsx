@@ -9,11 +9,11 @@ function Badge({ className, variant = "default", ...props }: BadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider",
-        variant === "default" && "bg-orange-50 text-[#ff4e26] border border-orange-100",
-        variant === "secondary" && "bg-zinc-100 text-zinc-800 border border-zinc-200",
-        variant === "destructive" && "bg-red-50 text-red-600 border border-red-100",
-        variant === "outline" && "bg-transparent text-zinc-900 border border-zinc-200",
+        "inline-flex items-center font-bold px-2.5 py-0.5 text-xs border-2 border-black transition-all shadow-[2px_2px_0px_#000000]",
+        variant === "default" && "bg-[#ff4e26] text-white",
+        variant === "secondary" && "bg-yellow-400 text-black",
+        variant === "destructive" && "bg-red-500 text-white",
+        variant === "outline" && "bg-white text-black",
         className
       )}
       {...props}

@@ -23,22 +23,21 @@ export function ProfileClient() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-      {/* Sidebar Navigation - horizontal scroll on mobile, vertical stack on desktop */}
-      <div className="flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-x-visible pb-3 md:pb-0 scrollbar-none shrink-0 w-full">
+      {/* Sidebar Navigation */}
+      <div className="flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 scrollbar-thin">
         {tabs.map((tab) => {
           const Icon = tab.icon
-          const isActive = activeSection === tab.id
           return (
             <button
               key={tab.id}
               onClick={() => setActiveSection(tab.id)}
-              className={`flex items-center gap-2 px-4 py-3 rounded-full text-xs font-bold uppercase tracking-wider text-left transition-all shrink-0 cursor-pointer select-none border border-zinc-200/80 ${
-                isActive
-                  ? "bg-[#ff4e26] text-white border-[#ff4e26] shadow-sm shadow-orange-500/10"
-                  : "bg-white text-zinc-600 hover:text-black hover:border-zinc-300"
+              className={`flex items-center gap-2 px-4 py-3 border-2 border-black font-extrabold text-sm uppercase tracking-wider text-left transition-all shrink-0 select-none ${
+                activeSection === tab.id
+                  ? "bg-[#ff4e26] text-white shadow-[2px_2px_0px_#000000]"
+                  : "bg-white text-black shadow-[2px_2px_0px_#000000] hover:-translate-y-px hover:shadow-[3px_3px_0px_#000000] active:translate-x-px active:translate-y-px active:shadow-[1px_1px_0px_#000000]"
               }`}
             >
-              <Icon size={14} />
+              <Icon size={16} />
               <span>{tab.label}</span>
             </button>
           )
@@ -46,7 +45,7 @@ export function ProfileClient() {
       </div>
 
       {/* Form Content Area */}
-      <div className="md:col-span-3 bg-white border border-zinc-100 rounded-3xl p-6 md:p-8 shadow-sm">
+      <div className="md:col-span-3 border-3 border-black bg-white p-6 shadow-[4px_4px_0px_#000000] space-y-6">
         {activeSection === "basic" && <BasicInfoForm />}
         {activeSection === "experience" && <ExperienceForm />}
         {activeSection === "projects" && <ProjectForm />}

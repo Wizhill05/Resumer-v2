@@ -29,9 +29,9 @@ export function HistoryClient() {
     return (
       <div className="flex justify-center items-center py-20">
         <div className="flex gap-2">
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-1" />
-          <span className="w-3 h-3 bg-zinc-300 rounded-full pulse-dot-2" />
-          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-3" />
+          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
+          <span className="w-4 h-4 bg-yellow-400 border-2 border-black pixel-bounce-2" />
+          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
         </div>
       </div>
     )
@@ -39,43 +39,43 @@ export function HistoryClient() {
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex gap-3 items-center">
+      <div className="p-4 bg-red-100 border-3 border-black text-black shadow-[4px_4px_0px_#000000] flex gap-3 items-center">
         <AlertCircle className="shrink-0 text-red-600" />
-        <p className="text-sm font-semibold">Error: {error instanceof Error ? error.message : String(error)}</p>
+        <p className="text-sm font-bold">Error: {error instanceof Error ? error.message : String(error)}</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center bg-white p-4 border border-zinc-100 rounded-2xl shadow-sm">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">{runs.length} generations</h3>
-        <Button variant="ghost" size="sm" onClick={() => refetch()} className="font-bold flex gap-1.5 items-center">
+      <div className="flex justify-between items-center bg-white p-4 border-2 border-black shadow-[2px_2px_0px_#000000]">
+        <h3 className="text-sm font-extrabold uppercase tracking-wider">{runs.length} generations</h3>
+        <Button variant="ghost" size="sm" onClick={() => refetch()} className="border-transparent hover:border-black font-bold">
           <RefreshCw size={14} /> Refresh
         </Button>
       </div>
 
       {runs.length === 0 ? (
-        <div className="p-12 border border-zinc-100 bg-white text-center rounded-3xl shadow-sm">
-          <FileText className="mx-auto text-zinc-400 mb-3" size={36} />
-          <h4 className="font-heading text-lg font-bold uppercase tracking-wider text-zinc-900 mb-1">No runs yet</h4>
-          <p className="text-sm font-medium text-zinc-500">Your tailored resumes will appear here once generated.</p>
+        <div className="p-12 border-3 border-black bg-white text-center shadow-[4px_4px_0px_#000000]">
+          <FileText className="mx-auto text-black mb-3" size={36} />
+          <h4 className="font-extrabold text-lg uppercase tracking-wider mb-1">No generations yet</h4>
+          <p className="text-sm font-medium text-zinc-700">Your tailored resumes will appear here once generated.</p>
         </div>
       ) : (
         <div className="space-y-4">
           {runs.map((run) => (
             <div
               key={run.id}
-              className="editorial-card p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white"
+              className="p-5 border-3 border-black bg-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-[4px_4px_0px_#000000] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_#000000] transition-all"
             >
               <div className="space-y-2">
                 <div className="flex gap-3 items-center flex-wrap">
-                  <h4 className="font-heading text-lg font-bold uppercase tracking-tight text-zinc-900">
+                  <h4 className="font-extrabold text-black text-lg uppercase tracking-tight">
                     {run.job_title || "Tailored Resume"}
                   </h4>
                   {run.company && (
-                    <span className="bg-orange-50/50 text-[#ff4e26] border border-orange-100/55 px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                      {run.company}
+                    <span className="bg-yellow-100 border border-black px-2 py-0.5 text-xs font-bold uppercase">
+                      at {run.company}
                     </span>
                   )}
                   <Badge
@@ -86,15 +86,15 @@ export function HistoryClient() {
                         ? "destructive"
                         : "secondary"
                     }
-                    className="text-[10px] tracking-widest font-extrabold"
+                    className="uppercase tracking-wider font-extrabold"
                   >
                     {run.status}
                   </Badge>
                 </div>
 
-                <div className="flex gap-4 text-[10px] font-bold text-zinc-400 flex-wrap uppercase tracking-wider">
+                <div className="flex gap-4 text-xs font-bold text-zinc-600 pt-1 flex-wrap uppercase">
                   <span className="flex items-center gap-1">
-                    <Calendar size={12} className="text-zinc-400" />
+                    <Calendar size={12} className="text-black" />
                     {new Date(run.created_at).toLocaleDateString()}
                   </span>
                   <span>Template: {run.template_id}</span>
@@ -102,12 +102,12 @@ export function HistoryClient() {
                 </div>
               </div>
 
-              <div className="flex gap-2 w-full sm:w-auto justify-end">
+              <div className="flex gap-2 w-full md:w-auto justify-end">
                 {run.status === "completed" && (
                   <Button
                     onClick={() => window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
                     size="sm"
-                    className="w-full sm:w-auto"
+                    className="w-full md:w-auto"
                   >
                     <Download size={14} /> Download PDF
                   </Button>
