@@ -15,7 +15,11 @@ class TailoredSummaryAndSkills(BaseModel):
     summary: str = Field(description="A professional summary of exactly 1-2 sentences (maximum 2 lines / 30 words) tailored to the target job.")
     skills: dict[str, list[str]] = Field(
         default_factory=dict,
-        description="Categorized skills relevant to the job description (e.g., {'Languages': ['Python', 'Go'], 'Frontend': ['React']}). Max 5-6 categories."
+        description=(
+            "Categorized skills relevant to the job description. Must include a 'Soft Skills' category. "
+            "Example: {'Languages': ['Python', 'Go'], 'Frontend': ['React', 'TypeScript'], "
+            "'Soft Skills': ['Leadership', 'Communication', 'Problem-Solving']}. Max 5-6 categories."
+        ),
     )
 
 

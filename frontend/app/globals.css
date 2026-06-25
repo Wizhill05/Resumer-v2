@@ -21,6 +21,13 @@
   }
 }
 
+/* Dot-grid texture background */
+.texture-bg {
+  background-color: #fbfbf3;
+  background-image: radial-gradient(circle, #00000018 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
 /* Neo-brutalist utility components */
 .brutalist-card {
   background-color: #ffffff;

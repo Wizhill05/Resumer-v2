@@ -141,31 +141,42 @@ export function GenerateClient() {
     window.open(`/api/backend/generate/${generationId}/preview`, "_blank")
   }
 
+  const nodeProgressMap: Record<string, { percent: number; text: string }> = {
+    job_analysis: { percent: 20, text: "Analyzing job description & extracting keywords..." },
+    summary_skills: { percent: 40, text: "Tailoring summary and core skills matching job requirements..." },
+    experience_writer: { percent: 55, text: "Aligning professional experience & formatting descriptions..." },
+    projects_writer: { percent: 65, text: "Selecting relevant projects & adapting bullet points..." },
+    assembly: { percent: 75, text: "Assembling resume sections..." },
+    orphan_repair: { percent: 80, text: "Fine-tuning bullet point formatting..." },
+    content_reduction: { percent: 82, text: "Trimming content to fit single page..." },
+    renderer: { percent: 85, text: "Rendering PDF template & executing page auto-fit..." },
+    saver: { percent: 95, text: "Saving artifacts..." },
+  }
+
   const getProgressAndStatus = () => {
     if (isDone || pipelineStatus === "completed") return { percent: 100, text: "Finished tailoring your resume!" }
     if (pipelineStatus === "failed") return { percent: 100, text: "Tailoring failed." }
     if (logs.length === 0) return { percent: 10, text: "Initializing agents and setting up state..." }
 
-    const lastLog = logs[logs.length - 1]
-    const node = lastLog?.node || ""
+    // Take max progress across ALL logs to prevent regression from parallel nodes
+    let maxPercent = 10
+    let bestText = "Running AI pipeline steps..."
 
-    switch (node) {
-      case "job_analyzer":
-      case "analyzer":
-        return { percent: 25, text: "Analyzing job description & extracting keywords..." }
-      case "summary_skills_writer":
-      case "skills_writer":
-        return { percent: 45, text: "Tailoring summary and core skills matching job requirements..." }
-      case "project_selector":
-      case "projects_writer":
-        return { percent: 65, text: "Selecting relevant projects & adapting bullet points..." }
-      case "experience_writer":
-        return { percent: 80, text: "Aligning professional experience & formatting descriptions..." }
-      case "render_pdf":
-        return { percent: 95, text: "Rendering PDF template & executing page auto-fit..." }
-      default:
-        return { percent: 85, text: lastLog.message || "Running AI pipeline steps..." }
+    for (const log of logs) {
+      const entry = nodeProgressMap[log.node]
+      if (entry && entry.percent > maxPercent) {
+        maxPercent = entry.percent
+        bestText = entry.text
+      }
     }
+
+    // If no known node matched, show last log message at a minimum baseline
+    if (maxPercent === 10) {
+      const lastLog = logs[logs.length - 1]
+      return { percent: 15, text: lastLog.message || bestText }
+    }
+
+    return { percent: maxPercent, text: bestText }
   }
 
   if (isLoadingTemplates) {
@@ -279,6 +290,13 @@ export function GenerateClient() {
             <h3 className="font-extrabold text-xl uppercase tracking-wider">Tailoring Resume...</h3>
             <p className="text-sm font-bold text-zinc-700 bg-yellow-200 border-2 border-black px-4 py-2 shadow-[2px_2px_0px_#000000]">
               {progress.text}
+            </p>
+            <p className="inline-flex items-center gap-2 text-xs font-bold text-zinc-600 bg-white border-2 border-black px-4 py-2 shadow-[2px_2px_0px_#000000]">
+              <span className="w-2 h-2 rounded-full bg-yellow-400 shrink-0 animate-pulse" />
+              This process may take 5–10 minutes to complete.
+            </p>
+            <p className="text-[11px] font-bold text-zinc-500">
+              Safe to close this tab and check History later — runs fully on our server.
             </p>
           </div>
 

@@ -31,5 +31,6 @@ class ResumeGraphState(TypedDict):
     # Controls & Logs
     repair_attempts: int
     render_attempts: int
+    content_reduction_step: int
     errors: list[str]
     logs: list[str]

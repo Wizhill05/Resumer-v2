@@ -242,6 +242,7 @@ async def stream_generation(
             font_size=0.0,
             repair_attempts=0,
             render_attempts=0,
+            content_reduction_step=0,
             errors=[],
             logs=[],
         )

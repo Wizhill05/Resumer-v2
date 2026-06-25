@@ -11,7 +11,7 @@ export default async function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fbfbf3] text-black">
+    <main className="min-h-screen texture-bg text-black">
       {/* Nav */}
       <nav className="border-b-3 border-black px-6 py-5 bg-white">
         <div className="max-w-6xl mx-auto flex items-center justify-between">

@@ -127,7 +127,16 @@ async def summary_skills_node(
                 (
                     "You are a professional resume writer. Write a tailored professional summary of exactly 1-2 sentences "
                     "(maximum 2 lines / 30 words) that is highly concise and highlights the most important qualifications. "
-                    "Then organize the candidate's skills into logical categories matching requirements from the job analysis."
+                    "Then organize skills into logical categories matching requirements from the job analysis.\n\n"
+                    "IMPORTANT skill-writing rules:\n"
+                    "- You MUST include a 'Soft Skills' category containing relevant soft skills (e.g., leadership, "
+                    "communication, problem-solving, teamwork, adaptability, time management) inferred from the "
+                    "candidate's experience and the job requirements.\n"
+                    "- You are FREE to include skills that the candidate did not explicitly list, as long as they are "
+                    "clearly demonstrated by the candidate's experience or would be valuable for the target role. "
+                    "Use the job analysis to identify skill gaps and fill them with plausible skills.\n"
+                    "- Prioritize skills that directly match the job requirements and extracted skills from the job analysis.\n"
+                    "- Keep a maximum of 5-6 skill categories total (including Soft Skills)."
                 ),
             ),
             (
@@ -215,7 +224,9 @@ async def experience_node(
                 "location": exp.get("location") or result.location,
                 "start_date": exp.get("start_date") or result.start_date,
                 "end_date": exp.get("end_date") or result.end_date,
-                "bullet_points": result.bullet_points,
+                "bullet_points": result.bullet_points[
+                    : state["template_manifest"].get("max_bullets_per_experience", 4)
+                ],
             }
         )
 
@@ -280,7 +291,9 @@ async def project_node(
                 "project_summary": result.project_summary,
                 "description": result.description,
                 "technologies": result.technologies,
-                "bullet_points": result.bullet_points,
+                "bullet_points": result.bullet_points[
+                    : state["template_manifest"].get("max_bullets_per_project", 3)
+                ],
                 "github_url": proj.get("github_url"),
                 "live_url": proj.get("live_url"),
                 "start_date": proj.get("start_date"),
@@ -667,6 +680,86 @@ async def render_node(
         "page_count": best_page_count,
         "font_size": best_font_size,
         "orphans": orphans if orphans else None,
+    }
+
+
+async def content_reduction_node(
+    state: ResumeGraphState, db: AsyncSession, gen_id: str
+) -> dict[str, Any]:
+    """Remove bullet points to fit resume within target page count.
+
+    Step 0: Remove last bullet from 2nd experience entry.
+    Step 1: Remove last bullet from 2nd project entry.
+    Step 2+: No more reductions possible — caller should treat as error.
+    """
+    step = state.get("content_reduction_step", 0)
+    experiences = list(state.get("experience_draft") or [])
+    projects = list(state.get("projects_draft") or [])
+
+    if step == 0:
+        # Try removing 1 bullet from 2nd experience
+        if len(experiences) > 1 and len(experiences[1].get("bullet_points", [])) > 1:
+            removed = experiences[1]["bullet_points"].pop()
+            await log_progress(
+                db,
+                gen_id,
+                "content_reduction",
+                f"Page overflow: removed 1 bullet from experience '{experiences[1]['role']}' "
+                f"({len(experiences[1]['bullet_points'])} remaining).",
+                "warning",
+            )
+        else:
+            await log_progress(
+                db,
+                gen_id,
+                "content_reduction",
+                "Page overflow: 2nd experience has ≤1 bullet, skipping to project reduction.",
+                "warning",
+            )
+
+        return {
+            "experience_draft": experiences,
+            "content_reduction_step": 1,
+        }
+
+    elif step == 1:
+        # Try removing 1 bullet from 2nd project
+        if len(projects) > 1 and len(projects[1].get("bullet_points", [])) > 1:
+            removed = projects[1]["bullet_points"].pop()
+            await log_progress(
+                db,
+                gen_id,
+                "content_reduction",
+                f"Page overflow: removed 1 bullet from project '{projects[1]['name']}' "
+                f"({len(projects[1]['bullet_points'])} remaining).",
+                "warning",
+            )
+        else:
+            await log_progress(
+                db,
+                gen_id,
+                "content_reduction",
+                "Page overflow: 2nd project has ≤1 bullet, no further reduction possible.",
+                "warning",
+            )
+
+        return {
+            "projects_draft": projects,
+            "content_reduction_step": 2,
+        }
+
+    # Step 2+: exhausted all reductions
+    await log_progress(
+        db,
+        gen_id,
+        "content_reduction",
+        "Content reduction exhausted. Resume still exceeds target page count.",
+        "error",
+    )
+    return {
+        "content_reduction_step": step + 1,
+        "errors": (state.get("errors") or [])
+        + ["Resume content too long to fit target page count after all reductions."],
     }
 
 

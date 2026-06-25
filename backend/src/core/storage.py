@@ -1,6 +1,12 @@
+import logging
+
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
+
 from src.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class StorageService:
@@ -19,12 +25,14 @@ class StorageService:
                 config=Config(signature_version="s3v4"),
                 region_name="auto",
             )
+            logger.info("StorageService: R2 client initialized for bucket '%s'", settings.R2_BUCKET_NAME)
         else:
             self.s3_client = None
+            logger.warning("StorageService: R2 not configured — uploads will be skipped.")
 
     def upload_bytes(self, data: bytes, key: str, content_type: str = "application/pdf") -> bool:
         if not self.enabled or not self.s3_client:
-            print("StorageService: R2 not configured. Skipping upload.")
+            logger.warning("StorageService: R2 not configured. Skipping upload of %s.", key)
             return False
         try:
             self.s3_client.put_object(
@@ -33,9 +41,21 @@ class StorageService:
                 Body=data,
                 ContentType=content_type,
             )
+            logger.info("StorageService: Uploaded %s (%d bytes)", key, len(data))
             return True
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            if error_code == "AccessDenied":
+                logger.error(
+                    "StorageService: AccessDenied uploading %s. "
+                    "Check R2 API token has 'Object Read & Write' permission for bucket '%s'.",
+                    key, settings.R2_BUCKET_NAME,
+                )
+            else:
+                logger.error("StorageService: ClientError uploading %s: [%s] %s", key, error_code, e)
+            return False
         except Exception as e:
-            print(f"StorageService: Failed to upload {key}: {e}")
+            logger.error("StorageService: Unexpected error uploading %s: %s", key, e)
             return False
 
     def file_exists(self, key: str) -> bool:
@@ -44,7 +64,10 @@ class StorageService:
         try:
             self.s3_client.head_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
             return True
-        except Exception:
+        except ClientError:
+            return False
+        except Exception as e:
+            logger.error("StorageService: Error checking existence of %s: %s", key, e)
             return False
 
     def get_presigned_url(self, key: str, expires_in: int = 3600) -> str | None:
@@ -56,6 +79,10 @@ class StorageService:
                 Params={"Bucket": settings.R2_BUCKET_NAME, "Key": key},
                 ExpiresIn=expires_in,
             )
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            logger.error("StorageService: ClientError generating presigned URL for %s: [%s] %s", key, error_code, e)
+            return None
         except Exception as e:
-            print(f"StorageService: Failed to generate presigned URL for {key}: {e}")
+            logger.error("StorageService: Failed to generate presigned URL for %s: %s", key, e)
             return None

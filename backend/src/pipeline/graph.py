@@ -10,6 +10,7 @@ from src.pipeline.nodes import (
     assembly_node,
     render_node,
     orphan_repair_node,
+    content_reduction_node,
     save_artifacts_node,
 )
 
@@ -64,6 +65,12 @@ async def wrap_orphan_repair(state: ResumeGraphState, config: RunnableConfig):
     return await orphan_repair_node(state, db, gen_id)
 
 
+async def wrap_content_reduction(state: ResumeGraphState, config: RunnableConfig):
+    db = config["configurable"]["db"]
+    gen_id = config["configurable"]["gen_id"]
+    return await content_reduction_node(state, db, gen_id)
+
+
 # ── Graph Builder ─────────────────────────────────────────────────────────────
 
 def compile_graph():
@@ -76,6 +83,7 @@ def compile_graph():
     builder.add_node("assembly", wrap_assembly)
     builder.add_node("render", wrap_render)
     builder.add_node("orphan_repair", wrap_orphan_repair)
+    builder.add_node("content_reduction", wrap_content_reduction)
     builder.add_node("save_artifacts", wrap_save_artifacts)
 
     # Define flow edges
@@ -93,14 +101,27 @@ def compile_graph():
 
     builder.add_edge("assembly", "render")
 
-    # Conditional routing after render to fix orphans
+    # Conditional routing after render: overflow > orphans > done
     def route_after_render(state: ResumeGraphState) -> str:
+        target_pages = state.get("template_manifest", {}).get("target_pages", 1)
+        page_count = state.get("page_count", 1)
+
+        # Priority 1: page overflow — reduce content
+        if page_count > target_pages:
+            if state.get("content_reduction_step", 0) < 2:
+                return "content_reduction"
+            # Exhausted reductions, save with whatever we have
+            return "save_artifacts"
+
+        # Priority 2: orphan line-wrap fixes
         if state.get("orphans") and state.get("repair_attempts", 0) < 2:
             return "orphan_repair"
+
         return "save_artifacts"
 
     builder.add_conditional_edges("render", route_after_render)
     builder.add_edge("orphan_repair", "assembly")
+    builder.add_edge("content_reduction", "assembly")
     builder.add_edge("save_artifacts", END)
 
     return builder.compile()

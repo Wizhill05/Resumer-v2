@@ -50,9 +50,22 @@ async function handleProxy(
       cache: "no-store",
     })
 
-    const resData = await backendRes.blob()
     const contentType = backendRes.headers.get("content-type") || "application/json"
 
+    // SSE streams must be forwarded as-is — never buffer via blob()
+    if (contentType.includes("text/event-stream")) {
+      return new NextResponse(backendRes.body, {
+        status: backendRes.status,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      })
+    }
+
+    const resData = await backendRes.blob()
     return new NextResponse(resData, {
       status: backendRes.status,
       headers: {

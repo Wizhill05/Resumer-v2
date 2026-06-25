@@ -8,7 +8,7 @@ export default async function GeneratePage() {
   if (!session) redirect("/")
 
   return (
-    <main className="min-h-screen bg-[#fbfbf3] text-black">
+    <main className="min-h-screen texture-bg text-black">
       <nav className="border-b-3 border-black px-6 py-4 bg-white">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <Link href="/dashboard" className="text-xl font-extrabold uppercase border-2 border-black bg-yellow-400 px-3 py-1 shadow-[2px_2px_0px_#000000]">
