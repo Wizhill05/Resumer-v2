@@ -1,7 +1,7 @@
 import { auth, signIn } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { redirect } from "next/navigation"
+import { Header } from "@/components/Header"
 
 export default async function Home() {
   const session = await auth()
@@ -11,56 +11,37 @@ export default async function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-zinc-950 to-zinc-900 text-white">
-      {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
-        <span className="text-xl font-bold tracking-tight">Resumer</span>
-        <div className="flex gap-3">
-          <form
-            action={async () => {
-              "use server"
-              await signIn("github")
-            }}
-          >
-            <Button type="submit" variant="outline" className="border-zinc-700 text-white hover:bg-zinc-800 bg-transparent">
-              Sign in with GitHub
-            </Button>
-          </form>
-          <form
-            action={async () => {
-              "use server"
-              await signIn("google")
-            }}
-          >
-            <Button type="submit" variant="outline" className="border-zinc-700 text-white hover:bg-zinc-800 bg-transparent">
-              Sign in with Google
-            </Button>
-          </form>
-        </div>
-      </nav>
+    <main className="min-h-screen bg-[#fdfbf7] text-[#121212] pt-24 pb-16 flex flex-col justify-between">
+      <Header isLoggedIn={false} />
 
-      {/* Hero */}
-      <section className="flex flex-col items-center text-center px-6 pt-24 pb-16 max-w-4xl mx-auto">
-        <Badge className="mb-6 bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-800">
-          Free to use — no credit card required
-        </Badge>
-        <h1 className="text-5xl font-extrabold tracking-tight leading-tight mb-6">
-          ATS-optimized resumes,
-          <br />
-          <span className="text-blue-400">generated in seconds.</span>
-        </h1>
-        <p className="text-lg text-zinc-400 max-w-2xl mb-10">
-          Paste a job description. Pick a template. Watch an AI pipeline tailor
-          your resume to the role — highlights, keywords, and all.
+      {/* Hero Section */}
+      <section className="max-w-4xl mx-auto px-6 py-12 md:py-20 flex-grow flex flex-col justify-center space-y-8">
+        <div className="space-y-4">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#ff4e26] bg-orange-50 border border-orange-100 rounded-full px-4 py-1.5 w-fit">
+            Next-Gen Resume Tailoring
+          </span>
+          
+          <h1 className="font-heading text-5xl sm:text-7xl md:text-8xl font-extrabold tracking-tighter leading-none text-left select-none uppercase">
+            your resume,
+            <br />
+            <span className="text-[#ff4e26]">tailored in seconds.</span>
+          </h1>
+        </div>
+
+        <p className="text-lg md:text-xl text-zinc-600 font-medium leading-relaxed max-w-2xl text-left">
+          Paste a job description. Let our multi-agent pipeline analyze requirements, highlight accomplishments, and format an ATS-optimized layout instantly.
         </p>
-        <div className="flex gap-4 flex-wrap justify-center">
+
+        {/* Side-by-Side CTAs */}
+        <div className="flex flex-col sm:flex-row gap-4 w-full justify-start pt-4">
           <form
             action={async () => {
               "use server"
               await signIn("github")
             }}
+            className="w-full sm:w-auto"
           >
-            <Button type="submit" size="lg" className="bg-blue-500 hover:bg-blue-600 text-white px-8">
+            <Button type="submit" size="lg" className="w-full">
               Get started with GitHub
             </Button>
           </form>
@@ -69,43 +50,42 @@ export default async function Home() {
               "use server"
               await signIn("google")
             }}
+            className="w-full sm:w-auto"
           >
-            <Button type="submit" size="lg" variant="outline" className="border-zinc-600 text-white hover:bg-zinc-800 bg-transparent px-8">
+            <Button type="submit" size="lg" variant="outline" className="w-full">
               Continue with Google
             </Button>
           </form>
         </div>
       </section>
 
-      {/* Features */}
-      <section className="max-w-5xl mx-auto px-6 py-16 grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[
-          {
-            title: "LangGraph Pipeline",
-            desc: "Multi-agent pipeline: analyzes the job, selects your best projects, rewrites bullets, assembles a tailored resume.",
-          },
-          {
-            title: "Live Progress",
-            desc: "Watch the pipeline run step-by-step via SSE streaming — no polling, no waiting in the dark.",
-          },
-          {
-            title: "PDF Auto-fit",
-            desc: "WeasyPrint renders your resume. Font size auto-adjusts to keep everything on a single page.",
-          },
-        ].map((f) => (
-          <div
-            key={f.title}
-            className="rounded-xl bg-zinc-800/50 border border-zinc-700/60 p-6"
-          >
-            <h3 className="font-semibold text-white mb-2">{f.title}</h3>
-            <p className="text-sm text-zinc-400 leading-relaxed">{f.desc}</p>
-          </div>
-        ))}
-      </section>
+      {/* Decorative / Section anchors behind hamburger menu options */}
+      <div className="max-w-4xl mx-auto w-full px-6 space-y-12 mt-12 opacity-80">
+        <div id="how-it-works" className="pt-12 border-t border-zinc-100">
+          <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-[#ff4e26] mb-3">How it Works</h2>
+          <p className="text-sm font-medium text-zinc-500 leading-relaxed">
+            Our multi-agent pipeline orchestrates specific AI agents (job analyzer, profile selector, bullet re-writer) in a LangGraph structure. It retrieves your profile data, picks the best projects/experience, re-writes the bullets for semantic fit, and renders a single-page PDF with WeasyPrint.
+          </p>
+        </div>
 
-      {/* Footer */}
-      <footer className="text-center text-sm text-zinc-600 py-10">
-        Resumer v2 — Free &amp; open source
+        <div id="templates" className="pt-8 border-t border-zinc-100">
+          <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-[#ff4e26] mb-3">Templates</h2>
+          <p className="text-sm font-medium text-zinc-500 leading-relaxed">
+            Beautiful layouts configured with strict constraints. Tested to compile successfully on WeasyPrint. Options include Compact, Modern Classic, and high-impact single column formats.
+          </p>
+        </div>
+
+        <div id="pricing" className="pt-8 border-t border-zinc-100">
+          <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-[#ff4e26] mb-3">Pricing</h2>
+          <p className="text-sm font-medium text-zinc-500 leading-relaxed font-bold">
+            Resumer is free forever. No payment required.
+          </p>
+        </div>
+      </div>
+
+      {/* Simple Footer */}
+      <footer className="max-w-4xl mx-auto w-full px-6 text-center text-xs font-bold text-zinc-400 mt-20 tracking-wider uppercase">
+        © resumer. open source.
       </footer>
     </main>
   )

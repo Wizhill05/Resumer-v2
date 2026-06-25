@@ -61,7 +61,7 @@ Public hosted resume builder. User signs up, fills profile (or uploads existing 
 - **boto3** for R2 storage
 
 ### Default LLM
-- **Gemma 4** via Gemini API (`gemini/gemma-4`)
+- **Gemma 4 31B** via Gemini API (`gemma-4-31b-it`)
 - Model selection dropdown for later (Gemini Flash, Claude Haiku, etc.)
 
 ---
@@ -327,7 +327,7 @@ CREATE TABLE generations (
     company          TEXT,
     keywords         TEXT[],
     instructions     TEXT,
-    model_used       TEXT DEFAULT 'gemma-4',
+    model_used       TEXT DEFAULT 'gemma-4-31b-it',
     status           TEXT DEFAULT 'pending',
     error_message    TEXT,
     pdf_storage_key  TEXT,
@@ -401,25 +401,36 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 ## 10. Implementation Phases
 
 ### Phase 1: Foundation, Onboarding, Rate Limits, and Simple Landing
-- [ ] Initialize Next.js 15, Tailwind v4, shadcn/ui
-- [ ] Build basic marketing landing page with "Login with GitHub/Google" buttons
-- [ ] Set up NextAuth.js v5 (JWT configuration)
-- [ ] Setup FastAPI + SQLAlchemy 2.0 Async + psycopg3 + Alembic migrations
-- [ ] Implement JWT decode dependency on FastAPI backend
-- [ ] Implement Profile, Projects, Experiences, Education CRUD with `react-hook-form` + `zod`
-- [ ] Write rate-limiting middleware (5 runs / user / day)
+- [x] Initialize Next.js 15, Tailwind v4, shadcn/ui
+- [x] Build basic marketing landing page with "Login with GitHub/Google" buttons
+- [x] Set up NextAuth.js v5 (JWT configuration)
+- [x] Setup FastAPI + SQLAlchemy 2.0 Async + psycopg3 + Alembic migrations
+- [x] Implement JWT decode dependency on FastAPI backend
+- [x] Implement Profile, Projects, Experiences, Education CRUD with `react-hook-form` + `zod`
+- [x] Write rate-limiting middleware (5 runs / user / day)
+
+**Bugs fixed during Phase 1:**
+- Fixed sign-in/sign-out buttons not working (`type="submit"` missing on Base UI Button inside forms)
 
 ### Phase 2: LangGraph, WeasyPrint, and SSE Execution
-- [ ] Port/Adapt Pydantic schemas for Gemma 4
-- [ ] Set up LangGraph StateGraph (Analysis, Parallel Selection, Assembly, Render nodes)
-- [ ] Implement WeasyPrint engine inside container, write auto-fit CSS adjustments
-- [ ] Build `/generate/{id}/stream` SSE node execution context
-- [ ] Implement SSE log retrieval (load historical logs from DB on reconnect, then tail)
-- [ ] Setup R2 file storage driver + PDF preview endpoint
-- [ ] Create 2 default CSS templates (Clean Modern, Compact)
+- [x] Port/Adapt Pydantic schemas for Gemini 2.5 Flash (was labelled Gemma 4)
+- [x] Set up LangGraph StateGraph (Analysis, Parallel Selection, Assembly, Render nodes)
+- [x] Implement WeasyPrint engine inside container, write auto-fit CSS adjustments
+- [x] Build `/generate/{id}/stream` SSE node execution context
+- [x] Implement SSE log retrieval (load historical logs from DB on reconnect, then tail)
+- [x] Setup R2 file storage driver + PDF preview endpoint
+- [x] Create 2 default CSS templates (Clean Modern, Compact)
+
+**Bugs fixed during Phase 2:**
+- Fixed missing `ResumeGraphState` import in `api/generation.py` (would cause `NameError` on every stream)
+- Added `GOOGLE_API_KEY` to `config.py`, `.env`, and `.env.example` (pipeline silently failed without it)
+- Fixed `model_used` default to `"gemma-4-31b-it"` in `schemas/generation.py`
+- Fixed markdown serialization (was only name + summary; now serializes full resume: skills, experience, projects, education)
+- Added `GET /generate/{id}/download` endpoint with `Content-Disposition: attachment`
+- Fixed history page download button to use `/download` instead of `/preview`
 
 ### Phase 3: History & Deploy
-- [ ] Implement History page (list past runs, preview/download PDF)
+- [x] Implement History page (list past runs, preview/download PDF)
 - [ ] Create Dockerfile with WeasyPrint system dependencies (Pango, Cairo)
 - [ ] Set up GitHub Actions CI/CD to deploy to Google Cloud Run
 - [ ] Set up Neon DB autosuspend configurations

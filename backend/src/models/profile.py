@@ -20,6 +20,7 @@ class Profile(Base):
     linkedin_url: Mapped[str | None] = mapped_column(String)
     github_url: Mapped[str | None] = mapped_column(String)
     portfolio_url: Mapped[str | None] = mapped_column(String)
+    subtitle: Mapped[str | None] = mapped_column(String)
     summary: Mapped[str | None] = mapped_column(Text)
     skills: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -77,3 +78,20 @@ class UserEducation(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UserExtracurricular(Base):
+    __tablename__ = "user_extracurriculars"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    organization: Mapped[str | None] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(Text)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    bullet_points: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+

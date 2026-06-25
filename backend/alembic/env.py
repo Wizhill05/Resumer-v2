@@ -15,11 +15,17 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Use sync URL for alembic
-config.set_main_option(
-    "sqlalchemy.url",
-    settings.DATABASE_URL,
-)
+# Use sync URL for alembic (strip async driver prefix)
+sync_url = settings.DATABASE_URL
+for prefix, replacement in [
+    ("postgresql+psycopg://", "postgresql+psycopg2://"),
+    ("postgres://", "postgresql+psycopg2://"),
+]:
+    if sync_url.startswith(prefix):
+        sync_url = sync_url.replace(prefix, replacement, 1)
+        break
+
+config.set_main_option("sqlalchemy.url", sync_url)
 
 target_metadata = Base.metadata
 

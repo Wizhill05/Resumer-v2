@@ -8,6 +8,7 @@ class ResumeGraphState(TypedDict):
     projects: list[dict]
     experiences: list[dict]
     education: list[dict]
+    extracurriculars: list[dict]
     job_description: str
     keywords: list[str]
     instructions: str
@@ -19,6 +20,7 @@ class ResumeGraphState(TypedDict):
     projects_draft: Optional[dict]
     experience_draft: Optional[dict]
     tailored_resume: Optional[dict]
+    orphans: Optional[list[dict]]
 
     # Render Output
     pdf_bytes: Optional[bytes]

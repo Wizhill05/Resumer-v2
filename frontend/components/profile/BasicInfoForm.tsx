@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2 } from "lucide-react"
 
 const schema = z.object({
   full_name: z.string().min(1, "Name is required"),
@@ -18,6 +17,7 @@ const schema = z.object({
   linkedin_url: z.string().url("Invalid URL").or(z.literal("")),
   github_url: z.string().url("Invalid URL").or(z.literal("")),
   portfolio_url: z.string().url("Invalid URL").or(z.literal("")),
+  subtitle: z.string().optional(),
   summary: z.string().optional(),
   skills: z.string().optional(), // Raw comma-separated string for editing
 })
@@ -36,7 +36,7 @@ export function BasicInfoForm() {
     },
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     values: profile ? {
       full_name: profile.full_name || "",
@@ -46,6 +46,7 @@ export function BasicInfoForm() {
       linkedin_url: profile.linkedin_url || "",
       github_url: profile.github_url || "",
       portfolio_url: profile.portfolio_url || "",
+      subtitle: profile.subtitle || "",
       summary: profile.summary || "",
       skills: profile.skills ? profile.skills.join(", ") : "",
     } : undefined,
@@ -80,66 +81,75 @@ export function BasicInfoForm() {
   if (isLoading) {
     return (
       <div className="flex justify-center p-8">
-        <Loader2 className="animate-spin text-zinc-400" />
+        <div className="flex gap-2">
+          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
+          <span className="w-3 h-3 bg-yellow-400 border-2 border-black pixel-bounce-2" />
+          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
+        </div>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-2">
           <Label htmlFor="full_name">Full Name</Label>
-          <Input id="full_name" {...register("full_name")} className="bg-zinc-900 border-zinc-800 text-white" />
-          {errors.full_name && <p className="text-red-400 text-xs">{errors.full_name.message}</p>}
+          <Input id="full_name" {...register("full_name")} />
+          {errors.full_name && <p className="text-red-600 text-xs font-bold">{errors.full_name.message}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="subtitle">Subtitle / Headline</Label>
+          <Input id="subtitle" placeholder="e.g. Final Year Undergraduate" {...register("subtitle")} />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" {...register("email")} className="bg-zinc-900 border-zinc-800 text-white" />
-          {errors.email && <p className="text-red-400 text-xs">{errors.email.message}</p>}
+          <Input id="email" type="email" {...register("email")} />
+          {errors.email && <p className="text-red-600 text-xs font-bold">{errors.email.message}</p>}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="phone">Phone</Label>
-          <Input id="phone" {...register("phone")} className="bg-zinc-900 border-zinc-800 text-white" />
+          <Input id="phone" {...register("phone")} />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="location">Location</Label>
-          <Input id="location" placeholder="e.g. San Francisco, CA" {...register("location")} className="bg-zinc-900 border-zinc-800 text-white" />
+          <Input id="location" placeholder="e.g. San Francisco, CA" {...register("location")} />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="linkedin_url">LinkedIn URL</Label>
-          <Input id="linkedin_url" {...register("linkedin_url")} className="bg-zinc-900 border-zinc-800 text-white" />
-          {errors.linkedin_url && <p className="text-red-400 text-xs">{errors.linkedin_url.message}</p>}
+          <Input id="linkedin_url" {...register("linkedin_url")} />
+          {errors.linkedin_url && <p className="text-red-600 text-xs font-bold">{errors.linkedin_url.message}</p>}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="github_url">GitHub URL</Label>
-          <Input id="github_url" {...register("github_url")} className="bg-zinc-900 border-zinc-800 text-white" />
-          {errors.github_url && <p className="text-red-400 text-xs">{errors.github_url.message}</p>}
+          <Input id="github_url" {...register("github_url")} />
+          {errors.github_url && <p className="text-red-600 text-xs font-bold">{errors.github_url.message}</p>}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="portfolio_url">Portfolio URL</Label>
-          <Input id="portfolio_url" {...register("portfolio_url")} className="bg-zinc-900 border-zinc-800 text-white" />
-          {errors.portfolio_url && <p className="text-red-400 text-xs">{errors.portfolio_url.message}</p>}
+          <Input id="portfolio_url" {...register("portfolio_url")} />
+          {errors.portfolio_url && <p className="text-red-600 text-xs font-bold">{errors.portfolio_url.message}</p>}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 md:col-span-2">
           <Label htmlFor="skills">Skills (comma separated)</Label>
-          <Input id="skills" placeholder="React, Node.js, Python" {...register("skills")} className="bg-zinc-900 border-zinc-800 text-white" />
+          <Input id="skills" placeholder="React, Node.js, Python" {...register("skills")} />
         </div>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="summary">Professional Summary</Label>
-        <Textarea id="summary" rows={4} {...register("summary")} className="bg-zinc-900 border-zinc-800 text-white" />
+        <Textarea id="summary" rows={4} {...register("summary")} />
       </div>
 
-      <Button type="submit" disabled={mutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white">
+      <Button type="submit" disabled={mutation.isPending} className="w-full sm:w-auto">
         {mutation.isPending ? "Saving..." : "Save Changes"}
       </Button>
     </form>

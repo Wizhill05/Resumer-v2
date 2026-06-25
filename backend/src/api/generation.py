@@ -5,25 +5,26 @@ from typing import Any
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from jinja2 import Template
 
 from src.core.auth import get_current_user
-from src.core.database import get_db
+from src.core.database import get_db, AsyncSessionLocal
 from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog
-from src.models.profile import Profile, UserProject, UserExperience, UserEducation
+from src.models.profile import Profile, UserProject, UserExperience, UserEducation, UserExtracurricular
 from src.models.user import User
 from src.schemas.generation import GenerationCreate, GenerationOut
 from src.pipeline.graph import compile_graph
 from src.pipeline.nodes import sse_queue_var, log_progress
+from src.pipeline.state import ResumeGraphState
 from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/generate", tags=["generation"])
 
-MAX_DAILY_RUNS = 5
+MAX_DAILY_RUNS = 50
 
 
 async def check_rate_limit(user: User, db: AsyncSession) -> None:
@@ -136,7 +137,7 @@ async def stream_generation(
 
         # Initialize the SSE Queue and set context var
         queue = asyncio.Queue()
-        token = sse_queue_var.set(queue)
+        sse_queue_var.set(queue)
 
         # Update generation status to in_progress
         gen.status = "in_progress"
@@ -158,6 +159,8 @@ async def stream_generation(
             description=p.description,
             technologies=p.technologies,
             bullet_points=p.bullet_points,
+            github_url=p.github_url,
+            live_url=p.live_url,
             start_date=p.start_date.isoformat() if p.start_date else None,
             end_date=p.end_date.isoformat() if p.end_date else None,
         ) for p in projects_res.scalars().all()]
@@ -187,6 +190,18 @@ async def stream_generation(
             coursework=ed.coursework,
         ) for ed in edu_res.scalars().all()]
 
+        extra_res = await db.execute(
+            select(UserExtracurricular).where(UserExtracurricular.user_id == current_user.id).order_by(UserExtracurricular.sort_order)
+        )
+        extracurriculars = [dict(
+            title=ex.title,
+            organization=ex.organization,
+            description=ex.description,
+            start_date=ex.start_date.isoformat() if ex.start_date else None,
+            end_date=ex.end_date.isoformat() if ex.end_date else None,
+            bullet_points=ex.bullet_points or [],
+        ) for ex in extra_res.scalars().all()]
+
         template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
         if not template_manifest:
             yield f"data: {json.dumps({'node': 'system', 'message': f'Template {gen.template_id} not found.', 'level': 'error'})}\n\n"
@@ -203,12 +218,14 @@ async def stream_generation(
                 "linkedin_url": profile.linkedin_url,
                 "github_url": profile.github_url,
                 "portfolio_url": profile.portfolio_url,
+                "subtitle": profile.subtitle,
                 "summary": profile.summary,
                 "skills": profile.skills,
             },
             projects=projects,
             experiences=experiences,
             education=education,
+            extracurriculars=extracurriculars,
             job_description=gen.job_description,
             keywords=gen.keywords or [],
             instructions=gen.instructions or "",
@@ -218,6 +235,7 @@ async def stream_generation(
             projects_draft=None,
             experience_draft=None,
             tailored_resume=None,
+            orphans=None,
             pdf_bytes=None,
             markdown=None,
             page_count=0,
@@ -230,32 +248,50 @@ async def stream_generation(
 
         async def run_pipeline():
             try:
-                graph = compile_graph()
-                result = await graph.ainvoke(
-                    initial_state,
-                    config={"configurable": {"db": db, "gen_id": str(gen.id)}}
-                )
+                async with AsyncSessionLocal() as pipeline_db:
+                    graph = compile_graph()
+                    result = await graph.ainvoke(
+                        initial_state,
+                        config={"configurable": {"db": pipeline_db, "gen_id": str(gen.id)}}
+                    )
 
-                # Store tailored resume and parameters in db metadata
-                gen.status = "completed"
-                gen.pdf_storage_key = f"runs/{gen.id}/resume.pdf"
-                gen.md_storage_key = f"runs/{gen.id}/resume.md"
-                gen.completed_at = datetime.now(timezone.utc)
-                gen.render_metadata = {
-                    "tailored_resume": result.get("tailored_resume"),
-                    "font_size": result.get("font_size"),
-                    "page_count": result.get("page_count"),
-                }
-                await db.commit()
+                async with AsyncSessionLocal() as update_db:
+                    gen_res = await update_db.execute(
+                        select(Generation).where(Generation.id == gen.id)
+                    )
+                    gen_obj = gen_res.scalar_one()
+
+                    gen_obj.status = "completed"
+                    gen_obj.pdf_storage_key = f"runs/{gen.id}/resume.pdf"
+                    gen_obj.md_storage_key = f"runs/{gen.id}/resume.md"
+                    gen_obj.completed_at = datetime.now(timezone.utc)
+                    gen_obj.render_metadata = {
+                        "tailored_resume": result.get("tailored_resume"),
+                        "font_size": result.get("font_size"),
+                        "page_count": result.get("page_count"),
+                    }
+                    await update_db.commit()
+
+                # Signal success status before sentinel
+                await queue.put({"node": "system", "message": "completed", "level": "status"})
             except Exception as e:
-                await db.rollback()
-                gen.status = "failed"
-                gen.error_message = str(e)
-                await db.commit()
-                await log_progress(db, str(gen.id), "system", f"Pipeline error occurred: {e}", "error")
+                async with AsyncSessionLocal() as fail_db:
+                    gen_res = await fail_db.execute(
+                        select(Generation).where(Generation.id == gen.id)
+                    )
+                    gen_obj = gen_res.scalar_one_or_none()
+                    if gen_obj:
+                        gen_obj.status = "failed"
+                        gen_obj.error_message = str(e)
+                        await fail_db.commit()
+
+                await log_progress(None, str(gen.id), "system", f"Pipeline error occurred: {e}", "error")
+                await queue.put({"node": "system", "message": "failed", "level": "status"})
             finally:
-                sse_queue_var.reset(token)
-                await queue.put(None) # Sentinel
+                await queue.put(None)  # Sentinel — always unblock the SSE consumer
+
+        # Close the request-scoped database session immediately so it doesn't hold a transaction open
+        await db.close()
 
         # Start pipeline task (inherits context vars)
         asyncio.create_task(run_pipeline())
@@ -289,12 +325,11 @@ async def preview_generation(
     if gen.status != "completed":
         raise HTTPException(status_code=400, detail="Generation is not completed yet.")
 
-    # Try fetching from storage if configured
+    # Try fetching from storage if configured and file actually exists
     storage = StorageService()
-    if storage.enabled and gen.pdf_storage_key:
+    if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
         presigned_url = storage.get_presigned_url(gen.pdf_storage_key)
         if presigned_url:
-            from fastapi.responses import RedirectResponse
             return RedirectResponse(presigned_url)
 
     # Fallback: Render PDF on the fly
@@ -312,26 +347,29 @@ async def preview_generation(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
-    html_template_str = TemplateRegistryService.get_template_html(gen.template_id)
-
-    if not template_manifest or not html_template_str:
+    if not template_manifest:
         raise HTTPException(status_code=500, detail="Template files missing.")
 
-    jinja_template = Template(html_template_str)
-    html_rendered = jinja_template.render(
-        profile={
-            "full_name": profile.full_name,
-            "email": profile.email,
-            "phone": profile.phone,
-            "location": profile.location,
-            "linkedin_url": profile.linkedin_url,
-            "github_url": profile.github_url,
-            "portfolio_url": profile.portfolio_url,
+    html_rendered = TemplateRegistryService.render_template(
+        gen.template_id,
+        {
+            "profile": {
+                "full_name": profile.full_name,
+                "email": profile.email,
+                "phone": profile.phone,
+                "location": profile.location,
+                "linkedin_url": profile.linkedin_url,
+                "github_url": profile.github_url,
+                "portfolio_url": profile.portfolio_url,
+                "subtitle": profile.subtitle,
+            },
+            "resume": tailored_resume,
+            "font_size": font_size or template_manifest.max_font_size,
+            "page_margin_mm": template_manifest.page_margin_mm,
         },
-        resume=tailored_resume,
-        font_size=font_size or template_manifest.max_font_size,
-        page_margin_mm=template_manifest.page_margin_mm,
     )
+    if not html_rendered:
+        raise HTTPException(status_code=500, detail="Template rendering failed.")
 
     try:
         from weasyprint import HTML
@@ -343,4 +381,79 @@ async def preview_generation(
 
     pdf_bytes = HTML(string=html_rendered).write_pdf()
     return Response(content=pdf_bytes, media_type="application/pdf")
+
+
+@router.get("/{gen_id}/download")
+async def download_generation(
+    gen_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Generation).where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
+    )
+    gen = result.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+
+    if gen.status != "completed":
+        raise HTTPException(status_code=400, detail="Generation is not completed yet.")
+
+    # Try R2 presigned URL with content-disposition
+    storage = StorageService()
+    if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
+        presigned_url = storage.get_presigned_url(gen.pdf_storage_key)
+        if presigned_url:
+            return RedirectResponse(presigned_url)
+
+    # Fallback: render on-the-fly and serve as attachment
+    metadata = gen.render_metadata or {}
+    tailored_resume = metadata.get("tailored_resume")
+    font_size = metadata.get("font_size")
+
+    if not tailored_resume:
+        raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
+
+    profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+    profile = profile_res.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not template_manifest:
+        raise HTTPException(status_code=500, detail="Template files missing.")
+
+    html_rendered = TemplateRegistryService.render_template(
+        gen.template_id,
+        {
+            "profile": {
+                "full_name": profile.full_name,
+                "email": profile.email,
+                "phone": profile.phone,
+                "location": profile.location,
+                "linkedin_url": profile.linkedin_url,
+                "github_url": profile.github_url,
+                "portfolio_url": profile.portfolio_url,
+                "subtitle": profile.subtitle,
+            },
+            "resume": tailored_resume,
+            "font_size": font_size or template_manifest.max_font_size,
+            "page_margin_mm": template_manifest.page_margin_mm,
+        },
+    )
+    if not html_rendered:
+        raise HTTPException(status_code=500, detail="Template rendering failed.")
+
+    try:
+        from weasyprint import HTML
+    except (OSError, ImportError) as e:
+        raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {e}")
+
+    pdf_bytes = HTML(string=html_rendered).write_pdf()
+    filename = f"resume-{gen_id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 

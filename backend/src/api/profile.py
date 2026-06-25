@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import get_current_user
 from src.core.database import get_db
-from src.models.profile import Profile, UserEducation, UserExperience, UserProject
+from src.models.profile import Profile, UserEducation, UserExperience, UserProject, UserExtracurricular
 from src.models.user import User
 from src.schemas.profile import (
     EducationCreate,
@@ -18,6 +18,9 @@ from src.schemas.profile import (
     ProjectCreate,
     ProjectOut,
     ProjectUpdate,
+    ExtracurricularCreate,
+    ExtracurricularOut,
+    ExtracurricularUpdate,
 )
 
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -262,3 +265,72 @@ async def delete_education(
     await db.delete(edu)
     await db.commit()
     return {"ok": True}
+
+
+# ── Extracurriculars ──────────────────────────────────────────────────────────
+
+@router.get("/extracurriculars", response_model=list[ExtracurricularOut])
+async def list_extracurriculars(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(UserExtracurricular).where(UserExtracurricular.user_id == current_user.id).order_by(UserExtracurricular.sort_order)
+    )
+    return result.scalars().all()
+
+
+@router.post("/extracurriculars", response_model=ExtracurricularOut)
+async def add_extracurricular(
+    data: ExtracurricularCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    extra = UserExtracurricular(user_id=current_user.id, **data.model_dump())
+    db.add(extra)
+    await db.commit()
+    await db.refresh(extra)
+    return extra
+
+
+@router.put("/extracurriculars/{extra_id}", response_model=ExtracurricularOut)
+async def update_extracurricular(
+    extra_id: str,
+    data: ExtracurricularUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi import HTTPException
+    result = await db.execute(
+        select(UserExtracurricular).where(UserExtracurricular.id == extra_id, UserExtracurricular.user_id == current_user.id)
+    )
+    extra = result.scalar_one_or_none()
+    if not extra:
+        raise HTTPException(status_code=404, detail="Extracurricular activity not found")
+
+    for field, value in data.model_dump(exclude_none=True).items():
+        setattr(extra, field, value)
+
+    await db.commit()
+    await db.refresh(extra)
+    return extra
+
+
+@router.delete("/extracurriculars/{extra_id}")
+async def delete_extracurricular(
+    extra_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi import HTTPException
+    result = await db.execute(
+        select(UserExtracurricular).where(UserExtracurricular.id == extra_id, UserExtracurricular.user_id == current_user.id)
+    )
+    extra = result.scalar_one_or_none()
+    if not extra:
+        raise HTTPException(status_code=404, detail="Extracurricular activity not found")
+
+    await db.delete(extra)
+    await db.commit()
+    return {"ok": True}
+

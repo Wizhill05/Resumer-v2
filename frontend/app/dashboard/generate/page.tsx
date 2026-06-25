@@ -1,31 +1,31 @@
-import { auth } from "@/lib/auth"
+import { auth, signOut } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { GenerateClient } from "./GenerateClient"
+import { Navigation } from "@/components/Navigation"
 
 export default async function GeneratePage() {
   const session = await auth()
   if (!session) redirect("/")
 
-  return (
-    <main className="min-h-screen bg-zinc-950 text-white">
-      <nav className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between max-w-6xl mx-auto">
-        <span className="font-bold text-lg">Resumer</span>
-        <div className="flex items-center gap-4 text-sm">
-          <Link href="/dashboard" className="text-zinc-400 hover:text-white">Dashboard</Link>
-          <Link href="/profile" className="text-zinc-400 hover:text-white">Profile</Link>
-          <Link href="/dashboard/history" className="text-zinc-400 hover:text-white">History</Link>
-        </div>
-      </nav>
+  async function handleSignOut() {
+    "use server"
+    await signOut({ redirectTo: "/" })
+  }
 
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        <h1 className="text-2xl font-bold mb-2">Generate Tailored Resume</h1>
-        <p className="text-zinc-400 mb-8">
-          Select a layout template, paste the job description, and watch our multi-agent pipeline build your resume.
-        </p>
+  return (
+    <Navigation signOutAction={handleSignOut}>
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <h1 className="font-heading text-4xl font-extrabold tracking-tight text-zinc-900 uppercase">
+            Generate Resume
+          </h1>
+          <p className="text-zinc-500 font-semibold">
+            Tailor a layout and compile it for your next target job.
+          </p>
+        </div>
 
         <GenerateClient />
       </div>
-    </main>
+    </Navigation>
   )
 }

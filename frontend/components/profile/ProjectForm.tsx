@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Plus, Trash2, Edit2, X } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Plus, Trash2, Edit2, X } from "lucide-react"
 
 const schema = z.object({
   name: z.string().min(1, "Project Name is required"),
@@ -25,12 +26,25 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
+type ProjectItem = {
+  id: string
+  name: string
+  description?: string
+  technologies?: string[]
+  github_url?: string
+  live_url?: string
+  start_date?: string
+  end_date?: string
+  bullet_points?: string[]
+  sort_order?: number
+}
+
 export function ProjectForm() {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
 
-  const { data: projects = [], isLoading } = useQuery<any[]>({
+  const { data: projects = [], isLoading } = useQuery<ProjectItem[]>({
     queryKey: ["projects"],
     queryFn: async () => {
       const res = await fetch("/api/backend/profile/projects")
@@ -92,7 +106,7 @@ export function ProjectForm() {
     },
   })
 
-  const startEdit = (project: any) => {
+  const startEdit = (project: ProjectItem) => {
     setEditingId(project.id)
     setIsAdding(true)
     reset({
@@ -117,7 +131,11 @@ export function ProjectForm() {
   if (isLoading) {
     return (
       <div className="flex justify-center p-8">
-        <Loader2 className="animate-spin text-zinc-400" />
+        <div className="flex gap-2">
+          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-1" />
+          <span className="w-3 h-3 bg-zinc-350 rounded-full pulse-dot-2" />
+          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-3" />
+        </div>
       </div>
     )
   }
@@ -125,8 +143,8 @@ export function ProjectForm() {
   return (
     <div className="space-y-6">
       {!isAdding && (
-        <div className="flex justify-between items-center">
-          <h3 className="text-sm font-medium text-zinc-400">
+        <div className="flex justify-between items-center bg-[#fdfbf7] p-4 border border-zinc-200/60 rounded-2xl">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
             {projects.length} project entries
           </h3>
           <Button
@@ -146,67 +164,66 @@ export function ProjectForm() {
               })
             }}
             size="sm"
-            className="bg-blue-600 hover:bg-blue-700 text-white flex gap-1 items-center"
           >
-            <Plus size={16} /> Add Project
+            <Plus size={14} /> Add Project
           </Button>
         </div>
       )}
 
       {isAdding && (
-        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 p-4 border border-zinc-800 rounded-lg bg-zinc-900/40">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="font-semibold text-white">
+        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-6 p-6 border border-zinc-100 rounded-3xl bg-[#fdfbf7]/50">
+          <div className="flex justify-between items-center mb-2 border-b border-zinc-150 pb-3">
+            <h3 className="font-heading text-lg font-bold text-zinc-900 uppercase">
               {editingId ? "Edit Project" : "Add Project"}
             </h3>
-            <Button type="button" variant="ghost" size="sm" onClick={handleCancel}>
+            <Button type="button" variant="ghost" size="icon-sm" onClick={handleCancel} className="border-none hover:bg-zinc-200/50">
               <X size={16} />
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Project Name</Label>
-              <Input id="name" {...register("name")} className="bg-zinc-900 border-zinc-800 text-white" />
-              {errors.name && <p className="text-red-400 text-xs">{errors.name.message}</p>}
+              <Input id="name" {...register("name")} />
+              {errors.name && <p className="text-red-600 text-xs font-bold">{errors.name.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="technologies">Technologies (comma separated)</Label>
-              <Input id="technologies" placeholder="React, TS, TailWind" {...register("technologies")} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="technologies" placeholder="React, TS, TailWind" {...register("technologies")} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="github_url">GitHub URL</Label>
-              <Input id="github_url" {...register("github_url")} className="bg-zinc-900 border-zinc-800 text-white" />
-              {errors.github_url && <p className="text-red-400 text-xs">{errors.github_url.message}</p>}
+              <Input id="github_url" {...register("github_url")} />
+              {errors.github_url && <p className="text-red-600 text-xs font-bold">{errors.github_url.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="live_url">Live URL</Label>
-              <Input id="live_url" {...register("live_url")} className="bg-zinc-900 border-zinc-800 text-white" />
-              {errors.live_url && <p className="text-red-400 text-xs">{errors.live_url.message}</p>}
+              <Input id="live_url" {...register("live_url")} />
+              {errors.live_url && <p className="text-red-600 text-xs font-bold">{errors.live_url.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="start_date">Start Date</Label>
-              <Input id="start_date" type="date" {...register("start_date")} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="start_date" type="date" {...register("start_date")} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="end_date">End Date</Label>
-              <Input id="end_date" type="date" {...register("end_date")} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="end_date" type="date" {...register("end_date")} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="sort_order">Sort Order</Label>
-              <Input id="sort_order" type="number" {...register("sort_order", { valueAsNumber: true })} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="sort_order" type="number" {...register("sort_order", { valueAsNumber: true })} />
             </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="description">Short Description</Label>
-            <Textarea id="description" rows={3} {...register("description")} className="bg-zinc-900 border-zinc-800 text-white" />
+            <Textarea id="description" rows={3} {...register("description")} />
           </div>
 
           <div className="space-y-2">
@@ -216,15 +233,14 @@ export function ProjectForm() {
               rows={4}
               placeholder="- Built real-time dashboard using Socket.io&#10;- Integrated Stripe payments API"
               {...register("bullet_points")}
-              className="bg-zinc-900 border-zinc-800 text-white"
             />
           </div>
 
-          <div className="flex gap-2">
-            <Button type="submit" disabled={saveMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <div className="flex gap-3 pt-4 border-t border-zinc-150">
+            <Button type="submit" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save"}
             </Button>
-            <Button type="button" variant="outline" onClick={handleCancel} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 bg-transparent">
+            <Button type="button" variant="outline" onClick={handleCancel}>
               Cancel
             </Button>
           </div>
@@ -233,44 +249,44 @@ export function ProjectForm() {
 
       <div className="space-y-4">
         {projects.map((proj) => (
-          <div key={proj.id} className="p-4 border border-zinc-800 rounded-lg bg-zinc-900/20 flex justify-between items-start">
-            <div className="space-y-1">
-              <h4 className="font-semibold text-white">{proj.name}</h4>
+          <div key={proj.id} className="editorial-card p-6 flex justify-between items-start bg-white">
+            <div className="space-y-2">
+              <h4 className="font-heading text-lg font-bold text-zinc-900 uppercase tracking-tight">{proj.name}</h4>
               {proj.technologies && proj.technologies.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
+                <div className="flex flex-wrap gap-1.5 mt-1">
                   {proj.technologies.map((t: string) => (
-                    <span key={t} className="text-xs bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded">
+                    <Badge key={t} variant="secondary" className="text-[9px] font-bold py-0 px-2 tracking-wider">
                       {t}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               )}
-              <p className="text-sm text-zinc-400 mt-2">{proj.description}</p>
+              <p className="text-sm font-semibold text-zinc-650 mt-2">{proj.description}</p>
               {proj.bullet_points && proj.bullet_points.length > 0 && (
-                <ul className="list-disc list-inside mt-2 text-xs text-zinc-400 space-y-1">
+                <ul className="list-disc list-inside mt-3 text-xs font-semibold text-zinc-600 space-y-1">
                   {proj.bullet_points.map((b: string, i: number) => (
                     <li key={i}>{b}</li>
                   ))}
                 </ul>
               )}
-              <div className="flex gap-4 mt-3 text-xs text-zinc-500">
-                {proj.github_url && <a href={proj.github_url} target="_blank" rel="noreferrer" className="underline hover:text-white">GitHub</a>}
-                {proj.live_url && <a href={proj.live_url} target="_blank" rel="noreferrer" className="underline hover:text-white">Live Site</a>}
+              <div className="flex gap-4 mt-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                {proj.github_url && <a href={proj.github_url} target="_blank" rel="noreferrer" className="underline hover:text-[#ff4e26]">GitHub</a>}
+                {proj.live_url && <a href={proj.live_url} target="_blank" rel="noreferrer" className="underline hover:text-[#ff4e26]">Live Site</a>}
               </div>
             </div>
             <div className="flex gap-2">
-              <Button size="icon" variant="ghost" onClick={() => startEdit(proj)} className="text-zinc-400 hover:text-white">
-                <Edit2 size={16} />
+              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(proj)} className="border-none hover:bg-zinc-100">
+                <Edit2 size={14} className="text-zinc-700" />
               </Button>
               <Button
-                size="icon"
+                size="icon-sm"
                 variant="ghost"
                 onClick={() => {
                   if (confirm("Are you sure?")) deleteMutation.mutate(proj.id)
                 }}
-                className="text-zinc-400 hover:text-red-400"
+                className="border-none hover:bg-red-50 hover:text-red-500"
               >
-                <Trash2 size={16} />
+                <Trash2 size={14} />
               </Button>
             </div>
           </div>

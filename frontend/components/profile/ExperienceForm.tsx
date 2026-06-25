@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Plus, Trash2, Edit2, X } from "lucide-react"
+import { Plus, Trash2, Edit2, X } from "lucide-react"
 
 const schema = z.object({
   role: z.string().min(1, "Role/Title is required"),
@@ -23,12 +23,23 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
+type ExperienceItem = {
+  id: string
+  role: string
+  organization: string
+  location?: string
+  start_date?: string
+  end_date?: string
+  bullet_points?: string[]
+  sort_order?: number
+}
+
 export function ExperienceForm() {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
 
-  const { data: experiences = [], isLoading } = useQuery<any[]>({
+  const { data: experiences = [], isLoading } = useQuery<ExperienceItem[]>({
     queryKey: ["experiences"],
     queryFn: async () => {
       const res = await fetch("/api/backend/profile/experiences")
@@ -87,7 +98,7 @@ export function ExperienceForm() {
     },
   })
 
-  const startEdit = (exp: any) => {
+  const startEdit = (exp: ExperienceItem) => {
     setEditingId(exp.id)
     setIsAdding(true)
     reset({
@@ -110,7 +121,11 @@ export function ExperienceForm() {
   if (isLoading) {
     return (
       <div className="flex justify-center p-8">
-        <Loader2 className="animate-spin text-zinc-400" />
+        <div className="flex gap-2">
+          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-1" />
+          <span className="w-3 h-3 bg-zinc-350 rounded-full pulse-dot-2" />
+          <span className="w-3 h-3 bg-[#ff4e26] rounded-full pulse-dot-3" />
+        </div>
       </div>
     )
   }
@@ -118,8 +133,8 @@ export function ExperienceForm() {
   return (
     <div className="space-y-6">
       {!isAdding && (
-        <div className="flex justify-between items-center">
-          <h3 className="text-sm font-medium text-zinc-400">
+        <div className="flex justify-between items-center bg-[#fdfbf7] p-4 border border-zinc-200/60 rounded-2xl">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
             {experiences.length} experience entries
           </h3>
           <Button
@@ -137,55 +152,54 @@ export function ExperienceForm() {
               })
             }}
             size="sm"
-            className="bg-blue-600 hover:bg-blue-700 text-white flex gap-1 items-center"
           >
-            <Plus size={16} /> Add Experience
+            <Plus size={14} /> Add Experience
           </Button>
         </div>
       )}
 
       {isAdding && (
-        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 p-4 border border-zinc-800 rounded-lg bg-zinc-900/40">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="font-semibold text-white">
+        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-6 p-6 border border-zinc-100 rounded-3xl bg-[#fdfbf7]/50">
+          <div className="flex justify-between items-center mb-2 border-b border-zinc-150 pb-3">
+            <h3 className="font-heading text-lg font-bold text-zinc-900 uppercase">
               {editingId ? "Edit Experience" : "Add Experience"}
             </h3>
-            <Button type="button" variant="ghost" size="sm" onClick={handleCancel}>
+            <Button type="button" variant="ghost" size="icon-sm" onClick={handleCancel} className="border-none hover:bg-zinc-200/50">
               <X size={16} />
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="role">Role / Job Title</Label>
-              <Input id="role" {...register("role")} className="bg-zinc-900 border-zinc-800 text-white" />
-              {errors.role && <p className="text-red-400 text-xs">{errors.role.message}</p>}
+              <Input id="role" {...register("role")} />
+              {errors.role && <p className="text-red-600 text-xs font-bold">{errors.role.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="organization">Company / Organization</Label>
-              <Input id="organization" {...register("organization")} className="bg-zinc-900 border-zinc-800 text-white" />
-              {errors.organization && <p className="text-red-400 text-xs">{errors.organization.message}</p>}
+              <Input id="organization" {...register("organization")} />
+              {errors.organization && <p className="text-red-600 text-xs font-bold">{errors.organization.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="location">Location</Label>
-              <Input id="location" placeholder="e.g. Remote, or New York, NY" {...register("location")} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="location" placeholder="e.g. Remote, or New York, NY" {...register("location")} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="sort_order">Sort Order (lower = higher priority)</Label>
-              <Input id="sort_order" type="number" {...register("sort_order", { valueAsNumber: true })} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="sort_order" type="number" {...register("sort_order", { valueAsNumber: true })} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="start_date">Start Date</Label>
-              <Input id="start_date" type="date" {...register("start_date")} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="start_date" type="date" {...register("start_date")} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
-              <Input id="end_date" type="date" {...register("end_date")} className="bg-zinc-900 border-zinc-800 text-white" />
+              <Input id="end_date" type="date" {...register("end_date")} />
             </div>
           </div>
 
@@ -196,15 +210,14 @@ export function ExperienceForm() {
               rows={5}
               placeholder="- Developed backend microservices using FastAPI&#10;- Configured PostgreSQL database and Alembic migrations"
               {...register("bullet_points")}
-              className="bg-zinc-900 border-zinc-800 text-white"
             />
           </div>
 
-          <div className="flex gap-2">
-            <Button type="submit" disabled={saveMutation.isPending} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <div className="flex gap-3 pt-4 border-t border-zinc-150">
+            <Button type="submit" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save"}
             </Button>
-            <Button type="button" variant="outline" onClick={handleCancel} className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 bg-transparent">
+            <Button type="button" variant="outline" onClick={handleCancel}>
               Cancel
             </Button>
           </div>
@@ -213,17 +226,17 @@ export function ExperienceForm() {
 
       <div className="space-y-4">
         {experiences.map((exp) => (
-          <div key={exp.id} className="p-4 border border-zinc-800 rounded-lg bg-zinc-900/20 flex justify-between items-start">
-            <div className="space-y-1">
-              <h4 className="font-semibold text-white">{exp.role}</h4>
-              <p className="text-sm text-zinc-300">
-                {exp.organization} — <span className="text-zinc-400">{exp.location || "Location N/A"}</span>
+          <div key={exp.id} className="editorial-card p-6 flex justify-between items-start bg-white">
+            <div className="space-y-2">
+              <h4 className="font-heading text-lg font-bold text-zinc-900 uppercase tracking-tight">{exp.role}</h4>
+              <p className="text-sm font-bold text-zinc-600 uppercase tracking-wide">
+                {exp.organization} — <span className="text-zinc-500 normal-case font-medium">{exp.location || "Location N/A"}</span>
               </p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                 {exp.start_date || "Start N/A"} to {exp.end_date || "Present"}
               </p>
               {exp.bullet_points && exp.bullet_points.length > 0 && (
-                <ul className="list-disc list-inside mt-2 text-xs text-zinc-400 space-y-1">
+                <ul className="list-disc list-inside mt-3 text-xs font-semibold text-zinc-600 space-y-1">
                   {exp.bullet_points.map((b: string, i: number) => (
                     <li key={i}>{b}</li>
                   ))}
@@ -231,18 +244,18 @@ export function ExperienceForm() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button size="icon" variant="ghost" onClick={() => startEdit(exp)} className="text-zinc-400 hover:text-white">
-                <Edit2 size={16} />
+              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(exp)} className="border-none hover:bg-zinc-100">
+                <Edit2 size={14} className="text-zinc-700" />
               </Button>
               <Button
-                size="icon"
+                size="icon-sm"
                 variant="ghost"
                 onClick={() => {
                   if (confirm("Are you sure?")) deleteMutation.mutate(exp.id)
                 }}
-                className="text-zinc-400 hover:text-red-400"
+                className="border-none hover:bg-red-50 hover:text-red-500"
               >
-                <Trash2 size={16} />
+                <Trash2 size={14} />
               </Button>
             </div>
           </div>

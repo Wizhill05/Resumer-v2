@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     R2_SECRET_ACCESS_KEY: str = ""
     R2_BUCKET_NAME: str = "resumer-artifacts"
 
+    GOOGLE_API_KEY: str = ""
+
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Absolute path to backend directory resolved relative to this file

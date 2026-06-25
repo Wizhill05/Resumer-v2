@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { signBackendToken } from "@/lib/jwt"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+const BACKEND_URL = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000"
 
 async function handleProxy(
   req: NextRequest,
@@ -18,7 +18,7 @@ async function handleProxy(
     email: session.user.email,
     name: session.user.name,
     picture: session.user.image,
-    provider: (session as any).token?.provider ?? "unknown",
+    provider: (session as { token?: { provider?: string } }).token?.provider ?? "unknown",
   }
   const backendToken = await signBackendToken(tokenPayload)
 
@@ -59,8 +59,8 @@ async function handleProxy(
         "Content-Type": contentType,
       },
     })
-  } catch (err: any) {
-    console.error("BFF Proxy Error:", err)
+  } catch (err) {
+    console.error("BFF Proxy Error:", err instanceof Error ? err.message : String(err))
     return NextResponse.json(
       { error: "Failed to connect to backend service" },
       { status: 502 }

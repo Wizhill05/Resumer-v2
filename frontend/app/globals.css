@@ -1,130 +1,129 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
-
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+@theme {
+  --font-sans: var(--font-inter), sans-serif;
+  --font-heading: var(--font-syne), sans-serif;
+  --color-brand-orange: #ff4e26;
+  --color-brand-orange-hover: #e03d16;
+  --color-brand-bg: #fdfbf7;
+  --color-brand-card: #ffffff;
+  --color-brand-text: #121212;
+  --color-brand-border: #e5e5e0;
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
   body {
-    @apply bg-background text-foreground;
+    background-color: #fdfbf7;
+    color: #121212;
+    font-family: var(--font-inter), sans-serif;
   }
-  html {
-    @apply font-sans;
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-syne), sans-serif;
+    font-weight: 700;
   }
+}
+
+/* modern editorial components */
+.editorial-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e5e0;
+  border-radius: 1.5rem;
+  box-shadow: 0 4px 20px -2px rgba(18, 18, 18, 0.03), 0 2px 6px -1px rgba(18, 18, 18, 0.02);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.editorial-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -4px rgba(18, 18, 18, 0.06), 0 4px 12px -2px rgba(18, 18, 18, 0.03);
+}
+
+.pill-button {
+  border-radius: 9999px;
+  font-weight: 700;
+  padding: 0.75rem 1.75rem;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.pill-input {
+  background-color: #ffffff;
+  border: 1px solid #e5e5e0;
+  border-radius: 9999px;
+  padding: 0.75rem 1.25rem;
+  font-family: inherit;
+  color: #121212;
+  outline: none;
+  width: 100%;
+  transition: all 0.2s ease-in-out;
+}
+
+.pill-input:focus {
+  border-color: #ff4e26;
+  box-shadow: 0 0 0 3px rgba(255, 78, 38, 0.15);
+}
+
+.modern-textarea {
+  background-color: #ffffff;
+  border: 1px solid #e5e5e0;
+  border-radius: 1rem;
+  padding: 0.75rem 1.25rem;
+  font-family: inherit;
+  color: #121212;
+  outline: none;
+  width: 100%;
+  transition: all 0.2s ease-in-out;
+}
+
+.modern-textarea:focus {
+  border-color: #ff4e26;
+  box-shadow: 0 0 0 3px rgba(255, 78, 38, 0.15);
+}
+
+.pill-badge {
+  border-radius: 9999px;
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Custom modern loading states */
+@keyframes smooth-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.pulse-dot-1 {
+  animation: smooth-pulse 1.4s infinite ease-in-out;
+}
+.pulse-dot-2 {
+  animation: smooth-pulse 1.4s infinite ease-in-out 0.2s;
+}
+.pulse-dot-3 {
+  animation: smooth-pulse 1.4s infinite ease-in-out 0.4s;
+}
+
+/* Thin pill progress bar */
+.modern-progress-bar {
+  height: 8px;
+  border-radius: 9999px;
+  background-color: #f1f0ea;
+  position: relative;
+  overflow: hidden;
+}
+
+.modern-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background-color: #ff4e26;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }

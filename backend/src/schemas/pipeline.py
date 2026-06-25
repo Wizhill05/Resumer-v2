@@ -12,7 +12,7 @@ class JobAnalysis(BaseModel):
 
 class TailoredSummaryAndSkills(BaseModel):
     """Professional summary and categorized skills tailored to the target job."""
-    summary: str = Field(description="A professional summary of 3-4 sentences tailored to the target job.")
+    summary: str = Field(description="A professional summary of exactly 1-2 sentences (maximum 2 lines / 30 words) tailored to the target job.")
     skills: dict[str, list[str]] = Field(
         default_factory=dict,
         description="Categorized skills relevant to the job description (e.g., {'Languages': ['Python', 'Go'], 'Frontend': ['React']}). Max 5-6 categories."
@@ -22,6 +22,7 @@ class TailoredSummaryAndSkills(BaseModel):
 class TailoredProject(BaseModel):
     """A personal project tailored to highlight relevance to the target job."""
     name: str = Field(description="Project name")
+    project_summary: str | None = Field(default=None, description="A 2-4 word high-level description of what the project is, e.g., 'API to MCP converter'")
     description: str | None = Field(default=None, description="Short project description")
     technologies: list[str] = Field(default_factory=list, description="Technologies used in the project")
     bullet_points: list[str] = Field(

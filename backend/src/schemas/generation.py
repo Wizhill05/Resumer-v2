@@ -11,7 +11,7 @@ class GenerationCreate(BaseModel):
     company: str | None = None
     keywords: list[str] | None = None
     instructions: str | None = None
-    model_used: str = "gemma-4"
+    model_used: str = "gemma-4-31b-it"
 
 
 class GenerationOut(BaseModel):

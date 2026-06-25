@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+const API_URL = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000"
 
 export async function apiFetch(path: string, init?: RequestInit) {
   const session = await auth()
@@ -11,10 +11,7 @@ export async function apiFetch(path: string, init?: RequestInit) {
 
   // Attach JWT from session if available
   if (session) {
-    // NextAuth v5 exposes the raw JWT token via getToken on server
-    // We pass it via Authorization header
-    const { getToken } = await import("next-auth/jwt")
-    // This is a server-side utility only
+    // NextAuth v5 raw JWT token handling on server
   }
 
   return fetch(`${API_URL}${path}`, { ...init, headers })

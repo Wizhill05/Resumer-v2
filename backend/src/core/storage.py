@@ -38,6 +38,15 @@ class StorageService:
             print(f"StorageService: Failed to upload {key}: {e}")
             return False
 
+    def file_exists(self, key: str) -> bool:
+        if not self.enabled or not self.s3_client:
+            return False
+        try:
+            self.s3_client.head_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
+            return True
+        except Exception:
+            return False
+
     def get_presigned_url(self, key: str, expires_in: int = 3600) -> str | None:
         if not self.enabled or not self.s3_client:
             return None

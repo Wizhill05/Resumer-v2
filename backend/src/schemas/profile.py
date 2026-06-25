@@ -13,6 +13,7 @@ class ProfileUpdate(BaseModel):
     linkedin_url: str | None = None
     github_url: str | None = None
     portfolio_url: str | None = None
+    subtitle: str | None = None
     summary: str | None = None
     skills: list[str] | None = None
 
@@ -103,3 +104,28 @@ class EducationOut(EducationCreate):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# Extracurriculars
+class ExtracurricularCreate(BaseModel):
+    title: str
+    organization: str | None = None
+    description: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    bullet_points: list[str] | None = None
+    sort_order: int = 0
+
+
+class ExtracurricularUpdate(ExtracurricularCreate):
+    title: str | None = None
+
+
+class ExtracurricularOut(ExtracurricularCreate):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
