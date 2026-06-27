@@ -28,6 +28,11 @@ class ResumeGraphState(TypedDict):
     page_count: int
     font_size: float
 
+    # Artifact storage keys (set by save_artifacts_node; None = upload skipped/failed)
+    pdf_storage_key: Optional[str]
+    md_storage_key: Optional[str]
+    thumb_storage_key: Optional[str]
+
     # Controls & Logs
     repair_attempts: int
     render_attempts: int

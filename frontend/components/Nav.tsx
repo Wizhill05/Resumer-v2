@@ -15,6 +15,7 @@ export function Nav() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setOpen(false) }, [pathname])
 
   useEffect(() => {

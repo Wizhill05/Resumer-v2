@@ -1,12 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { FileText, AlertCircle } from "lucide-react"
+import { FileText, AlertCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
 
 type Step = "input" | "submitted"
@@ -18,12 +18,14 @@ type TemplateItem = {
 }
 
 export function GenerateClient() {
+  const queryClient = useQueryClient()
   const [step, setStep] = useState<Step>("input")
   const [selectedTemplate, setSelectedTemplate] = useState<string>("personal-classic")
   const [jobDescription, setJobDescription] = useState("")
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Fetch available templates
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<TemplateItem[]>({
@@ -38,9 +40,10 @@ export function GenerateClient() {
   // Start generation run
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!jobDescription.trim()) return
+    if (!jobDescription.trim() || isSubmitting) return
 
     setError(null)
+    setIsSubmitting(true)
 
     try {
       const response = await fetch("/api/backend/generate", {
@@ -59,9 +62,13 @@ export function GenerateClient() {
         throw new Error(errorData.detail || "Failed to start generation")
       }
 
+      // Invalidate history so the new run appears immediately on the History page.
+      queryClient.invalidateQueries({ queryKey: ["history"] })
       setStep("submitted")
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -155,8 +162,20 @@ export function GenerateClient() {
             </div>
           </div>
 
-          <Button type="submit" size="lg" className="w-full">
-            Start Generation Pipeline
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full"
+            disabled={isSubmitting || !jobDescription.trim()}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="animate-spin" size={18} />
+                Starting…
+              </>
+            ) : (
+              "Start Generation Pipeline"
+            )}
           </Button>
         </form>
       )}
@@ -168,7 +187,7 @@ export function GenerateClient() {
               Generation Started!
             </h3>
             <p className="text-sm font-semibold text-zinc-700 leading-relaxed">
-              Your resume is being generated. This usually takes 5–10 minutes. You'll be notified by email when it's ready — or check the History page to track progress.
+              Your resume is being generated. This usually takes 5–10 minutes. You&apos;ll be notified by email when it&apos;s ready — or check the History page to track progress.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

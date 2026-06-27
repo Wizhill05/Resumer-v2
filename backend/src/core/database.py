@@ -11,7 +11,12 @@ if db_url.startswith("postgres://"):
 elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-engine = create_async_engine(db_url, echo=False)
+engine = create_async_engine(
+    db_url,
+    echo=False,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

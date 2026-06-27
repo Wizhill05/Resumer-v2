@@ -1,57 +1,98 @@
-import json
-import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from fastapi.responses import StreamingResponse, RedirectResponse
-from sqlalchemy import select
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select, case
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from jinja2 import Template
 
 from src.core.auth import get_current_user
-from src.core.database import get_db, AsyncSessionLocal
+from src.core.config import settings
+from src.core.database import get_db
+from src.core.executor import trigger_pipeline
+from src.core.notify import send_completion_email
 from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog
-from src.models.profile import Profile, UserProject, UserExperience, UserEducation, UserExtracurricular
 from src.models.user import User
 from src.schemas.generation import GenerationCreate, GenerationOut
-from src.pipeline.graph import compile_graph
-from src.pipeline.nodes import sse_queue_var, log_progress
-from src.pipeline.state import ResumeGraphState
 from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/generate", tags=["generation"])
 
 MAX_DAILY_RUNS = 50
+STUCK_TIMEOUT_MINUTES = 15
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+async def _user_email(db: AsyncSession, user_id) -> str | None:
+    res = await db.execute(select(User).where(User.id == user_id))
+    u = res.scalar_one_or_none()
+    return u.email if u else None
 
 
 async def check_rate_limit(user: User, db: AsyncSession) -> None:
+    """Atomic upsert-and-increment. Row-level lock prevents the TOCTOU race
+    where two concurrent requests both read the same count and bypass the cap."""
     now = datetime.now(timezone.utc)
-    result = await db.execute(select(UserRateLimit).where(UserRateLimit.user_id == user.id))
-    rl = result.scalar_one_or_none()
+    reset_at = now + timedelta(hours=24)
 
-    if not rl:
-        rl = UserRateLimit(user_id=user.id, request_count=1, reset_at=now + timedelta(hours=24))
-        db.add(rl)
-        await db.commit()
-        return
+    stmt = (
+        pg_insert(UserRateLimit)
+        .values(user_id=user.id, request_count=1, reset_at=reset_at)
+        .on_conflict_do_update(
+            index_elements=[UserRateLimit.user_id],
+            set_={
+                "request_count": case(
+                    (UserRateLimit.reset_at <= now, 1),
+                    else_=UserRateLimit.request_count + 1,
+                ),
+                "reset_at": case(
+                    (UserRateLimit.reset_at <= now, reset_at),
+                    else_=UserRateLimit.reset_at,
+                ),
+            },
+        )
+        .returning(UserRateLimit.request_count, UserRateLimit.reset_at)
+    )
+    result = await db.execute(stmt)
+    row = result.one()
+    await db.commit()
 
-    if now >= rl.reset_at:
-        rl.request_count = 1
-        rl.reset_at = now + timedelta(hours=24)
-        await db.commit()
-        return
-
-    if rl.request_count >= MAX_DAILY_RUNS:
+    count, reset = row[0], row[1]
+    if count > MAX_DAILY_RUNS:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit: {MAX_DAILY_RUNS} generations per day. Resets at {rl.reset_at.isoformat()}",
+            detail=f"Rate limit: {MAX_DAILY_RUNS} generations per day. Resets at {reset.isoformat()}",
         )
 
-    rl.request_count += 1
-    await db.commit()
+
+async def reap_stuck_generations(db: AsyncSession) -> None:
+    """Mark in_progress runs older than the timeout as failed + notify.
+    Covers Job executions that died (OOM, preemption) without reaching a
+    terminal status. Runs lazily on each POST /generate — zero infra."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STUCK_TIMEOUT_MINUTES)
+    result = await db.execute(
+        select(Generation).where(
+            Generation.status == "in_progress",
+            Generation.updated_at < cutoff,
+        )
+    )
+    stuck = result.scalars().all()
+    for gen in stuck:
+        gen.status = "failed"
+        gen.error_message = "Pipeline interrupted (job did not complete within timeout)"
+    if stuck:
+        await db.commit()
+        for gen in stuck:
+            # Best-effort notification; non-fatal.
+            email = await _user_email(db, gen.user_id)
+            send_completion_email(email, gen)
+
+
+# ── Generation CRUD ───────────────────────────────────────────────────────────
 
 
 @router.post("", response_model=GenerationOut)
@@ -60,6 +101,7 @@ async def start_generation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await reap_stuck_generations(db)
     await check_rate_limit(current_user, db)
 
     gen = Generation(
@@ -76,6 +118,20 @@ async def start_generation(
     db.add(gen)
     await db.commit()
     await db.refresh(gen)
+
+    # Trigger the Cloud Run Job (prod) or in-process task (dev). If the trigger
+    # itself fails, surface a 502 and mark the run failed so it isn't stuck pending.
+    try:
+        await trigger_pipeline(str(gen.id))
+    except Exception as e:
+        gen.status = "failed"
+        gen.error_message = f"Failed to start pipeline: {e}"
+        await db.commit()
+        await db.refresh(gen)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to start pipeline: {e}",
+        )
     return gen
 
 
@@ -107,13 +163,15 @@ async def get_generation(
     return gen
 
 
-@router.get("/{gen_id}/stream")
-async def stream_generation(
+@router.get("/{gen_id}/logs")
+async def get_logs(
     gen_id: str,
+    since: int = 0,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Fetch generation and verify ownership
+    """Cursor-based log poll for the History progress bar. Returns logs with
+    id > `since` plus the current status so the client can detect terminal."""
     result = await db.execute(
         select(Generation).where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
     )
@@ -121,236 +179,22 @@ async def stream_generation(
     if not gen:
         raise HTTPException(status_code=404, detail="Generation not found")
 
-    async def event_generator():
-        # If already completed or failed, stream historical logs and stop
-        if gen.status in ("completed", "failed"):
-            log_result = await db.execute(
-                select(GenerationLog)
-                .where(GenerationLog.generation_id == gen.id)
-                .order_by(GenerationLog.timestamp)
-            )
-            logs = log_result.scalars().all()
-            for log in logs:
-                yield f"data: {json.dumps({'node': log.node_name, 'message': log.message, 'level': log.level})}\n\n"
-            yield f"data: {json.dumps({'node': 'system', 'message': gen.status, 'level': 'status'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        # If already in_progress (reconnect), replay logs then poll for new ones
-        if gen.status == "in_progress":
-            await db.close()
-
-            last_log_id = 0
-            async with AsyncSessionLocal() as replay_db:
-                log_result = await replay_db.execute(
-                    select(GenerationLog)
-                    .where(GenerationLog.generation_id == gen.id)
-                    .order_by(GenerationLog.timestamp)
-                )
-                for log in log_result.scalars().all():
-                    yield f"data: {json.dumps({'node': log.node_name, 'message': log.message, 'level': log.level})}\n\n"
-                    last_log_id = log.id
-
-            # Poll DB for new logs until the generation reaches a terminal status
-            while True:
-                await asyncio.sleep(2)
-                async with AsyncSessionLocal() as poll_db:
-                    gen_res = await poll_db.execute(
-                        select(Generation).where(Generation.id == gen.id)
-                    )
-                    gen_check = gen_res.scalar_one()
-
-                    # Stream any new log entries since last check
-                    new_logs_res = await poll_db.execute(
-                        select(GenerationLog)
-                        .where(GenerationLog.generation_id == gen.id, GenerationLog.id > last_log_id)
-                        .order_by(GenerationLog.timestamp)
-                    )
-                    for log in new_logs_res.scalars().all():
-                        yield f"data: {json.dumps({'node': log.node_name, 'message': log.message, 'level': log.level})}\n\n"
-                        last_log_id = log.id
-
-                    if gen_check.status in ("completed", "failed"):
-                        yield f"data: {json.dumps({'node': 'system', 'message': gen_check.status, 'level': 'status'})}\n\n"
-                        yield "data: [DONE]\n\n"
-                        return
-
-        # Initialize the SSE Queue and set context var
-        queue = asyncio.Queue()
-        sse_queue_var.set(queue)
-
-        # Update generation status to in_progress
-        gen.status = "in_progress"
-        await db.commit()
-
-        # Load user profile and documents
-        profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
-        profile = profile_res.scalar_one_or_none()
-        if not profile:
-            yield f"data: {json.dumps({'node': 'system', 'message': 'Profile not found. Please complete basic onboarding.', 'level': 'error'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        projects_res = await db.execute(
-            select(UserProject).where(UserProject.user_id == current_user.id).order_by(UserProject.sort_order)
-        )
-        projects = [dict(
-            name=p.name,
-            description=p.description,
-            technologies=p.technologies,
-            bullet_points=p.bullet_points,
-            github_url=p.github_url,
-            live_url=p.live_url,
-            start_date=p.start_date.isoformat() if p.start_date else None,
-            end_date=p.end_date.isoformat() if p.end_date else None,
-        ) for p in projects_res.scalars().all()]
-
-        exp_res = await db.execute(
-            select(UserExperience).where(UserExperience.user_id == current_user.id).order_by(UserExperience.sort_order)
-        )
-        experiences = [dict(
-            role=e.role,
-            organization=e.organization,
-            location=e.location,
-            bullet_points=e.bullet_points,
-            start_date=e.start_date.isoformat() if e.start_date else None,
-            end_date=e.end_date.isoformat() if e.end_date else None,
-        ) for e in exp_res.scalars().all()]
-
-        edu_res = await db.execute(
-            select(UserEducation).where(UserEducation.user_id == current_user.id).order_by(UserEducation.sort_order)
-        )
-        education = [dict(
-            degree=ed.degree,
-            institution=ed.institution,
-            location=ed.location,
-            start_date=ed.start_date.isoformat() if ed.start_date else None,
-            end_date=ed.end_date.isoformat() if ed.end_date else None,
-            gpa=ed.gpa,
-            coursework=ed.coursework,
-        ) for ed in edu_res.scalars().all()]
-
-        extra_res = await db.execute(
-            select(UserExtracurricular).where(UserExtracurricular.user_id == current_user.id).order_by(UserExtracurricular.sort_order)
-        )
-        extracurriculars = [dict(
-            title=ex.title,
-            organization=ex.organization,
-            description=ex.description,
-            start_date=ex.start_date.isoformat() if ex.start_date else None,
-            end_date=ex.end_date.isoformat() if ex.end_date else None,
-            bullet_points=ex.bullet_points or [],
-        ) for ex in extra_res.scalars().all()]
-
-        template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
-        if not template_manifest:
-            yield f"data: {json.dumps({'node': 'system', 'message': f'Template {gen.template_id} not found.', 'level': 'error'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        initial_state = ResumeGraphState(
-            user_id=str(current_user.id),
-            profile={
-                "full_name": profile.full_name,
-                "email": profile.email,
-                "phone": profile.phone,
-                "location": profile.location,
-                "linkedin_url": profile.linkedin_url,
-                "github_url": profile.github_url,
-                "portfolio_url": profile.portfolio_url,
-                "subtitle": profile.subtitle,
-                "summary": profile.summary,
-                "skills": profile.skills,
-            },
-            projects=projects,
-            experiences=experiences,
-            education=education,
-            extracurriculars=extracurriculars,
-            job_description=gen.job_description,
-            keywords=gen.keywords or [],
-            instructions=gen.instructions or "",
-            template_manifest=template_manifest.model_dump(),
-            job_analysis=None,
-            summary_draft=None,
-            projects_draft=None,
-            experience_draft=None,
-            tailored_resume=None,
-            orphans=None,
-            pdf_bytes=None,
-            markdown=None,
-            page_count=0,
-            font_size=0.0,
-            repair_attempts=0,
-            render_attempts=0,
-            content_reduction_step=0,
-            errors=[],
-            logs=[],
-        )
-
-        async def run_pipeline():
-            try:
-                async with AsyncSessionLocal() as pipeline_db:
-                    graph = compile_graph()
-                    result = await graph.ainvoke(
-                        initial_state,
-                        config={"configurable": {"db": pipeline_db, "gen_id": str(gen.id)}}
-                    )
-
-                async with AsyncSessionLocal() as update_db:
-                    gen_res = await update_db.execute(
-                        select(Generation).where(Generation.id == gen.id)
-                    )
-                    gen_obj = gen_res.scalar_one()
-
-                    job_analysis = result.get("job_analysis") or {}
-                    gen_obj.status = "completed"
-                    gen_obj.job_title = job_analysis.get("job_title") or gen_obj.job_title
-                    gen_obj.company = job_analysis.get("company") or gen_obj.company
-                    gen_obj.pdf_storage_key = f"runs/{gen.id}/resume.pdf"
-                    gen_obj.md_storage_key = f"runs/{gen.id}/resume.md"
-                    gen_obj.thumb_storage_key = f"runs/{gen.id}/thumb.webp"
-                    gen_obj.completed_at = datetime.now(timezone.utc)
-                    gen_obj.render_metadata = {
-                        "tailored_resume": result.get("tailored_resume"),
-                        "font_size": result.get("font_size"),
-                        "page_count": result.get("page_count"),
-                    }
-                    await update_db.commit()
-
-                # Signal success status before sentinel
-                await queue.put({"node": "system", "message": "completed", "level": "status"})
-            except Exception as e:
-                async with AsyncSessionLocal() as fail_db:
-                    gen_res = await fail_db.execute(
-                        select(Generation).where(Generation.id == gen.id)
-                    )
-                    gen_obj = gen_res.scalar_one_or_none()
-                    if gen_obj:
-                        gen_obj.status = "failed"
-                        gen_obj.error_message = str(e)
-                        await fail_db.commit()
-
-                await log_progress(None, str(gen.id), "system", f"Pipeline error occurred: {e}", "error")
-                await queue.put({"node": "system", "message": "failed", "level": "status"})
-            finally:
-                await queue.put(None)  # Sentinel — always unblock the SSE consumer
-
-        # Close the request-scoped database session immediately so it doesn't hold a transaction open
-        await db.close()
-
-        # Start pipeline task (inherits context vars)
-        asyncio.create_task(run_pipeline())
-
-        # Yield logs as they arrive
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            yield f"data: {json.dumps(item)}\n\n"
-
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    log_result = await db.execute(
+        select(GenerationLog)
+        .where(GenerationLog.generation_id == gen.id, GenerationLog.id > since)
+        .order_by(GenerationLog.id)
+    )
+    logs = [
+        {
+            "id": l.id,
+            "node": l.node_name,
+            "message": l.message,
+            "level": l.level,
+            "timestamp": l.timestamp.isoformat() if l.timestamp else None,
+        }
+        for l in log_result.scalars().all()
+    ]
+    return {"logs": logs, "status": gen.status}
 
 
 @router.get("/{gen_id}/preview")
@@ -385,7 +229,7 @@ async def preview_generation(
     if not tailored_resume:
         raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
-    # Load profile details
+    from src.models.profile import Profile
     profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
     profile = profile_res.scalar_one_or_none()
     if not profile:
@@ -395,6 +239,7 @@ async def preview_generation(
     if not template_manifest:
         raise HTTPException(status_code=500, detail="Template files missing.")
 
+    font_base_url = str(settings.TEMPLATES_DIR / gen.template_id)
     html_rendered = TemplateRegistryService.render_template(
         gen.template_id,
         {
@@ -424,7 +269,7 @@ async def preview_generation(
             detail=f"PDF rendering is not configured on this host (missing Pango/Cairo system libraries): {e}"
         )
 
-    pdf_bytes = HTML(string=html_rendered).write_pdf()
+    pdf_bytes = HTML(string=html_rendered, base_url=font_base_url).write_pdf()
     return Response(content=pdf_bytes, media_type="application/pdf")
 
 
@@ -463,11 +308,11 @@ async def delete_generation(
     if not gen:
         raise HTTPException(status_code=404, detail="Generation not found")
 
-    # Delete R2 artifacts
+    # Delete R2 artifacts (best-effort; log failures so orphaned objects are visible)
     storage = StorageService()
     for key in [gen.pdf_storage_key, gen.md_storage_key, gen.thumb_storage_key]:
-        if key:
-            storage.delete_file(key)
+        if key and not storage.delete_file(key):
+            print(f"[delete_generation] failed to delete R2 object: {key}")
 
     # Delete DB row (logs cascade via FK ondelete=CASCADE)
     await db.delete(gen)
@@ -493,7 +338,6 @@ async def download_generation(
     # Try R2 presigned URL with content-disposition
     storage = StorageService()
     if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
-        # Build a clean filename from job_title + company
         _parts = [gen.job_title, gen.company]
         _slug = "-".join(
             p.lower().replace(" ", "-") for p in _parts if p and p != "Unknown Company"
@@ -514,6 +358,7 @@ async def download_generation(
     if not tailored_resume:
         raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
+    from src.models.profile import Profile
     profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
     profile = profile_res.scalar_one_or_none()
     if not profile:
@@ -523,6 +368,7 @@ async def download_generation(
     if not template_manifest:
         raise HTTPException(status_code=500, detail="Template files missing.")
 
+    font_base_url = str(settings.TEMPLATES_DIR / gen.template_id)
     html_rendered = TemplateRegistryService.render_template(
         gen.template_id,
         {
@@ -549,7 +395,7 @@ async def download_generation(
     except (OSError, ImportError) as e:
         raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {e}")
 
-    pdf_bytes = HTML(string=html_rendered).write_pdf()
+    pdf_bytes = HTML(string=html_rendered, base_url=font_base_url).write_pdf()
     _parts = [gen.job_title, gen.company]
     _slug = "-".join(
         p.lower().replace(" ", "-") for p in _parts if p and p != "Unknown Company"
@@ -560,4 +406,3 @@ async def download_generation(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
-

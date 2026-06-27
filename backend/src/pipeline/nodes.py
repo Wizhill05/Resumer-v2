@@ -1,6 +1,7 @@
-import contextvars
+import asyncio
 import io
 import json
+import math
 import re
 import uuid
 from datetime import datetime, timezone
@@ -27,15 +28,12 @@ from src.template_registry.service import TemplateRegistryService
 
 # ── Log Helper ────────────────────────────────────────────────────────────────
 
-# ContextVar to stream logs via SSE without altering node signatures
-sse_queue_var = contextvars.ContextVar("sse_queue", default=None)
-
 
 async def log_progress(
     db: AsyncSession, gen_id: str, node_name: str, message: str, level: str = "info"
 ):
     print(f"[{node_name}] {message}")
-    # Use a fresh session per log insert to avoid concurrent commit conflicts
+    # Use a fresh session per log insert to avoid concurrent commit conflicts.
     async with AsyncSessionLocal() as log_session:
         await log_session.execute(
             insert(GenerationLog).values(
@@ -47,10 +45,6 @@ async def log_progress(
             )
         )
         await log_session.commit()
-
-    queue = sse_queue_var.get()
-    if queue:
-        await queue.put({"node": node_name, "message": message, "level": level})
 
 
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
@@ -178,63 +172,62 @@ async def experience_node(
         return {"experience_draft": []}
 
     llm = get_llm()
-    # Tailor each experience in sequence (can also be done in parallel or batch)
-    tailored_exps = []
-    for exp in experiences[: state["template_manifest"].get("max_experience", 3)]:
+    max_exp = state["template_manifest"].get("max_experience", 3)
+    max_bullets = state["template_manifest"].get("max_bullets_per_experience", 4)
+    job_analysis = str(state["job_analysis"])
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                (
+                    "You are an expert resume writer. Tailor this experience entry to target the job analysis. "
+                    "Rewrite the bullet points using action verbs and highlight metrics or accomplishments relevant to the requirements. "
+                    "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
+                    "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks."
+                ),
+            ),
+            (
+                "user",
+                "Job Analysis:\n{job_analysis}\n\nRole: {role}\nCompany: {org}\nBullet Points:\n{bullets}",
+            ),
+        ]
+    )
+    structured_llm = llm.with_structured_output(TailoredExperience)
+    chain = prompt | structured_llm
+
+    async def tailor_one(exp):
         await log_progress(
             db,
             gen_id,
             "experience_writer",
             f"Tailoring role: {exp['role']} at {exp['organization']}",
         )
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    (
-                        "You are an expert resume writer. Tailor this experience entry to target the job analysis. "
-                        "Rewrite the bullet points using action verbs and highlight metrics or accomplishments relevant to the requirements. "
-                        "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
-                        "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks."
-                    ),
-                ),
-                (
-                    "user",
-                    "Job Analysis:\n{job_analysis}\n\nRole: {role}\nCompany: {org}\nBullet Points:\n{bullets}",
-                ),
-            ]
-        )
-
-        structured_llm = llm.with_structured_output(TailoredExperience)
-        chain = prompt | structured_llm
         result = await chain.ainvoke(
             {
-                "job_analysis": str(state["job_analysis"]),
+                "job_analysis": job_analysis,
                 "role": exp["role"],
                 "org": exp["organization"],
                 "bullets": "\n".join(exp.get("bullet_points") or []),
             }
         )
+        return {
+            "role": result.role,
+            "organization": result.organization,
+            "location": exp.get("location") or result.location,
+            "start_date": exp.get("start_date") or result.start_date,
+            "end_date": exp.get("end_date") or result.end_date,
+            "bullet_points": result.bullet_points[:max_bullets],
+        }
 
-        # Keep original dates and locations
-        tailored_exps.append(
-            {
-                "role": result.role,
-                "organization": result.organization,
-                "location": exp.get("location") or result.location,
-                "start_date": exp.get("start_date") or result.start_date,
-                "end_date": exp.get("end_date") or result.end_date,
-                "bullet_points": result.bullet_points[
-                    : state["template_manifest"].get("max_bullets_per_experience", 4)
-                ],
-            }
-        )
+    tailored_exps = await asyncio.gather(
+        *(tailor_one(exp) for exp in experiences[:max_exp])
+    )
 
     await log_progress(
         db, gen_id, "experience_writer", "Finished tailoring all experience entries."
     )
-    return {"experience_draft": tailored_exps}
+    return {"experience_draft": list(tailored_exps)}
 
 
 async def project_node(
@@ -250,62 +243,63 @@ async def project_node(
         return {"projects_draft": []}
 
     llm = get_llm()
-    tailored_projs = []
-    for proj in projects[: state["template_manifest"].get("max_projects", 3)]:
+    max_proj = state["template_manifest"].get("max_projects", 3)
+    max_bullets = state["template_manifest"].get("max_bullets_per_project", 3)
+    job_analysis = str(state["job_analysis"])
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                (
+                    "You are an expert resume writer. Tailor this project entry to target the job analysis. "
+                    "Highlight technologies and achievements relevant to the target role. "
+                    "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
+                    "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks."
+                ),
+            ),
+            (
+                "user",
+                "Job Analysis:\n{job_analysis}\n\nProject Name: {name}\nDescription: {desc}\nTechnologies: {techs}\nBullet Points:\n{bullets}",
+            ),
+        ]
+    )
+    structured_llm = llm.with_structured_output(TailoredProject)
+    chain = prompt | structured_llm
+
+    async def tailor_one(proj):
         await log_progress(
             db, gen_id, "projects_writer", f"Tailoring project: {proj['name']}"
         )
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    (
-                        "You are an expert resume writer. Tailor this project entry to target the job analysis. "
-                        "Highlight technologies and achievements relevant to the target role. "
-                        "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
-                        "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks."
-                    ),
-                ),
-                (
-                    "user",
-                    "Job Analysis:\n{job_analysis}\n\nProject Name: {name}\nDescription: {desc}\nTechnologies: {techs}\nBullet Points:\n{bullets}",
-                ),
-            ]
-        )
-
-        structured_llm = llm.with_structured_output(TailoredProject)
-        chain = prompt | structured_llm
         result = await chain.ainvoke(
             {
-                "job_analysis": str(state["job_analysis"]),
+                "job_analysis": job_analysis,
                 "name": proj["name"],
                 "desc": proj.get("description") or "",
                 "techs": ", ".join(proj.get("technologies") or []),
                 "bullets": "\n".join(proj.get("bullet_points") or []),
             }
         )
+        return {
+            "name": result.name,
+            "project_summary": result.project_summary,
+            "description": result.description,
+            "technologies": result.technologies,
+            "bullet_points": result.bullet_points[:max_bullets],
+            "github_url": proj.get("github_url"),
+            "live_url": proj.get("live_url"),
+            "start_date": proj.get("start_date"),
+            "end_date": proj.get("end_date"),
+        }
 
-        tailored_projs.append(
-            {
-                "name": result.name,
-                "project_summary": result.project_summary,
-                "description": result.description,
-                "technologies": result.technologies,
-                "bullet_points": result.bullet_points[
-                    : state["template_manifest"].get("max_bullets_per_project", 3)
-                ],
-                "github_url": proj.get("github_url"),
-                "live_url": proj.get("live_url"),
-                "start_date": proj.get("start_date"),
-                "end_date": proj.get("end_date"),
-            }
-        )
+    tailored_projs = await asyncio.gather(
+        *(tailor_one(proj) for proj in projects[:max_proj])
+    )
 
     await log_progress(
         db, gen_id, "projects_writer", "Finished tailoring all project entries."
     )
-    return {"projects_draft": tailored_projs}
+    return {"projects_draft": list(tailored_projs)}
 
 
 async def assembly_node(
@@ -436,8 +430,13 @@ def detect_orphans_in_weasyprint(doc) -> list[dict[str, Any]]:
                 last_line_width = widths[-1]
                 last_line_fill = last_line_width / full_width
 
-                avg_char_width = 5.2
-                chars_per_line = int(full_width / avg_char_width) if full_width > 0 else 90
+                # Derive chars-per-line from the first (full) line — accurate per font/size,
+                # unlike a hardcoded avg-char-width constant that drifts with the loaded font.
+                first_line_text = get_text(lines[0][0]).strip()
+                if first_line_text and full_width > 0:
+                    chars_per_line = len(first_line_text)
+                else:
+                    chars_per_line = 90
 
                 if line_count == 2 and last_line_fill < 0.75:
                     target_min = int(chars_per_line * 1.80)
@@ -509,59 +508,63 @@ async def render_node(
         "page_margin_mm": template_manifest.get("page_margin_mm", 15),
     }
 
-    # Perform binary-search over font sizes to auto-fit target page limit
+    # True binary search for the largest font size that fits target_pages.
     low = template_manifest.get("min_font_size", 8.0)
     high = template_manifest.get("max_font_size", 12.0)
     target_pages = template_manifest.get("target_pages", 1)
+    font_base_url = str(settings.TEMPLATES_DIR / template_id)
 
-    best_font_size = high
+    best_font_size = low
     best_pdf_bytes = None
     best_page_count = 999
     best_doc = None
 
-    for attempt in range(5):
+    span = max(high - low, 0.01)
+    iterations = max(4, math.ceil(math.log2(span / 0.05)))
+
+    for attempt in range(iterations):
         mid = (low + high) / 2
         html_rendered = TemplateRegistryService.render_template(
             template_id, {**render_context, "font_size": mid}
         )
 
-        doc = HTML(string=html_rendered).render()
+        doc = HTML(string=html_rendered, base_url=font_base_url).render()
         page_count = len(doc.pages)
         await log_progress(
             db,
             gen_id,
             "renderer",
-            f"Render attempt {attempt + 1}: font_size={mid:.2f}pt -> page_count={page_count}",
+            f"Render attempt {attempt + 1}/{iterations}: font_size={mid:.2f}pt -> page_count={page_count}",
         )
 
         if page_count <= target_pages:
-            # Fits! Save this and try a slightly larger font size to fill the page
+            # Fits — record and try a larger font.
             best_font_size = mid
             best_pdf_bytes = doc.write_pdf()
             best_page_count = page_count
             best_doc = doc
-            low = mid + 0.25
+            low = mid
         else:
-            # Overflow, must shrink font
-            high = mid - 0.25
+            # Overflow — try a smaller font.
+            high = mid
 
     if best_pdf_bytes is None:
-        # Fallback to minimum font size if nothing fit within the limit
+        # Even the smallest font overflowed; render at min and let content_reduction handle it.
         await log_progress(
             db,
             gen_id,
             "renderer",
-            "Warning: PDF overflowed at maximum constraints. Defaulting to minimum font size.",
+            "Warning: overflow at minimum font size; defaulting to minimum.",
             "warning",
         )
         html_rendered = TemplateRegistryService.render_template(
             template_id,
-            {**render_context, "font_size": template_manifest.get("min_font_size", 8.0)},
+            {**render_context, "font_size": low},
         )
-        best_doc = HTML(string=html_rendered).render()
+        best_doc = HTML(string=html_rendered, base_url=font_base_url).render()
         best_pdf_bytes = best_doc.write_pdf()
         best_page_count = len(best_doc.pages)
-        best_font_size = template_manifest.get("min_font_size", 8.0)
+        best_font_size = low
 
     await log_progress(
         db,
@@ -776,10 +779,12 @@ async def save_artifacts_node(
 
     pdf_key = f"runs/{gen_id}/resume.pdf"
     md_key = f"runs/{gen_id}/resume.md"
+    thumb_key = f"runs/{gen_id}/thumb.webp"
 
     storage = StorageService()
     pdf_uploaded = False
     md_uploaded = False
+    thumb_uploaded = False
 
     if pdf_bytes:
         pdf_uploaded = storage.upload_bytes(pdf_bytes, pdf_key, "application/pdf")
@@ -807,7 +812,6 @@ async def save_artifacts_node(
             buf = io.BytesIO()
             pil_image.save(buf, format="WEBP", quality=80)
             thumb_bytes = buf.getvalue()
-            thumb_key = f"runs/{gen_id}/thumb.webp"
             thumb_uploaded = storage.upload_bytes(thumb_bytes, thumb_key, "image/webp")
             if thumb_uploaded:
                 await log_progress(db, gen_id, "saver", f"Uploaded thumbnail to: {thumb_key}")
@@ -818,8 +822,13 @@ async def save_artifacts_node(
         db, gen_id, "saver", "Generation pipeline successfully completed."
     )
 
-    # Note: caller will mark generation status as 'completed' and save keys
-    return {}
+    # Return only the keys for uploads that succeeded so the caller doesn't
+    # persist a key pointing at a missing R2 object (broken presigned URLs).
+    return {
+        "pdf_storage_key": pdf_key if pdf_uploaded else None,
+        "md_storage_key": md_key if md_uploaded else None,
+        "thumb_storage_key": thumb_key if thumb_uploaded else None,
+    }
 
 
 async def orphan_repair_node(

@@ -55,7 +55,7 @@ async def update_profile(
         profile = Profile(user_id=current_user.id)
         db.add(profile)
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(profile, field, value)
 
     await db.commit()
@@ -104,7 +104,7 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(project, field, value)
 
     await db.commit()
@@ -172,7 +172,7 @@ async def update_experience(
     if not exp:
         raise HTTPException(status_code=404, detail="Experience not found")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(exp, field, value)
 
     await db.commit()
@@ -240,7 +240,7 @@ async def update_education(
     if not edu:
         raise HTTPException(status_code=404, detail="Education not found")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(edu, field, value)
 
     await db.commit()
@@ -308,7 +308,7 @@ async def update_extracurricular(
     if not extra:
         raise HTTPException(status_code=404, detail="Extracurricular activity not found")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(extra, field, value)
 
     await db.commit()

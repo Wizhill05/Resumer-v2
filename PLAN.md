@@ -22,13 +22,16 @@ Public hosted resume builder. User signs up, fills profile (or uploads existing 
 | Layer | Service | Free Tier | Why |
 |-------|---------|-----------|-----|
 | **Frontend** | **Vercel** | Unlimited deploys, 100GB bandwidth | Native Next.js support, zero config |
-| **Backend** | **Google Cloud Run** | 180k vCPU-sec/month, scales to zero | Full CPU on requests, truly free when idle |
+| **Backend** | **Google Cloud Run** | 180k vCPU-sec/month, scales to zero | CPU allocated only during active requests; long tasks use Cloud Run Jobs (service throttles background work outside requests) |
 | **Database** | **Neon PostgreSQL** | 0.5GB storage, autosuspend after 5min idle | Serverless Postgres, generous free tier |
 | **File Storage** | **Cloudflare R2** | 10GB storage, zero egress fees | Free S3-compatible, no surprise bills |
 | **Auth** | **NextAuth.js** | Free (self-hosted in Next.js) | JWT verification without DB auth sessions |
 
 ### Critical Architecture Adjustments for Cloud Run Free Tier
-- **SSE as Execution Context**: To prevent Cloud Run from freezing the CPU/container after sending an immediate HTTP response, the generation pipeline runs **synchronously inside the SSE request context**. The open connection keeps the instance active.
+- **Cloud Run Jobs for pipeline execution**: The generation pipeline runs as a **Cloud Run Job** (not a service request), so it executes to completion with CPU allocated for the full duration — independent of any client connection. POST `/generate` inserts the row, triggers the Job execution with `GEN_ID` as an env override, and returns immediately. The Job loads state from DB, runs the LangGraph pipeline, writes artifacts to R2 + DB, and sends the completion email. This survives the user walking away from the page (the default Cloud Run service CPU model throttles background work outside active requests, which is why a detached `asyncio.create_task` on the service does not work).
+- **Local dev fallback**: `EXECUTION_MODE=local` runs the pipeline in-process via `asyncio.create_task` (local machines are not CPU-throttled). `EXECUTION_MODE=cloudrun_job` triggers the Job via the Run Admin API.
+- **Reaper**: A sweep on each POST `/generate` marks `in_progress` generations older than 15 min as `failed` + emails — covers Job executions that died (OOM, preemption).
+- **Email-on-Completion**: Resend (free 3k/mo) fires on terminal status (completed/failed) from inside the Job. Primary completion signal to user.
 - **No Redis**: FastAPI `BackgroundTasks` are avoided for long runs since they run after the response is sent, which allows Cloud Run to kill/freeze the instance. DB-based execution states are used instead.
 - **WeasyPrint for PDF**: Pure Python, lightweight (~50MB vs Playwright's ~200MB Chromium). Essential for keeping the container footprint small.
   - *Note on WeasyPrint CSS*: No CSS Grid, limited Flexbox support. Templates must use `float`, table, or basic flex layouts.
@@ -47,7 +50,7 @@ Public hosted resume builder. User signs up, fills profile (or uploads existing 
 - **NextAuth.js v5** (GitHub + Google, JWT session mode)
 - **react-hook-form** + **zod** for nested profile forms
 - **TanStack Query** for server state
-- **SSE hook** with reconnection logic + `Last-Event-ID` support
+- **Log polling hook** (3s interval, cursor-based) for live progress bar
 
 ### Backend (`/backend`)
 - **Python 3.12+** with **uv**
@@ -59,6 +62,7 @@ Public hosted resume builder. User signs up, fills profile (or uploads existing 
 - **Jinja2** for resume templates
 - **Pydantic v2** for schemas
 - **boto3** for R2 storage
+- **Resend** for email notifications (free 3k/mo)
 
 ### Default LLM
 - **Gemma 4 31B** via Gemini API (`gemma-4-31b-it`)
@@ -84,7 +88,7 @@ Dashboard & Landing Page (Phase 1)
     │       1. Paste job description
     │       2. (Optional) Add keywords, instructions
     │       3. Select template (with preview + constraints)
-    │       4. Hit generate → watch live SSE terminal progress
+    │       4. Hit generate → email notification on completion (progress bar on History page via log polling)
     │       5. Preview PDF (inline pdf-preview iframe) → download
     │
     ├──► My Resumes (history of generated resumes)
@@ -142,11 +146,15 @@ backend/src/template_registry/        # Renamed from src/templates to avoid impo
 └── service.py
 
 backend/templates/                    # Raw template assets
-├── clean-modern/
-│   ├── manifest.json
-│   ├── template.jinja2
-│   └── style.css
-└── ...
+└── personal-classic/
+    ├── manifest.json
+    ├── template.jinja2
+    ├── style.css
+    └── fonts/                        # Bundled CMU Computer Modern Serif .ttf (no CDN dep)
+        ├── cmunrm.ttf                # normal
+        ├── cmunbx.ttf                # bold
+        ├── cmunti.ttf                # italic
+        └── cmunbi.ttf                # bold italic
 ```
 
 ---
@@ -163,36 +171,48 @@ backend/templates/                    # Raw template assets
                     └──────┬───────┘
                            │
                     ┌──────▼───────┐
-                    │ JOB ANALYSIS │  → JobAnalysis (cleaned JD, keywords, seniority)
+                    │ JOB ANALYSIS │  → JobAnalysis (title, company, keywords, seniority)
                     └──────┬───────┘
                            │
               ┌────────────┼────────────┐
-              │            │            │         (parallel fan-out)
-       ┌──────▼──────┐┌───▼────┐┌──────▼──────┐
+              │            │            │         (parallel fan-out; per-entry LLM
+       ┌──────▼──────┐┌───▼────┐┌──────▼──────┐    calls run concurrently via asyncio.gather)
        │  SUMMARY &  ││PROJECT ││ EXPERIENCE  │
-       │  SKILLS     ││SELECTOR││ WRITER      │
+       │  SKILLS     ││ WRITER ││ WRITER      │
        └──────┬──────┘└───┬────┘└──────┬──────┘
               │            │            │
               └────────────┼────────────┘  (fan-in)
-                           │
-                    ┌──────▼───────┐
-                    │   REPAIR     │─── missing skills? ──┐
-                    │   CHECK      │                      │
-                    └──────┬───────┘◄─────────────────────┘
                            │
                     ┌──────▼───────┐
                     │  ASSEMBLE    │  → TailoredResume JSON
                     └──────┬───────┘
                            │
                     ┌──────▼───────┐
-                    │  RENDER PDF  │─── pages > target? ──┐
-                    │ (WeasyPrint) │                      │
-                    └──────┬───────┘◄─────────────────────┘
-                           │              (shrink font, retry)
+                    │  RENDER PDF  │  WeasyPrint: true binary search over font size,
+                    │  + ORPHAN    │  base_url = templates dir (local font resolution),
+                    │  DETECTION   │  layout-tree walk → orphans[] (line-wrap orphans)
+                    └──────┬───────┘
+                           │
+                  ┌────────┴────────┐  route_after_render:
+                  │                 │   • page_count > target → content_reduction (step < 2)
+                  │                 │   • orphans & repair_attempts < 2 → orphan_repair
+                  │                 │   • else → save_artifacts
+        ┌─────────▼────────┐  ┌─────▼──────────┐
+        │ CONTENT REDUCTION│  │  ORPHAN REPAIR │  LLM rewrites each orphan bullet to
+        │ drop last bullet │  │                │  fill 1.75–1.95 lines (expand/shorten)
+        │ from 2nd entry   │  │                │
+        └─────────┬────────┘  └─────┬──────────┘
+                  │                 │
+                  └────────┬────────┘  (both loop back: ASSEMBLE → RENDER)
+                           │
                     ┌──────▼───────┐
-                    │  SAVE        │  → Upload PDF + MD to R2
-                    │  ARTIFACTS   │  → Store refs in DB
-                    └──────────────┘
+                    │  SAVE        │  Upload PDF + MD + WebP thumbnail to R2;
+                    │  ARTIFACTS   │  return storage keys (None if upload failed —
+                    │              │  caller only persists keys that succeeded)
+                    └──────┬───────┘
+                           │
+                           ▼
+                          END
 ```
 
 ### ResumeGraphState
@@ -205,6 +225,7 @@ class ResumeGraphState(TypedDict):
     projects: list[dict]
     experiences: list[dict]
     education: list[dict]
+    extracurriculars: list[dict]
     job_description: str
     keywords: list[str]
     instructions: str
@@ -216,6 +237,7 @@ class ResumeGraphState(TypedDict):
     projects_draft: Optional[dict]
     experience_draft: Optional[dict]
     tailored_resume: Optional[dict]
+    orphans: Optional[list[dict]]
 
     # Render Output
     pdf_bytes: Optional[bytes]
@@ -223,9 +245,15 @@ class ResumeGraphState(TypedDict):
     page_count: int
     font_size: float
 
-    # Controls & Logs
+    # Artifact storage keys (set by save_artifacts_node; None = upload skipped/failed)
+    pdf_storage_key: Optional[str]
+    md_storage_key: Optional[str]
+    thumb_storage_key: Optional[str]
+
+    # Controls
     repair_attempts: int
     render_attempts: int
+    content_reduction_step: int
     errors: list[str]
     logs: list[str]
 ```
@@ -257,6 +285,7 @@ CREATE TABLE profiles (
     linkedin_url  TEXT,
     github_url    TEXT,
     portfolio_url TEXT,
+    subtitle      TEXT,
     summary       TEXT,
     skills        TEXT[],             -- Extracted to primary column for querying
     created_at    TIMESTAMPTZ DEFAULT now(),
@@ -317,6 +346,22 @@ CREATE TABLE user_education (
 );
 CREATE INDEX idx_education_user_id ON user_education(user_id);
 
+-- Extracurriculars / Activities
+CREATE TABLE user_extracurriculars (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL,
+    organization  TEXT,
+    description   TEXT,
+    start_date    DATE,
+    end_date      DATE,
+    bullet_points TEXT[],
+    sort_order    INTEGER DEFAULT 0,
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_extracurriculars_user_id ON user_extracurriculars(user_id);
+
 -- Generation Runs
 CREATE TABLE generations (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -332,6 +377,7 @@ CREATE TABLE generations (
     error_message    TEXT,
     pdf_storage_key  TEXT,
     md_storage_key   TEXT,
+    thumb_storage_key TEXT,
     render_metadata  JSONB,
     created_at       TIMESTAMPTZ DEFAULT now(),
     updated_at       TIMESTAMPTZ DEFAULT now(),
@@ -339,7 +385,7 @@ CREATE TABLE generations (
 );
 CREATE INDEX idx_generations_user_id ON generations(user_id);
 
--- Generation Logs (SSE catchup support)
+-- Generation Logs (polled via GET /generate/{id}/logs?since=<log_id>)
 CREATE TABLE generation_logs (
     id            SERIAL PRIMARY KEY,
     generation_id UUID REFERENCES generations(id) ON DELETE CASCADE,
@@ -370,7 +416,7 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 | GET | `/system/health` | Healthcheck |
 
 ### Rate Limiting (Phase 1)
-- Global middleware checks `user_rate_limits` table: max 5 generations per day per user (resets every 24h).
+- `check_rate_limit` does an atomic upsert-and-increment on the `user_rate_limits` table (`ON CONFLICT ... RETURNING`). Currently `MAX_DAILY_RUNS=50` in code (planned reduction to 5). Resets every 24h. No TOCTOU race — the row-level lock means concurrent requests cannot both read the same count.
 
 ### Profile CRUD
 | Method | Path | Purpose |
@@ -382,6 +428,8 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 | PUT/DELETE | `/profile/experiences/{id}` | Update / Delete experience |
 | GET/POST | `/profile/education` | List / Add education |
 | PUT/DELETE | `/profile/education/{id}` | Update / Delete education |
+| GET/POST | `/profile/extracurriculars` | List / Add extracurriculars |
+| PUT/DELETE | `/profile/extracurriculars/{id}` | Update / Delete extracurricular |
 
 ### Templates
 | Method | Path | Purpose |
@@ -391,8 +439,8 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 ### Generation & Preview
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/generate` | Start a run, insert `generations` row, return `generation_id` |
-| GET | `/generate/{id}/stream` | **SSE Endpoint** executing LangGraph run and streaming logs |
+| POST | `/generate` | Start a run, insert `generations` row, trigger Cloud Run Job, return `generation_id` |
+| GET | `/generate/{id}/logs?since=<log_id>` | Poll logs after cursor (progress bar) |
 | GET | `/generate/{id}/preview` | Returns signed R2 URL or serves PDF directly with `Content-Type: application/pdf` |
 | GET | `/generate/{id}/download` | Serve PDF attachment |
 
@@ -412,14 +460,17 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 **Bugs fixed during Phase 1:**
 - Fixed sign-in/sign-out buttons not working (`type="submit"` missing on Base UI Button inside forms)
 
-### Phase 2: LangGraph, WeasyPrint, and SSE Execution
-- [x] Port/Adapt Pydantic schemas for Gemini 2.5 Flash (was labelled Gemma 4)
-- [x] Set up LangGraph StateGraph (Analysis, Parallel Selection, Assembly, Render nodes)
+### Phase 2: LangGraph, WeasyPrint, and PDF Pipeline
+- [x] Port/Adapt Pydantic schemas for Gemma 4 31B (`gemma-4-31b-it`) via Gemini API
+- [x] Set up LangGraph StateGraph (Analysis, parallel fan-out, Assembly, Render, Orphan Repair, Content Reduction, Save)
 - [x] Implement WeasyPrint engine inside container, write auto-fit CSS adjustments
-- [x] Build `/generate/{id}/stream` SSE node execution context
-- [x] Implement SSE log retrieval (load historical logs from DB on reconnect, then tail)
-- [x] Setup R2 file storage driver + PDF preview endpoint
-- [x] Create 2 default CSS templates (Clean Modern, Compact)
+- [x] Setup R2 file storage driver + PDF preview/download/thumbnail endpoints
+- [x] Create default CSS template (Personal Classic — Computer Modern serif, fonts bundled locally)
+- [x] True binary-search font fit + per-bullet orphan detection (chars-per-line derived from the layout, not a hardcoded constant)
+- [x] Parallel per-entry LLM calls via `asyncio.gather` (experience + projects writers)
+
+**Removed in Phase 3 (SSE execution context):**
+- The `/generate/{id}/stream` SSE endpoint and its `sse_queue_var` plumbing were replaced by Cloud Run Jobs + `/logs` polling (see §3 and Phase 3). SSE via the Vercel proxy hit a 10s serverless timeout and tied pipeline execution to an open client connection — incompatible with the walk-away UX.
 
 **Bugs fixed during Phase 2:**
 - Fixed missing `ResumeGraphState` import in `api/generation.py` (would cause `NameError` on every stream)
@@ -429,11 +480,20 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 - Added `GET /generate/{id}/download` endpoint with `Content-Disposition: attachment`
 - Fixed history page download button to use `/download` instead of `/preview`
 
-### Phase 3: History & Deploy
+### Phase 3: History, Deploy, Jobs, and Hardening
 - [x] Implement History page (list past runs, preview/download PDF)
-- [ ] Create Dockerfile with WeasyPrint system dependencies (Pango, Cairo)
-- [ ] Set up GitHub Actions CI/CD to deploy to Google Cloud Run
+- [x] Create Dockerfile with WeasyPrint system dependencies (Pango, Cairo) + bundled CMU fonts
+- [x] Bundle CMU Computer Modern Serif fonts locally in templates (drop CDN @font-face)
+- [x] Replace SSE with log polling endpoint (`/generate/{id}/logs?since=`) + 3s poll on History page
+- [x] Add Resend email-on-completion (terminal status) — `src/core/notify.py`
+- [x] Add reaper sweep for stuck `in_progress` generations (15min timeout) — runs lazily on each POST `/generate`
+- [x] Cloud Run Jobs pipeline execution — `src/pipeline/job_runner.py` + `src/core/executor.py` (POST `/generate` triggers the Job; `EXECUTION_MODE=local` runs in-process for dev)
+- [x] Atomic rate-limit upsert (no TOCTOU race) + JWT_SECRET fail-fast validation + Neon `pool_pre_ping`/`pool_recycle`
+- [x] Generate-button loading state (prevents duplicate-job clicks during Neon cold wake)
+- [x] GitHub Actions CI/CD: deploy API service + Pipeline Job to Cloud Run with env vars + Secret Manager secrets
 - [ ] Set up Neon DB autosuspend configurations
+- [ ] One-time GCP setup: Secret Manager secrets (DATABASE_URL, JWT_SECRET, GOOGLE_API_KEY, R2_*, RESEND_API_KEY), `RUNNER_SA` GitHub var, grant `roles/run.invoker` + `roles/secretmanager.secretAccessor` to the runtime SA
+- [ ] Configure R2 90-day lifecycle policy
 
 ### Phase 4: Enhancements (Post-MVP)
 - [ ] Resume parser API (PDF → Profile data)

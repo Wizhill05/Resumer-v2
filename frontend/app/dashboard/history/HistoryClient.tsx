@@ -30,102 +30,61 @@ const nodeProgressMap: Record<string, number> = {
 function useLiveProgress(runId: string, enabled: boolean, onDone: () => void) {
   const [percent, setPercent] = useState(10)
   const onDoneRef = useRef(onDone)
-  onDoneRef.current = onDone
+  useEffect(() => {
+    onDoneRef.current = onDone
+  }, [onDone])
 
   useEffect(() => {
     if (!enabled) return
 
     let active = true
-    let controller: AbortController | null = null
-    let stallTimer: ReturnType<typeof setTimeout> | null = null
+    let since = 0
+    let timer: ReturnType<typeof setInterval> | null = null
 
-    const resetStallTimer = () => {
-      if (stallTimer) clearTimeout(stallTimer)
-      stallTimer = setTimeout(() => {
-        // No SSE event for 30s — force reconnect via onDone
-        if (active) {
-          console.warn("SSE stall detected, triggering refetch")
-          onDoneRef.current()
-        }
-      }, 30_000)
-    }
-
-    async function readStream() {
+    const poll = async () => {
+      if (!active) return
       try {
-        controller = new AbortController()
-        const response = await fetch(`/api/backend/generate/${runId}/stream`, {
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          throw new Error("Failed to connect to stream")
-        }
-
-        const reader = response.body?.getReader()
-        const decoder = new TextDecoder()
-        if (!reader) {
-          throw new Error("ReadableStream not supported")
-        }
-
-        let buffer = ""
-        let maxPercent = 10
-        resetStallTimer()
-
-        while (active) {
-          const { value, done } = await reader.read()
-          if (done) break
-
-          resetStallTimer()
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split("\n")
-          buffer = lines.pop() || ""
-
-          for (const line of lines) {
-            const trimmed = line.trim()
-            if (!trimmed) continue
-
-            if (trimmed.startsWith("data: ")) {
-              const dataStr = trimmed.slice(6).trim()
-              if (dataStr === "[DONE]") {
-                onDoneRef.current()
-                return
-              }
-
-              try {
-                const log = JSON.parse(dataStr)
-                if (log.level === "status") {
-                  if (log.message === "completed" || log.message === "failed") {
-                    onDoneRef.current()
-                    return
-                  }
-                } else if (log.node) {
-                  const p = nodeProgressMap[log.node]
-                  if (p && p > maxPercent) {
-                    maxPercent = p
-                    setPercent(p)
-                  }
-                }
-              } catch {
-                // ignore parsing error
-              }
-            }
+        const res = await fetch(`/api/backend/generate/${runId}/logs?since=${since}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const logs = (data.logs ?? []) as Array<{
+          id: number
+          node: string | null
+          message: string
+          level: string
+        }>
+        for (const log of logs) {
+          since = log.id
+          if (
+            log.level === "status" &&
+            (log.message === "completed" || log.message === "failed")
+          ) {
+            active = false
+            if (timer) clearInterval(timer)
+            onDoneRef.current()
+            return
+          }
+          if (log.node) {
+            const p = nodeProgressMap[log.node]
+            if (p) setPercent((prev) => Math.max(prev, p))
           }
         }
-      } catch (err) {
-        if (active && (err as Error).name !== "AbortError") {
-          console.error("SSE stream error:", err)
+        if (data.status === "completed" || data.status === "failed") {
+          active = false
+          if (timer) clearInterval(timer)
           onDoneRef.current()
         }
+      } catch {
+        // transient network error — retry next tick
       }
     }
 
-    readStream()
+    poll()
+    timer = setInterval(poll, 3000)
 
     return () => {
       active = false
-      if (stallTimer) clearTimeout(stallTimer)
-      if (controller) {
-        controller.abort()
-      }
+      if (timer) clearInterval(timer)
     }
   }, [runId, enabled])
 
@@ -351,7 +310,7 @@ export function HistoryClient() {
     if (!hasActive) return
     const timer = setInterval(() => {
       refetch()
-    }, 30_000)
+    }, 5_000)
     return () => clearInterval(timer)
   }, [hasActive, refetch])
 

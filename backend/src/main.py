@@ -10,6 +10,13 @@ from src.template_registry import router as template_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail-fast config validation — refuse to start on misconfiguration.
+    if not settings.JWT_SECRET:
+        raise RuntimeError("JWT_SECRET is not set. Generate one and set it in env / Secret Manager.")
+    if settings.JWT_SECRET == "changeme":
+        raise RuntimeError("JWT_SECRET is still the default 'changeme'. Rotate before running.")
+    if not settings.GOOGLE_API_KEY:
+        raise RuntimeError("GOOGLE_API_KEY is not set. Pipeline cannot call the LLM.")
     yield
 
 
