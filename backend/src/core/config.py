@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     RESEND_API_KEY: str = ""
-    NOTIFICATION_FROM_EMAIL: str = "Resumer <noreply@resumer.app>"
+    NOTIFICATION_FROM_EMAIL: str = "Resumer <noreply@aryansingh.space>"
 
     # Pipeline execution: "local" runs in-process (dev); "cloudrun_job" triggers a Cloud Run Job (prod).
     EXECUTION_MODE: str = "local"
