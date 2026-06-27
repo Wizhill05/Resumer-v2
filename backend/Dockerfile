@@ -12,10 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    uv sync --frozen --no-install-project --no-dev
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project --no-dev
 
 # Final runtime stage
 FROM python:3.12-slim-bookworm
@@ -49,4 +47,4 @@ EXPOSE 8000
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"]
