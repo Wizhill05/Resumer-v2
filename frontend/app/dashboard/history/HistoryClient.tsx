@@ -244,7 +244,7 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
       <div
         className={`relative border-b border-gray-200 bg-zinc-50 ${completed ? "cursor-pointer" : ""}`}
         style={{ aspectRatio: "210/297" }}
-        onClick={() => completed && window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
+        onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
       >
         {completed && run.thumb_storage_key ? (
           <img
@@ -276,7 +276,7 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
       {/* Footer */}
       <div
         className={`px-3 py-3 cursor-pointer transition-all duration-150 ${completed ? "hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.date-p]:text-zinc-200" : ""}`}
-        onClick={() => completed && window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
+        onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
       >
         <div className="flex items-start gap-1.5">
           <StatusDot status={run.status} />
@@ -413,7 +413,7 @@ export function HistoryClient() {
             return (
               <div
                 key={run.id}
-                onClick={() => completed && window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
+                onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
                 className={[
                   "flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group",
                   completed
