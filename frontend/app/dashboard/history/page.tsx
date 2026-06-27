@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { HistoryClient } from "./HistoryClient"
+import { Nav } from "@/components/Nav"
 
 export default async function HistoryPage() {
   const session = await auth()
@@ -9,20 +9,9 @@ export default async function HistoryPage() {
 
   return (
     <main className="min-h-screen texture-bg text-black">
-      <nav className="border-b-3 border-black px-6 py-4 bg-white">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <Link href="/dashboard" className="text-xl font-extrabold uppercase border-2 border-black bg-yellow-400 px-3 py-1 shadow-[2px_2px_0px_#000000]">
-            Resumer
-          </Link>
-          <div className="flex items-center gap-4 text-sm font-bold">
-            <Link href="/dashboard" className="text-black hover:text-[#ff4e26]">Dashboard</Link>
-            <Link href="/profile" className="text-black hover:text-[#ff4e26]">Profile</Link>
-            <Link href="/dashboard/history" className="text-[#ff4e26] underline decoration-2">History</Link>
-          </div>
-        </div>
-      </nav>
+      <Nav />
 
-      <div className="max-w-4xl mx-auto px-6 py-12 space-y-6">
+      <div className="max-w-6xl mx-auto px-6 py-12 space-y-6">
         <div className="border-3 border-black bg-white p-6 shadow-[4px_4px_0px_#000000] space-y-2">
           <h1 className="text-3xl font-extrabold uppercase tracking-tight">Generation History</h1>
           <p className="text-zinc-700 font-medium">

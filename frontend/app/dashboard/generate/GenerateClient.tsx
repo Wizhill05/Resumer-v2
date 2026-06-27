@@ -6,14 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Download, FileText, CheckCircle2, AlertCircle, ArrowLeft } from "lucide-react"
+import { FileText, AlertCircle } from "lucide-react"
+import Link from "next/link"
 
-type Step = "input" | "generating" | "result"
-type LogEntry = {
-  node: string
-  message: string
-  level: string
-}
+type Step = "input" | "submitted"
 
 type TemplateItem = {
   id: string
@@ -27,10 +23,6 @@ export function GenerateClient() {
   const [jobDescription, setJobDescription] = useState("")
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
-  const [generationId, setGenerationId] = useState<string | null>(null)
-  const [logs, setLogs] = useState<LogEntry[]>([])
-  const [isDone, setIsDone] = useState(false)
-  const [pipelineStatus, setPipelineStatus] = useState<"completed" | "failed" | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Fetch available templates
@@ -48,10 +40,6 @@ export function GenerateClient() {
     e.preventDefault()
     if (!jobDescription.trim()) return
 
-    setStep("generating")
-    setLogs([])
-    setIsDone(false)
-    setPipelineStatus(null)
     setError(null)
 
     try {
@@ -71,112 +59,10 @@ export function GenerateClient() {
         throw new Error(errorData.detail || "Failed to start generation")
       }
 
-      const run = await response.json()
-      setGenerationId(run.id)
-
-      // Start reading stream
-      readStream(run.id)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setStep("input")
-    }
-  }
-
-  // Consume SSE logs stream from backend
-  const readStream = async (genId: string) => {
-    try {
-      const response = await fetch(`/api/backend/generate/${genId}/stream`)
-      if (!response.ok) {
-        throw new Error("Failed to connect to log stream")
-      }
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      if (!reader) {
-        throw new Error("ReadableStream not supported")
-      }
-
-      let buffer = ""
-
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed) continue
-
-          if (trimmed.startsWith("data: ")) {
-            const dataStr = trimmed.slice(6).trim()
-            if (dataStr === "[DONE]") {
-              setIsDone(true)
-              setStep("result")
-              break
-            }
-
-            try {
-              const log: LogEntry = JSON.parse(dataStr)
-              if (log.level === "status") {
-                setPipelineStatus(log.message as "completed" | "failed")
-              } else {
-                setLogs((prev) => [...prev, log])
-              }
-            } catch {
-              // Ignore line parsing errors
-            }
-          }
-        }
-      }
+      setStep("submitted")
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
-  }
-
-  const handleDownload = () => {
-    if (!generationId) return
-    window.open(`/api/backend/generate/${generationId}/preview`, "_blank")
-  }
-
-  const nodeProgressMap: Record<string, { percent: number; text: string }> = {
-    job_analysis: { percent: 20, text: "Analyzing job description & extracting keywords..." },
-    summary_skills: { percent: 40, text: "Tailoring summary and core skills matching job requirements..." },
-    experience_writer: { percent: 55, text: "Aligning professional experience & formatting descriptions..." },
-    projects_writer: { percent: 65, text: "Selecting relevant projects & adapting bullet points..." },
-    assembly: { percent: 75, text: "Assembling resume sections..." },
-    orphan_repair: { percent: 80, text: "Fine-tuning bullet point formatting..." },
-    content_reduction: { percent: 82, text: "Trimming content to fit single page..." },
-    renderer: { percent: 85, text: "Rendering PDF template & executing page auto-fit..." },
-    saver: { percent: 95, text: "Saving artifacts..." },
-  }
-
-  const getProgressAndStatus = () => {
-    if (isDone || pipelineStatus === "completed") return { percent: 100, text: "Finished tailoring your resume!" }
-    if (pipelineStatus === "failed") return { percent: 100, text: "Tailoring failed." }
-    if (logs.length === 0) return { percent: 10, text: "Initializing agents and setting up state..." }
-
-    // Take max progress across ALL logs to prevent regression from parallel nodes
-    let maxPercent = 10
-    let bestText = "Running AI pipeline steps..."
-
-    for (const log of logs) {
-      const entry = nodeProgressMap[log.node]
-      if (entry && entry.percent > maxPercent) {
-        maxPercent = entry.percent
-        bestText = entry.text
-      }
-    }
-
-    // If no known node matched, show last log message at a minimum baseline
-    if (maxPercent === 10) {
-      const lastLog = logs[logs.length - 1]
-      return { percent: 15, text: lastLog.message || bestText }
-    }
-
-    return { percent: maxPercent, text: bestText }
   }
 
   if (isLoadingTemplates) {
@@ -190,8 +76,6 @@ export function GenerateClient() {
       </div>
     )
   }
-
-  const progress = getProgressAndStatus()
 
   return (
     <div className="space-y-8">
@@ -277,92 +161,35 @@ export function GenerateClient() {
         </form>
       )}
 
-      {step === "generating" && (
-        <div className="space-y-8 py-10 flex flex-col items-center">
-          {/* Custom Pixel Animation */}
-          <div className="flex gap-3 mb-6">
-            <span className="w-6 h-6 bg-[#ff4e26] border-3 border-black pixel-bounce-1" />
-            <span className="w-6 h-6 bg-yellow-400 border-3 border-black pixel-bounce-2" />
-            <span className="w-6 h-6 bg-[#ff4e26] border-3 border-black pixel-bounce-3" />
-          </div>
-
-          <div className="text-center space-y-3 max-w-md w-full">
-            <h3 className="font-extrabold text-xl uppercase tracking-wider">Tailoring Resume...</h3>
-            <p className="text-sm font-bold text-zinc-700 bg-yellow-200 border-2 border-black px-4 py-2 shadow-[2px_2px_0px_#000000]">
-              {progress.text}
-            </p>
-            <p className="inline-flex items-center gap-2 text-xs font-bold text-zinc-600 bg-white border-2 border-black px-4 py-2 shadow-[2px_2px_0px_#000000]">
-              <span className="w-2 h-2 rounded-full bg-yellow-400 shrink-0 animate-pulse" />
-              This process may take 5–10 minutes to complete.
-            </p>
-            <p className="text-[11px] font-bold text-zinc-500">
-              Safe to close this tab and check History later — runs fully on our server.
+      {step === "submitted" && (
+        <div className="space-y-6 max-w-xl mx-auto py-12">
+          <div className="bg-white p-8 border-3 border-black shadow-[6px_6px_0px_#000000] text-center space-y-4">
+            <h3 className="font-extrabold text-2xl uppercase tracking-wider text-black">
+              Generation Started!
+            </h3>
+            <p className="text-sm font-semibold text-zinc-700 leading-relaxed">
+              Your resume is being generated. This usually takes 5–10 minutes. You'll be notified by email when it's ready — or check the History page to track progress.
             </p>
           </div>
-
-          {/* 8-bit Progress Bar */}
-          <div className="w-full max-w-lg mt-6">
-            <div className="pixel-progress-bar">
-              <div
-                className="pixel-progress-fill"
-                style={{ width: `${progress.percent}%` }}
-              />
-            </div>
-            <div className="flex justify-between items-center text-xs font-bold mt-2">
-              <span>INITIALIZING</span>
-              <span>COMPILING</span>
-              <span>COMPLETE</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {step === "result" && (
-        <div className="space-y-8">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 border-3 border-black shadow-[4px_4px_0px_#000000] gap-4">
-            <div className="flex gap-4 items-start">
-              {pipelineStatus === "failed" ? (
-                <AlertCircle className="text-red-500 shrink-0 w-8 h-8" />
-              ) : (
-                <CheckCircle2 className="text-[#ff4e26] shrink-0 w-8 h-8" />
-              )}
-              <div>
-                <h3 className="font-extrabold text-lg uppercase tracking-tight">
-                  {pipelineStatus === "failed" ? "Pipeline Failed" : "Resume Tailored Successfully!"}
-                </h3>
-                <p className="text-sm text-zinc-700 mt-1 font-medium">
-                  {pipelineStatus === "failed"
-                    ? "An error occurred during the generation. Please try again."
-                    : "Your resume has been adapted to match the job criteria."}
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3 w-full md:w-auto">
-              {pipelineStatus === "completed" && (
-                <Button onClick={handleDownload} className="w-full md:w-auto">
-                  <Download size={16} /> Open/Download PDF
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                onClick={() => setStep("input")}
-                className="w-full md:w-auto bg-transparent text-black"
-              >
-                <ArrowLeft size={16} /> Start Over
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link href="/dashboard/history" className="w-full sm:w-auto">
+              <Button className="w-full">
+                View History
               </Button>
-            </div>
+            </Link>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setJobDescription("")
+                setKeywords("")
+                setInstructions("")
+                setStep("input")
+              }}
+              className="w-full sm:w-auto bg-transparent text-black"
+            >
+              Generate Another
+            </Button>
           </div>
-
-          {/* PDF Preview Container */}
-          {generationId && pipelineStatus === "completed" && (
-            <div className="border-3 border-black bg-white shadow-[6px_6px_0px_#000000] h-[650px] relative">
-              <iframe
-                src={`/api/backend/generate/${generationId}/preview`}
-                className="w-full h-full border-none"
-                title="Resume PDF Preview"
-              />
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
-import { auth, signIn } from "@/lib/auth"
-import { Button } from "@/components/ui/button"
+import { auth } from "@/lib/auth"
 import { Badge } from "@/components/ui/badge"
 import { redirect } from "next/navigation"
+import { LoginModal } from "@/components/LoginModal"
 
 export default async function Home() {
   const session = await auth()
@@ -18,28 +18,7 @@ export default async function Home() {
           <span className="text-2xl font-extrabold tracking-tight uppercase border-2 border-black bg-yellow-400 px-3 py-1 shadow-[2px_2px_0px_#000000]">
             Resumer
           </span>
-          <div className="flex gap-3">
-            <form
-              action={async () => {
-                "use server"
-                await signIn("github")
-              }}
-            >
-              <Button type="submit" variant="outline" size="sm">
-                GitHub Login
-              </Button>
-            </form>
-            <form
-              action={async () => {
-                "use server"
-                await signIn("google")
-              }}
-            >
-              <Button type="submit" variant="outline" size="sm">
-                Google Login
-              </Button>
-            </form>
-          </div>
+          <LoginModal />
         </div>
       </nav>
 
@@ -59,38 +38,8 @@ export default async function Home() {
           Paste a job description. Pick a template. Watch our multi-agent pipeline tailor
           your resume to the role — highlighting relevant accomplishments and extracting keywords automatically.
         </p>
-        
-        {/* Playful pixel elements container */}
-        <div className="flex gap-2 py-4">
-          <span className="w-5 h-5 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
-          <span className="w-5 h-5 bg-yellow-400 border-2 border-black pixel-bounce-2" />
-          <span className="w-5 h-5 bg-black border-2 border-black pixel-bounce-3" />
-        </div>
 
-        <div className="flex gap-4 flex-wrap justify-center w-full max-w-md">
-          <form
-            className="w-full sm:w-auto"
-            action={async () => {
-              "use server"
-              await signIn("github")
-            }}
-          >
-            <Button type="submit" size="lg" className="w-full">
-              Get started with GitHub
-            </Button>
-          </form>
-          <form
-            className="w-full sm:w-auto"
-            action={async () => {
-              "use server"
-              await signIn("google")
-            }}
-          >
-            <Button type="submit" size="lg" variant="outline" className="w-full">
-              Continue with Google
-            </Button>
-          </form>
-        </div>
+        <LoginModal />
       </section>
 
       {/* Features Grid */}
@@ -126,7 +75,7 @@ export default async function Home() {
 
       {/* Footer */}
       <footer className="text-center font-bold text-sm text-black py-12 border-t-3 border-black bg-white mt-12">
-        RESUMER V2 — BUILT WITH NEO-BRUTALISM & HEART
+        RESUMER V2 — BUILT WITH NEO-BRUTALISM &amp; HEART
       </footer>
     </main>
   )

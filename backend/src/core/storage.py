@@ -70,13 +70,21 @@ class StorageService:
             logger.error("StorageService: Error checking existence of %s: %s", key, e)
             return False
 
-    def get_presigned_url(self, key: str, expires_in: int = 3600) -> str | None:
+    def get_presigned_url(
+        self,
+        key: str,
+        expires_in: int = 3600,
+        response_content_disposition: str | None = None,
+    ) -> str | None:
         if not self.enabled or not self.s3_client:
             return None
         try:
+            params: dict = {"Bucket": settings.R2_BUCKET_NAME, "Key": key}
+            if response_content_disposition:
+                params["ResponseContentDisposition"] = response_content_disposition
             return self.s3_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": settings.R2_BUCKET_NAME, "Key": key},
+                Params=params,
                 ExpiresIn=expires_in,
             )
         except ClientError as e:
@@ -86,3 +94,18 @@ class StorageService:
         except Exception as e:
             logger.error("StorageService: Failed to generate presigned URL for %s: %s", key, e)
             return None
+
+    def delete_file(self, key: str) -> bool:
+        if not self.enabled or not self.s3_client:
+            return False
+        try:
+            self.s3_client.delete_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
+            logger.info("StorageService: Deleted %s", key)
+            return True
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            logger.error("StorageService: ClientError deleting %s: [%s] %s", key, error_code, e)
+            return False
+        except Exception as e:
+            logger.error("StorageService: Failed to delete %s: %s", key, e)
+            return False

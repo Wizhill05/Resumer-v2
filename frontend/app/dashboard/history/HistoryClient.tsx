@@ -1,9 +1,8 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Calendar, FileText, Download, AlertCircle, RefreshCw } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState, useEffect, useRef } from "react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText } from "lucide-react"
 
 type HistoryRun = {
   id: string
@@ -13,6 +12,325 @@ type HistoryRun = {
   created_at: string
   template_id: string
   model_used: string
+  thumb_storage_key?: string
+}
+
+const nodeProgressMap: Record<string, number> = {
+  job_analysis: 15,
+  summary_skills: 25,
+  experience_writer: 30,
+  projects_writer: 35,
+  assembly: 40,
+  renderer: 45,
+  orphan_repair: 65,
+  content_reduction: 75,
+  saver: 95,
+}
+
+function useLiveProgress(runId: string, enabled: boolean, onDone: () => void) {
+  const [percent, setPercent] = useState(10)
+  const onDoneRef = useRef(onDone)
+  onDoneRef.current = onDone
+
+  useEffect(() => {
+    if (!enabled) return
+
+    let active = true
+    let controller: AbortController | null = null
+    let stallTimer: ReturnType<typeof setTimeout> | null = null
+
+    const resetStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer)
+      stallTimer = setTimeout(() => {
+        // No SSE event for 30s — force reconnect via onDone
+        if (active) {
+          console.warn("SSE stall detected, triggering refetch")
+          onDoneRef.current()
+        }
+      }, 30_000)
+    }
+
+    async function readStream() {
+      try {
+        controller = new AbortController()
+        const response = await fetch(`/api/backend/generate/${runId}/stream`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          throw new Error("Failed to connect to stream")
+        }
+
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        if (!reader) {
+          throw new Error("ReadableStream not supported")
+        }
+
+        let buffer = ""
+        let maxPercent = 10
+        resetStallTimer()
+
+        while (active) {
+          const { value, done } = await reader.read()
+          if (done) break
+
+          resetStallTimer()
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split("\n")
+          buffer = lines.pop() || ""
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed) continue
+
+            if (trimmed.startsWith("data: ")) {
+              const dataStr = trimmed.slice(6).trim()
+              if (dataStr === "[DONE]") {
+                onDoneRef.current()
+                return
+              }
+
+              try {
+                const log = JSON.parse(dataStr)
+                if (log.level === "status") {
+                  if (log.message === "completed" || log.message === "failed") {
+                    onDoneRef.current()
+                    return
+                  }
+                } else if (log.node) {
+                  const p = nodeProgressMap[log.node]
+                  if (p && p > maxPercent) {
+                    maxPercent = p
+                    setPercent(p)
+                  }
+                }
+              } catch {
+                // ignore parsing error
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (active && (err as Error).name !== "AbortError") {
+          console.error("SSE stream error:", err)
+          onDoneRef.current()
+        }
+      }
+    }
+
+    readStream()
+
+    return () => {
+      active = false
+      if (stallTimer) clearTimeout(stallTimer)
+      if (controller) {
+        controller.abort()
+      }
+    }
+  }, [runId, enabled])
+
+  return percent
+}
+
+type ViewMode = "list" | "grid"
+
+function StatusDot({ status }: { status: string }) {
+  if (status === "completed")
+    return <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-[5px]" />
+  if (status === "failed")
+    return <span className="inline-block w-2 h-2 rounded-full bg-red-400 shrink-0 mt-[5px]" />
+  return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-[5px] animate-pulse" />
+}
+
+function useDeleteRun() {
+  const queryClient = useQueryClient()
+  return async (id: string) => {
+    if (!window.confirm("Delete this resume from history?")) return
+    await fetch(`/api/backend/generate/${id}`, { method: "DELETE" })
+    queryClient.setQueryData<HistoryRun[]>(["history"], (old) =>
+      (old ?? []).filter((r) => r.id !== id)
+    )
+  }
+}
+
+function LiveProgressRow({
+  run,
+  onDelete,
+  refetch,
+}: {
+  run: HistoryRun
+  onDelete: (id: string) => void
+  refetch: () => void
+}) {
+  const percent = useLiveProgress(run.id, true, refetch)
+  const date = new Date(run.created_at).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  })
+
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group bg-zinc-50/50">
+      {/* Left: dot + info */}
+      <div className="flex items-start gap-3 min-w-0 flex-1">
+        <StatusDot status="in_progress" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-sm font-semibold leading-snug text-zinc-900">
+              {run.job_title || "Tailored Resume"}
+            </span>
+            {run.company && (
+              <span className="text-sm text-zinc-400 font-normal truncate">
+                at {run.company}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            {date}
+            <span className="mx-1.5 text-zinc-300">·</span>
+            {run.template_id}
+            <span className="mx-1.5 text-zinc-300">·</span>
+            {run.model_used}
+            <span className="mx-1.5 text-zinc-300">·</span>
+            <span className="text-amber-500 font-medium">generating ({percent}%)</span>
+          </p>
+          
+          {/* Progress bar */}
+          <div className="w-full bg-zinc-100 h-1 mt-2 rounded-full overflow-hidden">
+            <div
+              className="bg-[#ff4e26] h-full transition-all duration-500 ease-out"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Right: delete */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
+        className="shrink-0 p-1.5 text-zinc-300 hover:text-red-500 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+        aria-label="Delete"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  )
+}
+
+function LiveProgressGridCard({
+  run,
+  onDelete,
+  refetch,
+}: {
+  run: HistoryRun
+  onDelete: (id: string) => void
+  refetch: () => void
+}) {
+  const percent = useLiveProgress(run.id, true, refetch)
+  const date = new Date(run.created_at).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  })
+
+  return (
+    <div className="bg-white border border-gray-200 overflow-hidden flex flex-col group hover:border-gray-400 transition-colors">
+      {/* Thumbnail placeholder with progress */}
+      <div className="relative border-b border-gray-200 bg-zinc-50" style={{ aspectRatio: "210/297" }}>
+        <div className="w-full h-full flex flex-col items-center justify-center p-4 gap-3">
+          <FileText size={28} className="text-zinc-300 animate-pulse" />
+          <span className="text-xs text-amber-500 font-medium">Generating… {percent}%</span>
+          
+          {/* Progress bar */}
+          <div className="w-2/3 bg-zinc-200 h-1 rounded-full overflow-hidden">
+            <div
+              className="bg-[#ff4e26] h-full transition-all duration-500 ease-out"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Delete overlay button */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
+          className="absolute top-2 right-2 p-1.5 bg-white/90 border border-gray-200 rounded text-zinc-400 hover:text-red-500 hover:border-red-300 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          aria-label="Delete"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      {/* Footer */}
+      <div className="px-3 py-3">
+        <div className="flex items-start gap-1.5">
+          <StatusDot status="in_progress" />
+          <span className="text-sm font-semibold leading-snug truncate text-zinc-900">
+            {run.job_title || "Tailored Resume"}
+          </span>
+        </div>
+        <p className="text-xs text-zinc-400 mt-0.5 truncate pl-3.5">
+          {run.company ? `${run.company} · ` : ""}{date}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) => void }) {
+  const date = new Date(run.created_at).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  })
+  const completed = run.status === "completed"
+  const failed = run.status === "failed"
+
+  return (
+    <div className="bg-white border border-gray-200 overflow-hidden flex flex-col group hover:border-gray-400 transition-colors">
+      {/* Thumbnail */}
+      <div
+        className={`relative border-b border-gray-200 bg-zinc-50 ${completed ? "cursor-pointer" : ""}`}
+        style={{ aspectRatio: "210/297" }}
+        onClick={() => completed && window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
+      >
+        {completed && run.thumb_storage_key ? (
+          <img
+            src={`/api/backend/generate/${run.id}/thumb`}
+            alt={`${run.job_title || "Resume"} preview`}
+            className="w-full h-full object-cover object-top"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+            <FileText size={28} className="text-zinc-300" />
+            {failed && <span className="text-xs text-red-400 font-medium">Failed</span>}
+            {!completed && !failed && (
+              <span className="text-xs text-amber-500 font-medium">Processing…</span>
+            )}
+          </div>
+        )}
+
+        {/* Delete overlay button */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
+          className="absolute top-2 right-2 p-1.5 bg-white/90 border border-gray-200 rounded text-zinc-400 hover:text-red-500 hover:border-red-300 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          aria-label="Delete"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+
+      {/* Footer */}
+      <div
+        className={`px-3 py-3 cursor-pointer transition-all duration-150 ${completed ? "hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.date-p]:text-zinc-200" : ""}`}
+        onClick={() => completed && window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
+      >
+        <div className="flex items-start gap-1.5">
+          <StatusDot status={run.status} />
+          <span className={`title-span text-sm font-semibold leading-snug truncate transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900"}`}>
+            {run.job_title || "Tailored Resume"}
+          </span>
+        </div>
+        <p className="date-p text-xs text-zinc-400 mt-0.5 truncate pl-3.5 transition-colors duration-150">
+          {run.company ? `${run.company} · ` : ""}{date}
+        </p>
+      </div>
+    </div>
+  )
 }
 
 export function HistoryClient() {
@@ -25,96 +343,165 @@ export function HistoryClient() {
     },
   })
 
+  const [view, setView] = useState<ViewMode>("list")
+  const deleteRun = useDeleteRun()
+
+  const hasActive = runs.some((r) => r.status === "pending" || r.status === "in_progress")
+  useEffect(() => {
+    if (!hasActive) return
+    const timer = setInterval(() => {
+      refetch()
+    }, 30_000)
+    return () => clearInterval(timer)
+  }, [hasActive, refetch])
+
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center py-20">
-        <div className="flex gap-2">
-          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
-          <span className="w-4 h-4 bg-yellow-400 border-2 border-black pixel-bounce-2" />
-          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
-        </div>
+      <div className="bg-white border border-gray-200 divide-y divide-gray-100">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="px-5 py-4 flex items-start gap-3 animate-pulse">
+            <div className="w-2 h-2 rounded-full bg-gray-200 mt-[5px] shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 bg-gray-200 rounded w-48" />
+              <div className="h-3 bg-gray-100 rounded w-64" />
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="p-4 bg-red-100 border-3 border-black text-black shadow-[4px_4px_0px_#000000] flex gap-3 items-center">
-        <AlertCircle className="shrink-0 text-red-600" />
-        <p className="text-sm font-bold">Error: {error instanceof Error ? error.message : String(error)}</p>
+      <div className="px-5 py-4 bg-red-50 border border-red-200 text-sm text-red-700">
+        {error instanceof Error ? error.message : "Failed to load history"}
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center bg-white p-4 border-2 border-black shadow-[2px_2px_0px_#000000]">
-        <h3 className="text-sm font-extrabold uppercase tracking-wider">{runs.length} generations</h3>
-        <Button variant="ghost" size="sm" onClick={() => refetch()} className="border-transparent hover:border-black font-bold">
-          <RefreshCw size={14} /> Refresh
-        </Button>
+    <div className="bg-white border border-gray-200">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+          {runs.length} {runs.length === 1 ? "generation" : "generations"}
+        </span>
+        <div className="flex items-center gap-2">
+          {/* View toggle — desktop only */}
+          <div className="hidden md:flex items-center gap-0.5 border border-gray-200 rounded p-0.5">
+            <button
+              onClick={() => setView("list")}
+              className={`p-1 rounded transition-colors ${view === "list" ? "bg-zinc-900 text-white" : "text-zinc-400 hover:text-zinc-700"}`}
+              aria-label="List view"
+            >
+              <LayoutList size={14} />
+            </button>
+            <button
+              onClick={() => setView("grid")}
+              className={`p-1 rounded transition-colors ${view === "grid" ? "bg-zinc-900 text-white" : "text-zinc-400 hover:text-zinc-700"}`}
+              aria-label="Grid view"
+            >
+              <LayoutGrid size={14} />
+            </button>
+          </div>
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-black transition-colors py-1 px-2 rounded hover:bg-zinc-50"
+          >
+            <RefreshCw size={11} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {runs.length === 0 ? (
-        <div className="p-12 border-3 border-black bg-white text-center shadow-[4px_4px_0px_#000000]">
-          <FileText className="mx-auto text-black mb-3" size={36} />
-          <h4 className="font-extrabold text-lg uppercase tracking-wider mb-1">No generations yet</h4>
-          <p className="text-sm font-medium text-zinc-700">Your tailored resumes will appear here once generated.</p>
+        <div className="px-5 py-16 text-center">
+          <p className="text-sm font-semibold text-zinc-400">No generations yet</p>
+          <p className="text-xs text-zinc-300 mt-1">Your tailored resumes will appear here</p>
+        </div>
+      ) : view === "grid" ? (
+        /* ── Grid view ── */
+        <div className="p-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
+          {runs.map((run) => (
+            run.status === "in_progress" || run.status === "pending" ? (
+              <LiveProgressGridCard key={run.id} run={run} onDelete={deleteRun} refetch={refetch} />
+            ) : (
+              <GridCard key={run.id} run={run} onDelete={deleteRun} />
+            )
+          ))}
         </div>
       ) : (
-        <div className="space-y-4">
-          {runs.map((run) => (
-            <div
-              key={run.id}
-              className="p-5 border-3 border-black bg-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-[4px_4px_0px_#000000] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_#000000] transition-all"
-            >
-              <div className="space-y-2">
-                <div className="flex gap-3 items-center flex-wrap">
-                  <h4 className="font-extrabold text-black text-lg uppercase tracking-tight">
-                    {run.job_title || "Tailored Resume"}
-                  </h4>
-                  {run.company && (
-                    <span className="bg-yellow-100 border border-black px-2 py-0.5 text-xs font-bold uppercase">
-                      at {run.company}
-                    </span>
-                  )}
-                  <Badge
-                    variant={
-                      run.status === "completed"
-                        ? "default"
-                        : run.status === "failed"
-                        ? "destructive"
-                        : "secondary"
-                    }
-                    className="uppercase tracking-wider font-extrabold"
-                  >
-                    {run.status}
-                  </Badge>
+        /* ── List view ── */
+        <div className="divide-y divide-gray-100">
+          {runs.map((run) => {
+            if (run.status === "in_progress" || run.status === "pending") {
+              return (
+                <LiveProgressRow
+                  key={run.id}
+                  run={run}
+                  onDelete={deleteRun}
+                  refetch={refetch}
+                />
+              )
+            }
+
+            const date = new Date(run.created_at).toLocaleDateString("en-US", {
+              month: "short", day: "numeric", year: "numeric",
+            })
+            const completed = run.status === "completed"
+            const failed = run.status === "failed"
+
+            return (
+              <div
+                key={run.id}
+                onClick={() => completed && window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
+                className={[
+                  "flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group",
+                  completed
+                    ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.at-span]:text-zinc-200 hover:[&_.date-p]:text-zinc-200 hover:[&_.dot-span]:text-zinc-200 hover:[&_.delete-btn]:text-zinc-200 hover:scale-[1.012] hover:shadow-sm hover:z-10 hover:relative"
+                    : failed
+                    ? "hover:bg-zinc-50"
+                    : "",
+                ].join(" ")}
+              >
+                {/* Left: dot + info */}
+                <div className="flex items-start gap-3 min-w-0">
+                  <StatusDot status={run.status} />
+                  <div className="min-w-0">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className={`title-span text-sm font-semibold leading-snug transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900"}`}>
+                        {run.job_title || "Tailored Resume"}
+                      </span>
+                      {run.company && (
+                        <span className="at-span text-sm text-zinc-400 font-normal truncate transition-colors duration-150">
+                          at {run.company}
+                        </span>
+                      )}
+                    </div>
+                    <p className="date-p text-xs text-zinc-400 mt-0.5 transition-colors duration-150">
+                      {date}
+                      <span className="dot-span mx-1.5 text-zinc-300 transition-colors duration-150">·</span>
+                      {run.template_id}
+                      <span className="dot-span mx-1.5 text-zinc-300 transition-colors duration-150">·</span>
+                      {run.model_used}
+                      {failed && (
+                        <><span className="dot-span mx-1.5 text-zinc-300 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
+                      )}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex gap-4 text-xs font-bold text-zinc-600 pt-1 flex-wrap uppercase">
-                  <span className="flex items-center gap-1">
-                    <Calendar size={12} className="text-black" />
-                    {new Date(run.created_at).toLocaleDateString()}
-                  </span>
-                  <span>Template: {run.template_id}</span>
-                  <span>Model: {run.model_used}</span>
-                </div>
+                {/* Right: delete */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
+                  className="delete-btn shrink-0 p-1.5 text-zinc-300 hover:!text-white rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  aria-label="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
-
-              <div className="flex gap-2 w-full md:w-auto justify-end">
-                {run.status === "completed" && (
-                  <Button
-                    onClick={() => window.open(`/api/backend/generate/${run.id}/download`, "_blank")}
-                    size="sm"
-                    className="w-full md:w-auto"
-                  >
-                    <Download size={14} /> Download PDF
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

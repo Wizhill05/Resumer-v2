@@ -1,7 +1,8 @@
-import { auth, signOut } from "@/lib/auth"
+import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { Nav } from "@/components/Nav"
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -12,28 +13,7 @@ export default async function DashboardPage() {
   return (
     <main className="min-h-screen texture-bg text-black">
       {/* Nav */}
-      <nav className="border-b-3 border-black px-6 py-4 bg-white sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <Link href="/dashboard" className="text-xl font-extrabold uppercase border-2 border-black bg-yellow-400 px-3 py-1 shadow-[2px_2px_0px_#000000]">
-            Resumer
-          </Link>
-          <div className="flex items-center gap-4 text-sm font-bold">
-            <Link href="/dashboard" className="text-[#ff4e26] underline decoration-2">Dashboard</Link>
-            <Link href="/profile" className="text-black hover:text-[#ff4e26]">Profile</Link>
-            <Link href="/dashboard/history" className="text-black hover:text-[#ff4e26]">History</Link>
-            <form
-              action={async () => {
-                "use server"
-                await signOut({ redirectTo: "/" })
-              }}
-            >
-              <Button type="submit" variant="ghost" size="sm" className="font-bold border-transparent">
-                Sign out
-              </Button>
-            </form>
-          </div>
-        </div>
-      </nav>
+      <Nav />
 
       {/* Hero strip */}
       <div className="border-b-3 border-black bg-[#ff4e26]">

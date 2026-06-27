@@ -132,8 +132,48 @@ async def stream_generation(
             logs = log_result.scalars().all()
             for log in logs:
                 yield f"data: {json.dumps({'node': log.node_name, 'message': log.message, 'level': log.level})}\n\n"
+            yield f"data: {json.dumps({'node': 'system', 'message': gen.status, 'level': 'status'})}\n\n"
             yield "data: [DONE]\n\n"
             return
+
+        # If already in_progress (reconnect), replay logs then poll for new ones
+        if gen.status == "in_progress":
+            await db.close()
+
+            last_log_id = 0
+            async with AsyncSessionLocal() as replay_db:
+                log_result = await replay_db.execute(
+                    select(GenerationLog)
+                    .where(GenerationLog.generation_id == gen.id)
+                    .order_by(GenerationLog.timestamp)
+                )
+                for log in log_result.scalars().all():
+                    yield f"data: {json.dumps({'node': log.node_name, 'message': log.message, 'level': log.level})}\n\n"
+                    last_log_id = log.id
+
+            # Poll DB for new logs until the generation reaches a terminal status
+            while True:
+                await asyncio.sleep(2)
+                async with AsyncSessionLocal() as poll_db:
+                    gen_res = await poll_db.execute(
+                        select(Generation).where(Generation.id == gen.id)
+                    )
+                    gen_check = gen_res.scalar_one()
+
+                    # Stream any new log entries since last check
+                    new_logs_res = await poll_db.execute(
+                        select(GenerationLog)
+                        .where(GenerationLog.generation_id == gen.id, GenerationLog.id > last_log_id)
+                        .order_by(GenerationLog.timestamp)
+                    )
+                    for log in new_logs_res.scalars().all():
+                        yield f"data: {json.dumps({'node': log.node_name, 'message': log.message, 'level': log.level})}\n\n"
+                        last_log_id = log.id
+
+                    if gen_check.status in ("completed", "failed"):
+                        yield f"data: {json.dumps({'node': 'system', 'message': gen_check.status, 'level': 'status'})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
 
         # Initialize the SSE Queue and set context var
         queue = asyncio.Queue()
@@ -262,9 +302,13 @@ async def stream_generation(
                     )
                     gen_obj = gen_res.scalar_one()
 
+                    job_analysis = result.get("job_analysis") or {}
                     gen_obj.status = "completed"
+                    gen_obj.job_title = job_analysis.get("job_title") or gen_obj.job_title
+                    gen_obj.company = job_analysis.get("company") or gen_obj.company
                     gen_obj.pdf_storage_key = f"runs/{gen.id}/resume.pdf"
                     gen_obj.md_storage_key = f"runs/{gen.id}/resume.md"
+                    gen_obj.thumb_storage_key = f"runs/{gen.id}/thumb.webp"
                     gen_obj.completed_at = datetime.now(timezone.utc)
                     gen_obj.render_metadata = {
                         "tailored_resume": result.get("tailored_resume"),
@@ -384,6 +428,52 @@ async def preview_generation(
     return Response(content=pdf_bytes, media_type="application/pdf")
 
 
+@router.get("/{gen_id}/thumb")
+async def thumb_generation(
+    gen_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Generation).where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
+    )
+    gen = result.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    if not gen.thumb_storage_key:
+        raise HTTPException(status_code=404, detail="Thumbnail not available")
+
+    storage = StorageService()
+    presigned_url = storage.get_presigned_url(gen.thumb_storage_key)
+    if not presigned_url:
+        raise HTTPException(status_code=404, detail="Thumbnail not available")
+    return RedirectResponse(presigned_url)
+
+
+@router.delete("/{gen_id}", status_code=204)
+async def delete_generation(
+    gen_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Generation).where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
+    )
+    gen = result.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+
+    # Delete R2 artifacts
+    storage = StorageService()
+    for key in [gen.pdf_storage_key, gen.md_storage_key, gen.thumb_storage_key]:
+        if key:
+            storage.delete_file(key)
+
+    # Delete DB row (logs cascade via FK ondelete=CASCADE)
+    await db.delete(gen)
+    await db.commit()
+
+
 @router.get("/{gen_id}/download")
 async def download_generation(
     gen_id: str,
@@ -403,7 +493,16 @@ async def download_generation(
     # Try R2 presigned URL with content-disposition
     storage = StorageService()
     if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
-        presigned_url = storage.get_presigned_url(gen.pdf_storage_key)
+        # Build a clean filename from job_title + company
+        _parts = [gen.job_title, gen.company]
+        _slug = "-".join(
+            p.lower().replace(" ", "-") for p in _parts if p and p != "Unknown Company"
+        ) or "resume"
+        _filename = f"{_slug}.pdf"
+        presigned_url = storage.get_presigned_url(
+            gen.pdf_storage_key,
+            response_content_disposition=f'attachment; filename="{_filename}"',
+        )
         if presigned_url:
             return RedirectResponse(presigned_url)
 
@@ -451,7 +550,11 @@ async def download_generation(
         raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {e}")
 
     pdf_bytes = HTML(string=html_rendered).write_pdf()
-    filename = f"resume-{gen_id[:8]}.pdf"
+    _parts = [gen.job_title, gen.company]
+    _slug = "-".join(
+        p.lower().replace(" ", "-") for p in _parts if p and p != "Unknown Company"
+    ) or "resume"
+    filename = f"{_slug}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

@@ -24,5 +24,6 @@ class GenerationOut(BaseModel):
     model_used: str
     created_at: datetime
     completed_at: datetime | None
+    thumb_storage_key: str | None = None
 
     model_config = {"from_attributes": True}
