@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
-COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 # Final runtime stage
@@ -37,11 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy application source code
-COPY src/ /app/src/
-COPY templates/ /app/templates/
-COPY alembic/ /app/alembic/
-COPY alembic.ini /app/alembic.ini
-COPY main.py /app/main.py
+COPY backend/src/ /app/src/
+COPY backend/templates/ /app/templates/
+COPY backend/alembic/ /app/alembic/
+COPY backend/alembic.ini /app/alembic.ini
+COPY backend/main.py /app/main.py
 
 EXPOSE 8000
 
