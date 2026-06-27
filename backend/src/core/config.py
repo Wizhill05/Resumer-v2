@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATABASE_URL: str = "postgresql+psycopg://user:pass@localhost/resumer"
-    JWT_SECRET: str
+    JWT_SECRET: str = "changeme"
     JWT_ALGORITHM: str = "HS256"
 
     R2_ENDPOINT_URL: str = ""
