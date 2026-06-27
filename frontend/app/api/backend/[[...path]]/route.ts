@@ -51,13 +51,18 @@ async function handleProxy(
     })
 
     const contentType = backendRes.headers.get("content-type") || "application/json"
+    const contentDisp = backendRes.headers.get("content-disposition")
+
+    const responseHeaders = new Headers()
+    responseHeaders.set("Content-Type", contentType)
+    if (contentDisp) {
+      responseHeaders.set("Content-Disposition", contentDisp)
+    }
 
     const resData = await backendRes.blob()
     return new NextResponse(resData, {
       status: backendRes.status,
-      headers: {
-        "Content-Type": contentType,
-      },
+      headers: responseHeaders,
     })
   } catch (err) {
     console.error("BFF Proxy Error:", err instanceof Error ? err.message : String(err))
