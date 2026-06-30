@@ -98,6 +98,13 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         )
         return None
 
+    # Resolve content split: prefer stored value, fall back to template default.
+    if gen.content_split:
+        content_split = gen.content_split
+    else:
+        d = template_manifest.default_content_split
+        content_split = {"projects": d.projects, "experience": d.experience}
+
     return ResumeGraphState(
         user_id=str(gen.user_id),
         profile={
@@ -120,6 +127,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         keywords=gen.keywords or [],
         instructions=gen.instructions or "",
         template_manifest=template_manifest.model_dump(),
+        content_split=content_split,
         job_analysis=None,
         summary_draft=None,
         projects_draft=None,

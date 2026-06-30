@@ -104,6 +104,34 @@ async def start_generation(
     await reap_stuck_generations(db)
     await check_rate_limit(current_user, db)
 
+    # ── Validate template exists and resolve content split ─────────────────────
+    manifest = TemplateRegistryService.get_template_manifest(data.template_id)
+    if not manifest:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Template '{data.template_id}' not found.",
+        )
+
+    if data.content_split is not None:
+        # Check requested split exists in manifest's allowed list.
+        allowed = [
+            (s.projects, s.experience) for s in manifest.allowed_content_splits
+        ]
+        req = (data.content_split.projects, data.content_split.experience)
+        if req not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Invalid content_split {req} for template '{data.template_id}'. "
+                    f"Allowed splits (projects, experience): {allowed}"
+                ),
+            )
+        resolved_split = {"projects": data.content_split.projects, "experience": data.content_split.experience}
+    else:
+        # Fall back to template default.
+        d = manifest.default_content_split
+        resolved_split = {"projects": d.projects, "experience": d.experience}
+
     gen = Generation(
         user_id=current_user.id,
         template_id=data.template_id,
@@ -114,6 +142,7 @@ async def start_generation(
         instructions=data.instructions,
         model_used=data.model_used,
         status="pending",
+        content_split=resolved_split,
     )
     db.add(gen)
     await db.commit()

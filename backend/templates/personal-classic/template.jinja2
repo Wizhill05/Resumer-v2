@@ -5,6 +5,10 @@
   <style>
     {% include 'personal-classic/style.css' %}
     body { font-size: {{ font_size }}pt; }
+    h1 { font-size: calc({{ font_size }}pt * 2.4); }
+    h2 { font-size: calc({{ font_size }}pt * 1.15); }
+    h3 { font-size: calc({{ font_size }}pt * 1.1); }
+    .subtitle { font-size: calc({{ font_size }}pt * 1.35); }
     @page {
       margin: {{ page_margin_mm }}mm;
       margin-bottom: {{ page_margin_mm * 0.7 }}mm;
@@ -24,11 +28,11 @@
   <div class="header-right">
     <div>
       {% if profile.email %}✉ <a href="mailto:{{ profile.email }}">{{ profile.email }}</a>{% endif %}
-      {% if profile.linkedin_url %} | &#x1F517; <a href="{{ profile.linkedin_url }}">{{ profile.linkedin_url | replace('https://', '') | replace('http://', '') }}</a>{% endif %}
+      {% if profile.linkedin_url %} | <img class="social-icon" src="personal-classic/icons/linkedin.svg" /> <a href="{{ profile.linkedin_url }}">{{ profile.linkedin_url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a>{% endif %}
     </div>
     <div>
       {% if profile.phone %}✆ {{ profile.phone }}{% endif %}
-      {% if profile.github_url %} | &#xe60f; <a href="{{ profile.github_url }}">{{ profile.github_url | replace('https://', '') | replace('http://', '') }}</a>{% endif %}
+      {% if profile.github_url %} | <img class="social-icon" src="personal-classic/icons/github.svg" /> <a href="{{ profile.github_url }}">{{ profile.github_url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a>{% endif %}
     </div>
   </div>
 </div>

@@ -1,20 +1,29 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { FileText, AlertCircle, Loader2 } from "lucide-react"
+import { FileText, AlertCircle, Loader2, Briefcase, FolderGit2 } from "lucide-react"
 import Link from "next/link"
 
 type Step = "input" | "submitted"
+
+type ContentSplit = {
+  projects: number
+  experience: number
+  label: string
+}
 
 type TemplateItem = {
   id: string
   name: string
   description: string
+  content_slots: number
+  allowed_content_splits: ContentSplit[]
+  default_content_split: ContentSplit
 }
 
 export function GenerateClient() {
@@ -26,6 +35,7 @@ export function GenerateClient() {
   const [instructions, setInstructions] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [splitIndex, setSplitIndex] = useState<number | null>(null)
 
   // Fetch available templates
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<TemplateItem[]>({
@@ -36,6 +46,33 @@ export function GenerateClient() {
       return res.json()
     },
   })
+
+  // Derive per-template split options
+  const activeTemplate = useMemo(
+    () => templates.find((t) => t.id === selectedTemplate) ?? null,
+    [templates, selectedTemplate]
+  )
+
+  const splits = activeTemplate?.allowed_content_splits ?? []
+
+  // Reset to default whenever template changes
+  const resolvedSplitIndex = useMemo(() => {
+    if (!activeTemplate) return 0
+    if (splitIndex !== null && splitIndex < splits.length) return splitIndex
+    const defIdx = splits.findIndex(
+      (s) =>
+        s.projects === activeTemplate.default_content_split.projects &&
+        s.experience === activeTemplate.default_content_split.experience
+    )
+    return defIdx >= 0 ? defIdx : 0
+  }, [activeTemplate, splits, splitIndex])
+
+  const activeSplit = splits[resolvedSplitIndex] ?? null
+
+  const handleTemplateSelect = (id: string) => {
+    setSelectedTemplate(id)
+    setSplitIndex(null)
+  }
 
   // Start generation run
   const handleGenerate = async (e: React.FormEvent) => {
@@ -54,6 +91,9 @@ export function GenerateClient() {
           job_description: jobDescription,
           keywords: keywords ? keywords.split(",").map((k) => k.trim()) : [],
           instructions: instructions || null,
+          content_split: activeSplit
+            ? { projects: activeSplit.projects, experience: activeSplit.experience }
+            : undefined,
         }),
       })
 
@@ -102,7 +142,7 @@ export function GenerateClient() {
               {templates.map((tpl) => (
                 <div
                   key={tpl.id}
-                  onClick={() => setSelectedTemplate(tpl.id)}
+                  onClick={() => handleTemplateSelect(tpl.id)}
                   className={`p-5 cursor-pointer border-3 border-black transition-all ${
                     selectedTemplate === tpl.id
                       ? "bg-[#ff4e26] text-white shadow-[4px_4px_0px_#000000]"
@@ -123,9 +163,62 @@ export function GenerateClient() {
             </div>
           </div>
 
+          {/* Content Focus Slider */}
+          {activeTemplate && splits.length > 1 && (
+            <div className="space-y-4">
+              <Label className="text-lg font-extrabold uppercase tracking-tight">2. Content Focus</Label>
+              <div className="bg-white border-3 border-black shadow-[3px_3px_0px_#000000] p-5 space-y-4">
+                <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wide">
+                  {activeTemplate.content_slots} total sections — choose how to distribute them
+                </p>
+
+                {/* Split option buttons */}
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${splits.length}, 1fr)` }}>
+                  {splits.map((split, idx) => {
+                    const active = idx === resolvedSplitIndex
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSplitIndex(idx)}
+                        className={`p-3 border-2 border-black text-center transition-all font-bold text-xs uppercase tracking-wide ${
+                          active
+                            ? "bg-black text-white shadow-none translate-y-0.5 translate-x-0.5"
+                            : "bg-white text-black shadow-[2px_2px_0px_#000000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#000000]"
+                        }`}
+                      >
+                        {split.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Visual breakdown of chosen split */}
+                {activeSplit && (
+                  <div className="flex gap-3 pt-1">
+                    <div className="flex items-center gap-2 bg-zinc-100 border-2 border-black px-3 py-1.5">
+                      <FolderGit2 size={14} className="shrink-0 text-[#ff4e26]" />
+                      <span className="text-xs font-extrabold uppercase">
+                        {activeSplit.projects} Project{activeSplit.projects !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 bg-zinc-100 border-2 border-black px-3 py-1.5">
+                      <Briefcase size={14} className="shrink-0 text-[#ff4e26]" />
+                      <span className="text-xs font-extrabold uppercase">
+                        {activeSplit.experience} Experience{activeSplit.experience !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Job Description Textarea */}
           <div className="space-y-3">
-            <Label htmlFor="job" className="text-lg font-extrabold uppercase tracking-tight">2. Paste Job Description</Label>
+            <Label htmlFor="job" className="text-lg font-extrabold uppercase tracking-tight">
+              {activeTemplate && splits.length > 1 ? "3" : "2"}. Paste Job Description
+            </Label>
             <Textarea
               id="job"
               required
@@ -202,6 +295,7 @@ export function GenerateClient() {
                 setJobDescription("")
                 setKeywords("")
                 setInstructions("")
+                setSplitIndex(null)
                 setStep("input")
               }}
               className="w-full sm:w-auto bg-transparent text-black"

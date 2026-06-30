@@ -1,6 +1,13 @@
 from pydantic import BaseModel
 
 
+class ContentSplit(BaseModel):
+    """One valid project/experience distribution for a template's content slots."""
+    projects: int
+    experience: int
+    label: str
+
+
 class TemplateManifest(BaseModel):
     id: str
     name: str
@@ -14,8 +21,20 @@ class TemplateManifest(BaseModel):
     has_education: bool = True
     has_extracurricular: bool = False
 
-    max_projects: int = 3
-    max_experience: int = 2
+    # ── Content slot system ────────────────────────────────────────────────────
+    # Total number of project + experience slots available in this template.
+    content_slots: int = 4
+    # Each element is one allowed distribution that the user may choose.
+    # Backend enforces exactly the chosen split; AI is not trusted to self-limit.
+    allowed_content_splits: list[ContentSplit] = [
+        ContentSplit(projects=1, experience=3, label="Experience focused"),
+        ContentSplit(projects=2, experience=2, label="Balanced"),
+        ContentSplit(projects=3, experience=1, label="Project focused"),
+    ]
+    # Which split is pre-selected for the user (must exist in allowed_content_splits).
+    default_content_split: ContentSplit = ContentSplit(projects=2, experience=2, label="Balanced")
+
+    # Kept for bullet-level limits (independent of slot count).
     max_skills_categories: int = 5
     max_bullets_per_project: int = 3
     max_bullets_per_experience: int = 3

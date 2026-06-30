@@ -31,7 +31,7 @@
 body {
     font-family: 'Computer Modern Serif', serif;
     text-align: justify;
-    line-height: 1.5;
+    line-height: 1.25;
     margin: 0;
     padding: 0;
     color: black;
@@ -54,8 +54,8 @@ h2, h3 {
 h2 {
     font-size: 1.2em;
     border-bottom: 1px solid currentColor;
-    margin-top: 0.95em;
-    margin-bottom: 5px;
+    margin-top: 0.7em;
+    margin-bottom: 3px;
     padding-bottom: 2px;
 }
 
@@ -78,7 +78,7 @@ p, dl, table {
 
 ul, ol {
     padding-left: 0.18in;
-    margin: 0.16em 0 0.22em 0.12in;
+    margin: 0.08em 0 0.12em 0.12in;
 }
 
 ul {
@@ -87,7 +87,7 @@ ul {
 
 li {
     padding-left: 0.03in;
-    margin-bottom: 0.28em;
+    margin-bottom: 0.16em;
     color: #333333;
     text-align: justify;
 }
@@ -100,11 +100,11 @@ dl {
     display: flex;
     align-items: baseline;
     gap: 0.18in;
-    margin-top: 0.18em;
+    margin-top: 0.12em;
 }
 
 ul + dl, ol + dl, dl + dl {
-    margin-top: 0.7em;
+    margin-top: 0.45em;
 }
 
 dl dt {
@@ -120,11 +120,11 @@ dl dd {
 }
 
 dl + ul {
-    margin-top: 0.1em;
+    margin-top: 0.06em;
 }
 
 h2 + ul {
-    margin-top: 0.24em;
+    margin-top: 0.14em;
 }
 
 .skills-table {
@@ -165,6 +165,13 @@ h2 + ul {
     margin-bottom: 4px;
 }
 
+.social-icon {
+    width: 0.9em;
+    height: 0.9em;
+    vertical-align: text-bottom;
+    margin-right: 2px;
+}
+
 .header-right {
     text-align: right;
     font-size: 0.88em;
@@ -183,10 +190,10 @@ h2 + ul {
 
 .extracurriculars-section ul {
     padding-left: 0.18in;
-    margin: 0.16em 0 0.22em 0;
+    margin: 0.08em 0 0.12em 0;
 }
 
 .extracurriculars-section li {
     color: #333333;
-    margin-bottom: 0.28em;
+    margin-bottom: 0.16em;
 }

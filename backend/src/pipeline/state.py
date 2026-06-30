@@ -13,6 +13,9 @@ class ResumeGraphState(TypedDict):
     keywords: list[str]
     instructions: str
     template_manifest: dict
+    # Resolved content split: {"projects": N, "experience": M}
+    # Enforced by backend before AI runs; drives exact limits in every pipeline node.
+    content_split: dict
 
     # Outputs
     job_analysis: Optional[dict]

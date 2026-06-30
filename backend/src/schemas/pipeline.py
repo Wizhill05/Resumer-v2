@@ -55,3 +55,15 @@ class TailoredResume(BaseModel):
     experiences: list[TailoredExperience] = Field(default_factory=list)
     projects: list[TailoredProject] = Field(default_factory=list)
     education: list[dict] = Field(default_factory=list)
+
+
+class SelectedItems(BaseModel):
+    """Indices of selected projects and experiences based on job relevance."""
+    selected_experience_indices: list[int] = Field(
+        default_factory=list,
+        description="0-based indices of experiences selected as most relevant, ordered by relevance."
+    )
+    selected_project_indices: list[int] = Field(
+        default_factory=list,
+        description="0-based indices of projects selected as most relevant, ordered by relevance."
+    )

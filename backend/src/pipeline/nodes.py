@@ -20,6 +20,7 @@ from src.models.generation import Generation, GenerationLog
 from src.pipeline.state import ResumeGraphState
 from src.schemas.pipeline import (
     JobAnalysis,
+    SelectedItems,
     TailoredExperience,
     TailoredProject,
     TailoredSummaryAndSkills,
@@ -102,6 +103,137 @@ async def job_analysis_node(
     return {"job_analysis": result.model_dump()}
 
 
+async def selection_node(
+    state: ResumeGraphState, db: AsyncSession, gen_id: str
+) -> dict[str, Any]:
+    await log_progress(
+        db, gen_id, "selection", "Analyzing candidate experience and projects for relevance..."
+    )
+
+    experiences = state.get("experiences") or []
+    projects = state.get("projects") or []
+
+    if not experiences and not projects:
+        await log_progress(db, gen_id, "selection", "No experiences or projects to select.")
+        return {}
+
+    # Use content_split (exact user choice enforced by backend) — not manifest maxes.
+    content_split = state.get("content_split") or {}
+    max_exp = content_split.get("experience", 2)
+    max_proj = content_split.get("projects", 2)
+
+    llm = get_llm()
+    structured_llm = llm.with_structured_output(SelectedItems)
+
+    exp_list_str = []
+    for idx, exp in enumerate(experiences):
+        bullets = "; ".join(exp.get("bullet_points") or [])
+        exp_list_str.append(
+            f"Index {idx}: Role: '{exp.get('role')}', Organization: '{exp.get('organization')}', "
+            f"Bullets: {bullets}"
+        )
+
+    proj_list_str = []
+    for idx, proj in enumerate(projects):
+        bullets = "; ".join(proj.get("bullet_points") or [])
+        techs = ", ".join(proj.get("technologies") or [])
+        proj_list_str.append(
+            f"Index {idx}: Name: '{proj.get('name')}', Technologies: [{techs}], "
+            f"Description: '{proj.get('description') or ''}', Bullets: {bullets}"
+        )
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                (
+                    "You are an expert technical recruiter matching candidate history to a job.\n"
+                    f"Select EXACTLY {max_exp} experience entries and EXACTLY {max_proj} project entries that are most relevant to the target job description.\n"
+                    f"If fewer than {max_exp} experiences exist, select all of them. If fewer than {max_proj} projects exist, select all of them.\n"
+                    "Rank them in order of relevance, with the most relevant first.\n"
+                    "Only output valid indices within the range of the provided lists. Do not invent indices."
+                ),
+            ),
+            (
+                "user",
+                (
+                    "Job Title: {job_title}\n"
+                    "Job Requirements: {requirements}\n"
+                    "Extracted Job Skills: {skills}\n\n"
+                    "--- Candidate Experiences ---\n{experiences}\n\n"
+                    "--- Candidate Projects ---\n{projects}"
+                ),
+            ),
+        ]
+    )
+
+    job_analysis = state.get("job_analysis") or {}
+    requirements = ", ".join(job_analysis.get("key_requirements") or [])
+    skills = ", ".join(job_analysis.get("extracted_skills") or [])
+
+    chain = prompt | structured_llm
+    result = await chain.ainvoke(
+        {
+            "job_title": job_analysis.get("job_title") or "Target Role",
+            "requirements": requirements,
+            "skills": skills,
+            "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
+            "projects": "\n".join(proj_list_str) if proj_list_str else "None",
+        }
+    )
+
+    # ── Backend enforcement: clamp to exact split limits, dedup, fill gaps ────
+    selected_experiences = []
+    seen_exp_idx = set()
+    for idx in result.selected_experience_indices:
+        if len(selected_experiences) >= max_exp:
+            break
+        if 0 <= idx < len(experiences) and idx not in seen_exp_idx:
+            selected_experiences.append(experiences[idx])
+            seen_exp_idx.add(idx)
+
+    # Fill remaining slots from pool if AI returned too few.
+    for idx, exp in enumerate(experiences):
+        if len(selected_experiences) >= max_exp:
+            break
+        if idx not in seen_exp_idx:
+            selected_experiences.append(exp)
+            seen_exp_idx.add(idx)
+
+    # Hard cap — never exceed the user-chosen limit.
+    selected_experiences = selected_experiences[:max_exp]
+
+    selected_projects = []
+    seen_proj_idx = set()
+    for idx in result.selected_project_indices:
+        if len(selected_projects) >= max_proj:
+            break
+        if 0 <= idx < len(projects) and idx not in seen_proj_idx:
+            selected_projects.append(projects[idx])
+            seen_proj_idx.add(idx)
+
+    for idx, proj in enumerate(projects):
+        if len(selected_projects) >= max_proj:
+            break
+        if idx not in seen_proj_idx:
+            selected_projects.append(proj)
+            seen_proj_idx.add(idx)
+
+    selected_projects = selected_projects[:max_proj]
+
+    await log_progress(
+        db,
+        gen_id,
+        "selection",
+        f"Selected {len(selected_experiences)}/{max_exp} experience(s) and {len(selected_projects)}/{max_proj} project(s) based on relevance.",
+    )
+
+    return {
+        "experiences": selected_experiences,
+        "projects": selected_projects,
+    }
+
+
 async def summary_skills_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -172,7 +304,7 @@ async def experience_node(
         return {"experience_draft": []}
 
     llm = get_llm()
-    max_exp = state["template_manifest"].get("max_experience", 3)
+    max_exp = state.get("content_split", {}).get("experience", 2)
     max_bullets = state["template_manifest"].get("max_bullets_per_experience", 4)
     job_analysis = str(state["job_analysis"])
 
@@ -243,7 +375,7 @@ async def project_node(
         return {"projects_draft": []}
 
     llm = get_llm()
-    max_proj = state["template_manifest"].get("max_projects", 3)
+    max_proj = state.get("content_split", {}).get("projects", 2)
     max_bullets = state["template_manifest"].get("max_bullets_per_project", 3)
     job_analysis = str(state["job_analysis"])
 
@@ -312,6 +444,13 @@ async def assembly_node(
     summary_draft = state["summary_draft"] or {}
     experiences = state["experience_draft"] or []
     projects = state["projects_draft"] or []
+
+    # ── Hard final clamp — backend always wins, AI output irrelevant ──────────
+    content_split = state.get("content_split") or {}
+    max_exp = content_split.get("experience", len(experiences))
+    max_proj = content_split.get("projects", len(projects))
+    experiences = experiences[:max_exp]
+    projects = projects[:max_proj]
 
     # Map education directly
     education = []

@@ -30,6 +30,7 @@ class Generation(Base):
     md_storage_key: Mapped[str | None] = mapped_column(String)
     thumb_storage_key: Mapped[str | None] = mapped_column(String)
     render_metadata: Mapped[dict | None] = mapped_column(JSONB)
+    content_split: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

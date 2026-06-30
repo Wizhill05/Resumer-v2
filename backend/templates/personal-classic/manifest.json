@@ -9,8 +9,13 @@
   "has_links": true,
   "has_education": true,
   "has_extracurricular": true,
-  "max_projects": 3,
-  "max_experience": 3,
+  "content_slots": 4,
+  "allowed_content_splits": [
+    { "projects": 1, "experience": 3, "label": "Experience focused" },
+    { "projects": 2, "experience": 2, "label": "Balanced" },
+    { "projects": 3, "experience": 1, "label": "Project focused" }
+  ],
+  "default_content_split": { "projects": 2, "experience": 2, "label": "Balanced" },
   "max_skills_categories": 6,
   "max_bullets_per_project": 3,
   "max_bullets_per_experience": 4,

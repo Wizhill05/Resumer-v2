@@ -4,6 +4,7 @@ from langgraph.graph import StateGraph, START, END
 from src.pipeline.state import ResumeGraphState
 from src.pipeline.nodes import (
     job_analysis_node,
+    selection_node,
     summary_skills_node,
     experience_node,
     project_node,
@@ -21,6 +22,12 @@ async def wrap_job_analysis(state: ResumeGraphState, config: RunnableConfig):
     db = config["configurable"]["db"]
     gen_id = config["configurable"]["gen_id"]
     return await job_analysis_node(state, db, gen_id)
+
+
+async def wrap_selection(state: ResumeGraphState, config: RunnableConfig):
+    db = config["configurable"]["db"]
+    gen_id = config["configurable"]["gen_id"]
+    return await selection_node(state, db, gen_id)
 
 
 async def wrap_summary_skills(state: ResumeGraphState, config: RunnableConfig):
@@ -77,6 +84,7 @@ def compile_graph():
     builder = StateGraph(ResumeGraphState)
 
     builder.add_node("job_analysis", wrap_job_analysis)
+    builder.add_node("selection", wrap_selection)
     builder.add_node("summary_skills", wrap_summary_skills)
     builder.add_node("experience", wrap_experience)
     builder.add_node("project", wrap_project)
@@ -88,11 +96,12 @@ def compile_graph():
 
     # Define flow edges
     builder.add_edge(START, "job_analysis")
+    builder.add_edge("job_analysis", "selection")
 
     # Parallel fan-out
-    builder.add_edge("job_analysis", "summary_skills")
-    builder.add_edge("job_analysis", "experience")
-    builder.add_edge("job_analysis", "project")
+    builder.add_edge("selection", "summary_skills")
+    builder.add_edge("selection", "experience")
+    builder.add_edge("selection", "project")
 
     # Fan-in
     builder.add_edge("summary_skills", "assembly")
