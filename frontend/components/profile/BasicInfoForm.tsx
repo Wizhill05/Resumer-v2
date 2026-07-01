@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Loader2 } from "lucide-react"
 
 const schema = z.object({
   full_name: z.string().min(1, "Name is required"),
@@ -82,16 +83,16 @@ export function BasicInfoForm() {
     return (
       <div className="flex justify-center p-8">
         <div className="flex gap-2">
-          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
-          <span className="w-3 h-3 bg-yellow-400 border-2 border-black pixel-bounce-2" />
-          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
+          <span className="loading-dot bg-[#ff4e26]" />
+          <span className="loading-dot bg-yellow-400" />
+          <span className="loading-dot bg-[#ff4e26]" />
         </div>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 pixel-enter">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="full_name">Full Name</Label>
@@ -150,7 +151,7 @@ export function BasicInfoForm() {
       </div>
 
       <Button type="submit" disabled={mutation.isPending} className="w-full sm:w-auto">
-        {mutation.isPending ? "Saving..." : "Save Changes"}
+        {mutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save Changes"}
       </Button>
     </form>
   )

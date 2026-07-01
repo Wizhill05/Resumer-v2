@@ -26,9 +26,10 @@ export function LoginModal() {
   return (
     <>
       <Button
-        variant="outline"
+        variant="default"
         size="sm"
         onClick={() => setOpen(true)}
+        className="shadow-[3px_3px_0_#18181b] ring-2 ring-[#ff4e26]/20 hover:ring-[#ff4e26]/35"
       >
         Login
       </Button>
@@ -59,7 +60,7 @@ export function LoginModal() {
 
             {/* Header */}
             <div className="mb-8">
-              <div className="inline-block bg-yellow-400 border-2 border-black px-3 py-1 shadow-[2px_2px_0px_#000000] mb-4">
+              <div className="resumer-mark px-3 py-1 text-lg font-black mb-4">
                 <span className="text-lg font-extrabold uppercase tracking-tight">Resumer</span>
               </div>
               <h2 className="text-2xl font-extrabold uppercase tracking-tight leading-tight">

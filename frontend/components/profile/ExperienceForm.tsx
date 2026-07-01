@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Plus, Trash2, Edit2, X } from "lucide-react"
+import { Loader2, Plus, Trash2, Edit2, X } from "lucide-react"
 
 const schema = z.object({
   role: z.string().min(1, "Role/Title is required"),
@@ -118,20 +118,81 @@ export function ExperienceForm() {
     setIsAdding(false)
   }
 
+  const renderForm = () => (
+    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 bg-zinc-50 p-4 pixel-enter">
+      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 pb-2">
+        <h3 className="font-extrabold text-black uppercase tracking-tight">
+          {editingId ? "Edit Experience" : "Add Experience"}
+        </h3>
+        <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
+          <X size={16} />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="role">Role / Job Title</Label>
+          <Input id="role" {...register("role")} />
+          {errors.role && <p className="text-red-600 text-xs font-bold">{errors.role.message}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="organization">Company / Organization</Label>
+          <Input id="organization" {...register("organization")} />
+          {errors.organization && <p className="text-red-600 text-xs font-bold">{errors.organization.message}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="location">Location</Label>
+          <Input id="location" placeholder="e.g. Remote, or New York, NY" {...register("location")} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="start_date">Start Date</Label>
+          <Input id="start_date" type="date" {...register("start_date")} />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
+          <Input id="end_date" type="date" {...register("end_date")} />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="bullet_points">Numerical data and impact (one per line)</Label>
+        <Textarea
+          id="bullet_points"
+          rows={5}
+          placeholder="- Increased efficiency by 40% through automated reporting&#10;- Reduced API latency by 180ms across 12 services"
+          {...register("bullet_points")}
+        />
+      </div>
+
+      <div className="flex gap-3 border-t border-zinc-200 pt-3">
+        <Button type="submit" disabled={saveMutation.isPending}>
+          {saveMutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save"}
+        </Button>
+        <Button type="button" variant="outline" onClick={handleCancel} disabled={saveMutation.isPending}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  )
+
   if (isLoading) {
     return (
       <div className="flex justify-center p-8">
         <div className="flex gap-2">
-          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
-          <span className="w-3 h-3 bg-yellow-400 border-2 border-black pixel-bounce-2" />
-          <span className="w-3 h-3 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
+          <span className="loading-dot bg-[#ff4e26]" />
+          <span className="loading-dot bg-yellow-400" />
+          <span className="loading-dot bg-[#ff4e26]" />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pixel-enter">
       {!isAdding && (
         <div className="flex items-center justify-between gap-3 border border-zinc-200 bg-zinc-50 p-3">
           <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 sm:text-sm">
@@ -158,75 +219,12 @@ export function ExperienceForm() {
         </div>
       )}
 
-      {isAdding && (
-        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 bg-zinc-50 p-4">
-          <div className="mb-1 flex items-center justify-between border-b border-zinc-200 pb-2">
-            <h3 className="font-extrabold text-black uppercase tracking-tight">
-              {editingId ? "Edit Experience" : "Add Experience"}
-            </h3>
-            <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
-              <X size={16} />
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="role">Role / Job Title</Label>
-              <Input id="role" {...register("role")} />
-              {errors.role && <p className="text-red-600 text-xs font-bold">{errors.role.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="organization">Company / Organization</Label>
-              <Input id="organization" {...register("organization")} />
-              {errors.organization && <p className="text-red-600 text-xs font-bold">{errors.organization.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="location">Location</Label>
-              <Input id="location" placeholder="e.g. Remote, or New York, NY" {...register("location")} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="sort_order">Sort Order (lower = higher priority)</Label>
-              <Input id="sort_order" type="number" {...register("sort_order", { valueAsNumber: true })} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="start_date">Start Date</Label>
-              <Input id="start_date" type="date" {...register("start_date")} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
-              <Input id="end_date" type="date" {...register("end_date")} />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="bullet_points">Bullet Points (one per line)</Label>
-            <Textarea
-              id="bullet_points"
-              rows={5}
-              placeholder="- Developed backend microservices using FastAPI&#10;- Configured PostgreSQL database and Alembic migrations"
-              {...register("bullet_points")}
-            />
-          </div>
-
-          <div className="flex gap-3 border-t border-zinc-200 pt-3">
-            <Button type="submit" disabled={saveMutation.isPending}>
-              {saveMutation.isPending ? "Saving..." : "Save"}
-            </Button>
-            <Button type="button" variant="outline" onClick={handleCancel}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-      )}
+      {isAdding && !editingId && renderForm()}
 
       <div className="space-y-3">
         {experiences.map((exp) => (
-          <div key={exp.id} className="flex items-start justify-between gap-3 border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-400 md:p-4">
+          <div key={exp.id} className="space-y-3">
+          <div className="flex items-start justify-between gap-3 border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-400 md:p-4">
             <div className="min-w-0 space-y-1.5">
               <h4 className="text-base font-extrabold uppercase tracking-tight text-black">{exp.role}</h4>
               <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 sm:text-sm">
@@ -258,6 +256,8 @@ export function ExperienceForm() {
                 <Trash2 size={14} />
               </Button>
             </div>
+          </div>
+          {editingId === exp.id && renderForm()}
           </div>
         ))}
       </div>

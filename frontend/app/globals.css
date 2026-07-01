@@ -83,6 +83,84 @@
   .compact-card:hover {
     border-color: #a1a1aa;
   }
+
+  .resumer-mark {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #18181b;
+    background: linear-gradient(135deg, #ffffff 0%, #f4f4f5 100%);
+    color: #09090b;
+    box-shadow: 0 1px 0 #ffffff inset, 0 10px 22px #0000001f, 2px 2px 0 #18181b;
+    letter-spacing: -0.08em;
+    text-transform: uppercase;
+  }
+
+  .resumer-mark::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-top: 1px solid #ffffffcc;
+    pointer-events: none;
+  }
+
+  .soft-skeleton {
+    border: 1px solid #e4e4e7;
+    background: linear-gradient(135deg, #ffffff, #f4f4f5);
+    box-shadow: inset 0 1px 0 #ffffff, 0 1px 0 #00000008;
+  }
+
+  .loading-dot {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 2px solid #000000;
+  }
+
+  .landing-orb {
+    background:
+      radial-gradient(circle at 30% 25%, #ffffff 0 8%, transparent 9%),
+      radial-gradient(circle at 48% 44%, #ff4e26 0 18%, transparent 19%),
+      radial-gradient(circle at 66% 28%, #fde047 0 16%, transparent 17%),
+      radial-gradient(circle at 54% 68%, #18181b 0 20%, transparent 21%);
+    filter: drop-shadow(0 30px 60px #00000024);
+  }
+
+  .landing-card {
+    border: 1px solid #18181b;
+    background: #fffffff2;
+    box-shadow: 0 20px 60px #00000014, 3px 3px 0 #18181b;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+
+  .landing-card:hover {
+    transform: translateY(-4px);
+    border-color: #ff4e26;
+    box-shadow: 0 26px 70px #0000001c, 5px 5px 0 #18181b;
+  }
+
+  .login-highlight button {
+    min-height: 3rem;
+    padding-inline: 1.25rem;
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+    box-shadow: 0 0 0 6px #ff4e2618, 3px 3px 0 #18181b;
+  }
+
+  .login-highlight button:hover {
+    box-shadow: 0 0 0 8px #ff4e2624, 5px 5px 0 #18181b;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .landing-float {
+      animation: landing-float 7s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes landing-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-10px) rotate(1deg); }
 }
 
 /* Dot-grid texture background */
@@ -171,20 +249,19 @@
   display: inline-block;
 }
 
-/* Custom Pixel Animations */
-@keyframes pixel-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+@keyframes pixel-enter {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
-.pixel-bounce-1 {
-  animation: pixel-bounce 0.8s infinite steps(4) both;
+.pixel-enter {
+  animation: pixel-enter 0.4s ease-in both;
 }
-.pixel-bounce-2 {
-  animation: pixel-bounce 0.8s infinite steps(4) both 0.2s;
-}
-.pixel-bounce-3 {
-  animation: pixel-bounce 0.8s infinite steps(4) both 0.4s;
+
+.pixel-skeleton {
+  border: 1px solid #e4e4e7;
+  background: linear-gradient(135deg, #ffffff, #f4f4f5);
+  box-shadow: inset 0 1px 0 #ffffff, 0 1px 0 #00000008;
 }
 
 /* 8-bit style progress bar */

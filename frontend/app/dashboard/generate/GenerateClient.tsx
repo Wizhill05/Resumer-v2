@@ -172,16 +172,16 @@ export function GenerateClient() {
     return (
       <div className="panel flex justify-center py-12">
         <div className="flex gap-2">
-          <span className="h-3 w-3 bg-[#ff4e26] pixel-bounce-1" />
-          <span className="h-3 w-3 bg-yellow-400 pixel-bounce-2" />
-          <span className="h-3 w-3 bg-[#ff4e26] pixel-bounce-3" />
+          <span className="loading-dot bg-[#ff4e26]" />
+          <span className="loading-dot bg-yellow-400" />
+          <span className="loading-dot bg-[#ff4e26]" />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 md:space-y-5">
+    <div className="space-y-4 md:space-y-5 pixel-enter">
       {error && (
         <div className="panel flex items-center gap-3 border-red-200 bg-red-50 p-3 text-red-700">
           <AlertCircle className="shrink-0" size={18} />

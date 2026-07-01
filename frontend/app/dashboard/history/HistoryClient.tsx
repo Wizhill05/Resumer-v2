@@ -98,7 +98,7 @@ function StatusDot({ status }: { status: string }) {
     return <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-[5px]" />
   if (status === "failed")
     return <span className="inline-block w-2 h-2 rounded-full bg-red-400 shrink-0 mt-[5px]" />
-  return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-[5px] animate-pulse" />
+  return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-[5px]" />
 }
 
 function useDeleteRun() {
@@ -193,7 +193,7 @@ function LiveProgressGridCard({
       {/* Thumbnail placeholder with progress */}
       <div className="relative border-b border-gray-200 bg-zinc-50" style={{ aspectRatio: "210/297" }}>
         <div className="w-full h-full flex flex-col items-center justify-center p-4 gap-3">
-          <FileText size={28} className="text-zinc-300 animate-pulse" />
+          <FileText size={28} className="text-zinc-300" />
           <span className="text-xs text-amber-500 font-medium">Generating… {percent}%</span>
           
           {/* Progress bar */}
@@ -318,7 +318,7 @@ export function HistoryClient() {
     return (
       <div className="bg-white border border-gray-200 divide-y divide-gray-100">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="px-5 py-4 flex items-start gap-3 animate-pulse">
+          <div key={i} className="px-5 py-4 flex items-start gap-3">
             <div className="w-2 h-2 rounded-full bg-gray-200 mt-[5px] shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="h-4 bg-gray-200 rounded w-48" />
@@ -339,7 +339,7 @@ export function HistoryClient() {
   }
 
   return (
-    <div className="bg-white border border-gray-200">
+    <div className="bg-white border border-gray-200 pixel-enter">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">

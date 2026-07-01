@@ -29,7 +29,7 @@ export function Nav() {
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <Link
             href="/dashboard"
-            className="border border-zinc-900 bg-yellow-300 px-2.5 py-1 text-base font-extrabold uppercase tracking-tight md:text-lg"
+            className="resumer-mark px-2.5 py-1 text-base font-black md:text-lg"
           >
             Resumer
           </Link>

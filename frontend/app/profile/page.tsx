@@ -3,16 +3,17 @@ import { redirect } from "next/navigation"
 import { ProfileClient } from "./ProfileClient"
 import { Nav } from "@/components/Nav"
 import { Button } from "@/components/ui/button"
+import { Footer } from "@/components/Footer"
 
 export default async function ProfilePage() {
   const session = await auth()
   if (!session) redirect("/")
 
   return (
-    <main className="min-h-screen app-bg text-black">
+    <main className="min-h-screen flex flex-col app-bg text-black">
       <Nav />
 
-      <div className="page-wrap space-y-4 md:space-y-5">
+      <div className="page-wrap flex-1 space-y-4 md:space-y-5">
         <div className="page-header space-y-1">
           <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Step 1</p>
           <h1 className="text-2xl font-extrabold uppercase tracking-tight md:text-3xl">Your Profile</h1>
@@ -44,6 +45,8 @@ export default async function ProfilePage() {
           </div>
         </div>
       </div>
+
+      <Footer />
     </main>
   )
 }

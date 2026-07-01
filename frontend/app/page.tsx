@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth"
-import { Badge } from "@/components/ui/badge"
 import { redirect } from "next/navigation"
 import { LoginModal } from "@/components/LoginModal"
+import Link from "next/link"
+import { Footer } from "@/components/Footer"
 
 export default async function Home() {
   const session = await auth()
@@ -11,72 +12,90 @@ export default async function Home() {
   }
 
   return (
-    <main className="min-h-screen texture-bg text-black">
-      {/* Nav */}
-      <nav className="border-b-3 border-black px-6 py-5 bg-white">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <span className="text-2xl font-extrabold tracking-tight uppercase border-2 border-black bg-yellow-400 px-3 py-1 shadow-[2px_2px_0px_#000000]">
+    <main className="min-h-screen flex flex-col overflow-hidden bg-[#fbfbf3] text-black">
+      <nav className="px-5 py-5 md:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between">
+          <span className="resumer-mark px-3 py-1.5 text-2xl font-black">
             Resumer
           </span>
           <LoginModal />
         </div>
       </nav>
 
-      {/* Hero */}
-      <section className="flex flex-col items-center text-center px-6 pt-20 pb-16 max-w-4xl mx-auto space-y-6">
-        <Badge variant="secondary" className="text-sm font-bold tracking-wide uppercase px-4 py-1">
-          Free to use — no limits
-        </Badge>
-        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight leading-none uppercase">
-          ATS-optimized resumes,
-          <br />
-          <span className="bg-[#ff4e26] text-white border-3 border-black px-4 py-2 inline-block mt-4 shadow-[4px_4px_0px_#000000] rotate-[-1deg]">
-            generated in seconds.
-          </span>
-        </h1>
-        <p className="text-base md:text-lg text-zinc-800 max-w-2xl font-semibold border-2 border-black bg-white p-4 shadow-[3px_3px_0px_#000000] leading-relaxed">
-          Paste a job description. Pick a template. Watch our multi-agent pipeline tailor
-          your resume to the role — highlighting relevant accomplishments and extracting keywords automatically.
-        </p>
+      <section className="relative mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-12 md:grid-cols-[1.1fr_0.9fr] md:px-8 md:pb-28 md:pt-20">
+        <div className="absolute left-[-12rem] top-24 h-72 w-72 rounded-full bg-[#ff4e26]/10 blur-3xl" />
+        <div className="relative z-10">
+          <p className="mb-5 inline-flex border border-zinc-900 bg-white px-3 py-1 text-xs font-extrabold uppercase tracking-[0.28em] shadow-[2px_2px_0_#18181b]">
+            Free. Fast. Focused.
+          </p>
+          <h1 className="max-w-4xl text-5xl font-black uppercase leading-[0.86] tracking-[-0.08em] text-zinc-950 md:text-8xl">
+            Resume engine for sharp first passes.
+          </h1>
+          <p className="mt-7 max-w-xl text-base font-semibold leading-relaxed text-zinc-600 md:text-lg">
+            Build profile once. Paste job post. Resumer turns source material into clean, ATS-aware PDFs without making you fight blank pages.
+          </p>
+          <div className="login-highlight mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <LoginModal />
+            <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Login is start button. No card needed.</span>
+          </div>
+        </div>
 
-        <LoginModal />
+        <div className="relative min-h-[360px] md:min-h-[520px]">
+          <div className="landing-orb landing-float absolute right-0 top-4 h-64 w-64 rounded-full md:h-96 md:w-96" />
+          <div className="landing-card absolute left-0 top-24 w-[78%] rotate-[-2deg] p-5 md:left-6 md:top-32">
+            <div className="mb-8 flex items-center justify-between text-xs font-extrabold uppercase tracking-widest text-zinc-400">
+              <span>Profile</span><span>Ready</span>
+            </div>
+            <div className="space-y-3">
+              <div className="h-3 w-4/5 rounded-full bg-zinc-950" />
+              <div className="h-3 w-2/3 rounded-full bg-zinc-200" />
+              <div className="h-3 w-5/6 rounded-full bg-zinc-200" />
+            </div>
+          </div>
+          <div className="landing-card absolute bottom-10 right-0 w-[82%] rotate-[2deg] bg-zinc-950 p-5 text-white md:bottom-16">
+            <div className="mb-5 text-xs font-extrabold uppercase tracking-[0.28em] text-[#ff4e26]">Matched bullets</div>
+            <p className="text-2xl font-black uppercase leading-none tracking-[-0.06em] md:text-4xl">Role signal up. Noise down.</p>
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              <span className="h-9 bg-[#ff4e26]" />
+              <span className="h-9 bg-white" />
+              <span className="h-9 bg-yellow-300" />
+            </div>
+          </div>
+        </div>
       </section>
 
-      {/* Features Grid */}
-      <section className="max-w-6xl mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <section className="mx-auto max-w-6xl px-5 py-10 md:px-8 md:py-16">
+        <div className="mb-6 flex items-end justify-between gap-6">
+          <h2 className="max-w-xl text-3xl font-black uppercase leading-none tracking-[-0.06em] md:text-5xl">Minimal surface. Heavy lifting underneath.</h2>
+          <div className="hidden h-px flex-1 bg-zinc-300 md:block" />
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {[
             {
-              title: "LangGraph Agents",
-              desc: "Multi-agent orchestration analyzes the job posts, parses skills gaps, rewrites resume bullets, and compiles tailored PDFs.",
-              color: "bg-yellow-100",
+              title: "Profile Memory",
+              desc: "Keep source material organized once. Reuse it for every role.",
             },
             {
-              title: "Live Progress Bar",
-              desc: "Watch pipeline nodes execute step-by-step via SSE stream without annoying page polling.",
-              color: "bg-red-50",
+              title: "Job-Aware Drafting",
+              desc: "Extracts role signals and rewrites bullets around evidence you already have.",
             },
             {
-              title: "Smart Auto-fit",
-              desc: "WeasyPrint renders high-fidelity PDFs. Font sizes are automatically adjusted to fit precisely on a single page.",
-              color: "bg-blue-50",
+              title: "Clean PDF Output",
+              desc: "Practical templates, single-page fit, and generation history built in.",
             },
           ].map((f) => (
             <div
               key={f.title}
-              className={`border-3 border-black shadow-[4px_4px_0px_#000000] p-6 hover:-translate-y-1 transition-all ${f.color}`}
+              className="landing-card p-6"
             >
-              <h3 className="text-lg font-extrabold uppercase tracking-wider mb-2">{f.title}</h3>
-              <p className="text-sm font-semibold text-zinc-700 leading-relaxed">{f.desc}</p>
+              <h3 className="mb-8 text-lg font-black uppercase tracking-[-0.04em]">{f.title}</h3>
+              <p className="text-sm font-semibold leading-relaxed text-zinc-600">{f.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="text-center font-bold text-sm text-black py-12 border-t-3 border-black bg-white mt-12">
-        RESUMER V2 — BUILT WITH NEO-BRUTALISM &amp; HEART
-      </footer>
+      <Footer />
     </main>
   )
 }
