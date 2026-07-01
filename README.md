@@ -1,5 +1,4 @@
 <div align="center">
-  <br />
   <h1>Resumer</h1>
   <p><strong>Modern AI resume builder for fast, role-matched resumes.</strong></p>
   <p>
