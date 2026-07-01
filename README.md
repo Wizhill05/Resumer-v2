@@ -253,4 +253,4 @@ Production deployed and actively evolving. Main next improvements are richer tem
 
 ## License
 
-No license file is included yet. Add one before accepting external contributions.
+Distributed under the MIT License. See `LICENSE` for details.
