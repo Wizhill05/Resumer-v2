@@ -9,23 +9,24 @@ export default async function ProfilePage() {
   if (!session) redirect("/")
 
   return (
-    <main className="min-h-screen bg-[#fbfbf3] text-black">
+    <main className="min-h-screen app-bg text-black">
       <Nav />
 
-      <div className="max-w-6xl mx-auto px-6 py-12 space-y-6">
-        <div className="border-3 border-black bg-white p-6 shadow-[4px_4px_0px_#000000] space-y-2">
-          <h1 className="text-3xl font-extrabold uppercase tracking-tight">Your Profile</h1>
-          <p className="text-zinc-700 font-medium">
-            Fill in your details. The AI pipeline uses this data to build tailored resumes.
+      <div className="page-wrap space-y-4 md:space-y-5">
+        <div className="page-header space-y-1">
+          <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Step 1</p>
+          <h1 className="text-2xl font-extrabold uppercase tracking-tight md:text-3xl">Your Profile</h1>
+          <p className="max-w-2xl text-sm font-medium leading-relaxed text-zinc-600">
+            This is the source material for every generated resume. Projects and experience also unlock focus options.
           </p>
         </div>
 
         <ProfileClient />
 
         {/* Account section */}
-        <div className="border-t border-gray-200 pt-10 mt-10">
-          <h2 className="text-sm font-extrabold uppercase tracking-widest text-zinc-400 mb-4">Account</h2>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white border-2 border-black p-5 shadow-[2px_2px_0px_#000000]">
+        <div className="pt-2">
+          <h2 className="mb-3 text-xs font-extrabold uppercase tracking-widest text-zinc-400">Account</h2>
+          <div className="panel flex flex-col items-start justify-between gap-3 p-4 sm:flex-row sm:items-center">
             <div>
               <p className="font-bold text-sm">{session.user?.name ?? "User"}</p>
               <p className="text-xs text-zinc-500">{session.user?.email ?? ""}</p>

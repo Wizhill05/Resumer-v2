@@ -131,10 +131,10 @@ export function ExtracurricularForm() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {!isAdding && (
-        <div className="flex justify-between items-center bg-white p-4 border-2 border-black shadow-[2px_2px_0px_#000000]">
-          <h3 className="text-sm font-extrabold uppercase tracking-wider text-zinc-700">
+        <div className="flex items-center justify-between gap-3 border border-zinc-200 bg-zinc-50 p-3">
+          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 sm:text-sm">
             {extracurriculars.length} entries
           </h3>
           <Button
@@ -159,8 +159,8 @@ export function ExtracurricularForm() {
       )}
 
       {isAdding && (
-        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-6 p-5 border-3 border-black bg-white shadow-[3px_3px_0px_#000000]">
-          <div className="flex justify-between items-center mb-2 border-b-2 border-black pb-2">
+        <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 bg-zinc-50 p-4">
+          <div className="mb-1 flex items-center justify-between border-b border-zinc-200 pb-2">
             <h3 className="font-semibold text-black uppercase tracking-tight">
               {editingId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
             </h3>
@@ -169,7 +169,7 @@ export function ExtracurricularForm() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="title">Title / Activity / Award</Label>
               <Input id="title" {...register("title")} />
@@ -216,7 +216,7 @@ export function ExtracurricularForm() {
             />
           </div>
 
-          <div className="flex gap-3 pt-2 border-t-2 border-black">
+          <div className="flex gap-3 border-t border-zinc-200 pt-3">
             <Button type="submit" disabled={saveMutation.isPending}>
               {saveMutation.isPending ? "Saving..." : "Save"}
             </Button>
@@ -227,11 +227,11 @@ export function ExtracurricularForm() {
         </form>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {extracurriculars.map((ex) => (
-          <div key={ex.id} className="p-5 border-3 border-black bg-white flex justify-between items-start shadow-[3px_3px_0px_#000000] hover:shadow-[4px_4px_0px_#000000] hover:-translate-y-0.5 transition-all">
-            <div className="space-y-2">
-              <h4 className="font-extrabold text-black text-lg uppercase tracking-tight">{ex.title}</h4>
+          <div key={ex.id} className="flex items-start justify-between gap-3 border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-400 md:p-4">
+            <div className="min-w-0 space-y-1.5">
+              <h4 className="text-base font-extrabold uppercase tracking-tight text-black">{ex.title}</h4>
               {ex.organization && (
                 <p className="text-sm font-bold text-zinc-700 uppercase tracking-wide">
                   {ex.organization}
@@ -244,7 +244,7 @@ export function ExtracurricularForm() {
                 <p className="text-xs font-semibold text-zinc-600 mt-1 italic">{ex.description}</p>
               )}
               {ex.bullet_points && ex.bullet_points.length > 0 && (
-                <ul className="list-disc list-inside mt-3 text-xs font-semibold text-zinc-700 space-y-1">
+                <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600">
                   {ex.bullet_points.map((b: string, i: number) => (
                     <li key={i}>{b}</li>
                   ))}

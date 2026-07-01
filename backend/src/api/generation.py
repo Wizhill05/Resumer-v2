@@ -132,6 +132,26 @@ async def start_generation(
         d = manifest.default_content_split
         resolved_split = {"projects": d.projects, "experience": d.experience}
 
+    # ── Validate sufficient profile material exists in DB ─────────────────────
+    from sqlalchemy import func
+    from src.models.profile import UserExperience, UserProject
+
+    exp_count_stmt = select(func.count()).select_from(UserExperience).where(UserExperience.user_id == current_user.id)
+    proj_count_stmt = select(func.count()).select_from(UserProject).where(UserProject.user_id == current_user.id)
+
+    exp_count = (await db.execute(exp_count_stmt)).scalar() or 0
+    proj_count = (await db.execute(proj_count_stmt)).scalar() or 0
+
+    if exp_count < resolved_split["experience"] or proj_count < resolved_split["projects"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Insufficient profile entries. You selected {resolved_split['experience']} experiences "
+                f"and {resolved_split['projects']} projects, but you only have {exp_count} experiences "
+                f"and {proj_count} projects in your profile."
+            ),
+        )
+
     gen = Generation(
         user_id=current_user.id,
         template_id=data.template_id,

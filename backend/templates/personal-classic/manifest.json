@@ -9,11 +9,11 @@
   "has_links": true,
   "has_education": true,
   "has_extracurricular": true,
-  "content_slots": 4,
+  "content_slots": 5,
   "allowed_content_splits": [
-    { "projects": 1, "experience": 3, "label": "Experience focused" },
     { "projects": 2, "experience": 2, "label": "Balanced" },
-    { "projects": 3, "experience": 1, "label": "Project focused" }
+    { "projects": 2, "experience": 3, "label": "Experience Focused" },
+    { "projects": 3, "experience": 2, "label": "Project Focused" }
   ],
   "default_content_split": { "projects": 2, "experience": 2, "label": "Balanced" },
   "max_skills_categories": 6,

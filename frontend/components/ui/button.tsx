@@ -13,23 +13,23 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         type={type}
         ref={ref}
         className={cn(
-          "inline-flex shrink-0 items-center justify-center font-bold text-sm select-none border-2 border-black transition-all cursor-pointer disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex shrink-0 items-center justify-center gap-2 font-bold text-sm select-none border transition-all cursor-pointer disabled:pointer-events-none disabled:opacity-50",
           // Variants
-          variant === "default" && "bg-[#ff4e26] text-white shadow-[3px_3px_0px_#000000] hover:bg-[#e03d16] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#000000]",
-          variant === "outline" && "bg-white text-black shadow-[3px_3px_0px_#000000] hover:bg-zinc-50 hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#000000]",
-          variant === "secondary" && "bg-yellow-400 text-black shadow-[3px_3px_0px_#000000] hover:bg-yellow-500 hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#000000]",
-          variant === "ghost" && "border-transparent bg-transparent text-black hover:bg-zinc-200/50 hover:border-black active:bg-zinc-200",
-          variant === "destructive" && "bg-red-500 text-white shadow-[3px_3px_0px_#000000] hover:bg-red-600 hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#000000]",
+          variant === "default" && "border-[#18181b] bg-[#ff4e26] text-white shadow-[2px_2px_0px_#18181b] hover:bg-[#e03d16] active:translate-y-px active:shadow-none md:hover:-translate-y-0.5",
+          variant === "outline" && "border-zinc-300 bg-white text-black hover:border-zinc-900 hover:bg-zinc-50 active:translate-y-px",
+          variant === "secondary" && "border-zinc-900 bg-yellow-300 text-black shadow-[2px_2px_0px_#18181b] hover:bg-yellow-400 active:translate-y-px active:shadow-none md:hover:-translate-y-0.5",
+          variant === "ghost" && "border-transparent bg-transparent text-black hover:bg-zinc-100 active:bg-zinc-200",
+          variant === "destructive" && "border-red-600 bg-red-500 text-white hover:bg-red-600 active:translate-y-px",
           variant === "link" && "border-transparent bg-transparent text-black underline underline-offset-4 hover:text-[#ff4e26]",
           // Sizes
-          size === "default" && "h-10 px-4 py-2",
+          size === "default" && "h-9 px-3 py-2",
           size === "xs" && "h-7 px-2 text-xs",
-          size === "sm" && "h-8 px-3 text-xs",
-          size === "lg" && "h-12 px-6 text-base",
-          size === "icon" && "h-10 w-10 p-0",
+          size === "sm" && "h-8 px-2.5 text-xs",
+          size === "lg" && "h-10 px-4 text-sm md:h-11 md:px-5 md:text-base",
+          size === "icon" && "h-9 w-9 p-0",
           size === "icon-xs" && "h-7 w-7 p-0",
           size === "icon-sm" && "h-8 w-8 p-0",
-          size === "icon-lg" && "h-12 w-12 p-0",
+          size === "icon-lg" && "h-10 w-10 md:h-11 md:w-11 p-0",
           className
         )}
         {...props}

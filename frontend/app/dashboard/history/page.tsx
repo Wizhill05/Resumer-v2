@@ -8,13 +8,14 @@ export default async function HistoryPage() {
   if (!session) redirect("/")
 
   return (
-    <main className="min-h-screen texture-bg text-black">
+    <main className="min-h-screen app-bg text-black">
       <Nav />
 
-      <div className="max-w-6xl mx-auto px-6 py-12 space-y-6">
-        <div className="border-3 border-black bg-white p-6 shadow-[4px_4px_0px_#000000] space-y-2">
-          <h1 className="text-3xl font-extrabold uppercase tracking-tight">Generation History</h1>
-          <p className="text-zinc-700 font-medium">
+      <div className="page-wrap space-y-4 md:space-y-5">
+        <div className="page-header space-y-1">
+          <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Step 3</p>
+          <h1 className="text-2xl font-extrabold uppercase tracking-tight md:text-3xl">Generation History</h1>
+          <p className="max-w-2xl text-sm font-medium leading-relaxed text-zinc-600">
             View and download your previously tailored resume versions.
           </p>
         </div>

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { FileText, AlertCircle, Loader2, Briefcase, FolderGit2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, FileText, FolderGit2, Briefcase, Loader2, Lock } from "lucide-react"
 import Link from "next/link"
 
 type Step = "input" | "submitted"
@@ -26,6 +26,8 @@ type TemplateItem = {
   default_content_split: ContentSplit
 }
 
+type ProfileEntry = { id?: string }
+
 export function GenerateClient() {
   const queryClient = useQueryClient()
   const [step, setStep] = useState<Step>("input")
@@ -35,9 +37,9 @@ export function GenerateClient() {
   const [instructions, setInstructions] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [splitIndex, setSplitIndex] = useState<number | null>(null)
+  const [showErrorModal, setShowErrorModal] = useState(false)
+  const [sliderIndex, setSliderIndex] = useState<number>(1)
 
-  // Fetch available templates
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<TemplateItem[]>({
     queryKey: ["templates"],
     queryFn: async () => {
@@ -47,7 +49,24 @@ export function GenerateClient() {
     },
   })
 
-  // Derive per-template split options
+  const { data: profileExperiences = [] } = useQuery<ProfileEntry[]>({
+    queryKey: ["profile-experiences"],
+    queryFn: async () => {
+      const res = await fetch("/api/backend/profile/experiences")
+      if (!res.ok) throw new Error("Failed to load experiences")
+      return res.json()
+    },
+  })
+
+  const { data: profileProjects = [] } = useQuery<ProfileEntry[]>({
+    queryKey: ["profile-projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/backend/profile/projects")
+      if (!res.ok) throw new Error("Failed to load projects")
+      return res.json()
+    },
+  })
+
   const activeTemplate = useMemo(
     () => templates.find((t) => t.id === selectedTemplate) ?? null,
     [templates, selectedTemplate]
@@ -55,29 +74,69 @@ export function GenerateClient() {
 
   const splits = activeTemplate?.allowed_content_splits ?? []
 
-  // Reset to default whenever template changes
-  const resolvedSplitIndex = useMemo(() => {
-    if (!activeTemplate) return 0
-    if (splitIndex !== null && splitIndex < splits.length) return splitIndex
-    const defIdx = splits.findIndex(
-      (s) =>
-        s.projects === activeTemplate.default_content_split.projects &&
-        s.experience === activeTemplate.default_content_split.experience
-    )
-    return defIdx >= 0 ? defIdx : 0
-  }, [activeTemplate, splits, splitIndex])
+  const sliderOptions = useMemo(() => {
+    return [
+      {
+        name: "Project Focus",
+        projects: 3,
+        experience: 2,
+        enabled: profileProjects.length >= 3 && profileExperiences.length >= 2,
+        desc: "Best when projects prove the role fit.",
+      },
+      {
+        name: "Balanced",
+        projects: 2,
+        experience: 2,
+        enabled: profileProjects.length >= 2 && profileExperiences.length >= 2,
+        desc: "Good default for most applications.",
+      },
+      {
+        name: "Experience Focus",
+        projects: 2,
+        experience: 3,
+        enabled: profileProjects.length >= 2 && profileExperiences.length >= 3,
+        desc: "Best when work history is strongest.",
+      },
+    ]
+  }, [profileProjects.length, profileExperiences.length])
 
-  const activeSplit = splits[resolvedSplitIndex] ?? null
+  const selectedFocusIndex = useMemo(() => {
+    if (sliderOptions[sliderIndex]?.enabled) return sliderIndex
 
-  const handleTemplateSelect = (id: string) => {
-    setSelectedTemplate(id)
-    setSplitIndex(null)
+    const defaultSplit = activeTemplate?.default_content_split
+    const defaultIdx = defaultSplit
+      ? sliderOptions.findIndex(
+          (opt) => opt.projects === defaultSplit.projects && opt.experience === defaultSplit.experience
+        )
+      : -1
+
+    if (defaultIdx !== -1 && sliderOptions[defaultIdx]?.enabled) return defaultIdx
+
+    const firstEnabled = sliderOptions.findIndex((opt) => opt.enabled)
+    return firstEnabled !== -1 ? firstEnabled : sliderIndex
+  }, [activeTemplate?.default_content_split, sliderIndex, sliderOptions])
+
+  const activeOption = sliderOptions[selectedFocusIndex]
+  const projectsCount = activeOption?.projects ?? 2
+  const experienceCount = activeOption?.experience ?? 2
+
+  const getLockReason = (opt: { projects: number; experience: number }) => {
+    const missingProjects = Math.max(0, opt.projects - profileProjects.length)
+    const missingExperience = Math.max(0, opt.experience - profileExperiences.length)
+    const missing = []
+    if (missingProjects) missing.push(`${missingProjects} more project${missingProjects === 1 ? "" : "s"}`)
+    if (missingExperience) missing.push(`${missingExperience} more experience entr${missingExperience === 1 ? "y" : "ies"}`)
+    return missing.length ? `Locked: add ${missing.join(" and ")} to your profile.` : "Available"
   }
 
-  // Start generation run
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!jobDescription.trim() || isSubmitting) return
+
+    if (profileProjects.length < projectsCount || profileExperiences.length < experienceCount) {
+      setShowErrorModal(true)
+      return
+    }
 
     setError(null)
     setIsSubmitting(true)
@@ -91,9 +150,7 @@ export function GenerateClient() {
           job_description: jobDescription,
           keywords: keywords ? keywords.split(",").map((k) => k.trim()) : [],
           instructions: instructions || null,
-          content_split: activeSplit
-            ? { projects: activeSplit.projects, experience: activeSplit.experience }
-            : undefined,
+          content_split: { projects: projectsCount, experience: experienceCount },
         }),
       })
 
@@ -102,7 +159,6 @@ export function GenerateClient() {
         throw new Error(errorData.detail || "Failed to start generation")
       }
 
-      // Invalidate history so the new run appears immediately on the History page.
       queryClient.invalidateQueries({ queryKey: ["history"] })
       setStep("submitted")
     } catch (err) {
@@ -114,180 +170,182 @@ export function GenerateClient() {
 
   if (isLoadingTemplates) {
     return (
-      <div className="flex justify-center items-center py-20">
+      <div className="panel flex justify-center py-12">
         <div className="flex gap-2">
-          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-1" />
-          <span className="w-4 h-4 bg-yellow-400 border-2 border-black pixel-bounce-2" />
-          <span className="w-4 h-4 bg-[#ff4e26] border-2 border-black pixel-bounce-3" />
+          <span className="h-3 w-3 bg-[#ff4e26] pixel-bounce-1" />
+          <span className="h-3 w-3 bg-yellow-400 pixel-bounce-2" />
+          <span className="h-3 w-3 bg-[#ff4e26] pixel-bounce-3" />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 md:space-y-5">
       {error && (
-        <div className="p-4 bg-red-100 border-3 border-black text-black shadow-[4px_4px_0px_#000000] flex gap-3 items-center">
-          <AlertCircle className="shrink-0 text-red-600" />
+        <div className="panel flex items-center gap-3 border-red-200 bg-red-50 p-3 text-red-700">
+          <AlertCircle className="shrink-0" size={18} />
           <p className="text-sm font-bold">{error}</p>
         </div>
       )}
 
       {step === "input" && (
-        <form onSubmit={handleGenerate} className="space-y-8">
-          {/* Template Selection */}
-          <div className="space-y-4">
-            <Label className="text-lg font-extrabold uppercase tracking-tight">1. Choose Template</Label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {templates.map((tpl) => (
-                <div
-                  key={tpl.id}
-                  onClick={() => handleTemplateSelect(tpl.id)}
-                  className={`p-5 cursor-pointer border-3 border-black transition-all ${
-                    selectedTemplate === tpl.id
-                      ? "bg-[#ff4e26] text-white shadow-[4px_4px_0px_#000000]"
-                      : "bg-white text-black shadow-[3px_3px_0px_#000000] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#000000]"
-                  }`}
-                >
-                  <div className="flex gap-4">
-                    <FileText className="shrink-0" />
-                    <div>
-                      <h4 className="font-extrabold text-sm uppercase tracking-wider">{tpl.name}</h4>
-                      <p className={`text-xs mt-1 ${selectedTemplate === tpl.id ? "text-white/80" : "text-zinc-600"}`}>
-                        {tpl.description}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Content Focus Slider */}
-          {activeTemplate && splits.length > 1 && (
-            <div className="space-y-4">
-              <Label className="text-lg font-extrabold uppercase tracking-tight">2. Content Focus</Label>
-              <div className="bg-white border-3 border-black shadow-[3px_3px_0px_#000000] p-5 space-y-4">
-                <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wide">
-                  {activeTemplate.content_slots} total sections — choose how to distribute them
-                </p>
-
-                {/* Split option buttons */}
-                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${splits.length}, 1fr)` }}>
-                  {splits.map((split, idx) => {
-                    const active = idx === resolvedSplitIndex
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setSplitIndex(idx)}
-                        className={`p-3 border-2 border-black text-center transition-all font-bold text-xs uppercase tracking-wide ${
-                          active
-                            ? "bg-black text-white shadow-none translate-y-0.5 translate-x-0.5"
-                            : "bg-white text-black shadow-[2px_2px_0px_#000000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#000000]"
-                        }`}
-                      >
-                        {split.label}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* Visual breakdown of chosen split */}
-                {activeSplit && (
-                  <div className="flex gap-3 pt-1">
-                    <div className="flex items-center gap-2 bg-zinc-100 border-2 border-black px-3 py-1.5">
-                      <FolderGit2 size={14} className="shrink-0 text-[#ff4e26]" />
-                      <span className="text-xs font-extrabold uppercase">
-                        {activeSplit.projects} Project{activeSplit.projects !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 bg-zinc-100 border-2 border-black px-3 py-1.5">
-                      <Briefcase size={14} className="shrink-0 text-[#ff4e26]" />
-                      <span className="text-xs font-extrabold uppercase">
-                        {activeSplit.experience} Experience{activeSplit.experience !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  </div>
-                )}
+        <form onSubmit={handleGenerate} className="space-y-4 md:space-y-5">
+          <section className="panel p-4 md:p-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <Label className="text-sm font-extrabold uppercase tracking-wider">Template</Label>
+                <p className="mt-1 text-xs font-medium text-zinc-500">Controls resume structure and rendering.</p>
               </div>
+              <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">1</span>
             </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {templates.map((tpl) => {
+                const selected = selectedTemplate === tpl.id
+                return (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => setSelectedTemplate(tpl.id)}
+                    className={`flex items-start gap-3 border p-3 text-left transition-colors ${
+                      selected ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-200 bg-white hover:border-zinc-500"
+                    }`}
+                  >
+                    <FileText className="mt-0.5 shrink-0" size={18} />
+                    <span>
+                      <span className="block text-sm font-extrabold uppercase tracking-wide">{tpl.name}</span>
+                      <span className={`mt-0.5 block text-xs font-medium leading-relaxed ${selected ? "text-white/75" : "text-zinc-500"}`}>
+                        {tpl.description}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+
+          {activeTemplate && splits.length > 1 && (
+            <section className="panel p-4 md:p-5">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <Label className="text-sm font-extrabold uppercase tracking-wider">Content Focus</Label>
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-zinc-500">
+                    Choose how many saved projects and experience entries the resume should prioritize.
+                  </p>
+                </div>
+                <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">2</span>
+              </div>
+
+              <div className="mb-3 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600 sm:w-max">
+                <span className="inline-flex items-center gap-1 border border-zinc-200 bg-zinc-50 px-2 py-1">
+                  <FolderGit2 size={13} /> Your projects: {profileProjects.length}
+                </span>
+                <span className="inline-flex items-center gap-1 border border-zinc-200 bg-zinc-50 px-2 py-1">
+                  <Briefcase size={13} /> Your experience: {profileExperiences.length}
+                </span>
+              </div>
+
+              <div className="grid gap-2">
+                {sliderOptions.map((opt, idx) => {
+                  const selected = selectedFocusIndex === idx
+                  return (
+                    <button
+                      key={opt.name}
+                      type="button"
+                      disabled={!opt.enabled}
+                      onClick={() => opt.enabled && setSliderIndex(idx)}
+                      className={`flex items-start justify-between gap-3 border p-3 text-left transition-colors ${
+                        selected && opt.enabled
+                          ? "border-zinc-950 bg-[#ff4e26]/10"
+                          : opt.enabled
+                            ? "border-zinc-200 bg-white hover:border-zinc-500"
+                            : "border-zinc-200 bg-zinc-50 text-zinc-400"
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-extrabold uppercase tracking-wide text-zinc-950">{opt.name}</span>
+                          <span className="text-xs font-bold text-zinc-500">{opt.projects} projects + {opt.experience} experience</span>
+                        </span>
+                        <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">{opt.desc}</span>
+                        {!opt.enabled && (
+                          <span className="mt-1 flex items-center gap-1 text-xs font-bold text-red-600">
+                            <Lock size={12} /> {getLockReason(opt)}
+                          </span>
+                        )}
+                      </span>
+                      {selected && opt.enabled ? <CheckCircle2 className="shrink-0 text-[#ff4e26]" size={18} /> : null}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="mt-3 flex flex-col gap-2 border border-zinc-200 bg-zinc-50 p-3 text-xs font-bold text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
+                <span>Selected: <span className="text-zinc-950">{activeOption?.name}</span></span>
+                <span>Needs {projectsCount} projects and {experienceCount} experience entries.</span>
+              </div>
+            </section>
           )}
 
-          {/* Job Description Textarea */}
-          <div className="space-y-3">
-            <Label htmlFor="job" className="text-lg font-extrabold uppercase tracking-tight">
-              {activeTemplate && splits.length > 1 ? "3" : "2"}. Paste Job Description
-            </Label>
+          <section className="panel p-4 md:p-5">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <Label htmlFor="job" className="text-sm font-extrabold uppercase tracking-wider">Job Description</Label>
+                <p className="mt-1 text-xs font-medium text-zinc-500">Paste the full posting for better keyword matching.</p>
+              </div>
+              <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">{activeTemplate && splits.length > 1 ? "3" : "2"}</span>
+            </div>
             <Textarea
               id="job"
               required
-              rows={8}
-              placeholder="Paste the full job post details here..."
+              rows={6}
+              placeholder="Paste job post details here..."
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
-              className="bg-white border-2 border-black text-black"
+              className="min-h-40"
             />
-          </div>
+          </section>
 
-          {/* Keywords & Instructions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="keywords" className="font-bold">Focus Keywords (optional, comma separated)</Label>
-              <Input
-                id="keywords"
-                placeholder="Python, AWS, Next.js"
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                className="bg-white border-2 border-black text-black"
-              />
+          <section className="panel p-4 md:p-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="keywords" className="font-bold">Focus Keywords</Label>
+                <Input
+                  id="keywords"
+                  placeholder="Python, AWS, Next.js"
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="instructions" className="font-bold">Custom Instructions</Label>
+                <Input
+                  id="instructions"
+                  placeholder="Emphasize backend work"
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                />
+              </div>
             </div>
+          </section>
 
-            <div className="space-y-2">
-              <Label htmlFor="instructions" className="font-bold">Custom Instructions (optional)</Label>
-              <Input
-                id="instructions"
-                placeholder="e.g. emphasize my backend capabilities"
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                className="bg-white border-2 border-black text-black"
-              />
-            </div>
-          </div>
-
-          <Button
-            type="submit"
-            size="lg"
-            className="w-full"
-            disabled={isSubmitting || !jobDescription.trim()}
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="animate-spin" size={18} />
-                Starting…
-              </>
-            ) : (
-              "Start Generation Pipeline"
-            )}
+          <Button type="submit" size="lg" className="w-full" disabled={isSubmitting || !jobDescription.trim()}>
+            {isSubmitting ? <><Loader2 className="animate-spin" size={18} /> Starting...</> : "Generate Resume"}
           </Button>
         </form>
       )}
 
       {step === "submitted" && (
-        <div className="space-y-6 max-w-xl mx-auto py-12">
-          <div className="bg-white p-8 border-3 border-black shadow-[6px_6px_0px_#000000] text-center space-y-4">
-            <h3 className="font-extrabold text-2xl uppercase tracking-wider text-black">
-              Generation Started!
-            </h3>
-            <p className="text-sm font-semibold text-zinc-700 leading-relaxed">
-              Your resume is being generated. This usually takes 5–10 minutes. You&apos;ll be notified by email when it&apos;s ready — or check the History page to track progress.
+        <div className="mx-auto max-w-xl space-y-4 py-6 md:py-10">
+          <div className="panel-strong space-y-3 p-5 text-center md:p-7">
+            <h3 className="text-xl font-extrabold uppercase tracking-tight text-black">Generation Started</h3>
+            <p className="text-sm font-medium leading-relaxed text-zinc-600">
+              Your resume is being generated. It usually takes 5-10 minutes. Check History for progress and downloads.
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link href="/dashboard/history" className="w-full sm:w-auto">
-              <Button className="w-full">
-                View History
-              </Button>
+              <Button className="w-full">View History</Button>
             </Link>
             <Button
               variant="outline"
@@ -295,13 +353,50 @@ export function GenerateClient() {
                 setJobDescription("")
                 setKeywords("")
                 setInstructions("")
-                setSplitIndex(null)
                 setStep("input")
               }}
-              className="w-full sm:w-auto bg-transparent text-black"
+              className="w-full sm:w-auto"
             >
               Generate Another
             </Button>
+          </div>
+        </div>
+      )}
+
+      {showErrorModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 md:items-center md:p-4">
+          <div className="w-full max-w-md border-t border-zinc-900 bg-white p-4 shadow-2xl md:border md:p-6">
+            <div className="flex gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-red-50 text-red-600">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold uppercase tracking-tight">Need More Profile Material</h3>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-600">
+                  This focus needs more saved projects or experience before generation can start.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 border border-zinc-200 bg-zinc-50 p-3 text-sm font-bold">
+              <div className="flex justify-between gap-3">
+                <span className="text-zinc-500">Projects</span>
+                <span>{profileProjects.length} available / {projectsCount} needed</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-zinc-500">Experience</span>
+                <span>{profileExperiences.length} available / {experienceCount} needed</span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Link href="/profile" className="flex-1">
+                <Button className="w-full">Update Profile</Button>
+              </Link>
+              <Button variant="outline" type="button" onClick={() => setShowErrorModal(false)} className="flex-1">
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}

@@ -217,7 +217,7 @@ async def run_generation(gen_id: str) -> None:
                     "page_count": result.get("page_count"),
                 }
                 await update_db.commit()
-                send_completion_email(user_email, g)
+                send_completion_email(user_email, g, result.get("pdf_bytes"))
     except Exception as e:
         # 3b. Persist terminal failure.
         async with AsyncSessionLocal() as fail_db:

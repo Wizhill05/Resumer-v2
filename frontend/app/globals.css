@@ -12,7 +12,7 @@
 
 @layer base {
   * {
-    border-color: #000000;
+    border-color: #d4d4d8;
   }
   body {
     background-color: #fbfbf3;
@@ -21,11 +21,75 @@
   }
 }
 
+@layer components {
+  .app-bg {
+    background-color: #fbfbf3;
+    background-image: linear-gradient(#00000008 1px, transparent 1px), linear-gradient(90deg, #00000008 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .page-wrap {
+    width: min(100% - 2rem, 72rem);
+    margin-inline: auto;
+    padding-block: 1rem 2rem;
+  }
+
+  @media (min-width: 768px) {
+    .page-wrap {
+      width: min(100% - 3rem, 72rem);
+      padding-block: 2rem 3rem;
+    }
+  }
+
+  .page-header {
+    background: #ffffff;
+    border: 1px solid #e4e4e7;
+    border-left: 4px solid #ff4e26;
+    box-shadow: 0 1px 0 #0000000a;
+    padding: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .page-header {
+      padding: 1.25rem 1.5rem;
+    }
+  }
+
+  .panel {
+    background: #ffffff;
+    border: 1px solid #e4e4e7;
+    box-shadow: 0 1px 0 #0000000a;
+  }
+
+  .panel-strong {
+    background: #ffffff;
+    border: 2px solid #18181b;
+    box-shadow: 3px 3px 0 #18181b;
+  }
+
+  @media (max-width: 767px) {
+    .panel-strong {
+      border-width: 1px;
+      box-shadow: none;
+    }
+  }
+
+  .compact-card {
+    background: #ffffff;
+    border: 1px solid #e4e4e7;
+    transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+  }
+
+  .compact-card:hover {
+    border-color: #a1a1aa;
+  }
+}
+
 /* Dot-grid texture background */
 .texture-bg {
   background-color: #fbfbf3;
-  background-image: radial-gradient(circle, #00000018 1px, transparent 1px);
-  background-size: 22px 22px;
+  background-image: linear-gradient(#00000008 1px, transparent 1px), linear-gradient(90deg, #00000008 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 
 /* Neo-brutalist utility components */

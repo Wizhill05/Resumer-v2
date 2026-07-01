@@ -25,33 +25,28 @@ export function Nav() {
 
   return (
     <>
-      <nav className="border-b border-gray-200 px-6 py-4 bg-white sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <nav className="sticky top-0 z-50 border-b border-zinc-200 bg-white/95 px-4 py-2.5 backdrop-blur md:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between">
           <Link
             href="/dashboard"
-            className="text-xl font-extrabold uppercase border-2 border-black bg-yellow-400 px-3 py-1 shadow-[2px_2px_0px_#000000]"
+            className="border border-zinc-900 bg-yellow-300 px-2.5 py-1 text-base font-extrabold uppercase tracking-tight md:text-lg"
           >
             Resumer
           </Link>
 
           {/* Desktop links */}
-          <div className="hidden md:flex items-center gap-6 text-sm font-semibold">
+          <div className="hidden items-center gap-1 text-sm font-semibold md:flex">
             {links.map((link) => {
               const active = pathname === link.href
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={
-                    active
-                      ? "text-[#ff4e26]"
-                      : "text-zinc-600 hover:text-black transition-colors"
-                  }
+                  className={`px-3 py-1.5 transition-colors ${
+                    active ? "bg-orange-50 text-[#ff4e26]" : "text-zinc-600 hover:bg-zinc-50 hover:text-black"
+                  }`}
                 >
                   {link.label}
-                  {active && (
-                    <span className="block h-0.5 bg-[#ff4e26] mt-0.5 rounded-full" />
-                  )}
                 </Link>
               )
             })}
@@ -60,7 +55,7 @@ export function Nav() {
           {/* Mobile hamburger */}
           <button
             onClick={() => setOpen((o) => !o)}
-            className="md:hidden p-2 rounded hover:bg-zinc-100 transition-colors"
+            className="p-2 transition-colors hover:bg-zinc-100 md:hidden"
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
           >
@@ -85,7 +80,7 @@ export function Nav() {
       <div
         className="md:hidden fixed inset-0 bg-black/20 z-40 transition-opacity duration-200"
         style={{
-          top: "57px",
+          top: "49px",
           opacity: open ? 1 : 0,
           pointerEvents: open ? "auto" : "none",
         }}
@@ -95,9 +90,9 @@ export function Nav() {
 
       {/* Slide-down panel */}
       <div
-        className="md:hidden fixed left-0 right-0 bg-white border-b border-gray-200 shadow-lg z-50 transition-all duration-200 ease-out"
+        className="fixed left-0 right-0 z-50 border-b border-zinc-200 bg-white shadow-lg transition-all duration-200 ease-out md:hidden"
         style={{
-          top: "57px",
+          top: "49px",
           transform: open ? "translateY(0)" : "translateY(-8px)",
           opacity: open ? 1 : 0,
           pointerEvents: open ? "auto" : "none",
@@ -109,9 +104,9 @@ export function Nav() {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex items-center px-6 py-4 text-sm font-semibold border-b border-gray-100 last:border-b-0 transition-colors ${
+              className={`flex items-center border-b border-zinc-100 px-4 py-3 text-sm font-semibold transition-colors last:border-b-0 ${
                 active
-                  ? "text-[#ff4e26] bg-orange-50 border-l-4 border-l-[#ff4e26] pl-5"
+                  ? "border-l-4 border-l-[#ff4e26] bg-orange-50 pl-3 text-[#ff4e26]"
                   : "text-zinc-700 hover:bg-zinc-50 hover:text-black"
               }`}
             >

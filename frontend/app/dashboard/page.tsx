@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { Nav } from "@/components/Nav"
+import { Clock, FileText, UserRound } from "lucide-react"
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -11,147 +12,111 @@ export default async function DashboardPage() {
   const firstName = session.user?.name?.split(" ")[0] ?? "there"
 
   return (
-    <main className="min-h-screen texture-bg text-black">
-      {/* Nav */}
+    <main className="min-h-screen app-bg text-black">
       <Nav />
 
-      {/* Hero strip */}
-      <div className="border-b-3 border-black bg-[#ff4e26]">
-        <div className="max-w-6xl mx-auto px-6 py-10 flex flex-col md:flex-row items-start md:items-end justify-between gap-6">
+      <div className="border-b border-zinc-200 bg-[#ff4e26]">
+        <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-4 py-5 md:flex-row md:items-end md:px-6 md:py-8">
           <div>
-            <p className="text-white/80 font-bold uppercase text-xs tracking-widest mb-2">AI Resume Pipeline</p>
-            <h1 className="text-4xl md:text-5xl font-extrabold uppercase tracking-tight text-white leading-none">
+            <p className="mb-1 text-xs font-bold uppercase tracking-widest text-white/80">Resume workflow</p>
+            <h1 className="text-3xl font-extrabold uppercase leading-none tracking-tight text-white md:text-5xl">
               Hey, {firstName}.
             </h1>
-            <p className="text-white/90 font-semibold mt-3 max-w-md text-sm leading-relaxed">
-              Your AI-powered resume tailoring studio. Paste a job post, pick a template, get an ATS-optimized PDF.
+            <p className="mt-2 max-w-xl text-sm font-semibold leading-relaxed text-white/90">
+              Build your profile first. Then generate focused resumes from stronger source material.
             </p>
           </div>
-          <div className="flex gap-3 shrink-0">
-            <div className="border-2 border-white/60 px-4 py-3 text-center">
-              <p className="text-2xl font-extrabold text-white">AI</p>
-              <p className="text-[10px] font-bold uppercase text-white/70">Powered</p>
-            </div>
-            <div className="border-2 border-white/60 px-4 py-3 text-center">
-              <p className="text-2xl font-extrabold text-white">ATS</p>
-              <p className="text-[10px] font-bold uppercase text-white/70">Optimized</p>
-            </div>
-            <div className="border-2 border-white/60 px-4 py-3 text-center">
-              <p className="text-2xl font-extrabold text-white">PDF</p>
-              <p className="text-[10px] font-bold uppercase text-white/70">Output</p>
-            </div>
+          <div className="grid w-full grid-cols-3 gap-2 text-center md:w-auto">
+            {[
+              ["01", "Profile"],
+              ["02", "Tailor"],
+              ["03", "Download"],
+            ].map(([num, label]) => (
+              <div key={num} className="border border-white/40 px-3 py-2">
+                <p className="text-lg font-extrabold text-white">{num}</p>
+                <p className="text-[10px] font-bold uppercase text-white/75">{label}</p>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="max-w-6xl mx-auto px-6 py-10 space-y-6">
-
-        {/* Primary action — Generate (full width, featured) */}
-        <div className="border-3 border-black bg-white shadow-[6px_6px_0px_#000000] overflow-hidden">
-          {/* Orange accent bar */}
-          <div className="h-2 bg-[#ff4e26]" />
-          <div className="p-8 flex flex-col md:flex-row gap-8 items-start md:items-center justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="bg-[#ff4e26] text-white text-xs font-extrabold uppercase px-2 py-1 border-2 border-black shadow-[2px_2px_0px_#000000]">
-                  Primary Action
-                </span>
-                <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Step 1 of 1</span>
-              </div>
-              <h2 className="text-2xl md:text-3xl font-extrabold uppercase tracking-tight mb-3">
-                Generate Tailored Resume
-              </h2>
-              <p className="text-sm font-medium text-zinc-700 max-w-lg leading-relaxed mb-4">
-                Paste a job description and let the multi-agent AI pipeline adapt your resume — extracting keywords, rewriting bullets, and rendering a pixel-perfect PDF.
-              </p>
-              {/* 5–10 min notice */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                <div className="inline-flex items-center gap-2 bg-yellow-100 border-2 border-black px-4 py-2 shadow-[2px_2px_0px_#000000] text-sm font-bold">
-                  <span className="w-2 h-2 rounded-full bg-yellow-500 shrink-0" />
-                  This process may take 5–10 minutes to complete.
+      <div className="page-wrap space-y-4 md:space-y-5">
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <section className="panel-strong overflow-hidden">
+            <div className="h-1.5 bg-[#ff4e26]" />
+            <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center md:p-6">
+              <div className="flex gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-zinc-900 bg-[#ff4e26] text-white md:h-12 md:w-12">
+                  <UserRound size={20} />
                 </div>
-                <span className="text-xs font-bold text-zinc-500">
-                  Safe to close tab & return later — running on server.
-                </span>
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Step 1</p>
+                  <h2 className="text-xl font-extrabold uppercase tracking-tight md:text-3xl">Build Your Profile</h2>
+                  <p className="mt-1 max-w-xl text-sm font-medium leading-relaxed text-zinc-600">
+                    Add experience, projects, education, and skills first. Resume focus options unlock from this data.
+                  </p>
+                </div>
               </div>
-            </div>
-            <div className="shrink-0 w-full md:w-auto">
-              <Link href="/dashboard/generate">
-                <Button size="lg" className="w-full md:w-auto text-base px-10">
-                  Tailor Resume &rarr;
-                </Button>
+              <Link href="/profile" className="w-full md:w-auto">
+                <Button size="lg" className="w-full md:w-auto">Edit Profile</Button>
               </Link>
             </div>
-          </div>
+          </section>
+
+          <aside className="panel p-4 md:p-5">
+            <h3 className="text-sm font-extrabold uppercase tracking-wider">Why profile first?</h3>
+            <p className="mt-2 text-sm font-medium leading-relaxed text-zinc-600">
+              The generator can only select from saved profile entries. More projects and experience means more focus choices.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600">
+              <span className="border border-zinc-200 bg-zinc-50 p-2">Projects unlock project focus</span>
+              <span className="border border-zinc-200 bg-zinc-50 p-2">Experience unlocks role focus</span>
+            </div>
+          </aside>
         </div>
 
-        {/* Secondary actions — Profile + History side by side */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-          {/* Profile */}
-          <div className="border-3 border-black bg-white shadow-[4px_4px_0px_#000000] overflow-hidden group hover:-translate-y-1 hover:shadow-[6px_6px_0px_#000000] transition-all">
-            <div className="h-2 bg-yellow-400" />
-            <div className="p-6 flex flex-col h-full">
-              <div className="mb-4">
-                <div className="w-10 h-10 bg-yellow-400 border-2 border-black shadow-[2px_2px_0px_#000000] flex items-center justify-center mb-4">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                    <circle cx="12" cy="8" r="4" />
-                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-                  </svg>
-                </div>
-                <h2 className="text-xl font-extrabold uppercase tracking-tight mb-2">Build Your Profile</h2>
-                <p className="text-sm font-medium text-zinc-700 leading-relaxed">
-                  Add and manage your work experience, projects, education, and skills. The AI tailors from this data.
-                </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <section className="compact-card p-4 md:p-5">
+            <div className="flex gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-zinc-900 bg-zinc-950 text-white">
+                <FileText size={18} />
               </div>
-              <div className="mt-auto pt-4">
-                <Link href="/profile">
-                  <Button variant="outline" className="w-full bg-transparent text-black">
-                    Edit Profile
-                  </Button>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">Step 2</p>
+                <h2 className="text-lg font-extrabold uppercase tracking-tight">Generate Resume</h2>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-600">
+                  Paste a job post, choose template and focus, then start generation.
+                </p>
+                <Link href="/dashboard/generate" className="mt-4 block">
+                  <Button variant="outline" className="w-full md:w-auto">Generate Resume</Button>
                 </Link>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* History */}
-          <div className="border-3 border-black bg-white shadow-[4px_4px_0px_#000000] overflow-hidden group hover:-translate-y-1 hover:shadow-[6px_6px_0px_#000000] transition-all">
-            <div className="h-2 bg-black" />
-            <div className="p-6 flex flex-col h-full">
-              <div className="mb-4">
-                <div className="w-10 h-10 bg-black border-2 border-black shadow-[2px_2px_0px_#000000] flex items-center justify-center mb-4">
-                  <svg width="18" height="18" fill="none" stroke="white" strokeWidth="2.5" viewBox="0 0 24 24">
-                    <path d="M12 8v4l3 3" />
-                    <circle cx="12" cy="12" r="9" />
-                  </svg>
-                </div>
-                <h2 className="text-xl font-extrabold uppercase tracking-tight mb-2">View History</h2>
-                <p className="text-sm font-medium text-zinc-700 leading-relaxed">
-                  Access and download all previously generated and tailored resume versions from every run.
-                </p>
+          <section className="compact-card p-4 md:p-5">
+            <div className="flex gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-zinc-900 bg-yellow-300 text-zinc-950">
+                <Clock size={18} />
               </div>
-              <div className="mt-auto pt-4">
-                <Link href="/dashboard/history">
-                  <Button variant="outline" className="w-full bg-transparent text-black">
-                    View History
-                  </Button>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">Step 3</p>
+                <h2 className="text-lg font-extrabold uppercase tracking-tight">Download From History</h2>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-600">
+                  Runs continue on the server. Return later to download completed PDFs.
+                </p>
+                <Link href="/dashboard/history" className="mt-4 block">
+                  <Button variant="outline" className="w-full md:w-auto">View History</Button>
                 </Link>
               </div>
             </div>
-          </div>
+          </section>
         </div>
 
-        {/* Info strip */}
-        <div className="border-3 border-black bg-black text-white p-5 shadow-[4px_4px_0px_#ff4e26] flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
-          <p className="text-xs font-bold uppercase tracking-widest text-white/60">How it works</p>
-          <div className="flex flex-col md:flex-row gap-4 md:gap-10 text-sm font-bold">
-            <span><span className="text-[#ff4e26] mr-2">01</span>Build your profile</span>
-            <span className="text-white/30 hidden md:inline">/</span>
-            <span><span className="text-[#ff4e26] mr-2">02</span>Paste job description</span>
-            <span className="text-white/30 hidden md:inline">/</span>
-            <span><span className="text-[#ff4e26] mr-2">03</span>Download ATS resume PDF</span>
-          </div>
+        <div className="panel flex flex-col gap-2 p-3 text-xs font-bold text-zinc-600 md:flex-row md:items-center md:justify-between md:px-4">
+          <span className="uppercase tracking-wider text-zinc-400">Typical generation time</span>
+          <span>5-10 minutes. Safe to close the tab after starting.</span>
         </div>
       </div>
     </main>
