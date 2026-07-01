@@ -1,107 +1,51 @@
-name: Deploy Backend to Google Cloud Run
+name: Docker Build Check
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'backend/**'
-
-env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  REGION: us-central1
-  SERVICE_NAME: resumer-backend
-  JOB_NAME: resumer-pipeline
-  GAR_LOCATION: us-central1-docker.pkg.dev
-  # Runtime SA that both the API service and the pipeline Job run as.
-  # Must have roles/run.invoker (to trigger the Job) + roles/secretmanager.secretAccessor.
-  # Set as a GitHub variable (not secret): gcloud format <sa>@<project>.iam.gserviceaccount.com
-  RUNNER_SA: ${{ vars.RUNNER_SA }}
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy.yml"
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Authenticate with Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service.name }} image
+        uses: docker/build-push-action@v6
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker Auth
-        run: |
-          gcloud auth configure-docker ${{ env.GAR_LOCATION }} --quiet
-
-      - name: Build and Push Image
-        run: |
-          IMAGE_TAG="${{ env.GAR_LOCATION }}/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/backend:${{ github.sha }}"
-          docker build -t $IMAGE_TAG ./backend
-          docker push $IMAGE_TAG
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
-      # ── API Service (short-lived requests only; pipeline runs in the Job) ──
-      - name: Deploy API Service
-        uses: google-github-actions/deploy-cloudrun@v2
-        with:
-          service: ${{ env.SERVICE_NAME }}
-          region: ${{ env.REGION }}
-          image: ${{ env.IMAGE_TAG }}
-          service_account: ${{ env.RUNNER_SA }}
-          env_vars: |
-            FRONTEND_URL=${{ vars.FRONTEND_URL }}
-            R2_BUCKET_NAME=${{ vars.R2_BUCKET_NAME }}
-            R2_ENDPOINT_URL=${{ vars.R2_ENDPOINT_URL }}
-            EXECUTION_MODE=cloudrun_job
-            CLOUD_RUN_JOB_NAME=${{ env.JOB_NAME }}
-            CLOUD_RUN_JOB_REGION=${{ env.REGION }}
-            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
-            NOTIFICATION_FROM_EMAIL=${{ vars.NOTIFICATION_FROM_EMAIL }}
-          secrets: |
-            DATABASE_URL=DATABASE_URL:latest
-            JWT_SECRET=JWT_SECRET:latest
-            GOOGLE_API_KEY=GOOGLE_API_KEY:latest
-            R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest
-            R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest
-            RESEND_API_KEY=RESEND_API_KEY:latest
-          flags: >-
-            --allow-unauthenticated
-            --cpu=1
-            --memory=512Mi
-            --timeout=120
-            --concurrency=80
-            --max-instances=3
-            --min-instances=0
-
-      # The API service's SA must be able to trigger Job executions.
-      - name: Grant API service account the Job Invoker role
-        run: |
-          gcloud projects add-iam-policy-binding ${{ env.PROJECT_ID }} \
-            --member="serviceAccount:${{ env.RUNNER_SA }}" \
-            --role="roles/run.invoker" \
-            --condition="" \
-            --quiet || true
-
-      # ── Pipeline Job (long-running, CPU allocated for the full run) ──
-      - name: Deploy Pipeline Job
-        run: |
-          gcloud run jobs deploy ${{ env.JOB_NAME }} \
-            --image=${{ env.IMAGE_TAG }} \
-            --region=${{ env.REGION }} \
-            --service-account=${{ env.RUNNER_SA }} \
-            --command=python \
-            --args="-m src.pipeline.job_runner" \
-            --cpu=1 \
-            --memory=1Gi \
-            --task-timeout=1800s \
-            --max-retries=0 \
-            --set-env-vars "FRONTEND_URL=${{ vars.FRONTEND_URL }},R2_BUCKET_NAME=${{ vars.R2_BUCKET_NAME }},R2_ENDPOINT_URL=${{ vars.R2_ENDPOINT_URL }},EXECUTION_MODE=cloudrun_job,CLOUD_RUN_JOB_NAME=${{ env.JOB_NAME }},CLOUD_RUN_JOB_REGION=${{ env.REGION }},GCP_PROJECT_ID=${{ env.PROJECT_ID }},NOTIFICATION_FROM_EMAIL=${{ vars.NOTIFICATION_FROM_EMAIL }}" \
-            --set-secrets "DATABASE_URL=DATABASE_URL:latest,JWT_SECRET=JWT_SECRET:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,R2_ACCESS_KEY_ID=R2_ACCESS_KEY_ID:latest,R2_SECRET_ACCESS_KEY=R2_SECRET_ACCESS_KEY:latest,RESEND_API_KEY=RESEND_API_KEY:latest"
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: false
+          tags: resumer-${{ matrix.service.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.service.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}

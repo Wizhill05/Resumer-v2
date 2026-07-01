@@ -1,125 +1,172 @@
 <div align="center">
   <br />
   <h1>Resumer</h1>
-  <p><strong>AI resume engine for sharp, role-matched first passes.</strong></p>
+  <p><strong>Modern AI resume builder for fast, role-matched resumes.</strong></p>
   <p>
-    Build your profile once, paste a job description, choose a template, and generate clean ATS-aware resumes without fighting blank pages.
+    Build your profile once. Paste a job description. Generate clean, ATS-aware PDFs that feel tailored instead of templated.
   </p>
   <p>
-    <a href="#features"><strong>Features</strong></a> /
-    <a href="#stack"><strong>Stack</strong></a> /
-    <a href="#quick-start"><strong>Quick Start</strong></a> /
-    <a href="#deployment"><strong>Deployment</strong></a>
+    <a href="https://resumer.aryansingh.space"><strong>Live App</strong></a>
+    <span> / </span>
+    <a href="#features"><strong>Features</strong></a>
+    <span> / </span>
+    <a href="#tech-stack"><strong>Stack</strong></a>
+    <span> / </span>
+    <a href="#local-development"><strong>Run Locally</strong></a>
   </p>
   <p>
-    <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=nextdotjs" />
+    <img alt="Live" src="https://img.shields.io/badge/Live-resumer.aryansingh.space-111827?style=for-the-badge" />
+    <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-000000?style=for-the-badge&logo=nextdotjs" />
     <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=for-the-badge&logo=react&logoColor=white" />
     <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.138-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
-    <img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776ab?style=for-the-badge&logo=python&logoColor=white" />
-    <img alt="Tailwind" src="https://img.shields.io/badge/Tailwind-4-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white" />
+    <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ed?style=for-the-badge&logo=docker&logoColor=white" />
   </p>
   <br />
 </div>
 
 ---
 
-## Overview
+## Preview
 
-Resumer is a hosted resume builder designed around one fast loop: structured profile data in, job-aware resume out. The app stores reusable career material, runs an LLM pipeline against a target job description, renders a PDF with template constraints, and keeps generation history for later download.
+Resumer is already deployed at **[resumer.aryansingh.space](https://resumer.aryansingh.space)**.
 
 ```text
-Profile memory + job description
+Profile data + target job
         |
         v
-LangGraph generation pipeline
+AI resume generation pipeline
         |
         v
-Template-aware content shaping
+Template-aware resume content
         |
         v
-HTML / CSS render with WeasyPrint
-        |
-        v
-PDF + markdown artifacts in object storage
+Rendered PDF + saved history
 ```
+
+## Why It Exists
+
+Most resume tools either make you manually fight layout or produce generic AI text. Resumer keeps your real career material structured, then uses a job description to generate sharper first drafts with practical PDF output.
 
 ## Features
 
-| Area | What it does |
+| Feature | Description |
 | --- | --- |
-| Profile builder | Stores core info, education, experience, projects, skills, and extracurriculars. |
-| Job-aware generation | Uses role context, keywords, and optional instructions to tailor resume content. |
-| Template system | Jinja2 templates with manifests, content split rules, and render constraints. |
-| PDF output | Generates clean downloadable PDFs with WeasyPrint. |
-| Generation history | Tracks status, logs, artifacts, and previous resume runs. |
-| Auth | NextAuth v5 with GitHub and Google providers. |
-| Cloud-ready jobs | FastAPI service triggers Cloud Run Jobs for long-running pipeline work. |
-| Storage | Saves generated artifacts to S3-compatible Cloudflare R2. |
+| Profile memory | Save reusable education, experience, projects, skills, links, and extracurriculars. |
+| Job-aware generation | Paste a job description and generate content around role signals. |
+| Template constraints | Resume templates define supported sections and content splits. |
+| PDF export | Backend renders final documents with Jinja2, CSS, and WeasyPrint. |
+| Generation history | Track previous resumes, status, logs, artifacts, and downloads. |
+| Auth | GitHub and Google login through NextAuth. |
+| Object storage | Generated artifacts are stored through S3-compatible Cloudflare R2. |
+| Docker deploy | Frontend and backend ship as containerized services. |
 
-## Stack
+## Tech Stack
 
-| Layer | Tech |
+| Layer | Tools |
 | --- | --- |
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui |
-| State + forms | TanStack Query, react-hook-form, Zod |
+| Forms and state | react-hook-form, Zod, TanStack Query |
 | Auth | NextAuth.js v5, JWT sessions |
-| Backend | FastAPI, Pydantic v2, SQLAlchemy 2.0 async, Alembic |
-| AI pipeline | LangGraph, LangChain, Google Gemini / Gemma models |
-| Rendering | Jinja2, WeasyPrint, template manifests |
-| Data | PostgreSQL, Cloudflare R2 |
-| Deploy | Vercel frontend, Google Cloud Run backend + Cloud Run Job worker |
+| Backend | FastAPI, Pydantic v2, SQLAlchemy async, Alembic |
+| AI pipeline | LangGraph, LangChain, Google Gemini / Gemma API |
+| Rendering | Jinja2 templates, WeasyPrint PDF renderer |
+| Database | PostgreSQL |
+| Storage | Cloudflare R2 or any S3-compatible bucket |
+| Deployment | Docker, Railway, custom domain |
+
+## Architecture
+
+```text
+Browser
+  |
+  | Next.js app
+  v
+Frontend container
+  |
+  | /api/backend proxy + JWT auth
+  v
+FastAPI backend container
+  |
+  | async SQLAlchemy
+  v
+PostgreSQL
+
+FastAPI backend
+  |
+  | generation pipeline
+  v
+LangGraph + LLM
+  |
+  | render artifacts
+  v
+WeasyPrint + Cloudflare R2
+```
 
 ## Project Structure
 
 ```text
 Resumer-v2/
-|-- frontend/              # Next.js app router UI
-|   |-- app/               # Pages, layouts, API routes
-|   |-- components/        # UI + feature components
-|   `-- lib/               # Auth, JWT, shared utilities
-|-- backend/               # FastAPI service + pipeline worker
-|   |-- src/api/           # Profile, generation, system routes
-|   |-- src/core/          # Config, auth, storage, executor
-|   |-- src/pipeline/      # LangGraph resume generation flow
-|   |-- src/models/        # SQLAlchemy models
-|   |-- src/schemas/       # Pydantic schemas
-|   `-- templates/         # Resume templates
-|-- docker-compose.yml     # Local full-stack containers
-`-- PLAN.md                # Product and architecture notes
+|-- frontend/
+|   |-- app/                  # Next.js app router pages and API routes
+|   |-- components/           # Navigation, auth modal, profile forms, UI pieces
+|   |-- lib/                  # Auth, JWT, shared utilities
+|   |-- Dockerfile            # Frontend container
+|   `-- package.json          # pnpm scripts and dependencies
+|-- backend/
+|   |-- src/api/              # Profile, generation, system endpoints
+|   |-- src/core/             # Config, auth, DB, storage, executor
+|   |-- src/models/           # SQLAlchemy models
+|   |-- src/pipeline/         # LangGraph generation flow
+|   |-- src/schemas/          # Pydantic schemas
+|   |-- templates/            # Resume templates and manifests
+|   |-- Dockerfile            # Backend container
+|   `-- pyproject.toml        # uv Python project config
+|-- docker-compose.yml        # Local Docker orchestration
+|-- PLAN.md                   # Product and architecture notes
+`-- .github/workflows/        # GitHub workflow checks
 ```
 
-## Quick Start
+## Local Development
 
-### 1. Clone
+### Requirements
 
-```bash
-git clone <repo-url>
-cd Resumer-v2
-```
+| Tool | Version |
+| --- | --- |
+| Node.js | 20+ |
+| pnpm | Latest stable |
+| Python | 3.12+ |
+| uv | Latest stable |
+| PostgreSQL | Any recent version |
+| Docker | Optional, recommended |
 
-### 2. Configure environment
+### Environment
+
+Copy sample environment files:
 
 ```bash
 cp frontend/.env.example frontend/.env
 cp backend/.env.example backend/.env
 ```
 
-Set matching auth secrets in both files:
+Set these core values:
 
 ```env
-NEXTAUTH_SECRET=your-secret-here
-JWT_SECRET=your-secret-here
-```
-
-Minimum backend values for local generation:
-
-```env
+NEXTAUTH_SECRET=use-the-same-secret-as-backend
+JWT_SECRET=use-the-same-secret-as-frontend
 DATABASE_URL=postgresql+psycopg://user:pass@localhost/resumer
 GOOGLE_API_KEY=your-google-api-key
-EXECUTION_MODE=local
 ```
 
-### 3. Run frontend
+Frontend also needs OAuth credentials if you want login locally:
+
+```env
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+```
+
+### Run Frontend
 
 ```bash
 cd frontend
@@ -127,9 +174,9 @@ pnpm install
 pnpm dev
 ```
 
-Frontend runs on `http://localhost:3000`.
+Open `http://localhost:3000`.
 
-### 4. Run backend
+### Run Backend
 
 ```bash
 cd backend
@@ -142,84 +189,68 @@ Backend runs on `http://localhost:8000`.
 
 ## Docker
 
-Run both services with Docker Compose:
+Run full stack locally:
 
 ```bash
 docker compose up --build
 ```
 
-| Service | URL |
+| Service | Local URL |
 | --- | --- |
 | Frontend | `http://localhost:3000` |
 | Backend | `http://localhost:48000` |
 
-## Environment Variables
-
-### Frontend
-
-| Variable | Purpose |
-| --- | --- |
-| `NEXTAUTH_SECRET` | NextAuth signing secret. Must match backend `JWT_SECRET`. |
-| `NEXTAUTH_URL` | Public frontend URL. |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth provider. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth provider. |
-| `NEXT_PUBLIC_API_URL` | Browser-visible backend URL. |
-
-### Backend
-
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string. |
-| `JWT_SECRET` | Token verification secret. Must match `NEXTAUTH_SECRET`. |
-| `GOOGLE_API_KEY` | LLM provider API key. |
-| `FRONTEND_URL` | Allowed CORS origin. |
-| `R2_ENDPOINT_URL` | Cloudflare R2 S3-compatible endpoint. |
-| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 credentials. |
-| `R2_BUCKET_NAME` | Artifact bucket name. |
-| `RESEND_API_KEY` | Optional completion email delivery. |
-| `EXECUTION_MODE` | `local` for dev, `cloudrun_job` for production worker execution. |
-
-## Core Flow
-
-1. User signs in with GitHub or Google.
-2. User fills reusable profile data.
-3. User pastes a job description and selects a resume template.
-4. Backend validates profile depth and creates a generation row.
-5. Pipeline analyzes the job, writes tailored sections, renders artifacts, and updates status.
-6. User previews, downloads, or returns to previous generations.
-
-## API Surface
-
-| Route | Purpose |
-| --- | --- |
-| `GET /profile` | Fetch or create current user profile. |
-| `PUT /profile` | Update base profile fields. |
-| `GET /profile/projects` | List projects. |
-| `GET /profile/experiences` | List experiences. |
-| `POST /generate` | Start resume generation. |
-| `GET /generate` | List generation history. |
-| `GET /generate/{gen_id}` | Fetch generation status and metadata. |
-| `GET /generate/{gen_id}/logs` | Poll generation logs. |
-
 ## Deployment
 
-Production target is split by workload:
+Current production deployment uses **Railway + Docker** with the live domain at **resumer.aryansingh.space**.
 
-| Piece | Target |
+| Service | Deployment role |
 | --- | --- |
-| Frontend | Vercel |
-| API service | Google Cloud Run service |
-| Pipeline worker | Google Cloud Run Job |
-| Database | Neon PostgreSQL or any hosted Postgres |
-| Artifacts | Cloudflare R2 |
-| Email | Resend |
+| Frontend container | Serves Next.js production app. |
+| Backend container | Serves FastAPI API and generation pipeline. |
+| PostgreSQL | Stores users, profiles, generations, logs, and artifact metadata. |
+| Cloudflare R2 | Stores generated PDFs and related files. |
+| Custom domain | Points public traffic to the deployed Railway service. |
 
-The included GitHub Actions workflow deploys the backend image to Cloud Run, creates or updates the API service, and deploys the pipeline as a Cloud Run Job.
+## Key Environment Variables
 
-## Design Notes
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `NEXTAUTH_SECRET` | Frontend | Signs NextAuth JWTs. |
+| `NEXTAUTH_URL` | Frontend | Public app URL. |
+| `NEXT_PUBLIC_API_URL` | Frontend | Public backend URL for browser calls. |
+| `BACKEND_INTERNAL_URL` | Frontend | Internal service URL for Docker/Railway networking. |
+| `DATABASE_URL` | Backend | PostgreSQL connection string. |
+| `JWT_SECRET` | Backend | Verifies frontend auth tokens. |
+| `GOOGLE_API_KEY` | Backend | LLM API key for generation. |
+| `FRONTEND_URL` | Backend | CORS origin. |
+| `R2_ENDPOINT_URL` | Backend | Cloudflare R2 endpoint. |
+| `R2_ACCESS_KEY_ID` | Backend | R2 access key. |
+| `R2_SECRET_ACCESS_KEY` | Backend | R2 secret key. |
+| `R2_BUCKET_NAME` | Backend | Artifact bucket name. |
+| `RESEND_API_KEY` | Backend | Optional completion email delivery. |
 
-Resumer avoids generic resume-builder bloat. Data entry stays structured, generation stays evidence-based, and templates declare their own constraints so the AI output fits the final document instead of producing unusable walls of text.
+## API Highlights
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /profile` | Fetch or initialize profile. |
+| `PUT /profile` | Update base profile data. |
+| `GET /profile/projects` | List saved projects. |
+| `GET /profile/experiences` | List saved experiences. |
+| `POST /generate` | Start a resume generation run. |
+| `GET /generate` | List generation history. |
+| `GET /generate/{gen_id}` | Fetch generation status. |
+| `GET /generate/{gen_id}/logs` | Poll generation logs. |
+
+## Design Direction
+
+Resumer uses a sharp editorial look rather than generic SaaS polish: warm background, heavy typography, high-contrast cards, minimal chrome, and direct product language. The UI keeps attention on one loop: profile, job, generated resume.
+
+## Status
+
+Production deployed and actively evolving. Main next improvements are richer templates, better generation observability, and smoother onboarding for first-time profiles.
 
 ## License
 
-No license file is included yet. Add one before publishing or accepting outside contributions.
+No license file is included yet. Add one before accepting external contributions.
