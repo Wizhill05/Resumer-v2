@@ -14,11 +14,12 @@
     <a href="#local-development"><strong>Run Locally</strong></a>
   </p>
   <p>
-  <img alt="Live" src="https://img.shields.io/badge/Live-resumer.aryansingh.space-111827?style=flat-square" />
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs" />
-  <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
-  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.138-009688?style=flat-square&logo=fastapi&logoColor=white" />
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-ready-2496ed?style=flat-square&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/🌐_Live-resumer.aryansingh.space-0f172a?style=flat-square" />
+  <img src="https://img.shields.io/badge/Next.js_16-black?style=flat-square&logo=nextdotjs" />
+  <img src="https://img.shields.io/badge/React_19-61DAFB?style=flat-square&logo=react&logoColor=000" />
+  <img src="https://img.shields.io/badge/FastAPI_0.138-009688?style=flat-square&logo=fastapi" />
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" />
+
   </p>
   <br />
 </div>
