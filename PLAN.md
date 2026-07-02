@@ -22,22 +22,23 @@ Public hosted resume builder. User signs up, fills profile (or uploads existing 
 | Layer | Service | Free Tier | Why |
 |-------|---------|-----------|-----|
 | **Frontend** | **Vercel** | Unlimited deploys, 100GB bandwidth | Native Next.js support, zero config |
-| **Backend** | **Google Cloud Run** | 180k vCPU-sec/month, scales to zero | CPU allocated only during active requests; long tasks use Cloud Run Jobs (service throttles background work outside requests) |
+| **Backend** | **Railway** | $5 credit/mo free, always-on service | Persistent process; no CPU throttling; no cold-start latency |
 | **Database** | **Neon PostgreSQL** | 0.5GB storage, autosuspend after 5min idle | Serverless Postgres, generous free tier |
 | **File Storage** | **Cloudflare R2** | 10GB storage, zero egress fees | Free S3-compatible, no surprise bills |
 | **Auth** | **NextAuth.js** | Free (self-hosted in Next.js) | JWT verification without DB auth sessions |
 
-### Critical Architecture Adjustments for Cloud Run Free Tier
-- **Cloud Run Jobs for pipeline execution**: The generation pipeline runs as a **Cloud Run Job** (not a service request), so it executes to completion with CPU allocated for the full duration — independent of any client connection. POST `/generate` inserts the row, triggers the Job execution with `GEN_ID` as an env override, and returns immediately. The Job loads state from DB, runs the LangGraph pipeline, writes artifacts to R2 + DB, and sends the completion email. This survives the user walking away from the page (the default Cloud Run service CPU model throttles background work outside active requests, which is why a detached `asyncio.create_task` on the service does not work).
-- **Local dev fallback**: `EXECUTION_MODE=local` runs the pipeline in-process via `asyncio.create_task` (local machines are not CPU-throttled). `EXECUTION_MODE=cloudrun_job` triggers the Job via the Run Admin API.
-- **Reaper**: A sweep on each POST `/generate` marks `in_progress` generations older than 15 min as `failed` + emails — covers Job executions that died (OOM, preemption).
-- **Email-on-Completion**: Resend (free 3k/mo) fires on terminal status (completed/failed) from inside the Job. Primary completion signal to user.
-- **No Redis**: FastAPI `BackgroundTasks` are avoided for long runs since they run after the response is sent, which allows Cloud Run to kill/freeze the instance. DB-based execution states are used instead.
+### Architecture Notes for Railway
+- **Always-on process**: Railway runs the FastAPI service as a persistent process. `asyncio.create_task` is safe for background pipeline execution — the process is never CPU-throttled or frozen between requests.
+- **In-process pipeline**: POST `/generate` inserts the row, fires a detached `asyncio.create_task(run_generation(gen_id))`, and returns immediately. The task runs to completion in the background.
+- **Local dev identical to prod**: `EXECUTION_MODE=local` is the only mode. No separate job infrastructure needed.
+- **Reaper**: A sweep on each POST `/generate` marks `in_progress` generations older than 15 min as `failed` + emails — covers tasks that died (OOM, crash) without reaching a terminal status.
+- **Email-on-Completion**: Resend (free 3k/mo) fires on terminal status (completed/failed) from inside the pipeline task. Primary completion signal to user.
+- **No Redis**: DB-based execution states. The reaper is lazy (runs on each POST `/generate`) — zero extra infra.
 - **WeasyPrint for PDF**: Pure Python, lightweight (~50MB vs Playwright's ~200MB Chromium). Essential for keeping the container footprint small.
   - *Note on WeasyPrint CSS*: No CSS Grid, limited Flexbox support. Templates must use `float`, table, or basic flex layouts.
   - *Note on System Deps*: Dockerfile must install `libpango`, `libcairo`, `libgdk-pixbuf`, `shared-mime-info`.
-- **No scraping in v2 MVP**: Paste Job Description manually or fetch from URL using basic HTTP client on backend (no headless browser to avoid Cloud Run memory exhaustion).
-- **R2 Lifecycle Policy**: Set a 90-day TTL policy on the R2 bucket to auto-delete old PDFs/MDs, staying well within the 10GB free limit.
+- **No scraping in v2 MVP**: Paste Job Description manually or fetch from URL using basic HTTP client on backend (no headless browser).
+- **R2 Lifecycle Policy**: 90-day TTL rule applied idempotently on each container start (boto3 `put_bucket_lifecycle_configuration`). Auto-deletes old PDFs/MDs, staying within the 10GB free limit.
 
 ---
 
@@ -439,7 +440,7 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 ### Generation & Preview
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/generate` | Start a run, insert `generations` row, trigger Cloud Run Job, return `generation_id` |
+| POST | `/generate` | Start a run, insert `generations` row, fire in-process pipeline task, return `generation_id` |
 | GET | `/generate/{id}/logs?since=<log_id>` | Poll logs after cursor (progress bar) |
 | GET | `/generate/{id}/preview` | Returns signed R2 URL or serves PDF directly with `Content-Type: application/pdf` |
 | GET | `/generate/{id}/download` | Serve PDF attachment |
@@ -470,7 +471,7 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 - [x] Parallel per-entry LLM calls via `asyncio.gather` (experience + projects writers)
 
 **Removed in Phase 3 (SSE execution context):**
-- The `/generate/{id}/stream` SSE endpoint and its `sse_queue_var` plumbing were replaced by Cloud Run Jobs + `/logs` polling (see §3 and Phase 3). SSE via the Vercel proxy hit a 10s serverless timeout and tied pipeline execution to an open client connection — incompatible with the walk-away UX.
+- The `/generate/{id}/stream` SSE endpoint and its `sse_queue_var` plumbing were replaced by in-process asyncio tasks + `/logs` polling (see §3 and Phase 3). SSE via the Vercel proxy hit a 10s serverless timeout and tied pipeline execution to an open client connection — incompatible with the walk-away UX.
 
 **Bugs fixed during Phase 2:**
 - Fixed missing `ResumeGraphState` import in `api/generation.py` (would cause `NameError` on every stream)
@@ -487,16 +488,320 @@ Backend decodes NextAuth's token with a shared secret (`JWT_SECRET`). Users are 
 - [x] Replace SSE with log polling endpoint (`/generate/{id}/logs?since=`) + 3s poll on History page
 - [x] Add Resend email-on-completion (terminal status) — `src/core/notify.py`
 - [x] Add reaper sweep for stuck `in_progress` generations (15min timeout) — runs lazily on each POST `/generate`
-- [x] Cloud Run Jobs pipeline execution — `src/pipeline/job_runner.py` + `src/core/executor.py` (POST `/generate` triggers the Job; `EXECUTION_MODE=local` runs in-process for dev)
+- [x] In-process pipeline execution via detached asyncio task — `src/pipeline/job_runner.py` + `src/core/executor.py` (POST `/generate` fires task; Railway keeps process alive so task completes reliably)
 - [x] Atomic rate-limit upsert (no TOCTOU race) + JWT_SECRET fail-fast validation + Neon `pool_pre_ping`/`pool_recycle`
 - [x] Generate-button loading state (prevents duplicate-job clicks during Neon cold wake)
-- [x] GitHub Actions CI/CD: deploy API service + Pipeline Job to Cloud Run with env vars + Secret Manager secrets
-- [ ] Set up Neon DB autosuspend configurations
-- [ ] One-time GCP setup: Secret Manager secrets (DATABASE_URL, JWT_SECRET, GOOGLE_API_KEY, R2_*, RESEND_API_KEY), `RUNNER_SA` GitHub var, grant `roles/run.invoker` + `roles/secretmanager.secretAccessor` to the runtime SA
-- [ ] Configure R2 90-day lifecycle policy
+- [x] GitHub Actions CI/CD: build and push Docker image; deploy to Railway via Railway CLI
+- [x] Set up Neon DB autosuspend configurations
+- [x] Configure R2 90-day lifecycle policy
 
-### Phase 4: Enhancements (Post-MVP)
-- [ ] Resume parser API (PDF → Profile data)
-- [ ] GitHub project scraper agent
+### Phase 4: Guided Onboarding, Resume Import, and GitHub Project Autofill
+
+Goal: first-time users should not face blank profile forms. They can upload old resumes and paste GitHub repo links; Resumer extracts structured profile data, stages it for review, deduplicates against existing data, then writes only accepted entries into the existing profile tables.
+
+#### UX Flow
+
+```
+Sign Up
+    |
+    v
+Onboarding Wizard
+    |
+    |-- Step 1: Import resume(s)
+    |       - Upload one or more old resumes
+    |       - Backend extracts text safely
+    |       - LLM maps text into profile, experience, education, skills, projects
+    |       - Duplicate projects/experiences are merged or skipped, not copied
+    |       - User reviews staged results before saving
+    |
+    |-- Step 2: Add projects from GitHub
+    |       - Paste one or more public GitHub repo URLs
+    |       - Backend reads README, repo metadata, languages, and safe file tree
+    |       - LLM creates project name, description, tech stack, resume bullets
+    |       - Duplicate GitHub/project entries are merged or skipped
+    |       - User reviews staged project before saving
+    |
+    |-- Step 3: Fill missing manual fields
+    |       - Show only gaps: phone, portfolio, missing dates, weak bullets
+    |
+    v
+Profile complete enough to generate resume
+```
+
+#### Product Principles
+
+- Never silently overwrite user data.
+- Never execute uploaded files or repository code.
+- Imported data lands in a review screen first.
+- Existing saved profile values win unless the user explicitly accepts a replacement.
+- Multiple uploaded resumes may describe the same project, job, or school; imports must dedupe before insert.
+- Every imported row stores `source`: `resume_import`, `github_import`, or `manual`.
+- Show confidence and warnings for weak, missing, duplicate, or suspicious fields.
+- Keep import cheap: one LLM extraction call per resume, one call per GitHub repo.
+
+#### Backend: Resume Import
+
+Add endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/profile/import/resume` | Upload one resume file and return staged profile data |
+| POST | `/profile/import/resumes` | Upload multiple resume files and return one deduped staged profile draft |
+| POST | `/profile/import/apply` | Apply accepted staged data to profile tables |
+
+Supported v1 file types:
+
+- PDF only for MVP.
+- Limit: 5MB per file.
+- Max pages: 5 per file.
+- Max files per import: 5.
+- Reject scanned/image-only PDFs with clear message: `Could not read text from this PDF.`
+
+Safe extraction pipeline:
+
+1. Receive multipart upload.
+2. Validate extension, MIME type, size, and page count.
+3. Store only in memory or temp storage; delete temp file after extraction.
+4. Extract text with a PDF text library only; do not execute macros, scripts, embedded files, links, or attachments.
+5. Strip control characters, normalize whitespace, and cap prompt input length.
+6. Treat all extracted text as untrusted prompt data; wrap it in delimiters and instruct the LLM to ignore any instructions inside the resume.
+7. Call LLM with strict Pydantic output schema.
+8. Run deterministic dedupe/merge against existing DB rows and other uploaded resumes.
+9. Return staged data, duplicate matches, warnings, and suggested actions; do not persist final entries yet.
+10. Frontend lets user accept, edit, merge, skip, or replace each section or row.
+11. Apply accepted data using existing Profile/Projects/Experiences/Education CRUD logic.
+
+Structured output schema:
+
+```python
+class ImportWarning(BaseModel):
+    scope: str
+    message: str
+
+
+class DuplicateCandidate(BaseModel):
+    imported_index: int
+    existing_id: str | None = None
+    existing_type: str
+    confidence: float
+    reason: str
+    suggested_action: Literal["merge", "skip", "create"]
+
+
+class ResumeImportDraft(BaseModel):
+    profile: ProfileUpdate
+    experiences: list[ExperienceCreate]
+    projects: list[ProjectCreate]
+    education: list[EducationCreate]
+    extracurriculars: list[ExtracurricularCreate]
+    duplicate_candidates: list[DuplicateCandidate]
+    warnings: list[ImportWarning]
+```
+
+Merge and duplicate rules:
+
+- Base profile: fill blank fields by default; never replace non-empty fields without explicit user action.
+- Skills: union existing + imported, dedupe case-insensitive, normalize punctuation and casing.
+- Experience duplicate key: normalized `role + organization`, overlapping date range, and similar bullet text.
+- Project duplicate key: same `github_url`, normalized `name`, or high text similarity between descriptions/bullets.
+- Education duplicate key: normalized `degree + institution`, with date overlap if present.
+- Extracurricular duplicate key: normalized `title + organization`, with date overlap if present.
+- If duplicate confidence is high, default action is `merge` or `skip`, never `create`.
+- If duplicate confidence is medium, ask user in review UI.
+- If duplicate confidence is low, allow create but show warning.
+- Merging arrays appends only unique bullets/technologies/coursework; no repeated bullet text.
+- Date conflicts surface to user instead of guessing.
+
+#### Backend: Malicious or Random Upload Handling
+
+Uploads are untrusted input, not documents to execute.
+
+Required safeguards:
+
+- Accept only `application/pdf` for MVP; reject all other MIME types even if extension is `.pdf`.
+- Verify PDF header and parseability before extraction.
+- Enforce hard size, page, text-length, and request-time limits.
+- Never shell out to document converters for MVP.
+- Never follow embedded links from PDFs.
+- Never extract or run embedded files, JavaScript, attachments, or launch actions.
+- Strip metadata before sending anything to the LLM unless explicitly needed.
+- Use parser timeout and catch parser crashes as safe failures.
+- Return generic parse errors to users; log safe diagnostics only.
+- Rate-limit imports separately from resume generation.
+- Virus scanning can be deferred for MVP if files are never persisted, but must be added before storing raw uploads in R2.
+- If random content is uploaded, extraction should return low-confidence empty draft plus warning, not pollute the profile.
+
+Prompt-injection defense:
+
+- The resume text may contain instructions like `ignore previous instructions`. Treat it as data only.
+- System prompt must say extracted resume text is untrusted and cannot change the task.
+- Output must match schema; unknown fields are discarded.
+- Do not let imported text set `source`, `user_id`, IDs, API paths, or internal flags.
+
+#### Backend: GitHub Project Import
+
+Add endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/profile/import/github-project` | Parse one public GitHub repo URL into staged project |
+| POST | `/profile/import/github-projects` | Batch import multiple public repo URLs |
+
+Input:
+
+```json
+{
+  "url": "https://github.com/owner/repo"
+}
+```
+
+GitHub fetch strategy:
+
+- Parse and validate only `github.com/{owner}/{repo}` URLs.
+- Use GitHub REST API when possible:
+  - `GET /repos/{owner}/{repo}`
+  - `GET /repos/{owner}/{repo}/readme`
+  - `GET /repos/{owner}/{repo}/languages`
+  - `GET /repos/{owner}/{repo}/contents`
+- Fallback to raw README URL only if API fails safely.
+- MVP supports public repos only.
+- Private repo import requires storing GitHub OAuth access token later; current auth does not appear to persist provider tokens.
+
+Data sent to LLM:
+
+- Repo name.
+- Repo description.
+- README text.
+- Language breakdown.
+- Top-level file tree.
+- Dependency manifests when available: `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `go.mod`, `pom.xml`.
+
+Output:
+
+```python
+class GitHubProjectDraft(BaseModel):
+    name: str
+    description: str
+    technologies: list[str]
+    github_url: str
+    live_url: str | None = None
+    bullet_points: list[str]
+    duplicate_candidates: list[DuplicateCandidate]
+    warnings: list[ImportWarning]
+```
+
+Project bullet rules:
+
+- 2-4 bullets.
+- Resume-ready and specific.
+- No fake metrics.
+- If no measurable outcome exists, describe architecture, users, automation, performance, deployment, or integration without inventing numbers.
+- Include tech stack only when evidence exists in README, languages, dependency files, or repo metadata.
+
+GitHub security and limits:
+
+- Allow only GitHub domains.
+- Block localhost, private IPs, redirects to non-GitHub hosts, and arbitrary URL fetching to avoid SSRF.
+- Timeout requests after 8 seconds.
+- Cap README and manifest text before LLM calls.
+- Never clone repositories or execute code in MVP.
+- Never install dependencies.
+- Only inspect text files returned by GitHub API.
+- Cache repeated repo imports per user + repo URL later if needed.
+
+#### Frontend: Onboarding Wizard
+
+Add `/onboarding` route.
+
+Wizard sections:
+
+1. Welcome
+2. Upload resume(s)
+3. Review imported profile
+4. Add GitHub projects
+5. Resolve duplicates and conflicts
+6. Fix missing fields
+7. Finish and go dashboard
+
+Profile page changes:
+
+- Add `Import from resume` button near profile tabs.
+- Add `Autofill from GitHub` button inside Projects section.
+- Imported project opens the same ProjectForm in edit/review mode before save.
+- Use TanStack Query mutations for import calls.
+- Show loading states with concrete labels:
+  - `Reading PDF`
+  - `Extracting profile`
+  - `Finding duplicates`
+  - `Review results`
+  - `Saving accepted data`
+
+Dashboard change:
+
+- If profile is incomplete, primary CTA becomes `Finish onboarding` instead of only `Profile Section`.
+- Completion checklist uses existing profile/project/experience/education counts.
+
+#### Database Changes
+
+MVP can avoid new staging tables by returning draft JSON to frontend and applying accepted rows immediately.
+
+Optional hardening table for later:
+
+```sql
+CREATE TABLE profile_imports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    source_ref TEXT,
+    draft JSONB NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    applied_at TIMESTAMPTZ
+);
+```
+
+Recommended MVP:
+
+- No new table.
+- Add no migration unless import history is needed.
+- Reuse existing `source` columns for projects and experiences.
+- Add `source` to education and extracurriculars later only if provenance is needed there too.
+
+#### Implementation Tasks
+
+- [ ] Add `src/services/resume_import.py` for PDF validation, safe text extraction, LLM structuring, and multi-resume dedupe.
+- [ ] Add `src/services/github_import.py` for GitHub URL parsing, API fetch, README/tree/language extraction, and safe text caps.
+- [ ] Add import schemas to `src/schemas/profile.py`.
+- [ ] Add import routes under `src/api/profile.py` or new `src/api/imports.py`.
+- [ ] Add deterministic duplicate detection helpers for projects, experiences, education, skills, and extracurriculars.
+- [ ] Add LLM prompts that forbid invented dates, companies, degrees, links, user IDs, internal fields, and metrics.
+- [ ] Add `/onboarding` frontend route.
+- [ ] Add resume upload UI with staged review.
+- [ ] Add GitHub autofill UI in `ProjectForm`.
+- [ ] Add duplicate review UI with `merge`, `skip`, and `create new` actions.
+- [ ] Add tests for PDF validation, random upload rejection, parser failure, prompt injection text, GitHub URL validation, SSRF prevention, and duplicate detection.
+
+#### MVP Cut
+
+Build first:
+
+- PDF resume upload.
+- Multiple resume upload with dedupe.
+- Public GitHub repo import.
+- Review-before-save UI.
+- Fill blank profile fields only.
+- Add or merge projects/experiences/education only after user confirms.
+
+Defer:
+
+- DOCX.
+- Private GitHub repos.
+- Import history table.
+- Background import jobs.
+- Raw upload persistence in R2.
+- Multi-resume semantic merge beyond deterministic duplicate detection.
+- Browser scraping of GitHub pages.
+
+### Phase 5: Enhancements (Post-MVP)
 - [ ] Add support for multiple models via selection dropdown
 - [ ] Add more templates

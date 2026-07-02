@@ -1,5 +1,21 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
 from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _parse_keys(raw: str | None) -> list[str]:
+    """Accept bare comma-separated string or JSON array string."""
+    if not raw:
+        return []
+    raw = raw.strip()
+    if raw.startswith("["):
+        try:
+            return [str(k).strip() for k in json.loads(raw) if str(k).strip()]
+        except json.JSONDecodeError:
+            pass
+    return [k.strip() for k in raw.split(",") if k.strip()]
 
 
 class Settings(BaseSettings):
@@ -14,21 +30,21 @@ class Settings(BaseSettings):
     R2_SECRET_ACCESS_KEY: str = ""
     R2_BUCKET_NAME: str = "resumer-artifacts"
 
-    GOOGLE_API_KEY: str = ""
+    # Stored as raw string; parsed via property so pydantic-settings never
+    # tries json.loads on a bare comma-separated value like "key1,key2".
+    GOOGLE_API_KEYS: str = Field(default="", alias="GOOGLE_API_KEYS")
+
+    @property
+    def google_api_keys(self) -> list[str]:
+        return _parse_keys(self.GOOGLE_API_KEYS)
 
     FRONTEND_URL: str = "http://localhost:3000"
 
     RESEND_API_KEY: str = ""
     NOTIFICATION_FROM_EMAIL: str = "Resumer <noreply@aryansingh.space>"
 
-    # Pipeline execution: "local" runs in-process (dev); "cloudrun_job" triggers a Cloud Run Job (prod).
     EXECUTION_MODE: str = "local"
-    CLOUD_RUN_JOB_NAME: str = "resumer-pipeline"
-    CLOUD_RUN_JOB_REGION: str = "us-central1"
-    GCP_PROJECT_ID: str = ""
-    CLOUD_RUN_TASK_TIMEOUT_SECONDS: int = 1800
 
-    # Absolute path to backend directory resolved relative to this file
     BACKEND_DIR: Path = Path(__file__).resolve().parent.parent.parent
     TEMPLATES_DIR: Path = BACKEND_DIR / "templates"
 

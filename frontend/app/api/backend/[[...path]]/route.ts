@@ -39,8 +39,8 @@ async function handleProxy(
   headers.set("Authorization", `Bearer ${backendToken}`)
 
   try {
-    const body = req.method !== "GET" && req.method !== "HEAD" 
-      ? await req.blob() 
+    const body = req.method !== "GET" && req.method !== "HEAD"
+      ? await req.arrayBuffer()
       : undefined
 
     const backendRes = await fetch(targetUrl, {

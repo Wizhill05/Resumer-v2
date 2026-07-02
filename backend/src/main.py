@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
-from src.api import profile, generation, system
+from src.core.storage import StorageService
+from src.api import profile, generation, system, imports
 from src.template_registry import router as template_router
 
 
@@ -15,8 +16,12 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("JWT_SECRET is not set. Generate one and set it in env / Secret Manager.")
     if settings.JWT_SECRET == "changeme":
         raise RuntimeError("JWT_SECRET is still the default 'changeme'. Rotate before running.")
-    if not settings.GOOGLE_API_KEY:
-        raise RuntimeError("GOOGLE_API_KEY is not set. Pipeline cannot call the LLM.")
+    if not settings.google_api_keys:
+        raise RuntimeError("GOOGLE_API_KEYS is not set. Set at least one key in env.")
+
+    # Idempotently ensure R2 bucket has a 90-day lifecycle expiry rule.
+    StorageService().ensure_lifecycle_policy()
+
     yield
 
 
@@ -32,5 +37,6 @@ app.add_middleware(
 
 app.include_router(system.router)
 app.include_router(profile.router)
+app.include_router(imports.router)
 app.include_router(generation.router)
 app.include_router(template_router)

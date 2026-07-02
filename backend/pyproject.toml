@@ -24,6 +24,5 @@ dependencies = [
     "pypdfium2>=4",
     "Pillow>=10",
     "resend>=2.0.0",
-    "google-auth>=2.30.0",
     "requests>=2.32.0",
 ]

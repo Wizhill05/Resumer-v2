@@ -109,3 +109,40 @@ class StorageService:
         except Exception as e:
             logger.error("StorageService: Failed to delete %s: %s", key, e)
             return False
+
+    def ensure_lifecycle_policy(self) -> None:
+        """Idempotently apply a 90-day expiry rule to all objects in the bucket.
+
+        Safe to call on every container start — R2 (S3-compatible) will overwrite
+        the existing lifecycle config with the same rule, producing no visible change.
+        Skipped silently if R2 is not configured (local dev).
+        """
+        if not self.enabled or not self.s3_client:
+            logger.info("StorageService: R2 not configured — skipping lifecycle policy setup.")
+            return
+        try:
+            self.s3_client.put_bucket_lifecycle_configuration(
+                Bucket=settings.R2_BUCKET_NAME,
+                LifecycleConfiguration={
+                    "Rules": [
+                        {
+                            "ID": "expire-artifacts-90d",
+                            "Status": "Enabled",
+                            "Filter": {"Prefix": ""},  # applies to all objects
+                            "Expiration": {"Days": 90},
+                        }
+                    ]
+                },
+            )
+            logger.info(
+                "StorageService: R2 lifecycle policy set — objects in '%s' expire after 90 days.",
+                settings.R2_BUCKET_NAME,
+            )
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "Unknown")
+            logger.error(
+                "StorageService: ClientError setting lifecycle policy on '%s': [%s] %s",
+                settings.R2_BUCKET_NAME, error_code, e,
+            )
+        except Exception as e:
+            logger.error("StorageService: Failed to set lifecycle policy: %s", e)

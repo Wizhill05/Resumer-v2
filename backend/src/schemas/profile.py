@@ -1,7 +1,8 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # Profile
@@ -128,4 +129,47 @@ class ExtracurricularOut(ExtracurricularCreate):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# Imports
+class ImportWarning(BaseModel):
+    scope: str
+    message: str
+
+
+class DuplicateCandidate(BaseModel):
+    imported_index: int
+    imported_type: Literal["profile", "experience", "project", "education", "extracurricular", "skill"]
+    existing_id: str | None = None
+    existing_type: str
+    confidence: float
+    reason: str
+    suggested_action: Literal["merge", "skip", "create"]
+
+
+class ResumeImportDraft(BaseModel):
+    profile: ProfileUpdate = ProfileUpdate()
+    experiences: list[ExperienceCreate] = Field(default_factory=list)
+    projects: list[ProjectCreate] = Field(default_factory=list)
+    education: list[EducationCreate] = Field(default_factory=list)
+    extracurriculars: list[ExtracurricularCreate] = Field(default_factory=list)
+    duplicate_candidates: list[DuplicateCandidate] = Field(default_factory=list)
+    warnings: list[ImportWarning] = Field(default_factory=list)
+
+
+class GitHubProjectImportRequest(BaseModel):
+    url: str
+
+
+class GitHubProjectDraft(ProjectCreate):
+    duplicate_candidates: list[DuplicateCandidate] = Field(default_factory=list)
+    warnings: list[ImportWarning] = Field(default_factory=list)
+
+
+class ImportApplyRequest(BaseModel):
+    profile: ProfileUpdate | None = None
+    experiences: list[ExperienceCreate] = Field(default_factory=list)
+    projects: list[ProjectCreate] = Field(default_factory=list)
+    education: list[EducationCreate] = Field(default_factory=list)
+    extracurriculars: list[ExtracurricularCreate] = Field(default_factory=list)
 

@@ -13,7 +13,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
+from src.core.config import settings  # noqa: F401 (kept for other settings usage)
 from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
 from src.models.generation import Generation, GenerationLog
@@ -51,11 +51,16 @@ async def log_progress(
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
 
 
-def get_llm():
+def get_llm(api_key: str) -> ChatGoogleGenerativeAI:
+    """Create an LLM client for the given API key.
+
+    The key is selected once per pipeline run (round-robin from ApiKeyPool)
+    and threaded through state so all nodes in a run share the same key.
+    """
     return ChatGoogleGenerativeAI(
         model="gemma-4-31b-it",
         temperature=0.2,
-        google_api_key=settings.GOOGLE_API_KEY,
+        google_api_key=api_key,
     )
 
 
@@ -69,7 +74,7 @@ async def job_analysis_node(
         db, gen_id, "job_analysis", "Starting job description analysis..."
     )
 
-    llm = get_llm()
+    llm = get_llm(state["api_key"])
     structured_llm = llm.with_structured_output(JobAnalysis)
 
     prompt = ChatPromptTemplate.from_messages(
@@ -122,7 +127,7 @@ async def selection_node(
     max_exp = content_split.get("experience", 2)
     max_proj = content_split.get("projects", 2)
 
-    llm = get_llm()
+    llm = get_llm(state["api_key"])
     structured_llm = llm.with_structured_output(SelectedItems)
 
     exp_list_str = []
@@ -244,7 +249,7 @@ async def summary_skills_node(
         "Generating tailored summary & categorizing skills...",
     )
 
-    llm = get_llm()
+    llm = get_llm(state["api_key"])
     structured_llm = llm.with_structured_output(TailoredSummaryAndSkills)
 
     prompt = ChatPromptTemplate.from_messages(
@@ -303,7 +308,7 @@ async def experience_node(
         await log_progress(db, gen_id, "experience_writer", "No experiences to tailor.")
         return {"experience_draft": []}
 
-    llm = get_llm()
+    llm = get_llm(state["api_key"])
     max_exp = state.get("content_split", {}).get("experience", 2)
     max_bullets = state["template_manifest"].get("max_bullets_per_experience", 4)
     job_analysis = str(state["job_analysis"])
@@ -374,7 +379,7 @@ async def project_node(
         await log_progress(db, gen_id, "projects_writer", "No projects to tailor.")
         return {"projects_draft": []}
 
-    llm = get_llm()
+    llm = get_llm(state["api_key"])
     max_proj = state.get("content_split", {}).get("projects", 2)
     max_bullets = state["template_manifest"].get("max_bullets_per_project", 3)
     job_analysis = str(state["job_analysis"])
@@ -1127,7 +1132,7 @@ async def orphan_repair_node(
         "Respond with ONLY the JSON object shown above. Nothing else."
     )
 
-    llm = get_llm()
+    llm = get_llm(state["api_key"])
     raw_response = ""
     try:
         from langchain_core.messages import SystemMessage, HumanMessage

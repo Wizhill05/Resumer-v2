@@ -74,13 +74,13 @@ export function DashboardClient() {
           <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile needed</p>
-              <h2 className="text-xl font-extrabold uppercase tracking-tight">Add source material first</h2>
+              <h2 className="text-xl font-extrabold uppercase tracking-tight">Import source material first</h2>
               <p className="mt-1 text-sm font-semibold leading-relaxed text-zinc-600">
-                Missing: {missing.join(", ")}. Add at least one entry in each section so generator has material.
+                Missing: {missing.join(", ")}. Upload old resumes or paste GitHub project links to fill this faster.
               </p>
             </div>
-            <Link href="/profile" className="w-full md:w-auto">
-              <Button size="lg" className="w-full md:w-auto">Complete Profile</Button>
+            <Link href="/onboarding" className="w-full md:w-auto">
+              <Button size="lg" className="w-full md:w-auto">Finish Onboarding</Button>
             </Link>
           </div>
         </section>

@@ -17,6 +17,9 @@ class ResumeGraphState(TypedDict):
     # Enforced by backend before AI runs; drives exact limits in every pipeline node.
     content_split: dict
 
+    # API key selected for this run (round-robin from key_pool; shared by all nodes)
+    api_key: str
+
     # Outputs
     job_analysis: Optional[dict]
     summary_draft: Optional[dict]

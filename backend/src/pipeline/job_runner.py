@@ -1,9 +1,9 @@
-"""Cloud Run Job entrypoint + local in-process runner.
+"""Pipeline runner.
 
 Runs a single generation to completion: loads state from DB, invokes the
 LangGraph pipeline, persists artifact keys + metadata, and fires the
-completion email. Independent of any HTTP request — survives the user
-walking away from the page (Cloud Run Job allocates CPU for the full run).
+completion email. Runs as a detached asyncio task on Railway — the service
+process stays alive so the task completes even if the user navigates away.
 """
 import asyncio
 import uuid
@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.api_key_pool import key_pool
 from src.core.database import AsyncSessionLocal
 from src.core.notify import send_completion_email
 from src.models.generation import Generation
@@ -29,7 +30,7 @@ from src.pipeline.state import ResumeGraphState
 from src.template_registry.service import TemplateRegistryService
 
 
-async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphState | None:
+async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -> ResumeGraphState | None:
     profile_res = await db.execute(select(Profile).where(Profile.user_id == gen.user_id))
     profile = profile_res.scalar_one_or_none()
     if not profile:
@@ -107,6 +108,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
 
     return ResumeGraphState(
         user_id=str(gen.user_id),
+        api_key=api_key,
         profile={
             "full_name": profile.full_name,
             "email": profile.email,
@@ -174,7 +176,10 @@ async def run_generation(gen_id: str) -> None:
         gen.status = "in_progress"
         await db.commit()
 
-        initial_state = await _load_initial_state(db, gen)
+        # Select API key once for the entire run (round-robin across key pool).
+        api_key = key_pool.next()
+
+        initial_state = await _load_initial_state(db, gen, api_key)
         if initial_state is None:
             async with AsyncSessionLocal() as fail_db:
                 g = await fail_db.get(Generation, gen_uuid)
@@ -232,7 +237,7 @@ async def run_generation(gen_id: str) -> None:
 
 
 def main() -> None:
-    """Container entrypoint for the Cloud Run Job. Reads GEN_ID from env."""
+    """Entrypoint for running a generation directly (e.g. for debugging). Reads GEN_ID from env."""
     import asyncio
     import os
 

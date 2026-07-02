@@ -6,6 +6,7 @@ import { ExperienceForm } from "@/components/profile/ExperienceForm"
 import { ProjectForm } from "@/components/profile/ProjectForm"
 import { EducationForm } from "@/components/profile/EducationForm"
 import { ExtracurricularForm } from "@/components/profile/ExtracurricularForm"
+import { ResumeImportPanel } from "@/components/profile/ResumeImportPanel"
 import { User, Briefcase, FolderGit2, GraduationCap, Award } from "lucide-react"
 
 type Section = "basic" | "experience" | "projects" | "education" | "extracurricular"
@@ -46,6 +47,11 @@ export function ProfileClient() {
       </div>
 
       <div className="panel p-4 md:p-5">
+        {activeSection !== "projects" && (
+          <div className="mb-4">
+            <ResumeImportPanel />
+          </div>
+        )}
         {activeSection === "basic" && <BasicInfoForm />}
         {activeSection === "experience" && <ExperienceForm />}
         {activeSection === "projects" && <ProjectForm />}

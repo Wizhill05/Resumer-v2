@@ -168,7 +168,7 @@ async def start_generation(
     await db.commit()
     await db.refresh(gen)
 
-    # Trigger the Cloud Run Job (prod) or in-process task (dev). If the trigger
+    # Trigger the pipeline (in-process asyncio task on Railway). If the trigger
     # itself fails, surface a 502 and mark the run failed so it isn't stuck pending.
     try:
         await trigger_pipeline(str(gen.id))
