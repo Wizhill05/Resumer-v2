@@ -191,6 +191,11 @@ export function GenerateClient() {
 
       {step === "input" && (
         <form onSubmit={handleGenerate} className="space-y-4 md:space-y-5">
+          <div className="panel-strong flex flex-col gap-2 bg-[#ff4e26] p-4 text-white md:flex-row md:items-center md:justify-between">
+            <p className="text-sm font-black uppercase tracking-wide">Free beta limit: 5 generations per person per day.</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-white/80">Resets after 24 hours.</p>
+          </div>
+
           <section className="panel p-4 md:p-5">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>

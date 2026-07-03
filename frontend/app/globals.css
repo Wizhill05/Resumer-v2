@@ -157,6 +157,77 @@
     box-shadow: 0 26px 70px #0000001c, 5px 5px 0 #18181b;
   }
 
+  .landing-ui-card {
+    border: 1px solid #18181b;
+    background: #fffffff2;
+    box-shadow: 0 22px 70px #00000014, 3px 3px 0 #18181b;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+
+  .landing-ui-card:hover {
+    transform: translateY(-4px);
+    border-color: #ff4e26;
+    box-shadow: 0 30px 80px #0000001f, 5px 5px 0 #18181b;
+  }
+
+  .landing-noise {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.38;
+    background-image: radial-gradient(#00000012 0.7px, transparent 0.7px);
+    background-size: 6px 6px;
+    mix-blend-mode: multiply;
+  }
+
+  .landing-glow {
+    position: absolute;
+    width: 28rem;
+    height: 28rem;
+    border-radius: 9999px;
+    filter: blur(72px);
+    pointer-events: none;
+  }
+
+  .landing-rise,
+  .landing-rise-delay,
+  .landing-reveal,
+  .landing-signal-tile {
+    animation: landing-rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .landing-rise-delay {
+    animation-delay: 140ms;
+  }
+
+  .landing-reveal,
+  .landing-signal-tile {
+    animation-timeline: view();
+    animation-range: entry 0% cover 28%;
+  }
+
+  .landing-meter {
+    animation: landing-meter 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    transform-origin: left;
+  }
+
+  .landing-marquee {
+    width: max-content;
+    animation: landing-marquee 26s linear infinite;
+  }
+
+  .landing-stack-card {
+    position: sticky;
+    transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+  }
+
+  .landing-stack-card:hover {
+    transform: translateY(-6px);
+    border-color: #ff4e26;
+    background-color: #ffffff12;
+  }
+
   .login-highlight button {
     min-height: 3rem;
     padding-inline: 1.25rem;
@@ -174,6 +245,55 @@
       animation: landing-float 7s ease-in-out infinite;
     }
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .landing-rise,
+    .landing-rise-delay,
+    .landing-reveal,
+    .landing-signal-tile,
+    .landing-meter,
+    .landing-marquee,
+    .landing-float {
+      animation: none;
+    }
+  }
+
+  @media (max-width: 767px) {
+    .landing-noise {
+      opacity: 0.22;
+    }
+
+    .landing-glow {
+      width: 18rem;
+      height: 18rem;
+    }
+
+    .landing-stack-card {
+      position: relative;
+      top: auto !important;
+    }
+  }
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes landing-meter {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes landing-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
 }
 
 @keyframes landing-float {

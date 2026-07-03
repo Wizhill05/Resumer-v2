@@ -20,7 +20,7 @@ from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/generate", tags=["generation"])
 
-MAX_DAILY_RUNS = 50
+MAX_DAILY_RUNS = 5
 STUCK_TIMEOUT_MINUTES = 15
 
 
