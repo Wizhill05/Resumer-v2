@@ -228,7 +228,7 @@
     background-color: #ffffff12;
   }
 
-  .login-highlight button {
+  .login-highlight > button {
     min-height: 3rem;
     padding-inline: 1.25rem;
     font-size: 0.95rem;
@@ -236,7 +236,7 @@
     box-shadow: 0 0 0 6px #ff4e2618, 3px 3px 0 #18181b;
   }
 
-  .login-highlight button:hover {
+  .login-highlight > button:hover {
     box-shadow: 0 0 0 8px #ff4e2624, 5px 5px 0 #18181b;
   }
 

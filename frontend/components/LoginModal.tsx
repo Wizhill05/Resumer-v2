@@ -1,12 +1,18 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { createPortal } from "react-dom"
 import { signInGithub, signInGoogle } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
 
 export function LoginModal() {
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Close on Escape key
   useEffect(() => {
@@ -34,7 +40,7 @@ export function LoginModal() {
         Login
       </Button>
 
-      {open && (
+      {open && mounted && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
           role="dialog"
@@ -48,7 +54,7 @@ export function LoginModal() {
           />
 
           {/* Modal */}
-          <div className="relative bg-white border-3 border-black shadow-[6px_6px_0px_#000000] w-full max-w-sm p-8 z-10">
+          <div className="relative z-10 w-full max-w-lg border-3 border-black bg-white p-6 shadow-[8px_8px_0px_#000000] sm:p-8 md:p-10">
             {/* Close */}
             <button
               onClick={() => setOpen(false)}
@@ -61,12 +67,12 @@ export function LoginModal() {
             {/* Header */}
             <div className="mb-8">
               <div className="resumer-mark px-3 py-1 text-lg font-black mb-4">
-                <span className="text-lg font-extrabold uppercase tracking-tight">Resumer</span>
+                <span className="text-xl font-extrabold uppercase tracking-tight">Resumer</span>
               </div>
-              <h2 className="text-2xl font-extrabold uppercase tracking-tight leading-tight">
+              <h2 className="text-3xl font-extrabold uppercase leading-tight tracking-[-0.03em] md:text-4xl">
                 Sign in to continue
               </h2>
-              <p className="text-sm text-zinc-500 font-medium mt-1">
+              <p className="mt-2 text-base font-semibold text-zinc-500">
                 Choose a provider to get started
               </p>
             </div>
@@ -76,7 +82,7 @@ export function LoginModal() {
               <form action={signInGithub}>
                 <button
                   type="submit"
-                  className="w-full flex items-center gap-3 px-4 py-3 border-2 border-black bg-white font-bold text-sm hover:bg-zinc-50 active:bg-zinc-100 transition-colors text-left"
+                  className="flex min-h-14 w-full items-center gap-3 border-2 border-black bg-white px-5 py-4 text-left text-base font-bold transition-colors hover:bg-zinc-50 active:bg-zinc-100"
                 >
                   {/* GitHub icon */}
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -89,7 +95,7 @@ export function LoginModal() {
               <form action={signInGoogle}>
                 <button
                   type="submit"
-                  className="w-full flex items-center gap-3 px-4 py-3 border-2 border-black bg-white font-bold text-sm hover:bg-zinc-50 active:bg-zinc-100 transition-colors text-left"
+                  className="flex min-h-14 w-full items-center gap-3 border-2 border-black bg-white px-5 py-4 text-left text-base font-bold transition-colors hover:bg-zinc-50 active:bg-zinc-100"
                 >
                   {/* Google icon */}
                   <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
@@ -103,11 +109,12 @@ export function LoginModal() {
               </form>
             </div>
 
-            <p className="text-xs text-zinc-400 text-center mt-6">
-              Free to use — no credit card required
+            <p className="mt-6 text-center text-sm font-semibold text-zinc-400">
+              Free beta. 5 generations per day.
             </p>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )

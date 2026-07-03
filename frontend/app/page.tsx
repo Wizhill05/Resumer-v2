@@ -3,44 +3,44 @@ import { redirect } from "next/navigation";
 import { LoginModal } from "@/components/LoginModal";
 import { Footer } from "@/components/Footer";
 
-const outcomes = ["Job", "Focus", "Resume", "PDF"];
+const outcomes = ["Brief", "Evidence", "Tone", "Export"];
 
 const proof = [
-  "job-focused",
-  "quality",
-  "on the fly",
-  "free for now",
-  "self-hostable",
-  "5/day",
+  "paste role",
+  "reuse proof",
+  "cut filler",
+  "ship PDF",
+  "fork anytime",
+  "daily cap",
 ];
 
 const steps = [
-  { title: "Paste job", text: "Drop in role text." },
-  { title: "Pick focus", text: "Project, balanced, experience." },
-  { title: "Get PDF", text: "Tailored resume, saved." },
+  { title: "Throw in JD", text: "Messy posting goes in." },
+  { title: "Choose angle", text: "Projects, work, or balanced." },
+  { title: "Take the file", text: "PDF lands in history." },
 ];
 
 const signals = [
-  "Role fit",
-  "ATS shape",
-  "Proof",
-  "Page fit",
-  "Keywords",
-  "History",
+  "Hiring clues",
+  "Plain sections",
+  "Receipts",
+  "One-page pressure",
+  "Keyword pull",
+  "Run archive",
 ];
 
 const stackCards = [
   {
     number: "01",
-    title: "Free",
-    text: "Free for now because nobody is using it.",
+    title: "Tiny crowd",
+    text: "No pricing page yet. Usage is still quiet.",
   },
   {
     number: "02",
-    title: "Private",
-    text: "Do not trust hosted? Run your own.",
+    title: "Exit hatch",
+    text: "Clone it if hosted resume data feels cursed.",
   },
-  { number: "03", title: "Open", text: "Source lives on GitHub." },
+  { number: "03", title: "Own stack", text: "Keys, database, templates, pipeline: yours." },
 ];
 
 export default async function Home() {
@@ -60,13 +60,13 @@ export default async function Home() {
           </span>
           <div className="hidden items-center gap-6 text-xs font-black uppercase tracking-[0.22em] text-zinc-500 md:flex">
             <a href="#flow" className="transition hover:text-zinc-950">
-              Generate
+              Make
             </a>
             <a href="#trust" className="transition hover:text-zinc-950">
-              Self-host
+              Fork
             </a>
             <a href="#launch" className="transition hover:text-zinc-950">
-              Start
+              Login
             </a>
           </div>
           <LoginModal />
@@ -87,7 +87,7 @@ export default async function Home() {
           <p className="mb-5 inline-flex border border-zinc-950 bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.28em] shadow-[2px_2px_0_#18181b]">
             resumer.aryansingh.space
           </p>
-          <h1 className="max-w-4xl text-4xl font-black uppercase  text-zinc-950 sm:text-5xl lg:text-7xl">
+          <h1 className="max-w-4xl text-4xl font-black uppercase text-zinc-950 sm:text-5xl lg:text-7xl">
             Quality job-focused resumes on the fly.
           </h1>
           <div className="login-highlight mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -102,8 +102,8 @@ export default async function Home() {
           <div className="landing-orb landing-float absolute right-2 top-2 h-72 w-72 rounded-full md:right-10 md:h-[28rem] md:w-[28rem]" />
           <div className="landing-ui-card absolute left-0 top-10 w-[88%] max-w-[31rem] rotate-[-3deg] p-5 md:left-8 md:top-16">
             <div className="mb-8 flex items-center justify-between text-xs font-black uppercase tracking-[0.24em] text-zinc-400">
-              <span>Job post</span>
-              <span className="text-[#ff4e26]">Pasted</span>
+              <span>Brief</span>
+              <span className="text-[#ff4e26]">Parsed</span>
             </div>
             <div className="grid gap-3">
               <div className="h-4 w-4/5 rounded-full bg-zinc-950" />
@@ -124,8 +124,8 @@ export default async function Home() {
 
           <div className="landing-ui-card absolute bottom-16 right-0 w-[88%] max-w-[34rem] rotate-[2deg] bg-zinc-950 p-5 text-white md:bottom-24">
             <div className="mb-5 flex items-center justify-between text-xs font-black uppercase tracking-[0.26em] text-[#ff4e26]">
-              <span>Resume run</span>
-              <span>Live</span>
+              <span>Rewrite lab</span>
+              <span>Hot</span>
             </div>
             <div className="space-y-3">
               {signals.slice(0, 4).map((signal, index) => (
@@ -144,7 +144,7 @@ export default async function Home() {
               ))}
             </div>
             <p className="mt-8 text-4xl font-black uppercase leading-[0.92] tracking-[-0.045em] md:text-6xl">
-              Draft. Render. Download.
+              Less blank-page panic.
             </p>
           </div>
         </div>
@@ -170,7 +170,7 @@ export default async function Home() {
       >
         <div className="grid gap-8 md:grid-cols-[0.85fr_1.15fr] md:items-start">
           <h2 className="max-w-2xl text-5xl font-black uppercase leading-[0.94] tracking-[-0.045em] md:text-7xl">
-            Generate quality without résumé theater.
+            Less ceremony. More usable output.
           </h2>
           <div className="grid gap-4 md:grid-cols-3">
             {steps.map((step, index) => (
@@ -209,7 +209,7 @@ export default async function Home() {
                     style={{ animationDelay: `${index * 90}ms` }}
                   >
                     <span className="text-xs font-black uppercase tracking-[0.24em] text-[#ff4e26]">
-                      Signal
+                      Check
                     </span>
                     <p className="mt-8 text-2xl font-black uppercase leading-[0.95] tracking-[-0.025em]">
                       {signal}
@@ -218,7 +218,7 @@ export default async function Home() {
                 ))}
               </div>
               <h2 className="mt-16 max-w-3xl text-5xl font-black uppercase leading-[0.92] tracking-[-0.045em] md:text-8xl">
-                Focused for each job.
+                It reads the posting before writing.
               </h2>
             </div>
           </div>
@@ -228,16 +228,16 @@ export default async function Home() {
                 5/day
               </p>
               <p className="mt-4 max-w-xs text-sm font-black uppercase leading-6 tracking-[0.14em] text-white/80">
-                Limit per person while it is free.
+                Enough to apply. Not enough to melt my wallet.
               </p>
             </div>
             <div className="landing-ui-card p-6">
               <div className="flex items-center justify-between border-b border-zinc-200 pb-4 text-xs font-black uppercase tracking-[0.24em] text-zinc-400">
-                <span>Runs</span>
-                <span>Saved</span>
+                <span>Recent</span>
+                <span>PDF</span>
               </div>
               <div className="mt-6 space-y-3">
-                {["Frontend role", "AI role", "Internship"].map((role) => (
+                {["Campus recruiter", "Backend sprint", "Stealth startup"].map((role) => (
                   <div
                     key={role}
                     className="flex items-center justify-between border border-zinc-200 bg-zinc-50 p-3 text-sm font-black"
@@ -292,10 +292,10 @@ export default async function Home() {
           />
           <div className="relative max-w-4xl">
             <h2 className="text-6xl font-black uppercase leading-[0.9] tracking-[-0.055em] md:text-9xl">
-              Do not trust me with your data?
+              Your data, your call.
             </h2>
             <p className="mt-7 max-w-lg text-lg font-bold leading-relaxed tracking-[-0.01em] text-zinc-600">
-              Host it yourself. Code is public.
+              Use hosted for speed. Fork when trust matters.
             </p>
             <div className="login-highlight mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
               <LoginModal />
