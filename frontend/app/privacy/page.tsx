@@ -13,6 +13,9 @@ export default function PrivacyPage() {
           <div className="mt-8 space-y-5 text-sm font-semibold leading-relaxed text-zinc-600">
             <p>Resumer stores account, profile, job description, generation history, and resume output data needed to provide resume generation features.</p>
             <p>We use this data to authenticate you, build resumes, show past generations, and improve reliability. We do not sell personal data.</p>
+            <p>No-login trial uses essential cookies to keep an anonymous guest session, enforce the 5-resume daily limit, and protect access to guest downloads. These cookies do not store your full resume content.</p>
+            <p>Guest draft details imported or typed in the trial are stored in your browser device storage. They are sent to the server only when you import resumes for parsing or generate a resume.</p>
+            <p>Guest generation inputs and artifacts may be stored temporarily so the pipeline can finish and you can download the PDF. Guest artifacts are intended to expire and are not account history.</p>
             <p>OAuth providers may share basic account details such as name, email, and avatar depending on provider settings.</p>
             <p>You can delete generated history inside app where supported. For account or data removal requests, contact project owner/admin.</p>
             <p>This policy may change as product changes. Continued use means updated policy applies.</p>

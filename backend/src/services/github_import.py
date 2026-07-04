@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.api_key_pool import key_pool
 from src.models.user import User
-from src.pipeline.nodes import get_llm
+from src.pipeline.nodes import create_structured_chain, get_llm
 from src.schemas.profile import GitHubProjectDraft, ResumeImportDraft
 from src.services.import_utils import unique_strings
 from src.services.resume_import import add_duplicates, load_existing_profile_data
@@ -71,7 +71,7 @@ def fetch_repo_context(owner: str, repo: str) -> dict:
 async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHubProjectDraft:
     owner, repo, canonical_url = parse_github_url(url)
     context = fetch_repo_context(owner, repo)
-    llm = get_llm(key_pool.next()).with_structured_output(GitHubProjectDraft)
+    llm = get_llm(key_pool.next())
     prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -85,7 +85,8 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             ),
         ]
     )
-    message = await prompt.ainvoke(
+    chain = create_structured_chain(llm, prompt, GitHubProjectDraft)
+    draft = await chain.ainvoke(
         {
             "url": canonical_url,
             "metadata": context["metadata"],
@@ -95,7 +96,6 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             "readme": context["readme"],
         }
     )
-    draft = await llm.ainvoke(message)
     draft.github_url = canonical_url
     draft.technologies = unique_strings(draft.technologies)
     draft.bullet_points = unique_strings(draft.bullet_points)

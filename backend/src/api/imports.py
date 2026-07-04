@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import asyncio
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,7 @@ from src.services.github_import import import_github_project
 from src.services.resume_import import (
     MAX_FILES,
     add_duplicates,
+    extract_all_drafts,
     extract_resume_draft,
     extract_upload_text,
     load_existing_profile_data,
@@ -58,14 +61,51 @@ def _education_exists(item, existing_education: list[UserEducation], seen: set[s
     return False
 
 
-@router.post("/resume", response_model=ResumeImportDraft)
-async def import_resume(
-    file: UploadFile = File(...),
+class ParsedTexts(BaseModel):
+    texts: list[str]
+    filenames: list[str]
+
+
+@router.post("/parse", response_model=ParsedTexts)
+async def parse_resumes(
+    files: list[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Stage 1: parse PDFs to raw text. Fast, no LLM."""
+    if len(files) > MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
+    texts = []
+    filenames = []
+    for file in files:
+        text = await extract_upload_text(file)
+        texts.append(text)
+        filenames.append(file.filename or "resume")
+    return ParsedTexts(texts=texts, filenames=filenames)
+
+
+@router.post("/extract", response_model=ResumeImportDraft)
+async def extract_resumes(
+    data: ParsedTexts,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    text = await extract_upload_text(file)
-    draft = await extract_resume_draft(text)
+    """Stage 2: run LLM extraction on pre-parsed texts (parallel), return merged draft."""
+    tasks = [extract_resume_draft(text, filename) for text, filename in zip(data.texts, data.filenames)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    drafts = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            print(f"[import/extract] skipping {data.filenames[i]}: {result}")
+            if len(data.texts) == 1:
+                raise result
+        else:
+            drafts.append(result)
+
+    if not drafts:
+        raise HTTPException(status_code=502, detail="Could not extract data from any of the uploaded resumes.")
+
+    draft = merge_drafts(drafts)
     return add_duplicates(draft, await load_existing_profile_data(db, current_user))
 
 
@@ -76,13 +116,8 @@ async def import_resumes(
     db: AsyncSession = Depends(get_db),
 ):
     if len(files) > MAX_FILES:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
-    drafts = []
-    for file in files:
-        text = await extract_upload_text(file)
-        drafts.append(await extract_resume_draft(text))
+    drafts = await extract_all_drafts(files)
     draft = merge_drafts(drafts)
     return add_duplicates(draft, await load_existing_profile_data(db, current_user))
 

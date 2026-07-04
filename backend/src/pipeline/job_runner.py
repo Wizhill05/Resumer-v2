@@ -30,7 +30,71 @@ from src.pipeline.state import ResumeGraphState
 from src.template_registry.service import TemplateRegistryService
 
 
+def _state_from_snapshot(gen: Generation, api_key: str, template_manifest) -> ResumeGraphState:
+    snapshot = gen.guest_input_snapshot or {}
+    profile = snapshot.get("profile") or {}
+    content_split = gen.content_split
+    if not content_split:
+        default = template_manifest.default_content_split
+        content_split = {"projects": default.projects, "experience": default.experience}
+
+    return ResumeGraphState(
+        user_id=str(gen.user_id),
+        api_key=api_key,
+        profile={
+            "full_name": profile.get("full_name"),
+            "email": profile.get("email"),
+            "phone": profile.get("phone"),
+            "location": profile.get("location"),
+            "linkedin_url": profile.get("linkedin_url"),
+            "github_url": profile.get("github_url"),
+            "portfolio_url": profile.get("portfolio_url"),
+            "subtitle": profile.get("subtitle"),
+            "summary": profile.get("summary"),
+            "skills": profile.get("skills") or [],
+        },
+        projects=snapshot.get("projects") or [],
+        experiences=snapshot.get("experiences") or [],
+        education=snapshot.get("education") or [],
+        extracurriculars=snapshot.get("extracurriculars") or [],
+        job_description=gen.job_description,
+        keywords=gen.keywords or [],
+        instructions=gen.instructions or "",
+        template_manifest=template_manifest.model_dump(),
+        content_split=content_split,
+        job_analysis=None,
+        summary_draft=None,
+        projects_draft=None,
+        experience_draft=None,
+        tailored_resume=None,
+        orphans=None,
+        pdf_bytes=None,
+        markdown=None,
+        page_count=0,
+        font_size=0.0,
+        pdf_storage_key=None,
+        md_storage_key=None,
+        thumb_storage_key=None,
+        repair_attempts=0,
+        render_attempts=0,
+        content_reduction_step=0,
+        errors=[],
+        logs=[],
+    )
+
+
 async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -> ResumeGraphState | None:
+    template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not template_manifest:
+        await log_progress(
+            None, str(gen.id), "system",
+            f"Template {gen.template_id} not found.", "error",
+        )
+        return None
+
+    if gen.is_guest and gen.guest_input_snapshot:
+        return _state_from_snapshot(gen, api_key, template_manifest)
+
     profile_res = await db.execute(select(Profile).where(Profile.user_id == gen.user_id))
     profile = profile_res.scalar_one_or_none()
     if not profile:
@@ -90,14 +154,6 @@ async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -
         end_date=ex.end_date.isoformat() if ex.end_date else None,
         bullet_points=ex.bullet_points or [],
     ) for ex in extra_res.scalars().all()]
-
-    template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
-    if not template_manifest:
-        await log_progress(
-            None, str(gen.id), "system",
-            f"Template {gen.template_id} not found.", "error",
-        )
-        return None
 
     # Resolve content split: prefer stored value, fall back to template default.
     if gen.content_split:
@@ -161,41 +217,42 @@ async def _fetch_user_email(user_id) -> str | None:
 async def run_generation(gen_id: str) -> None:
     """Execute one generation to completion. Safe to call from a Job or in-process."""
     gen_uuid = uuid.UUID(gen_id)
+    user_email: str | None = None
 
-    # 1. Fetch + claim the generation. Skip if already terminal.
-    async with AsyncSessionLocal() as db:
-        gen_res = await db.execute(select(Generation).where(Generation.id == gen_uuid))
-        gen = gen_res.scalar_one_or_none()
-        if not gen:
-            print(f"[job_runner] generation {gen_id} not found")
-            return
-        if gen.status in ("completed", "failed"):
-            print(f"[job_runner] generation {gen_id} already {gen.status}; skipping")
-            return
-
-        gen.status = "in_progress"
-        await db.commit()
-
-        # Select API key once for the entire run (round-robin across key pool).
-        api_key = key_pool.next()
-
-        initial_state = await _load_initial_state(db, gen, api_key)
-        if initial_state is None:
-            async with AsyncSessionLocal() as fail_db:
-                g = await fail_db.get(Generation, gen_uuid)
-                if g:
-                    g.status = "failed"
-                    g.error_message = "Profile not found; complete onboarding first."
-                    await fail_db.commit()
-                    email = await _fetch_user_email(gen.user_id)
-                    send_completion_email(email, g)
-            return
-
-        # The generations row has no email; fetch the user's email for notifications.
-        user_email = await _fetch_user_email(gen.user_id)
-
-    # 2. Run the graph in its own session.
     try:
+        # 1. Fetch + claim the generation. Skip if already terminal.
+        async with AsyncSessionLocal() as db:
+            gen_res = await db.execute(select(Generation).where(Generation.id == gen_uuid))
+            gen = gen_res.scalar_one_or_none()
+            if not gen:
+                print(f"[job_runner] generation {gen_id} not found")
+                return
+            if gen.status in ("completed", "failed"):
+                print(f"[job_runner] generation {gen_id} already {gen.status}; skipping")
+                return
+
+            gen.status = "in_progress"
+            await db.commit()
+
+            # Select API key once for the entire run (round-robin across key pool).
+            api_key = key_pool.next()
+
+            initial_state = await _load_initial_state(db, gen, api_key)
+            if initial_state is None:
+                async with AsyncSessionLocal() as fail_db:
+                    g = await fail_db.get(Generation, gen_uuid)
+                    if g:
+                        g.status = "failed"
+                        g.error_message = "Profile not found; complete onboarding first."
+                        await fail_db.commit()
+                        email = await _fetch_user_email(gen.user_id)
+                        send_completion_email(email, g)
+                return
+
+            # The generations row has no email; fetch the user's email for notifications.
+            user_email = await _fetch_user_email(gen.user_id)
+
+        # 2. Run the graph in its own session.
         async with AsyncSessionLocal() as pipeline_db:
             graph = compile_graph()
             result = await graph.ainvoke(
@@ -223,15 +280,20 @@ async def run_generation(gen_id: str) -> None:
                 }
                 await update_db.commit()
                 send_completion_email(user_email, g, result.get("pdf_bytes"))
+
     except Exception as e:
-        # 3b. Persist terminal failure.
-        async with AsyncSessionLocal() as fail_db:
-            g = await fail_db.get(Generation, gen_uuid)
-            if g:
-                g.status = "failed"
-                g.error_message = str(e)
-                await fail_db.commit()
-                send_completion_email(user_email, g)
+        # Persist terminal failure — covers both claim-phase and graph-phase errors.
+        print(f"[job_runner] generation {gen_id} failed: {e!r}")
+        try:
+            async with AsyncSessionLocal() as fail_db:
+                g = await fail_db.get(Generation, gen_uuid)
+                if g:
+                    g.status = "failed"
+                    g.error_message = str(e)
+                    await fail_db.commit()
+                    send_completion_email(user_email, g)
+        except Exception as inner:
+            print(f"[job_runner] could not persist failure for {gen_id}: {inner!r}")
         await log_progress(None, gen_id, "system", f"Pipeline error: {e}", "error")
         raise
 

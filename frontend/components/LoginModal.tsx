@@ -6,13 +6,8 @@ import { signInGithub, signInGoogle } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
 
-export function LoginModal() {
+export function LoginModal({ triggerClassName }: { triggerClassName?: string }) {
   const [open, setOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   // Close on Escape key
   useEffect(() => {
@@ -35,12 +30,12 @@ export function LoginModal() {
         variant="default"
         size="sm"
         onClick={() => setOpen(true)}
-        className="shadow-[3px_3px_0_#18181b] ring-2 ring-[#ff4e26]/20 hover:ring-[#ff4e26]/35"
+        className={triggerClassName ?? "shadow-[3px_3px_0_#18181b] ring-2 ring-[#ff4e26]/20 hover:ring-[#ff4e26]/35"}
       >
         Login
       </Button>
 
-      {open && mounted && createPortal(
+      {open && typeof document !== "undefined" && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
           role="dialog"

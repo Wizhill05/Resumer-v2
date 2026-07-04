@@ -19,8 +19,8 @@ class ApiKeyPool:
         cleaned = [k.strip() for k in keys if k.strip()]
         if not cleaned:
             raise RuntimeError(
-                "No Google API keys configured. "
-                "Set GOOGLE_API_KEYS=key1,key2,... in your environment."
+                "No Groq API keys configured. "
+                "Set GROQ_API_KEYS=key1,key2,... in your environment."
             )
         self._keys = cleaned
         self._cycle = itertools.cycle(cleaned)
@@ -34,4 +34,5 @@ class ApiKeyPool:
 
 
 # Module-level singleton — initialised once at import time.
-key_pool = ApiKeyPool(settings.google_api_keys)
+# Prefer GROQ_API_KEYS; falls back to GOOGLE_API_KEYS for backward compat.
+key_pool = ApiKeyPool(settings.groq_api_keys if settings.groq_api_keys else settings.google_api_keys)

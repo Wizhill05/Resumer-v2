@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import io
 import json
 import math
@@ -9,7 +10,7 @@ from typing import Any
 
 from jinja2 import Template
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,17 +52,58 @@ async def log_progress(
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
 
 
-def get_llm(api_key: str) -> ChatGoogleGenerativeAI:
+def get_llm(api_key: str) -> ChatGroq:
     """Create an LLM client for the given API key.
 
     The key is selected once per pipeline run (round-robin from ApiKeyPool)
     and threaded through state so all nodes in a run share the same key.
     """
-    return ChatGoogleGenerativeAI(
-        model="gemma-4-31b-it",
+    return ChatGroq(
+        model="qwen/qwen3.6-27b",
         temperature=0.2,
-        google_api_key=api_key,
+        groq_api_key=api_key,
+        max_tokens=2048,
     )
+
+
+def create_structured_chain(llm, prompt: ChatPromptTemplate, schema_class):
+    model_name = getattr(llm, "model", getattr(llm, "model_name", ""))
+    if "qwen" in model_name.lower():
+        import json
+        from langchain_core.prompts import SystemMessagePromptTemplate
+        
+        schema_json = json.dumps(schema_class.model_json_schema(), indent=2)
+        new_messages = []
+        system_updated = False
+        
+        instructions = (
+            "\n\nYou MUST respond ONLY with a valid JSON object. "
+            "Do not wrap it in markdown backticks or any conversational text. "
+            "The JSON object must strictly conform to this JSON schema:\n" + schema_json
+        )
+        
+        for msg in prompt.messages:
+            if hasattr(msg, "prompt") and isinstance(msg, SystemMessagePromptTemplate):
+                template_text = msg.prompt.template
+                escaped_instructions = instructions.replace("{", "{{").replace("}", "}}")
+                msg.prompt.template = template_text + escaped_instructions
+                system_updated = True
+            elif hasattr(msg, "content") and getattr(msg, "type", "") == "system":
+                escaped_instructions = instructions.replace("{", "{{").replace("}", "}}")
+                msg.content = msg.content + escaped_instructions
+                system_updated = True
+            new_messages.append(msg)
+            
+        if not system_updated:
+            escaped_instructions = instructions.replace("{", "{{").replace("}", "}}")
+            new_messages.insert(0, SystemMessagePromptTemplate.from_template(
+                "You must output JSON matching the schema." + escaped_instructions
+            ))
+            prompt.messages = new_messages
+            
+        return prompt | llm.with_structured_output(schema_class, method="json_mode")
+    else:
+        return prompt | llm.with_structured_output(schema_class)
 
 
 # ── Graph Nodes ───────────────────────────────────────────────────────────────
@@ -75,7 +117,6 @@ async def job_analysis_node(
     )
 
     llm = get_llm(state["api_key"])
-    structured_llm = llm.with_structured_output(JobAnalysis)
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -90,13 +131,16 @@ async def job_analysis_node(
         ]
     )
 
-    chain = prompt | structured_llm
-    result = await chain.ainvoke(
-        {
-            "job_desc": state["job_description"],
-            "keywords": ", ".join(state["keywords"]) if state["keywords"] else "None",
-            "instructions": state["instructions"] or "None",
-        }
+    chain = create_structured_chain(llm, prompt, JobAnalysis)
+    result = await asyncio.wait_for(
+        chain.ainvoke(
+            {
+                "job_desc": state["job_description"],
+                "keywords": ", ".join(state["keywords"]) if state["keywords"] else "None",
+                "instructions": state["instructions"] or "None",
+            }
+        ),
+        timeout=120.0,
     )
 
     await log_progress(
@@ -128,7 +172,6 @@ async def selection_node(
     max_proj = content_split.get("projects", 2)
 
     llm = get_llm(state["api_key"])
-    structured_llm = llm.with_structured_output(SelectedItems)
 
     exp_list_str = []
     for idx, exp in enumerate(experiences):
@@ -176,15 +219,18 @@ async def selection_node(
     requirements = ", ".join(job_analysis.get("key_requirements") or [])
     skills = ", ".join(job_analysis.get("extracted_skills") or [])
 
-    chain = prompt | structured_llm
-    result = await chain.ainvoke(
-        {
-            "job_title": job_analysis.get("job_title") or "Target Role",
-            "requirements": requirements,
-            "skills": skills,
-            "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
-            "projects": "\n".join(proj_list_str) if proj_list_str else "None",
-        }
+    chain = create_structured_chain(llm, prompt, SelectedItems)
+    result = await asyncio.wait_for(
+        chain.ainvoke(
+            {
+                "job_title": job_analysis.get("job_title") or "Target Role",
+                "requirements": requirements,
+                "skills": skills,
+                "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
+                "projects": "\n".join(proj_list_str) if proj_list_str else "None",
+            }
+        ),
+        timeout=120.0,
     )
 
     # ── Backend enforcement: clamp to exact split limits, dedup, fill gaps ────
@@ -250,7 +296,6 @@ async def summary_skills_node(
     )
 
     llm = get_llm(state["api_key"])
-    structured_llm = llm.with_structured_output(TailoredSummaryAndSkills)
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -278,13 +323,16 @@ async def summary_skills_node(
         ]
     )
 
-    chain = prompt | structured_llm
-    result = await chain.ainvoke(
-        {
-            "job_analysis": str(state["job_analysis"]),
-            "candidate_skills": ", ".join(state["profile"].get("skills") or []),
-            "candidate_summary": state["profile"].get("summary") or "",
-        }
+    chain = create_structured_chain(llm, prompt, TailoredSummaryAndSkills)
+    result = await asyncio.wait_for(
+        chain.ainvoke(
+            {
+                "job_analysis": str(state["job_analysis"]),
+                "candidate_skills": ", ".join(state["profile"].get("skills") or []),
+                "candidate_summary": state["profile"].get("summary") or "",
+            }
+        ),
+        timeout=120.0,
     )
 
     await log_progress(
@@ -330,8 +378,7 @@ async def experience_node(
             ),
         ]
     )
-    structured_llm = llm.with_structured_output(TailoredExperience)
-    chain = prompt | structured_llm
+    chain = create_structured_chain(llm, prompt, TailoredExperience)
 
     async def tailor_one(exp):
         await log_progress(
@@ -340,13 +387,16 @@ async def experience_node(
             "experience_writer",
             f"Tailoring role: {exp['role']} at {exp['organization']}",
         )
-        result = await chain.ainvoke(
-            {
-                "job_analysis": job_analysis,
-                "role": exp["role"],
-                "org": exp["organization"],
-                "bullets": "\n".join(exp.get("bullet_points") or []),
-            }
+        result = await asyncio.wait_for(
+            chain.ainvoke(
+                {
+                    "job_analysis": job_analysis,
+                    "role": exp["role"],
+                    "org": exp["organization"],
+                    "bullets": "\n".join(exp.get("bullet_points") or []),
+                }
+            ),
+            timeout=120.0,
         )
         return {
             "role": result.role,
@@ -401,21 +451,23 @@ async def project_node(
             ),
         ]
     )
-    structured_llm = llm.with_structured_output(TailoredProject)
-    chain = prompt | structured_llm
+    chain = create_structured_chain(llm, prompt, TailoredProject)
 
     async def tailor_one(proj):
         await log_progress(
             db, gen_id, "projects_writer", f"Tailoring project: {proj['name']}"
         )
-        result = await chain.ainvoke(
-            {
-                "job_analysis": job_analysis,
-                "name": proj["name"],
-                "desc": proj.get("description") or "",
-                "techs": ", ".join(proj.get("technologies") or []),
-                "bullets": "\n".join(proj.get("bullet_points") or []),
-            }
+        result = await asyncio.wait_for(
+            chain.ainvoke(
+                {
+                    "job_analysis": job_analysis,
+                    "name": proj["name"],
+                    "desc": proj.get("description") or "",
+                    "techs": ", ".join(proj.get("technologies") or []),
+                    "bullets": "\n".join(proj.get("bullet_points") or []),
+                }
+            ),
+            timeout=120.0,
         )
         return {
             "name": result.name,
@@ -686,10 +738,14 @@ async def render_node(
             best_font_size = mid
             best_pdf_bytes = doc.write_pdf()
             best_page_count = page_count
+            # Free the previous best doc before replacing it
+            if best_doc is not None:
+                del best_doc
             best_doc = doc
             low = mid
         else:
-            # Overflow — try a smaller font.
+            # Overflow — discard immediately, do not hold in memory
+            del doc
             high = mid
 
     if best_pdf_bytes is None:
@@ -709,6 +765,9 @@ async def render_node(
         best_pdf_bytes = best_doc.write_pdf()
         best_page_count = len(best_doc.pages)
         best_font_size = low
+
+    # Force GC to reclaim WeasyPrint/Cairo objects from discarded render iterations
+    gc.collect()
 
     await log_progress(
         db,
@@ -1140,7 +1199,7 @@ async def orphan_repair_node(
             SystemMessage(content="You are a precise resume editor. You ONLY output valid JSON. No explanation, no markdown fences."),
             HumanMessage(content=prompt)
         ]
-        resp = await llm.ainvoke(messages)
+        resp = await asyncio.wait_for(llm.ainvoke(messages), timeout=120.0)
         content = resp.content
         if isinstance(content, list):
             text_parts = []

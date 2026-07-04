@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LoginModal } from "@/components/LoginModal";
 import { Footer } from "@/components/Footer";
@@ -8,6 +9,7 @@ const outcomes = ["Brief", "Evidence", "Tone", "Export"];
 const proof = [
   "paste role",
   "reuse proof",
+  "no login",
   "cut filler",
   "ship PDF",
   "fork anytime",
@@ -15,7 +17,7 @@ const proof = [
 ];
 
 const steps = [
-  { title: "Throw in JD", text: "Messy posting goes in." },
+  { title: "Import proof", text: "Old resume plus messy posting goes in." },
   { title: "Choose angle", text: "Projects, work, or balanced." },
   { title: "Take the file", text: "PDF lands in history." },
 ];
@@ -69,7 +71,15 @@ export default async function Home() {
               Login
             </a>
           </div>
-          <LoginModal />
+          <div className="flex items-center gap-2">
+            <Link
+              href="/try"
+              className="inline-flex min-h-9 items-center justify-center border-2 border-zinc-950 bg-white px-3 text-xs font-black uppercase tracking-wide text-zinc-950 shadow-[2px_2px_0_#18181b] transition hover:-translate-y-0.5 hover:shadow-[4px_4px_0_#18181b]"
+            >
+              Try free
+            </Link>
+            <LoginModal />
+          </div>
         </div>
       </nav>
 
@@ -90,10 +100,19 @@ export default async function Home() {
           <h1 className="max-w-4xl text-4xl font-black uppercase text-zinc-950 sm:text-5xl lg:text-7xl">
             Quality job-focused resumes on the fly.
           </h1>
+          <p className="mt-5 max-w-2xl text-base font-bold leading-7 text-zinc-600 md:text-lg">
+            Try 5 free resumes every day without logging in. Import old resumes, paste a job post, download a tailored draft.
+          </p>
           <div className="login-highlight mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <Link
+              href="/try"
+              className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] transition hover:-translate-y-0.5 hover:shadow-[5px_5px_0_#18181b] active:translate-y-0"
+            >
+              Try free
+            </Link>
             <LoginModal />
             <span className="text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
-              5 generations per day.
+              No login: 5/day. Login keeps history.
             </span>
           </div>
         </div>
@@ -295,9 +314,15 @@ export default async function Home() {
               Your data, your call.
             </h2>
             <p className="mt-7 max-w-lg text-lg font-bold leading-relaxed tracking-[-0.01em] text-zinc-600">
-              Use hosted for speed. Fork when trust matters.
+              Use hosted for speed. Try without login. Fork when trust matters.
             </p>
             <div className="login-highlight mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
+              <Link
+                href="/try"
+                className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] transition hover:-translate-y-0.5 hover:shadow-[5px_5px_0_#18181b] active:translate-y-0"
+              >
+                Try 5 free today
+              </Link>
               <LoginModal />
               <a
                 href="https://github.com/Wizhill05/resumer-v2"

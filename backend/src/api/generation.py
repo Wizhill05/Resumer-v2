@@ -279,10 +279,23 @@ async def preview_generation(
         raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
     from src.models.profile import Profile
-    profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
-    profile = profile_res.scalar_one_or_none()
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+    if gen.is_guest and gen.guest_input_snapshot:
+        profile_data = gen.guest_input_snapshot.get("profile") or {}
+    else:
+        profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+        profile = profile_res.scalar_one_or_none()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        profile_data = {
+            "full_name": profile.full_name,
+            "email": profile.email,
+            "phone": profile.phone,
+            "location": profile.location,
+            "linkedin_url": profile.linkedin_url,
+            "github_url": profile.github_url,
+            "portfolio_url": profile.portfolio_url,
+            "subtitle": profile.subtitle,
+        }
 
     template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
     if not template_manifest:
@@ -292,16 +305,7 @@ async def preview_generation(
     html_rendered = TemplateRegistryService.render_template(
         gen.template_id,
         {
-            "profile": {
-                "full_name": profile.full_name,
-                "email": profile.email,
-                "phone": profile.phone,
-                "location": profile.location,
-                "linkedin_url": profile.linkedin_url,
-                "github_url": profile.github_url,
-                "portfolio_url": profile.portfolio_url,
-                "subtitle": profile.subtitle,
-            },
+            "profile": profile_data,
             "resume": tailored_resume,
             "font_size": font_size or template_manifest.max_font_size,
             "page_margin_mm": template_manifest.page_margin_mm,

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import ARRAY, DateTime, ForeignKey, Integer, String, Text, Boolean, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,10 @@ class Generation(Base):
     thumb_storage_key: Mapped[str | None] = mapped_column(String)
     render_metadata: Mapped[dict | None] = mapped_column(JSONB)
     content_split: Mapped[dict | None] = mapped_column(JSONB)
+    is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
+    guest_token_hash: Mapped[str | None] = mapped_column(String)
+    guest_input_snapshot: Mapped[dict | None] = mapped_column(JSONB)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -61,5 +65,13 @@ class UserRateLimit(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
+    request_count: Mapped[int] = mapped_column(Integer, default=0)
+    reset_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GuestRateLimit(Base):
+    __tablename__ = "guest_rate_limits"
+
+    token_hash: Mapped[str] = mapped_column(String, primary_key=True)
     request_count: Mapped[int] = mapped_column(Integer, default=0)
     reset_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
