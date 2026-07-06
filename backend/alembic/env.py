@@ -7,7 +7,7 @@ from alembic import context
 # Import all models so autogenerate detects them
 from src.models.user import Base  # noqa: F401
 from src.models.profile import Profile, UserProject, UserExperience, UserEducation  # noqa: F401
-from src.models.generation import Generation, GenerationLog, UserRateLimit  # noqa: F401
+from src.models.generation import Generation, GenerationLog, GuestRateLimit, PromptConfig, UserRateLimit  # noqa: F401
 from src.core.config import settings
 
 config = context.config
@@ -18,8 +18,9 @@ if config.config_file_name is not None:
 # Use sync URL for alembic (strip async driver prefix)
 sync_url = settings.DATABASE_URL
 for prefix, replacement in [
-    ("postgresql+psycopg://", "postgresql+psycopg2://"),
-    ("postgres://", "postgresql+psycopg2://"),
+    ("postgresql+psycopg://", "postgresql+psycopg://"),
+    ("postgres://", "postgresql+psycopg://"),
+    ("postgresql://", "postgresql+psycopg://"),
 ]:
     if sync_url.startswith(prefix):
         sync_url = sync_url.replace(prefix, replacement, 1)

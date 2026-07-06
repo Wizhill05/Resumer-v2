@@ -32,24 +32,24 @@ class Settings(BaseSettings):
 
     # Stored as raw string; parsed via property so pydantic-settings never
     # tries json.loads on a bare comma-separated value like "key1,key2".
-    GROQ_API_KEYS: str = Field(default="", alias="GROQ_API_KEYS")
-
-    @property
-    def groq_api_keys(self) -> list[str]:
-        return _parse_keys(self.GROQ_API_KEYS)
-
-    # Legacy alias — kept so existing envs with GOOGLE_API_KEYS still boot.
+    CEREBRAS_API_KEYS: str = Field(default="", alias="CEREBRAS_API_KEYS")
     GOOGLE_API_KEYS: str = Field(default="", alias="GOOGLE_API_KEYS")
 
     @property
+    def cerebras_api_keys(self) -> list[str]:
+        return _parse_keys(self.CEREBRAS_API_KEYS)
+
+    @property
     def google_api_keys(self) -> list[str]:
-        """Fallback: prefer GROQ_API_KEYS, fall back to GOOGLE_API_KEYS for compat."""
-        keys = _parse_keys(self.GROQ_API_KEYS)
-        if keys:
-            return keys
         return _parse_keys(self.GOOGLE_API_KEYS)
 
     FRONTEND_URL: str = "http://localhost:3000"
+
+    ADMIN_EMAILS: str = "admin@example.com,user@example.com"
+
+    @property
+    def admin_emails(self) -> list[str]:
+        return _parse_keys(self.ADMIN_EMAILS)
 
     RESEND_API_KEY: str = ""
     NOTIFICATION_FROM_EMAIL: str = "Resumer <noreply@aryansingh.space>"

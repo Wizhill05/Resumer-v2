@@ -1,4 +1,24 @@
-from pydantic import BaseModel, Field
+import ast
+
+from pydantic import BaseModel, Field, field_validator
+
+
+def _coerce_str_to_list(v):
+    """Cerebras function-calling sometimes returns list values as string
+    representations like ``"['Python', 'Go']"`` instead of actual arrays.
+    Parse them back into real lists."""
+    if isinstance(v, str):
+        v = v.strip()
+        if v.startswith("["):
+            try:
+                parsed = ast.literal_eval(v)
+                if isinstance(parsed, list):
+                    return [str(i) for i in parsed]
+            except (ValueError, SyntaxError):
+                pass
+        # Fallback: comma-separated string
+        return [s.strip() for s in v.split(",") if s.strip()]
+    return v
 
 
 class JobAnalysis(BaseModel):
@@ -21,6 +41,13 @@ class TailoredSummaryAndSkills(BaseModel):
             "'Soft Skills': ['Leadership', 'Communication', 'Problem-Solving']}. Max 5-6 categories."
         ),
     )
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def coerce_skill_values(cls, v):
+        if isinstance(v, dict):
+            return {k: _coerce_str_to_list(val) for k, val in v.items()}
+        return v
 
 
 class TailoredProject(BaseModel):
@@ -55,6 +82,47 @@ class TailoredResume(BaseModel):
     experiences: list[TailoredExperience] = Field(default_factory=list)
     projects: list[TailoredProject] = Field(default_factory=list)
     education: list[dict] = Field(default_factory=list)
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def coerce_skill_values(cls, v):
+        if isinstance(v, dict):
+            return {k: _coerce_str_to_list(val) for k, val in v.items()}
+        return v
+
+
+class TailoredExperienceBatch(BaseModel):
+    """Batch of tailored experience entries."""
+    entries: list[TailoredExperience] = Field(
+        default_factory=list,
+        description="All tailored experience entries in the same order as the input."
+    )
+
+
+class TailoredProjectBatch(BaseModel):
+    """Batch of tailored project entries."""
+    entries: list[TailoredProject] = Field(
+        default_factory=list,
+        description="All tailored project entries in the same order as the input."
+    )
+
+
+class TailoredExtracurricular(BaseModel):
+    """A single extracurricular activity/achievement rewritten as a descriptive sentence."""
+    description: str = Field(
+        description=(
+            "A single compelling sentence describing the achievement or activity. "
+            "Example: 'Led the winning team of Hacknight 2024 held at SCEM Mangalore'"
+        )
+    )
+
+
+class TailoredExtracurricularBatch(BaseModel):
+    """Batch of tailored extracurricular entries."""
+    entries: list[TailoredExtracurricular] = Field(
+        default_factory=list,
+        description="All tailored extracurricular entries in the same order as the input.",
+    )
 
 
 class SelectedItems(BaseModel):

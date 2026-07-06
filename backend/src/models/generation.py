@@ -75,3 +75,14 @@ class GuestRateLimit(Base):
     token_hash: Mapped[str] = mapped_column(String, primary_key=True)
     request_count: Mapped[int] = mapped_column(Integer, default=0)
     reset_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PromptConfig(Base):
+    __tablename__ = "prompt_configs"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    user_prompt: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -43,3 +43,17 @@ async def get_current_user(
         await db.refresh(user)
 
     return user
+
+
+async def get_current_admin(
+    user: User = Depends(get_current_user),
+) -> User:
+    admin_emails = settings.admin_emails
+    # If '*' is in admin_emails, anyone is allowed. Otherwise, exact check.
+    if "*" in admin_emails or user.email in admin_emails:
+        return user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Forbidden: Admin access required",
+    )

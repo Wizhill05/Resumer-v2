@@ -7,10 +7,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.api_key_pool import key_pool
 from src.models.profile import Profile, UserEducation, UserExperience, UserProject, UserExtracurricular
 from src.models.user import User
-from src.pipeline.nodes import create_structured_chain, get_llm
+from src.pipeline.nodes import invoke_with_fallback, _structured
 from src.schemas.profile import DuplicateCandidate, ImportWarning, ResumeImportDraft
 from src.services.import_utils import normalize_text, similar, unique_strings
 
@@ -74,7 +73,6 @@ async def extract_upload_text(file: UploadFile) -> str:
 
 
 async def extract_resume_draft(text: str, filename: str = "resume") -> ResumeImportDraft:
-    llm = get_llm(key_pool.next())
     prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -90,13 +88,15 @@ async def extract_resume_draft(text: str, filename: str = "resume") -> ResumeImp
             ),
         ]
     )
-    chain = create_structured_chain(llm, prompt, ResumeImportDraft)
 
     last_exc: Exception | None = None
     for attempt in range(1, EXTRACT_MAX_RETRIES + 1):
         try:
             print(f"[import] LLM extraction attempt {attempt}/{EXTRACT_MAX_RETRIES} for {filename}")
-            draft: ResumeImportDraft = await chain.ainvoke({"text": text})
+            draft: ResumeImportDraft = await invoke_with_fallback(
+                lambda llm, p: prompt | _structured(llm, ResumeImportDraft, p),
+                {"text": text},
+            )
 
             draft.profile.skills = unique_strings(draft.profile.skills)
             for project in draft.projects:

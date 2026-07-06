@@ -17,14 +17,12 @@ class ResumeGraphState(TypedDict):
     # Enforced by backend before AI runs; drives exact limits in every pipeline node.
     content_split: dict
 
-    # API key selected for this run (round-robin from key_pool; shared by all nodes)
-    api_key: str
-
     # Outputs
     job_analysis: Optional[dict]
     summary_draft: Optional[dict]
     projects_draft: Optional[dict]
     experience_draft: Optional[dict]
+    extracurriculars_draft: Optional[list[dict]]
     tailored_resume: Optional[dict]
     orphans: Optional[list[dict]]
 
@@ -41,6 +39,7 @@ class ResumeGraphState(TypedDict):
 
     # Controls & Logs
     repair_attempts: int
+    repair_history: Optional[dict]  # maps "section:item_idx:bullet_idx" -> original text before repair
     render_attempts: int
     content_reduction_step: int
     errors: list[str]

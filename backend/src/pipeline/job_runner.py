@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.api_key_pool import key_pool
 from src.core.database import AsyncSessionLocal
 from src.core.notify import send_completion_email
 from src.models.generation import Generation
@@ -30,7 +29,7 @@ from src.pipeline.state import ResumeGraphState
 from src.template_registry.service import TemplateRegistryService
 
 
-def _state_from_snapshot(gen: Generation, api_key: str, template_manifest) -> ResumeGraphState:
+def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState:
     snapshot = gen.guest_input_snapshot or {}
     profile = snapshot.get("profile") or {}
     content_split = gen.content_split
@@ -40,7 +39,6 @@ def _state_from_snapshot(gen: Generation, api_key: str, template_manifest) -> Re
 
     return ResumeGraphState(
         user_id=str(gen.user_id),
-        api_key=api_key,
         profile={
             "full_name": profile.get("full_name"),
             "email": profile.get("email"),
@@ -66,6 +64,7 @@ def _state_from_snapshot(gen: Generation, api_key: str, template_manifest) -> Re
         summary_draft=None,
         projects_draft=None,
         experience_draft=None,
+        extracurriculars_draft=None,
         tailored_resume=None,
         orphans=None,
         pdf_bytes=None,
@@ -76,6 +75,7 @@ def _state_from_snapshot(gen: Generation, api_key: str, template_manifest) -> Re
         md_storage_key=None,
         thumb_storage_key=None,
         repair_attempts=0,
+        repair_history=None,
         render_attempts=0,
         content_reduction_step=0,
         errors=[],
@@ -83,7 +83,7 @@ def _state_from_snapshot(gen: Generation, api_key: str, template_manifest) -> Re
     )
 
 
-async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -> ResumeGraphState | None:
+async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphState | None:
     template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
     if not template_manifest:
         await log_progress(
@@ -93,7 +93,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -
         return None
 
     if gen.is_guest and gen.guest_input_snapshot:
-        return _state_from_snapshot(gen, api_key, template_manifest)
+        return _state_from_snapshot(gen, template_manifest)
 
     profile_res = await db.execute(select(Profile).where(Profile.user_id == gen.user_id))
     profile = profile_res.scalar_one_or_none()
@@ -164,7 +164,6 @@ async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -
 
     return ResumeGraphState(
         user_id=str(gen.user_id),
-        api_key=api_key,
         profile={
             "full_name": profile.full_name,
             "email": profile.email,
@@ -190,6 +189,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -
         summary_draft=None,
         projects_draft=None,
         experience_draft=None,
+        extracurriculars_draft=None,
         tailored_resume=None,
         orphans=None,
         pdf_bytes=None,
@@ -200,6 +200,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation, api_key: str) -
         md_storage_key=None,
         thumb_storage_key=None,
         repair_attempts=0,
+        repair_history=None,
         render_attempts=0,
         content_reduction_step=0,
         errors=[],
@@ -234,10 +235,7 @@ async def run_generation(gen_id: str) -> None:
             gen.status = "in_progress"
             await db.commit()
 
-            # Select API key once for the entire run (round-robin across key pool).
-            api_key = key_pool.next()
-
-            initial_state = await _load_initial_state(db, gen, api_key)
+            initial_state = await _load_initial_state(db, gen)
             if initial_state is None:
                 async with AsyncSessionLocal() as fail_db:
                     g = await fail_db.get(Generation, gen_uuid)

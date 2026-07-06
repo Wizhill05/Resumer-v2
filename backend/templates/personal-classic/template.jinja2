@@ -122,22 +122,7 @@
 <div class="extracurriculars-section">
   <ul>
   {% for ex in resume.extracurriculars %}
-    <li>
-      {{ ex.title }}{% if ex.organization %} | {{ ex.organization }}{% endif %}
-      {%- if ex.start_date or ex.end_date %} ({% endif -%}
-      {%- if ex.start_date %}{{ ex.start_date | format_date }}{% endif -%}
-      {%- if ex.start_date and ex.end_date %} – {% endif -%}
-      {%- if ex.end_date %}{{ ex.end_date | format_date }}{% elif ex.start_date %}Present{% endif -%}
-      {%- if ex.start_date or ex.end_date %}){% endif -%}
-      
-      {% if ex.bullet_points %}
-      <ul>
-      {% for bullet in ex.bullet_points %}
-        <li>{{ bullet | markdown }}</li>
-      {% endfor %}
-      </ul>
-      {% endif %}
-    </li>
+    <li>{{ ex.description | markdown }}</li>
   {% endfor %}
   </ul>
 </div>

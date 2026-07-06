@@ -6,9 +6,8 @@ from fastapi import HTTPException, status
 from langchain_core.prompts import ChatPromptTemplate
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.api_key_pool import key_pool
 from src.models.user import User
-from src.pipeline.nodes import create_structured_chain, get_llm
+from src.pipeline.nodes import invoke_with_fallback, _structured
 from src.schemas.profile import GitHubProjectDraft, ResumeImportDraft
 from src.services.import_utils import unique_strings
 from src.services.resume_import import add_duplicates, load_existing_profile_data
@@ -71,7 +70,6 @@ def fetch_repo_context(owner: str, repo: str) -> dict:
 async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHubProjectDraft:
     owner, repo, canonical_url = parse_github_url(url)
     context = fetch_repo_context(owner, repo)
-    llm = get_llm(key_pool.next())
     prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -85,8 +83,8 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             ),
         ]
     )
-    chain = create_structured_chain(llm, prompt, GitHubProjectDraft)
-    draft = await chain.ainvoke(
+    draft: GitHubProjectDraft = await invoke_with_fallback(
+        lambda llm, p: prompt | _structured(llm, GitHubProjectDraft, p),
         {
             "url": canonical_url,
             "metadata": context["metadata"],
@@ -94,7 +92,7 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             "files": "\n".join(context["files"]),
             "manifests": context["manifests"],
             "readme": context["readme"],
-        }
+        },
     )
     draft.github_url = canonical_url
     draft.technologies = unique_strings(draft.technologies)

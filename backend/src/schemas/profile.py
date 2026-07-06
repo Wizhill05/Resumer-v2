@@ -1,8 +1,58 @@
+import ast
+import re
 import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+# ── Cerebras coercion helpers ─────────────────────────────────────────────────
+# Cerebras function-calling often returns list[str] as a plain comma-separated
+# string and date fields as human strings like "Jan 2025".  These helpers
+# normalise the values before Pydantic validation so both Cerebras and Google
+# outputs parse cleanly.
+
+def _coerce_str_to_list(v):
+    """'React, Node.js, Python' or "['React', 'Node']" → real list."""
+    if v is None:
+        return v
+    if isinstance(v, list):
+        return v
+    if isinstance(v, str):
+        v = v.strip()
+        if v.startswith("["):
+            try:
+                parsed = ast.literal_eval(v)
+                if isinstance(parsed, list):
+                    return [str(i) for i in parsed]
+            except (ValueError, SyntaxError):
+                pass
+        return [s.strip() for s in v.split(",") if s.strip()]
+    return v
+
+
+_MONTH_FORMATS = ["%B %Y", "%b %Y", "%Y-%m-%d", "%Y-%m", "%m/%Y", "%m-%Y"]
+
+
+def _coerce_str_to_date(v):
+    """'Jan 2025' or 'June 2023' → date(2025, 1, 1)."""
+    if v is None or isinstance(v, date):
+        return v
+    if isinstance(v, str):
+        v = v.strip()
+        if not v or v.lower() in ("present", "current", "now", "ongoing"):
+            return None
+        for fmt in _MONTH_FORMATS:
+            try:
+                return datetime.strptime(v, fmt).date()
+            except ValueError:
+                continue
+        # Last resort: extract year only
+        year_match = re.search(r"\b(19|20)\d{2}\b", v)
+        if year_match:
+            return date(int(year_match.group()), 1, 1)
+    return v
 
 
 # Profile
@@ -17,6 +67,11 @@ class ProfileUpdate(BaseModel):
     subtitle: str | None = None
     summary: str | None = None
     skills: list[str] | None = None
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def coerce_skills(cls, v):
+        return _coerce_str_to_list(v)
 
 
 class ProfileOut(ProfileUpdate):
@@ -39,6 +94,16 @@ class ProjectCreate(BaseModel):
     end_date: date | None = None
     bullet_points: list[str] | None = None
     sort_order: int = 0
+
+    @field_validator("technologies", "bullet_points", mode="before")
+    @classmethod
+    def coerce_lists(cls, v):
+        return _coerce_str_to_list(v)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def coerce_dates(cls, v):
+        return _coerce_str_to_date(v)
 
 
 class ProjectUpdate(ProjectCreate):
@@ -64,6 +129,16 @@ class ExperienceCreate(BaseModel):
     end_date: date | None = None
     bullet_points: list[str] | None = None
     sort_order: int = 0
+
+    @field_validator("bullet_points", mode="before")
+    @classmethod
+    def coerce_lists(cls, v):
+        return _coerce_str_to_list(v)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def coerce_dates(cls, v):
+        return _coerce_str_to_date(v)
 
 
 class ExperienceUpdate(ExperienceCreate):
@@ -92,6 +167,16 @@ class EducationCreate(BaseModel):
     coursework: list[str] | None = None
     sort_order: int = 0
 
+    @field_validator("coursework", mode="before")
+    @classmethod
+    def coerce_lists(cls, v):
+        return _coerce_str_to_list(v)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def coerce_dates(cls, v):
+        return _coerce_str_to_date(v)
+
 
 class EducationUpdate(EducationCreate):
     degree: str | None = None
@@ -116,6 +201,16 @@ class ExtracurricularCreate(BaseModel):
     end_date: date | None = None
     bullet_points: list[str] | None = None
     sort_order: int = 0
+
+    @field_validator("bullet_points", mode="before")
+    @classmethod
+    def coerce_lists(cls, v):
+        return _coerce_str_to_list(v)
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def coerce_dates(cls, v):
+        return _coerce_str_to_date(v)
 
 
 class ExtracurricularUpdate(ExtracurricularCreate):

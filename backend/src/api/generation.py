@@ -36,6 +36,9 @@ async def _user_email(db: AsyncSession, user_id) -> str | None:
 async def check_rate_limit(user: User, db: AsyncSession) -> None:
     """Atomic upsert-and-increment. Row-level lock prevents the TOCTOU race
     where two concurrent requests both read the same count and bypass the cap."""
+    if "*" in settings.admin_emails or user.email in settings.admin_emails:
+        return  # Admin bypass
+
     now = datetime.now(timezone.utc)
     reset_at = now + timedelta(hours=24)
 

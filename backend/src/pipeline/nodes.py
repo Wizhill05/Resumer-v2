@@ -10,20 +10,24 @@ from typing import Any
 
 from jinja2 import Template
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_groq import ChatGroq
-from sqlalchemy import insert
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings  # noqa: F401 (kept for other settings usage)
 from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
-from src.models.generation import Generation, GenerationLog
+from src.models.generation import Generation, GenerationLog, PromptConfig
 from src.pipeline.state import ResumeGraphState
 from src.schemas.pipeline import (
     JobAnalysis,
     SelectedItems,
     TailoredExperience,
+    TailoredExperienceBatch,
+    TailoredExtracurricularBatch,
     TailoredProject,
+    TailoredProjectBatch,
     TailoredSummaryAndSkills,
 )
 from src.template_registry.service import TemplateRegistryService
@@ -51,59 +55,75 @@ async def log_progress(
 
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
 
+from src.core.api_key_pool import cerebras_pool, google_pool
 
-def get_llm(api_key: str) -> ChatGroq:
-    """Create an LLM client for the given API key.
 
-    The key is selected once per pipeline run (round-robin from ApiKeyPool)
-    and threaded through state so all nodes in a run share the same key.
-    """
-    return ChatGroq(
-        model="qwen/qwen3.6-27b",
+def _cerebras_llm(api_key: str) -> ChatOpenAI:
+    return ChatOpenAI(
+        model="gemma-4-31b",
         temperature=0.2,
-        groq_api_key=api_key,
-        max_tokens=2048,
+        base_url="https://api.cerebras.ai/v1",
+        api_key=api_key,
     )
 
 
-def create_structured_chain(llm, prompt: ChatPromptTemplate, schema_class):
-    model_name = getattr(llm, "model", getattr(llm, "model_name", ""))
-    if "qwen" in model_name.lower():
-        import json
-        from langchain_core.prompts import SystemMessagePromptTemplate
+def _google_llm(api_key: str) -> ChatGoogleGenerativeAI:
+    return ChatGoogleGenerativeAI(
+        model="gemma-4-31b-it",
+        temperature=0.2,
+        google_api_key=api_key,
+    )
+
+
+def _structured(llm, schema, provider: str):
+    """Structured output with provider-appropriate method.
+
+    Cerebras doesn't support OpenAI's ``json_schema`` response_format.
+    Use ``function_calling`` (tool calls) which Cerebras does support.
+    """
+    if provider == "cerebras":
+        return llm.with_structured_output(schema, method="function_calling")
+    return llm.with_structured_output(schema)
+
+
+async def invoke_with_fallback(chain_factory, invoke_args, timeout: float = 120.0):
+    """Try Cerebras first; on any failure fall back to Google.
+
+    chain_factory(llm, provider_name) -> a runnable chain.
+    Each call pulls its own key from the respective pool — parallel calls
+    naturally spread across different keys.
+    """
+    providers = [
+        ("cerebras", cerebras_pool, _cerebras_llm),
+        ("google", google_pool, _google_llm),
+    ]
+    last_exc: Exception | None = None
+    for name, pool, factory in providers:
+        try:
+            llm = factory(pool.next())
+            chain = chain_factory(llm, name)
+            return await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
+        except Exception as exc:
+            last_exc = exc
+            if name != "google":
+                print(f"[llm_fallback] {name} failed ({exc!r}). Retrying with Google...")
+    raise RuntimeError(f"All LLM providers failed. Last error: {last_exc!r}") from last_exc
+
+
+async def get_prompt_config(db: AsyncSession, name: str, default_system: str, default_user: str | None = None) -> tuple[str, str | None]:
+    try:
+        result = await db.execute(select(PromptConfig).where(PromptConfig.name == name))
+        cfg = result.scalar_one_or_none()
+        if cfg:
+            return cfg.system_prompt, cfg.user_prompt
         
-        schema_json = json.dumps(schema_class.model_json_schema(), indent=2)
-        new_messages = []
-        system_updated = False
-        
-        instructions = (
-            "\n\nYou MUST respond ONLY with a valid JSON object. "
-            "Do not wrap it in markdown backticks or any conversational text. "
-            "The JSON object must strictly conform to this JSON schema:\n" + schema_json
-        )
-        
-        for msg in prompt.messages:
-            if hasattr(msg, "prompt") and isinstance(msg, SystemMessagePromptTemplate):
-                template_text = msg.prompt.template
-                escaped_instructions = instructions.replace("{", "{{").replace("}", "}}")
-                msg.prompt.template = template_text + escaped_instructions
-                system_updated = True
-            elif hasattr(msg, "content") and getattr(msg, "type", "") == "system":
-                escaped_instructions = instructions.replace("{", "{{").replace("}", "}}")
-                msg.content = msg.content + escaped_instructions
-                system_updated = True
-            new_messages.append(msg)
-            
-        if not system_updated:
-            escaped_instructions = instructions.replace("{", "{{").replace("}", "}}")
-            new_messages.insert(0, SystemMessagePromptTemplate.from_template(
-                "You must output JSON matching the schema." + escaped_instructions
-            ))
-            prompt.messages = new_messages
-            
-        return prompt | llm.with_structured_output(schema_class, method="json_mode")
-    else:
-        return prompt | llm.with_structured_output(schema_class)
+        cfg = PromptConfig(name=name, system_prompt=default_system, user_prompt=default_user)
+        db.add(cfg)
+        await db.commit()
+        return default_system, default_user
+    except Exception as e:
+        print(f"Error fetching prompt config '{name}': {e}")
+        return default_system, default_user
 
 
 # ── Graph Nodes ───────────────────────────────────────────────────────────────
@@ -116,31 +136,21 @@ async def job_analysis_node(
         db, gen_id, "job_analysis", "Starting job description analysis..."
     )
 
-    llm = get_llm(state["api_key"])
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                "You are an expert technical recruiter. Analyze the job description and extract key information.",
-            ),
-            (
-                "user",
-                "Job Description:\n{job_desc}\n\nKeywords/Focus:\n{keywords}\n\nInstructions:\n{instructions}",
-            ),
-        ]
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        "job_analysis",
+        default_system="You are an expert technical recruiter. Analyze the job description and extract key information.",
+        default_user="Job Description:\n{job_desc}\n\nKeywords/Focus:\n{keywords}\n\nInstructions:\n{instructions}",
     )
+    prompt = ChatPromptTemplate.from_messages([("system", sys_prompt), ("user", usr_prompt)])
 
-    chain = create_structured_chain(llm, prompt, JobAnalysis)
-    result = await asyncio.wait_for(
-        chain.ainvoke(
-            {
-                "job_desc": state["job_description"],
-                "keywords": ", ".join(state["keywords"]) if state["keywords"] else "None",
-                "instructions": state["instructions"] or "None",
-            }
-        ),
-        timeout=120.0,
+    result = await invoke_with_fallback(
+        lambda llm, p: prompt | _structured(llm, JobAnalysis, p),
+        {
+            "job_desc": state["job_description"],
+            "keywords": ", ".join(state["keywords"]) if state["keywords"] else "None",
+            "instructions": state["instructions"] or "None",
+        },
     )
 
     await log_progress(
@@ -171,8 +181,6 @@ async def selection_node(
     max_exp = content_split.get("experience", 2)
     max_proj = content_split.get("projects", 2)
 
-    llm = get_llm(state["api_key"])
-
     exp_list_str = []
     for idx, exp in enumerate(experiences):
         bullets = "; ".join(exp.get("bullet_points") or [])
@@ -190,28 +198,28 @@ async def selection_node(
             f"Description: '{proj.get('description') or ''}', Bullets: {bullets}"
         )
 
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        "selection",
+        default_system=(
+            "You are an expert technical recruiter matching candidate history to a job.\n"
+            "Select EXACTLY {max_exp} experience entries and EXACTLY {max_proj} project entries that are most relevant to the target job description.\n"
+            "If fewer than {max_exp} experiences exist, select all of them. If fewer than {max_proj} projects exist, select all of them.\n"
+            "Rank them in order of relevance, with the most relevant first.\n"
+            "Only output valid indices within the range of the provided lists. Do not invent indices."
+        ),
+        default_user=(
+            "Job Title: {job_title}\n"
+            "Job Requirements: {requirements}\n"
+            "Extracted Job Skills: {skills}\n\n"
+            "--- Candidate Experiences ---\n{experiences}\n\n"
+            "--- Candidate Projects ---\n{projects}"
+        )
+    )
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                (
-                    "You are an expert technical recruiter matching candidate history to a job.\n"
-                    f"Select EXACTLY {max_exp} experience entries and EXACTLY {max_proj} project entries that are most relevant to the target job description.\n"
-                    f"If fewer than {max_exp} experiences exist, select all of them. If fewer than {max_proj} projects exist, select all of them.\n"
-                    "Rank them in order of relevance, with the most relevant first.\n"
-                    "Only output valid indices within the range of the provided lists. Do not invent indices."
-                ),
-            ),
-            (
-                "user",
-                (
-                    "Job Title: {job_title}\n"
-                    "Job Requirements: {requirements}\n"
-                    "Extracted Job Skills: {skills}\n\n"
-                    "--- Candidate Experiences ---\n{experiences}\n\n"
-                    "--- Candidate Projects ---\n{projects}"
-                ),
-            ),
+            ("system", sys_prompt.format(max_exp=max_exp, max_proj=max_proj)),
+            ("user", usr_prompt),
         ]
     )
 
@@ -219,18 +227,15 @@ async def selection_node(
     requirements = ", ".join(job_analysis.get("key_requirements") or [])
     skills = ", ".join(job_analysis.get("extracted_skills") or [])
 
-    chain = create_structured_chain(llm, prompt, SelectedItems)
-    result = await asyncio.wait_for(
-        chain.ainvoke(
-            {
-                "job_title": job_analysis.get("job_title") or "Target Role",
-                "requirements": requirements,
-                "skills": skills,
-                "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
-                "projects": "\n".join(proj_list_str) if proj_list_str else "None",
-            }
-        ),
-        timeout=120.0,
+    result = await invoke_with_fallback(
+        lambda llm, p: prompt | _structured(llm, SelectedItems, p),
+        {
+            "job_title": job_analysis.get("job_title") or "Target Role",
+            "requirements": requirements,
+            "skills": skills,
+            "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
+            "projects": "\n".join(proj_list_str) if proj_list_str else "None",
+        },
     )
 
     # ── Backend enforcement: clamp to exact split limits, dedup, fill gaps ────
@@ -295,44 +300,34 @@ async def summary_skills_node(
         "Generating tailored summary & categorizing skills...",
     )
 
-    llm = get_llm(state["api_key"])
-
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                (
-                    "You are a professional resume writer. Write a tailored professional summary of exactly 1-2 sentences "
-                    "(maximum 2 lines / 30 words) that is highly concise and highlights the most important qualifications. "
-                    "Then organize skills into logical categories matching requirements from the job analysis.\n\n"
-                    "IMPORTANT skill-writing rules:\n"
-                    "- You MUST include a 'Soft Skills' category containing relevant soft skills (e.g., leadership, "
-                    "communication, problem-solving, teamwork, adaptability, time management) inferred from the "
-                    "candidate's experience and the job requirements.\n"
-                    "- You are FREE to include skills that the candidate did not explicitly list, as long as they are "
-                    "clearly demonstrated by the candidate's experience or would be valuable for the target role. "
-                    "Use the job analysis to identify skill gaps and fill them with plausible skills.\n"
-                    "- Prioritize skills that directly match the job requirements and extracted skills from the job analysis.\n"
-                    "- Keep a maximum of 5-6 skill categories total (including Soft Skills)."
-                ),
-            ),
-            (
-                "user",
-                "Job Analysis:\n{job_analysis}\n\nCandidate Skills:\n{candidate_skills}\n\nCandidate Summary:\n{candidate_summary}",
-            ),
-        ]
-    )
-
-    chain = create_structured_chain(llm, prompt, TailoredSummaryAndSkills)
-    result = await asyncio.wait_for(
-        chain.ainvoke(
-            {
-                "job_analysis": str(state["job_analysis"]),
-                "candidate_skills": ", ".join(state["profile"].get("skills") or []),
-                "candidate_summary": state["profile"].get("summary") or "",
-            }
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        "summary_skills",
+        default_system=(
+            "You are a professional resume writer. Write a tailored professional summary of exactly 1-2 sentences "
+            "(maximum 2 lines / 30 words) that is highly concise and highlights the most important qualifications. "
+            "Then organize skills into logical categories matching requirements from the job analysis.\n\n"
+            "IMPORTANT skill-writing rules:\n"
+            "- You MUST include a 'Soft Skills' category containing relevant soft skills (e.g., leadership, "
+            "communication, problem-solving, teamwork, adaptability, time management) inferred from the "
+            "candidate's experience and the job requirements.\n"
+            "- You are FREE to include skills that the candidate did not explicitly list, as long as they are "
+            "clearly demonstrated by the candidate's experience or would be valuable for the target role. "
+            "Use the job analysis to identify skill gaps and fill them with plausible skills.\n"
+            "- Prioritize skills that directly match the job requirements and extracted skills from the job analysis.\n"
+            "- Keep a maximum of 5-6 skill categories total (including Soft Skills)."
         ),
-        timeout=120.0,
+        default_user="Job Analysis:\n{job_analysis}\n\nCandidate Skills:\n{candidate_skills}\n\nCandidate Summary:\n{candidate_summary}"
+    )
+    prompt = ChatPromptTemplate.from_messages([("system", sys_prompt), ("user", usr_prompt)])
+
+    result = await invoke_with_fallback(
+        lambda llm, p: prompt | _structured(llm, TailoredSummaryAndSkills, p),
+        {
+            "job_analysis": str(state["job_analysis"]),
+            "candidate_skills": ", ".join(state["profile"].get("skills") or []),
+            "candidate_summary": state["profile"].get("summary") or "",
+        },
     )
 
     await log_progress(
@@ -356,65 +351,58 @@ async def experience_node(
         await log_progress(db, gen_id, "experience_writer", "No experiences to tailor.")
         return {"experience_draft": []}
 
-    llm = get_llm(state["api_key"])
     max_exp = state.get("content_split", {}).get("experience", 2)
     max_bullets = state["template_manifest"].get("max_bullets_per_experience", 4)
     job_analysis = str(state["job_analysis"])
+    batch = experiences[:max_exp]
 
+    entries_text = ""
+    for i, exp in enumerate(batch, start=1):
+        entries_text += (
+            f"\n--- Entry {i} ---\n"
+            f"Role: {exp['role']}\nCompany: {exp['organization']}\n"
+            f"Bullet Points:\n" + "\n".join(exp.get("bullet_points") or []) + "\n"
+        )
+
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        "experience_writer",
+        default_system=(
+            "You are an expert resume writer. Tailor ALL provided experience entries to target the job analysis. "
+            "Rewrite bullet points using action verbs and highlight metrics or accomplishments relevant to the requirements. "
+            "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
+            "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks. "
+            "Return EXACTLY {batch_len} entries in the same order as the input."
+        ),
+        default_user="Job Analysis:\n{job_analysis}\n\nExperience Entries:\n{entries}"
+    )
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                (
-                    "You are an expert resume writer. Tailor this experience entry to target the job analysis. "
-                    "Rewrite the bullet points using action verbs and highlight metrics or accomplishments relevant to the requirements. "
-                    "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
-                    "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks."
-                ),
-            ),
-            (
-                "user",
-                "Job Analysis:\n{job_analysis}\n\nRole: {role}\nCompany: {org}\nBullet Points:\n{bullets}",
-            ),
+            ("system", sys_prompt.format(batch_len=len(batch))),
+            ("user", usr_prompt),
         ]
     )
-    chain = create_structured_chain(llm, prompt, TailoredExperience)
 
-    async def tailor_one(exp):
-        await log_progress(
-            db,
-            gen_id,
-            "experience_writer",
-            f"Tailoring role: {exp['role']} at {exp['organization']}",
-        )
-        result = await asyncio.wait_for(
-            chain.ainvoke(
-                {
-                    "job_analysis": job_analysis,
-                    "role": exp["role"],
-                    "org": exp["organization"],
-                    "bullets": "\n".join(exp.get("bullet_points") or []),
-                }
-            ),
-            timeout=120.0,
-        )
-        return {
-            "role": result.role,
-            "organization": result.organization,
-            "location": exp.get("location") or result.location,
-            "start_date": exp.get("start_date") or result.start_date,
-            "end_date": exp.get("end_date") or result.end_date,
-            "bullet_points": result.bullet_points[:max_bullets],
-        }
-
-    tailored_exps = await asyncio.gather(
-        *(tailor_one(exp) for exp in experiences[:max_exp])
+    await log_progress(db, gen_id, "experience_writer", f"Tailoring {len(batch)} experience entries in one batch...")
+    result = await invoke_with_fallback(
+        lambda llm, p: prompt | _structured(llm, TailoredExperienceBatch, p),
+        {"job_analysis": job_analysis, "entries": entries_text},
     )
 
-    await log_progress(
-        db, gen_id, "experience_writer", "Finished tailoring all experience entries."
-    )
-    return {"experience_draft": list(tailored_exps)}
+    tailored_exps = []
+    for i, tailored in enumerate(result.entries[:max_exp]):
+        original = batch[i]
+        tailored_exps.append({
+            "role": tailored.role,
+            "organization": tailored.organization,
+            "location": original.get("location") or tailored.location,
+            "start_date": original.get("start_date") or tailored.start_date,
+            "end_date": original.get("end_date") or tailored.end_date,
+            "bullet_points": tailored.bullet_points[:max_bullets],
+        })
+
+    await log_progress(db, gen_id, "experience_writer", "Finished tailoring all experience entries.")
+    return {"experience_draft": tailored_exps}
 
 
 async def project_node(
@@ -429,66 +417,142 @@ async def project_node(
         await log_progress(db, gen_id, "projects_writer", "No projects to tailor.")
         return {"projects_draft": []}
 
-    llm = get_llm(state["api_key"])
     max_proj = state.get("content_split", {}).get("projects", 2)
     max_bullets = state["template_manifest"].get("max_bullets_per_project", 3)
     job_analysis = str(state["job_analysis"])
+    batch = projects[:max_proj]
 
+    entries_text = ""
+    for i, proj in enumerate(batch, start=1):
+        entries_text += (
+            f"\n--- Project {i} ---\n"
+            f"Name: {proj['name']}\n"
+            f"Description: {proj.get('description') or ''}\n"
+            f"Technologies: {', '.join(proj.get('technologies') or [])}\n"
+            f"Bullet Points:\n" + "\n".join(proj.get("bullet_points") or []) + "\n"
+        )
+
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        "projects_writer",
+        default_system=(
+            "You are an expert resume writer. Tailor ALL provided project entries to target the job analysis. "
+            "Highlight technologies and achievements relevant to the target role. "
+            "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
+            "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks. "
+            "Return EXACTLY {batch_len} entries in the same order as the input."
+        ),
+        default_user="Job Analysis:\n{job_analysis}\n\nProject Entries:\n{entries}"
+    )
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                (
-                    "You are an expert resume writer. Tailor this project entry to target the job analysis. "
-                    "Highlight technologies and achievements relevant to the target role. "
-                    "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
-                    "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks."
-                ),
-            ),
-            (
-                "user",
-                "Job Analysis:\n{job_analysis}\n\nProject Name: {name}\nDescription: {desc}\nTechnologies: {techs}\nBullet Points:\n{bullets}",
-            ),
+            ("system", sys_prompt.format(batch_len=len(batch))),
+            ("user", usr_prompt),
         ]
     )
-    chain = create_structured_chain(llm, prompt, TailoredProject)
 
-    async def tailor_one(proj):
-        await log_progress(
-            db, gen_id, "projects_writer", f"Tailoring project: {proj['name']}"
-        )
-        result = await asyncio.wait_for(
-            chain.ainvoke(
-                {
-                    "job_analysis": job_analysis,
-                    "name": proj["name"],
-                    "desc": proj.get("description") or "",
-                    "techs": ", ".join(proj.get("technologies") or []),
-                    "bullets": "\n".join(proj.get("bullet_points") or []),
-                }
-            ),
-            timeout=120.0,
-        )
-        return {
-            "name": result.name,
-            "project_summary": result.project_summary,
-            "description": result.description,
-            "technologies": result.technologies,
-            "bullet_points": result.bullet_points[:max_bullets],
-            "github_url": proj.get("github_url"),
-            "live_url": proj.get("live_url"),
-            "start_date": proj.get("start_date"),
-            "end_date": proj.get("end_date"),
-        }
-
-    tailored_projs = await asyncio.gather(
-        *(tailor_one(proj) for proj in projects[:max_proj])
+    await log_progress(db, gen_id, "projects_writer", f"Tailoring {len(batch)} projects in one batch...")
+    result = await invoke_with_fallback(
+        lambda llm, p: prompt | _structured(llm, TailoredProjectBatch, p),
+        {"job_analysis": job_analysis, "entries": entries_text},
     )
 
+    tailored_projs = []
+    for i, tailored in enumerate(result.entries[:max_proj]):
+        original = batch[i]
+        tailored_projs.append({
+            "name": tailored.name,
+            "project_summary": tailored.project_summary,
+            "description": tailored.description,
+            "technologies": tailored.technologies,
+            "bullet_points": tailored.bullet_points[:max_bullets],
+            "github_url": original.get("github_url"),
+            "live_url": original.get("live_url"),
+            "start_date": original.get("start_date"),
+            "end_date": original.get("end_date"),
+        })
+
+    await log_progress(db, gen_id, "projects_writer", "Finished tailoring all project entries.")
+    return {"projects_draft": tailored_projs}
+
+
+async def extracurricular_node(
+    state: ResumeGraphState, db: AsyncSession, gen_id: str
+) -> dict[str, Any]:
     await log_progress(
-        db, gen_id, "projects_writer", "Finished tailoring all project entries."
+        db, gen_id, "extracurricular_writer", "Tailoring extracurricular entries..."
     )
-    return {"projects_draft": list(tailored_projs)}
+
+    extracurriculars = state.get("extracurriculars") or []
+    if not extracurriculars:
+        await log_progress(db, gen_id, "extracurricular_writer", "No extracurriculars to tailor.")
+        return {"extracurriculars_draft": []}
+
+    # Filter out entries that are just section headers (e.g. "Achievements")
+    valid_entries = [
+        ex for ex in extracurriculars
+        if ex.get("title", "").strip().lower() not in {
+            "achievements", "activities", "extra-curricular",
+            "extracurricular", "awards", "honors",
+        }
+    ]
+
+    if not valid_entries:
+        await log_progress(db, gen_id, "extracurricular_writer", "No valid extracurriculars after filtering headers.")
+        return {"extracurriculars_draft": []}
+
+    batch = valid_entries[:3]
+    job_analysis = str(state["job_analysis"])
+
+    entries_text = ""
+    for i, ex in enumerate(batch, start=1):
+        bullets = "\n".join(ex.get("bullet_points") or [])
+        entries_text += (
+            f"\n--- Entry {i} ---\n"
+            f"Title: {ex.get('title', '')}\n"
+            f"Organization: {ex.get('organization', '')}\n"
+            f"Description: {ex.get('description', '')}\n"
+            f"Start Date: {ex.get('start_date', '')}\n"
+            f"End Date: {ex.get('end_date', '')}\n"
+            f"Details:\n{bullets}\n"
+        )
+
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        "extracurricular_writer",
+        default_system=(
+            "You are an expert resume writer. For each extracurricular activity or achievement entry, "
+            "generate a SINGLE compelling descriptive sentence that captures the essence of the activity. "
+            "The sentence should read naturally, like: 'Led the winning team of Hacknight 2024 held at SCEM Mangalore' "
+            "or 'Presented AI automation project to 200+ attendees at the annual tech symposium'. "
+            "Use action verbs. Incorporate the organization name, event details, and any quantifiable impact naturally into the sentence. "
+            "Do NOT output section headers like 'Achievements' or 'Activities'. "
+            "Do NOT output the raw title verbatim — rewrite it into a natural sentence. "
+            "Each entry must produce exactly ONE sentence in the description field. "
+            "Return EXACTLY {batch_len} entries in the same order as the input."
+        ),
+        default_user="Job Analysis:\n{job_analysis}\n\nExtracurricular Entries:\n{entries}"
+    )
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", sys_prompt.format(batch_len=len(batch))),
+            ("user", usr_prompt),
+        ]
+    )
+
+    await log_progress(db, gen_id, "extracurricular_writer", f"Tailoring {len(batch)} extracurricular entries...")
+    result = await invoke_with_fallback(
+        lambda llm, p: prompt | _structured(llm, TailoredExtracurricularBatch, p),
+        {"job_analysis": job_analysis, "entries": entries_text},
+    )
+
+    tailored = [
+        {"description": entry.description}
+        for entry in result.entries[:3]
+    ]
+
+    await log_progress(db, gen_id, "extracurricular_writer", "Finished tailoring extracurricular entries.")
+    return {"extracurriculars_draft": tailored}
 
 
 async def assembly_node(
@@ -524,19 +588,8 @@ async def assembly_node(
             }
         )
 
-    # Map extracurriculars directly
-    extracurriculars = []
-    for ex in state.get("extracurriculars") or []:
-        extracurriculars.append(
-            {
-                "title": ex.get("title"),
-                "organization": ex.get("organization"),
-                "description": ex.get("description"),
-                "start_date": ex.get("start_date"),
-                "end_date": ex.get("end_date"),
-                "bullet_points": ex.get("bullet_points") or [],
-            }
-        )
+    # Map extracurriculars — use LLM-tailored descriptive sentences.
+    extracurriculars = state.get("extracurriculars_draft") or []
 
     tailored_resume = {
         "summary": summary_draft.get("summary"),
@@ -871,14 +924,8 @@ async def render_node(
     if resume.get("extracurriculars"):
         md_lines.append("## Extra-Curricular Activities & Achievements")
         for ex in resume["extracurriculars"]:
-            date_range = f"{ex.get('start_date', '')} – {ex.get('end_date', '') or 'Present'}"
-            md_lines.append(f"### {ex.get('title')} — {ex.get('organization') or ''}")
-            md_lines.append(f"_{date_range}_")
-            if ex.get("description"):
-                md_lines.append(ex["description"])
-            for bullet in ex.get("bullet_points") or []:
-                md_lines.append(f"- {bullet}")
-            md_lines.append("")
+            md_lines.append(f"- {ex.get('description', '')}")
+        md_lines.append("")
 
     md_content = "\n".join(md_lines)
     return {
@@ -1045,18 +1092,26 @@ async def orphan_repair_node(
         db,
         gen_id,
         "orphan_repair",
-        f"Repairing {len(orphans)} orphan/oversize bullet(s)...",
+        f"Repairing {len(orphans)} orphan/oversize bullet(s) (attempt {state.get('repair_attempts', 0) + 1})...",
     )
 
     experiences = state.get("experience_draft") or []
     projects = state.get("projects_draft") or []
-    extracurriculars = state.get("extracurriculars") or []
+    extracurriculars_draft = state.get("extracurriculars_draft") or []
+
+    # Load repair history — tracks originals before any repair so we can revert.
+    # Keys: "section:item_idx:bullet_idx" → original text before first repair.
+    repair_history = dict(state.get("repair_history") or {})
 
     def clean_text(s):
         return re.sub(r"\*\*", "", s).strip()
 
+    def history_key(section, item_idx, bullet_idx):
+        return f"{section}:{item_idx}:{bullet_idx}"
+
     bullet_blocks = []
     mapping = []
+    reverted = 0
 
     for idx, orphan in enumerate(orphans, start=1):
         orphan_clean = clean_text(orphan["text"])
@@ -1081,14 +1136,12 @@ async def orphan_repair_node(
                 if match:
                     break
 
-        # Try to find in extracurriculars
+        # Try to find in extracurriculars_draft (description field, not bullet_points)
         if not match:
-            for ex_idx, ex in enumerate(extracurriculars):
-                for bullet_idx, bullet in enumerate(ex.get("bullet_points") or []):
-                    if clean_text(bullet) == orphan_clean:
-                        match = ("extracurriculars", ex_idx, bullet_idx, bullet)
-                        break
-                if match:
+            for ex_idx, ex in enumerate(extracurriculars_draft):
+                desc = ex.get("description", "")
+                if desc and clean_text(desc) == orphan_clean:
+                    match = ("extracurriculars", ex_idx, 0, desc)
                     break
 
         if not match:
@@ -1102,13 +1155,36 @@ async def orphan_repair_node(
             continue
 
         section_key, item_idx, bullet_idx, original_md = match
+        hkey = history_key(section_key, item_idx, bullet_idx)
+
+        # ── Rollback check: if this bullet was repaired before and is now >2 lines,
+        #    revert to the pre-repair original instead of trying again.
+        if hkey in repair_history and orphan.get("renderedLines", 0) > 2:
+            pre_repair_text = repair_history[hkey]
+            await log_progress(
+                db,
+                gen_id,
+                "orphan_repair",
+                f"Bullet '{orphan['text'][:40]}...' regressed to {orphan['renderedLines']} lines after repair. Reverting to original.",
+                "warning",
+            )
+            if section_key == "experience":
+                experiences[item_idx]["bullet_points"][bullet_idx] = pre_repair_text
+            elif section_key == "projects":
+                projects[item_idx]["bullet_points"][bullet_idx] = pre_repair_text
+            elif section_key == "extracurriculars":
+                extracurriculars_draft[item_idx]["description"] = pre_repair_text
+            # Remove from history — original restored, no further repair needed.
+            del repair_history[hkey]
+            reverted += 1
+            continue
 
         if section_key == "projects":
             context = f"Project: \"{projects[item_idx].get('name', '')}\""
         elif section_key == "experience":
             context = f"Experience: \"{experiences[item_idx].get('role', '')}\" at {experiences[item_idx].get('organization', '')}"
         else:
-            context = f"Extracurricular: \"{extracurriculars[item_idx].get('title', '')}\""
+            context = "Extracurricular activity"
 
         fix_type = orphan["fix_type"]
         chars_per_line = orphan["charsPerLine"]
@@ -1153,53 +1229,80 @@ async def orphan_repair_node(
             "item_idx": item_idx,
             "bullet_idx": bullet_idx,
             "original_md": original_md,
+            "history_key": hkey,
             "target_max": target_max,
         })
 
+    if reverted:
+        await log_progress(
+            db, gen_id, "orphan_repair",
+            f"Reverted {reverted} bullet(s) to pre-repair originals due to >2 line regression.",
+        )
+
     if not bullet_blocks:
-        return {"orphans": None, "repair_attempts": state.get("repair_attempts", 0) + 1}
+        return {
+            "experience_draft": experiences,
+            "projects_draft": projects,
+            "extracurriculars_draft": extracurriculars_draft,
+            "orphans": None,
+            "repair_attempts": state.get("repair_attempts", 0) + 1,
+            "repair_history": repair_history,
+        }
 
     try:
         kw_text = ", ".join(state["keywords"][:8]) if state["keywords"] else "N/A"
     except Exception:
         kw_text = "N/A"
 
-    prompt = (
-        "OUTPUT FORMAT — THIS IS MANDATORY:\n"
-        "You MUST respond with ONLY a raw JSON object. No explanation. No prose. No markdown fences.\n"
-        "Shape:\n"
-        "{\n"
-        '  "bullets": [\n'
-        '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
-        '    {"index": 2, "replacement": "..."}\n'
-        "  ]\n"
-        "}\n\n"
-        "TASK: Rewrite resume bullet points to fix PDF line-wrap issues.\n"
-        "Font: Computer Modern Serif (proportional). Exact character limits given per bullet.\n\n"
-        "RULES:\n"
-        "- Character counts are VISIBLE characters only. Markdown bold markers (**) do NOT count.\n"
-        "- Start every bullet with a strong action verb.\n"
-        "- Use markdown bold (e.g. **35%**, **FastAPI**, **400ms**) to highlight all numbers, statistical figures, percentages, key technologies, and key metrics in the bullet points. Every number or metric MUST be bolded.\n"
-        "- Add job-relevant technical detail when expanding (use keywords from the job).\n"
-        "- Keep the core meaning and factual claims of the original.\n"
-        "- Each rewritten bullet MUST stay within its target character range.\n"
-        "- No bullet may EVER exceed 2 rendered lines. Respect the HARD MAX.\n"
-        "- No emojis.\n\n"
-        f"Job-relevant keywords: {kw_text}\n\n"
-        + "\n\n".join(bullet_blocks)
-        + "\n\n"
-        "Respond with ONLY the JSON object shown above. Nothing else."
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        "orphan_repair",
+        default_system="You are a precise resume editor. You ONLY output valid JSON. No explanation, no markdown fences.",
+        default_user=(
+            "OUTPUT FORMAT — THIS IS MANDATORY:\n"
+            "You MUST respond with ONLY a raw JSON object. No explanation. No prose. No markdown fences.\n"
+            "Shape:\n"
+            "{\n"
+            '  "bullets": [\n'
+            '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
+            '    {"index": 2, "replacement": "..."}\n'
+            "  ]\n"
+            "}\n\n"
+            "TASK: Rewrite resume bullet points to fix PDF line-wrap issues.\n"
+            "Font: Computer Modern Serif (proportional). Exact character limits given per bullet.\n\n"
+            "RULES:\n"
+            "- Character counts are VISIBLE characters only. Markdown bold markers (**) do NOT count.\n"
+            "- Start every bullet with a strong action verb.\n"
+            "- Use markdown bold (e.g. **35%**, **FastAPI**, **400ms**) to highlight all numbers, statistical figures, percentages, key technologies, and key metrics in the bullet points. Every number or metric MUST be bolded.\n"
+            "- Add job-relevant technical detail when expanding (use keywords from the job).\n"
+            "- Keep the core meaning and factual claims of the original.\n"
+            "- Each rewritten bullet MUST stay within its target character range.\n"
+            "- No bullet may EVER exceed 2 rendered lines. Respect the HARD MAX.\n"
+            "- No emojis.\n\n"
+            "Job-relevant keywords: {kw_text}\n\n"
+            "{bullet_blocks}\n\n"
+            "Respond with ONLY the JSON object shown above. Nothing else."
+        )
     )
 
-    llm = get_llm(state["api_key"])
+    formatted_usr_prompt = usr_prompt.format(
+        kw_text=kw_text,
+        bullet_blocks="\n\n".join(bullet_blocks)
+    )
+
     raw_response = ""
     try:
         from langchain_core.messages import SystemMessage, HumanMessage
         messages = [
-            SystemMessage(content="You are a precise resume editor. You ONLY output valid JSON. No explanation, no markdown fences."),
-            HumanMessage(content=prompt)
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=formatted_usr_prompt)
         ]
-        resp = await asyncio.wait_for(llm.ainvoke(messages), timeout=120.0)
+        # invoke_with_fallback expects a chain_factory; for raw message invoke, wrap accordingly.
+        resp = await invoke_with_fallback(
+            lambda llm, p: llm,
+            messages,
+            timeout=120.0,
+        )
         content = resp.content
         if isinstance(content, list):
             text_parts = []
@@ -1219,7 +1322,11 @@ async def orphan_repair_node(
             f"Error calling LLM for orphan repair: {e}",
             "error",
         )
-        return {"orphans": None, "repair_attempts": state.get("repair_attempts", 0) + 1}
+        return {
+            "orphans": None,
+            "repair_attempts": state.get("repair_attempts", 0) + 1,
+            "repair_history": repair_history,
+        }
 
     def extract_json(raw_text):
         fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
@@ -1261,13 +1368,18 @@ async def orphan_repair_node(
             section_key = entry["section_key"]
             item_idx = entry["item_idx"]
             bullet_idx = entry["bullet_idx"]
+            hkey = entry["history_key"]
+
+            # Save original to repair_history BEFORE overwriting (only first time).
+            if hkey not in repair_history:
+                repair_history[hkey] = entry["original_md"]
 
             if section_key == "experience":
                 experiences[item_idx]["bullet_points"][bullet_idx] = new_text
             elif section_key == "projects":
                 projects[item_idx]["bullet_points"][bullet_idx] = new_text
             elif section_key == "extracurriculars":
-                extracurriculars[item_idx]["bullet_points"][bullet_idx] = new_text
+                extracurriculars_draft[item_idx]["description"] = new_text
             
             applied += 1
 
@@ -1289,8 +1401,9 @@ async def orphan_repair_node(
     return {
         "experience_draft": experiences,
         "projects_draft": projects,
-        "extracurriculars": extracurriculars,
+        "extracurriculars_draft": extracurriculars_draft,
         "orphans": None,
         "repair_attempts": state.get("repair_attempts", 0) + 1,
+        "repair_history": repair_history,
     }
 

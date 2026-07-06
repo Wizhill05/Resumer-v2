@@ -8,6 +8,7 @@ from src.pipeline.nodes import (
     summary_skills_node,
     experience_node,
     project_node,
+    extracurricular_node,
     assembly_node,
     render_node,
     orphan_repair_node,
@@ -46,6 +47,12 @@ async def wrap_project(state: ResumeGraphState, config: RunnableConfig):
     db = config["configurable"]["db"]
     gen_id = config["configurable"]["gen_id"]
     return await project_node(state, db, gen_id)
+
+
+async def wrap_extracurricular(state: ResumeGraphState, config: RunnableConfig):
+    db = config["configurable"]["db"]
+    gen_id = config["configurable"]["gen_id"]
+    return await extracurricular_node(state, db, gen_id)
 
 
 async def wrap_assembly(state: ResumeGraphState, config: RunnableConfig):
@@ -88,6 +95,7 @@ def compile_graph():
     builder.add_node("summary_skills", wrap_summary_skills)
     builder.add_node("experience", wrap_experience)
     builder.add_node("project", wrap_project)
+    builder.add_node("extracurricular", wrap_extracurricular)
     builder.add_node("assembly", wrap_assembly)
     builder.add_node("render", wrap_render)
     builder.add_node("orphan_repair", wrap_orphan_repair)
@@ -102,11 +110,13 @@ def compile_graph():
     builder.add_edge("selection", "summary_skills")
     builder.add_edge("selection", "experience")
     builder.add_edge("selection", "project")
+    builder.add_edge("selection", "extracurricular")
 
     # Fan-in
     builder.add_edge("summary_skills", "assembly")
     builder.add_edge("experience", "assembly")
     builder.add_edge("project", "assembly")
+    builder.add_edge("extracurricular", "assembly")
 
     builder.add_edge("assembly", "render")
 

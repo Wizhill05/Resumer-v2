@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Menu, X } from "lucide-react"
 
-const links = [
+const defaultLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
   { href: "/dashboard/history", label: "History" },
@@ -14,6 +14,18 @@ const links = [
 export function Nav() {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const [links, setLinks] = useState(defaultLinks)
+
+  useEffect(() => {
+    // Check if user is admin to show Admin panel link
+    fetch("/api/backend/admin/analytics")
+      .then((res) => {
+        if (res.ok) {
+          setLinks([...defaultLinks, { href: "/admin", label: "Admin" }])
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setOpen(false) }, [pathname])
