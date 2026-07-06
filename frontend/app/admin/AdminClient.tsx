@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,10 @@ import {
   FileText, 
   Terminal, 
   Lock, 
-  ArrowLeft 
+  ArrowLeft,
+  Database,
+  Play,
+  Boxes,
 } from "lucide-react"
 
 type AnalyticsData = {
@@ -29,6 +32,26 @@ type AnalyticsData = {
     cerebras: { configured_keys_count: number }
     google: { configured_keys_count: number }
   }
+  llm_metrics: MetricSummary
+}
+
+type MetricSummary = {
+  total_tokens: number
+  average_node_latency_ms: number
+  fallback_count: number
+  parse_error_count: number
+  recorded_calls: number
+}
+
+type MetricNode = {
+  node_name: string
+  provider: string
+  calls: number
+  average_latency_ms: number
+  errors: number
+  fallbacks: number
+  parse_errors: number
+  total_tokens: number
 }
 
 type PromptConfig = {
@@ -61,6 +84,10 @@ type UserItem = {
   provider?: string
   request_count: number
   reset_at?: string
+  daily_cap?: number
+  monthly_cap?: number
+  monthly_count?: number
+  admin_note?: string
 }
 
 type LogItem = {
@@ -69,6 +96,29 @@ type LogItem = {
   level: string
   message: string
   node_name?: string
+}
+
+type PromptTestRun = {
+  id: string
+  prompt_name: string
+  status: string
+  output?: string
+  latency_ms?: number
+  error_message?: string
+  created_at: string
+}
+
+type StorageObject = {
+  key: string
+  size: number
+  last_modified?: string
+}
+
+type StorageList = {
+  enabled: boolean
+  objects: StorageObject[]
+  next_cursor?: string
+  error?: string
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -83,7 +133,18 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export function AdminClient() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"analytics" | "generations" | "prompts" | "users">("analytics")
+  const [activeTab, setActiveTab] = useState<"analytics" | "generations" | "prompts" | "users" | "metrics" | "storage" | "templates">("analytics")
+  const [generationSearch, setGenerationSearch] = useState("")
+  const [generationStatus, setGenerationStatus] = useState("")
+  const [generationUserType, setGenerationUserType] = useState("")
+  const [userSearch, setUserSearch] = useState("")
+  const [storagePrefix, setStoragePrefix] = useState("")
+  const [playgroundVariables, setPlaygroundVariables] = useState("{}")
+  const [playgroundResult, setPlaygroundResult] = useState("")
+  const [bulkCases, setBulkCases] = useState("[]")
+  const [templateId, setTemplateId] = useState("personal-classic")
+  const [templateContext, setTemplateContext] = useState("{}")
+  const [templateHtml, setTemplateHtml] = useState("")
   
   // States for Prompt editor
   const [selectedPrompt, setSelectedPrompt] = useState<PromptConfig | null>(null)
@@ -92,6 +153,9 @@ export function AdminClient() {
 
   // States for log view
   const [viewingLogsGenId, setViewingLogsGenId] = useState<string | null>(null)
+  const streamRef = useRef<EventSource | null>(null)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [liveLogs, setLiveLogs] = useState<LogItem[]>([])
 
   // States for rate limit edit
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
@@ -112,15 +176,25 @@ export function AdminClient() {
 
   // 3. Fetch Generations
   const { data: generations = [], isLoading: loadingGenerations } = useQuery<GenerationItem[]>({
-    queryKey: ["admin", "generations"],
-    queryFn: () => fetchJson<GenerationItem[]>("/api/backend/admin/generations?limit=50"),
+    queryKey: ["admin", "generations", generationSearch, generationStatus, generationUserType],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: "50" })
+      if (generationSearch.trim()) params.set("search", generationSearch.trim())
+      if (generationStatus) params.set("status_filter", generationStatus)
+      if (generationUserType) params.set("user_type", generationUserType)
+      return fetchJson<GenerationItem[]>(`/api/backend/admin/generations?${params}`)
+    },
     enabled: activeTab === "generations",
   })
 
   // 4. Fetch Users
   const { data: users = [], isLoading: loadingUsers } = useQuery<UserItem[]>({
-    queryKey: ["admin", "users"],
-    queryFn: () => fetchJson<UserItem[]>("/api/backend/admin/users?limit=50"),
+    queryKey: ["admin", "users", userSearch],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: "50" })
+      if (userSearch.trim()) params.set("search", userSearch.trim())
+      return fetchJson<UserItem[]>(`/api/backend/admin/users?${params}`)
+    },
     enabled: activeTab === "users",
   })
 
@@ -129,6 +203,30 @@ export function AdminClient() {
     queryKey: ["admin", "logs", viewingLogsGenId],
     queryFn: () => fetchJson<LogItem[]>(`/api/backend/admin/generations/${viewingLogsGenId}/logs`),
     enabled: !!viewingLogsGenId,
+  })
+
+  const { data: metricSummary } = useQuery<MetricSummary>({
+    queryKey: ["admin", "metrics", "summary"],
+    queryFn: () => fetchJson<MetricSummary>("/api/backend/admin/metrics/summary"),
+    enabled: activeTab === "metrics",
+  })
+
+  const { data: metricNodes = [] } = useQuery<MetricNode[]>({
+    queryKey: ["admin", "metrics", "nodes"],
+    queryFn: () => fetchJson<MetricNode[]>("/api/backend/admin/metrics/nodes"),
+    enabled: activeTab === "metrics",
+  })
+
+  const { data: promptRuns = [] } = useQuery<PromptTestRun[]>({
+    queryKey: ["admin", "prompt-test-runs"],
+    queryFn: () => fetchJson<PromptTestRun[]>("/api/backend/admin/prompts/test-runs"),
+    enabled: activeTab === "prompts",
+  })
+
+  const { data: storageList } = useQuery<StorageList>({
+    queryKey: ["admin", "storage", storagePrefix],
+    queryFn: () => fetchJson<StorageList>(`/api/backend/admin/storage/objects?prefix=${encodeURIComponent(storagePrefix)}`),
+    enabled: activeTab === "storage",
   })
 
   // Mutations
@@ -191,6 +289,89 @@ export function AdminClient() {
     },
   })
 
+  const updateCreditsMutation = useMutation({
+    mutationFn: async (payload: { userId: string; daily_cap: number; monthly_cap: number; admin_note?: string }) => {
+      const res = await fetch(`/api/backend/admin/users/${payload.userId}/credits`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error("Failed to update credits")
+      return res.json()
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "users"] }),
+  })
+
+  const runPlaygroundMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPrompt) throw new Error("Select a prompt first")
+      const res = await fetch("/api/backend/admin/prompts/playground", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt_name: selectedPrompt.name,
+          system_prompt: systemPromptVal,
+          user_prompt: userPromptVal,
+          variables: JSON.parse(playgroundVariables),
+        }),
+      })
+      if (!res.ok) throw new Error("Prompt playground failed")
+      return res.json()
+    },
+    onSuccess: (data) => {
+      setPlaygroundResult(data.output || data.error_message || "No output")
+      queryClient.invalidateQueries({ queryKey: ["admin", "prompt-test-runs"] })
+    },
+  })
+
+  const runBulkMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPrompt) throw new Error("Select a prompt first")
+      const res = await fetch("/api/backend/admin/prompts/bulk-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt_name: selectedPrompt.name,
+          system_prompt: systemPromptVal,
+          user_prompt: userPromptVal,
+          cases: JSON.parse(bulkCases),
+        }),
+      })
+      if (!res.ok) throw new Error("Bulk test failed")
+      return res.json()
+    },
+    onSuccess: (data) => {
+      setPlaygroundResult(JSON.stringify(data.results, null, 2))
+      queryClient.invalidateQueries({ queryKey: ["admin", "prompt-test-runs"] })
+    },
+  })
+
+  const deleteStorageMutation = useMutation({
+    mutationFn: async (key: string) => {
+      const res = await fetch("/api/backend/admin/storage/object", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      })
+      if (!res.ok) throw new Error("Delete failed")
+      return res.json()
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "storage"] }),
+  })
+
+  const renderTemplateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/backend/admin/templates/sandbox/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template_id: templateId, context: JSON.parse(templateContext) }),
+      })
+      if (!res.ok) throw new Error("Template render failed")
+      return res.json()
+    },
+    onSuccess: (data) => setTemplateHtml(data.html || ""),
+  })
+
   // Access check
   if (analyticsErr?.message === "Access Denied" || analyticsErr?.message === "Unauthorized") {
     return (
@@ -208,6 +389,49 @@ export function AdminClient() {
     setSelectedPrompt(p)
     setSystemPromptVal(p.system_prompt)
     setUserPromptVal(p.user_prompt || "")
+  }
+
+  const exportLogs = () => {
+    if (!viewingLogsGenId) return
+    const lines = (liveLogs.length > 0 ? liveLogs : logs).map((log) => {
+      const node = log.node_name ? `[${log.node_name}] ` : ""
+      return `${log.timestamp} [${log.level}] ${node}${log.message}`
+    })
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `generation-${viewingLogsGenId}-logs.txt`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const startLogStream = () => {
+    if (!viewingLogsGenId || streamRef.current) return
+    setLiveLogs([])
+    const stream = new EventSource(`/api/backend/admin/generations/${viewingLogsGenId}/stream`)
+    streamRef.current = stream
+    setIsStreaming(true)
+    stream.addEventListener("log", (event) => {
+      setLiveLogs((current) => [...current, JSON.parse((event as MessageEvent).data)])
+    })
+    stream.addEventListener("done", () => {
+      stream.close()
+      streamRef.current = null
+      setIsStreaming(false)
+      queryClient.invalidateQueries({ queryKey: ["admin", "logs", viewingLogsGenId] })
+    })
+    stream.onerror = () => {
+      stream.close()
+      streamRef.current = null
+      setIsStreaming(false)
+    }
+  }
+
+  const stopLogStream = () => {
+    streamRef.current?.close()
+    streamRef.current = null
+    setIsStreaming(false)
   }
 
   return (
@@ -242,6 +466,27 @@ export function AdminClient() {
         >
           <Users className="mr-2" size={16} /> User Rate Limits
         </Button>
+        <Button 
+          variant={activeTab === "metrics" ? "default" : "outline"} 
+          onClick={() => setActiveTab("metrics")}
+          size="sm"
+        >
+          <Database className="mr-2" size={16} /> LLM Metrics
+        </Button>
+        <Button 
+          variant={activeTab === "storage" ? "default" : "outline"} 
+          onClick={() => setActiveTab("storage")}
+          size="sm"
+        >
+          <Boxes className="mr-2" size={16} /> Storage
+        </Button>
+        <Button 
+          variant={activeTab === "templates" ? "default" : "outline"} 
+          onClick={() => setActiveTab("templates")}
+          size="sm"
+        >
+          <Play className="mr-2" size={16} /> Templates
+        </Button>
       </div>
 
       {/* ANALYTICS TAB */}
@@ -260,6 +505,7 @@ export function AdminClient() {
                 <div className="panel-strong bg-white p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Total Builds</p>
                   <p className="text-3xl font-black text-[#ff4e26] mt-1">{analytics.total_generations}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase text-zinc-500">{analytics.total_guest_generations} guest</p>
                 </div>
                 <div className="panel-strong bg-white p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Avg Latency</p>
@@ -331,20 +577,28 @@ export function AdminClient() {
         <div className="space-y-4 pixel-enter">
           {viewingLogsGenId ? (
             <div className="panel-strong bg-white p-5 space-y-4">
-              <div className="flex justify-between items-center border-b pb-3">
+              <div className="flex flex-wrap justify-between gap-2 items-center border-b pb-3">
                 <h3 className="font-bold uppercase text-sm tracking-wide">Logs for Generation {viewingLogsGenId}</h3>
-                <Button size="xs" variant="outline" onClick={() => setViewingLogsGenId(null)}>
-                  <ArrowLeft className="mr-1" size={12} /> Back to generations
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="xs" variant="outline" onClick={isStreaming ? stopLogStream : startLogStream}>
+                    {isStreaming ? "Stop live" : "Live stream"}
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={exportLogs} disabled={logs.length === 0 && liveLogs.length === 0}>
+                    Export logs
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={() => setViewingLogsGenId(null)}>
+                    <ArrowLeft className="mr-1" size={12} /> Back to generations
+                  </Button>
+                </div>
               </div>
 
               {loadingLogs ? (
                 <div className="soft-skeleton h-40" />
-              ) : logs.length === 0 ? (
+              ) : logs.length === 0 && liveLogs.length === 0 ? (
                 <p className="text-xs text-zinc-500 font-semibold italic text-center py-8">No logs found for this run.</p>
               ) : (
                 <div className="bg-zinc-950 p-4 text-white font-mono text-xs overflow-y-auto max-h-[450px] space-y-1.5 leading-relaxed">
-                  {logs.map((log) => {
+                  {(liveLogs.length > 0 ? liveLogs : logs).map((log) => {
                     let levelColor = "text-zinc-400"
                     if (log.level === "error") levelColor = "text-red-400"
                     if (log.level === "warning") levelColor = "text-amber-400"
@@ -368,6 +622,35 @@ export function AdminClient() {
                 <Button size="xs" variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["admin", "generations"] })}>
                   <RefreshCw size={12} className="mr-1" /> Refresh
                 </Button>
+              </div>
+
+              <div className="grid gap-2 rounded-none border border-zinc-200 bg-white p-3 md:grid-cols-[1fr_160px_160px]">
+                <Input
+                  value={generationSearch}
+                  onChange={(e) => setGenerationSearch(e.target.value)}
+                  placeholder="Search job, company, model, email"
+                  className="h-9 text-xs"
+                />
+                <select
+                  value={generationStatus}
+                  onChange={(e) => setGenerationStatus(e.target.value)}
+                  className="h-9 border border-zinc-200 bg-white px-2 text-xs font-semibold"
+                >
+                  <option value="">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                </select>
+                <select
+                  value={generationUserType}
+                  onChange={(e) => setGenerationUserType(e.target.value)}
+                  className="h-9 border border-zinc-200 bg-white px-2 text-xs font-semibold"
+                >
+                  <option value="">All users</option>
+                  <option value="user">Signed-in</option>
+                  <option value="guest">Guest</option>
+                </select>
               </div>
 
               {loadingGenerations ? (
@@ -408,6 +691,11 @@ export function AdminClient() {
                               <span className={`px-2 py-0.5 font-bold uppercase text-[9px] ${statusColor}`}>
                                 {gen.status}
                               </span>
+                              {gen.error_message && (
+                                <p className="mt-1 max-w-xs truncate text-[10px] font-semibold text-red-600" title={gen.error_message}>
+                                  {gen.error_message}
+                                </p>
+                              )}
                             </td>
                             <td className="p-3 text-zinc-500 font-mono text-[10px]">
                               {new Date(gen.created_at).toLocaleString()}
@@ -417,7 +705,11 @@ export function AdminClient() {
                                 size="xs" 
                                 variant="outline" 
                                 className="px-2"
-                                onClick={() => setViewingLogsGenId(gen.id)}
+                                onClick={() => {
+                                  stopLogStream()
+                                  setLiveLogs([])
+                                  setViewingLogsGenId(gen.id)
+                                }}
                               >
                                 <Terminal size={12} className="mr-1" /> Logs
                               </Button>
@@ -531,12 +823,151 @@ export function AdminClient() {
                       {updatePromptMutation.isPending ? "Saving..." : "Save Changes"}
                     </Button>
                   </div>
+
+                  <div className="border-t pt-4 space-y-3">
+                    <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Prompt Playground</h4>
+                    <Textarea
+                      rows={5}
+                      className="font-mono text-xs"
+                      value={playgroundVariables}
+                      onChange={(e) => setPlaygroundVariables(e.target.value)}
+                      placeholder='{"job_desc":"..."}'
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="xs" onClick={() => runPlaygroundMutation.mutate()} disabled={runPlaygroundMutation.isPending}>
+                        Run Once
+                      </Button>
+                      <Button size="xs" variant="outline" onClick={() => runBulkMutation.mutate()} disabled={runBulkMutation.isPending}>
+                        Run Bulk Cases
+                      </Button>
+                    </div>
+                    <Textarea
+                      rows={4}
+                      className="font-mono text-xs"
+                      value={bulkCases}
+                      onChange={(e) => setBulkCases(e.target.value)}
+                      placeholder='[{"job_desc":"case 1"},{"job_desc":"case 2"}]'
+                    />
+                    {playgroundResult && (
+                      <pre className="max-h-60 overflow-auto bg-zinc-950 p-3 text-xs text-white whitespace-pre-wrap">{playgroundResult}</pre>
+                    )}
+                    <div className="space-y-2">
+                      <h5 className="text-[10px] font-extrabold uppercase text-zinc-500">Recent test runs</h5>
+                      {promptRuns.slice(0, 5).map((run) => (
+                        <div key={run.id} className="border border-zinc-200 p-2 text-xs">
+                          <div className="flex justify-between font-bold">
+                            <span>{run.prompt_name}</span>
+                            <span>{run.status} · {Math.round(run.latency_ms || 0)}ms</span>
+                          </div>
+                          <p className="mt-1 truncate text-zinc-500">{run.output || run.error_message || "No output"}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </>
             ) : (
               <div className="h-64 flex items-center justify-center text-zinc-400 text-sm font-semibold italic">
                 Select a prompt from the sidebar to view and edit its template.
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* LLM METRICS TAB */}
+      {activeTab === "metrics" && (
+        <div className="space-y-4 pixel-enter">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
+            <div className="panel-strong bg-white p-4">
+              <p className="text-[10px] font-extrabold uppercase text-zinc-500">Calls</p>
+              <p className="text-2xl font-black">{metricSummary?.recorded_calls ?? 0}</p>
+            </div>
+            <div className="panel-strong bg-white p-4">
+              <p className="text-[10px] font-extrabold uppercase text-zinc-500">Tokens</p>
+              <p className="text-2xl font-black">{metricSummary?.total_tokens ?? 0}</p>
+            </div>
+            <div className="panel-strong bg-white p-4">
+              <p className="text-[10px] font-extrabold uppercase text-zinc-500">Avg Latency</p>
+              <p className="text-2xl font-black">{metricSummary?.average_node_latency_ms ?? 0}ms</p>
+            </div>
+            <div className="panel-strong bg-white p-4">
+              <p className="text-[10px] font-extrabold uppercase text-zinc-500">Fallbacks</p>
+              <p className="text-2xl font-black text-amber-600">{metricSummary?.fallback_count ?? 0}</p>
+            </div>
+            <div className="panel-strong bg-white p-4">
+              <p className="text-[10px] font-extrabold uppercase text-zinc-500">Parse Errors</p>
+              <p className="text-2xl font-black text-red-600">{metricSummary?.parse_error_count ?? 0}</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto border border-zinc-200 bg-white">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-zinc-100 font-bold text-zinc-700">
+                <tr><th className="p-3">Node</th><th className="p-3">Provider</th><th className="p-3">Calls</th><th className="p-3">Avg Latency</th><th className="p-3">Errors</th><th className="p-3">Tokens</th></tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200">
+                {metricNodes.map((row) => (
+                  <tr key={`${row.node_name}-${row.provider}`}>
+                    <td className="p-3 font-bold">{row.node_name}</td>
+                    <td className="p-3">{row.provider}</td>
+                    <td className="p-3">{row.calls}</td>
+                    <td className="p-3">{row.average_latency_ms}ms</td>
+                    <td className="p-3">{row.errors} errors · {row.fallbacks} fallbacks · {row.parse_errors} parse</td>
+                    <td className="p-3">{row.total_tokens}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* STORAGE TAB */}
+      {activeTab === "storage" && (
+        <div className="space-y-4 pixel-enter">
+          <div className="rounded-none border border-zinc-200 bg-white p-3 flex gap-2">
+            <Input value={storagePrefix} onChange={(e) => setStoragePrefix(e.target.value)} placeholder="Prefix filter" className="h-9 text-xs" />
+            <Button size="sm" variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["admin", "storage"] })}>Refresh</Button>
+          </div>
+          {storageList?.error && <p className="text-sm font-bold text-red-600">{storageList.error}</p>}
+          <div className="overflow-x-auto border border-zinc-200 bg-white">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-zinc-100 font-bold text-zinc-700">
+                <tr><th className="p-3">Key</th><th className="p-3">Size</th><th className="p-3">Modified</th><th className="p-3 text-right">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200">
+                {(storageList?.objects ?? []).map((obj) => (
+                  <tr key={obj.key}>
+                    <td className="p-3 font-mono break-all">{obj.key}</td>
+                    <td className="p-3">{obj.size} bytes</td>
+                    <td className="p-3">{obj.last_modified ? new Date(obj.last_modified).toLocaleString() : "-"}</td>
+                    <td className="p-3 text-right space-x-1.5">
+                      <Button size="xs" variant="outline" onClick={() => window.open(`/api/backend/admin/storage/object?key=${encodeURIComponent(obj.key)}`, "_blank")}>Meta</Button>
+                      <Button size="xs" variant="ghost" onClick={() => confirm("Delete object?") && deleteStorageMutation.mutate(obj.key)}>Delete</Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TEMPLATE SANDBOX TAB */}
+      {activeTab === "templates" && (
+        <div className="grid gap-4 md:grid-cols-2 pixel-enter">
+          <div className="panel-strong bg-white p-4 space-y-3">
+            <Label className="text-xs font-bold">Template ID</Label>
+            <Input value={templateId} onChange={(e) => setTemplateId(e.target.value)} className="h-9 text-xs" />
+            <Label className="text-xs font-bold">Render Context JSON</Label>
+            <Textarea rows={16} className="font-mono text-xs" value={templateContext} onChange={(e) => setTemplateContext(e.target.value)} />
+            <Button onClick={() => renderTemplateMutation.mutate()} disabled={renderTemplateMutation.isPending}>Render Sandbox</Button>
+          </div>
+          <div className="panel-strong bg-white p-4">
+            {templateHtml ? (
+              <iframe className="h-[650px] w-full border border-zinc-200" srcDoc={templateHtml} />
+            ) : (
+              <div className="flex h-64 items-center justify-center text-sm font-semibold text-zinc-400">Render output appears here.</div>
             )}
           </div>
         </div>
@@ -549,6 +980,15 @@ export function AdminClient() {
             <h3 className="text-sm font-bold uppercase tracking-wide">User Account Limit Overview</h3>
           </div>
 
+          <div className="rounded-none border border-zinc-200 bg-white p-3">
+            <Input
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Search users by email or name"
+              className="h-9 text-xs"
+            />
+          </div>
+
           {loadingUsers ? (
             <div className="soft-skeleton h-64" />
           ) : (
@@ -559,6 +999,7 @@ export function AdminClient() {
                     <th className="p-3">Name & Email</th>
                     <th className="p-3">Joined Date</th>
                     <th className="p-3">Used Count (24h)</th>
+                    <th className="p-3">Caps</th>
                     <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -598,8 +1039,17 @@ export function AdminClient() {
                             {u.request_count} builds
                           </span>
                         )}
+                        {u.reset_at && (
+                          <p className="mt-1 text-[10px] font-semibold text-zinc-400">
+                            Resets {new Date(u.reset_at).toLocaleString()}
+                          </p>
+                        )}
                       </td>
-                      <td className="p-3 text-right">
+                      <td className="p-3 text-zinc-600">
+                        <p className="font-mono">Daily {u.daily_cap ?? 5}</p>
+                        <p className="font-mono">Monthly {u.monthly_count ?? 0}/{u.monthly_cap ?? 150}</p>
+                      </td>
+                      <td className="p-3 text-right space-x-1.5">
                         <Button 
                           size="xs" 
                           variant="outline"
@@ -609,6 +1059,26 @@ export function AdminClient() {
                           }}
                         >
                           Set Used Count
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => updateRateLimitMutation.mutate({ userId: u.id, request_count: 0 })}
+                        >
+                          Reset
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => {
+                            const daily = Number(prompt("Daily cap", String(u.daily_cap ?? 5)))
+                            const monthly = Number(prompt("Monthly cap", String(u.monthly_cap ?? 150)))
+                            if (!Number.isNaN(daily) && !Number.isNaN(monthly)) {
+                              updateCreditsMutation.mutate({ userId: u.id, daily_cap: daily, monthly_cap: monthly, admin_note: u.admin_note })
+                            }
+                          }}
+                        >
+                          Caps
                         </Button>
                       </td>
                     </tr>

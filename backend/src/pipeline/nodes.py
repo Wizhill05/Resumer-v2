@@ -4,6 +4,7 @@ import io
 import json
 import math
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings  # noqa: F401 (kept for other settings usage)
 from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
-from src.models.generation import Generation, GenerationLog, PromptConfig
+from src.models.generation import Generation, GenerationLog, GenerationNodeMetric, PromptConfig
 from src.pipeline.state import ResumeGraphState
 from src.schemas.pipeline import (
     JobAnalysis,
@@ -86,7 +87,64 @@ def _structured(llm, schema, provider: str):
     return llm.with_structured_output(schema)
 
 
-async def invoke_with_fallback(chain_factory, invoke_args, timeout: float = 120.0):
+def _extract_token_usage(result: Any) -> tuple[int | None, int | None, int | None]:
+    metadata = getattr(result, "response_metadata", None) or {}
+    usage = metadata.get("token_usage") or metadata.get("usage_metadata") or getattr(result, "usage_metadata", None) or {}
+    prompt_tokens = usage.get("prompt_tokens") or usage.get("input_tokens")
+    completion_tokens = usage.get("completion_tokens") or usage.get("output_tokens")
+    total_tokens = usage.get("total_tokens") or usage.get("total_token_count")
+    return prompt_tokens, completion_tokens, total_tokens
+
+
+def _is_parse_error(exc: Exception) -> bool:
+    text = f"{exc.__class__.__name__}: {exc}".lower()
+    return any(part in text for part in ["validation", "parse", "parser", "json", "schema"])
+
+
+async def record_node_metric(
+    gen_id: str | None,
+    node_name: str | None,
+    provider: str,
+    model: str | None,
+    status: str,
+    latency_ms: float,
+    fallback_used: bool,
+    parse_error: bool = False,
+    error_message: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    total_tokens: int | None = None,
+) -> None:
+    if not gen_id or not node_name:
+        return
+    async with AsyncSessionLocal() as metric_session:
+        await metric_session.execute(
+            insert(GenerationNodeMetric).values(
+                generation_id=uuid.UUID(gen_id),
+                node_name=node_name,
+                provider=provider,
+                model=model,
+                status=status,
+                latency_ms=latency_ms,
+                fallback_used=fallback_used,
+                parse_error=parse_error,
+                error_message=error_message,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        await metric_session.commit()
+
+
+async def invoke_with_fallback(
+    chain_factory,
+    invoke_args,
+    timeout: float = 120.0,
+    node_name: str | None = None,
+    gen_id: str | None = None,
+):
     """Try Cerebras first; on any failure fall back to Google.
 
     chain_factory(llm, provider_name) -> a runnable chain.
@@ -98,13 +156,40 @@ async def invoke_with_fallback(chain_factory, invoke_args, timeout: float = 120.
         ("google", google_pool, _google_llm),
     ]
     last_exc: Exception | None = None
-    for name, pool, factory in providers:
+    for index, (name, pool, factory) in enumerate(providers):
+        started = time.perf_counter()
+        llm = None
         try:
             llm = factory(pool.next())
             chain = chain_factory(llm, name)
-            return await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
+            result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
+            prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(result)
+            await record_node_metric(
+                gen_id,
+                node_name,
+                name,
+                getattr(llm, "model_name", None) or getattr(llm, "model", None),
+                "success",
+                (time.perf_counter() - started) * 1000,
+                fallback_used=index > 0,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+            )
+            return result
         except Exception as exc:
             last_exc = exc
+            await record_node_metric(
+                gen_id,
+                node_name,
+                name,
+                getattr(llm, "model_name", None) or getattr(llm, "model", None) if llm else None,
+                "error",
+                (time.perf_counter() - started) * 1000,
+                fallback_used=name != "google",
+                parse_error=_is_parse_error(exc),
+                error_message=str(exc)[:2000],
+            )
             if name != "google":
                 print(f"[llm_fallback] {name} failed ({exc!r}). Retrying with Google...")
     raise RuntimeError(f"All LLM providers failed. Last error: {last_exc!r}") from last_exc
@@ -151,6 +236,8 @@ async def job_analysis_node(
             "keywords": ", ".join(state["keywords"]) if state["keywords"] else "None",
             "instructions": state["instructions"] or "None",
         },
+        node_name="job_analysis",
+        gen_id=gen_id,
     )
 
     await log_progress(
@@ -236,6 +323,8 @@ async def selection_node(
             "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
             "projects": "\n".join(proj_list_str) if proj_list_str else "None",
         },
+        node_name="selection",
+        gen_id=gen_id,
     )
 
     # ── Backend enforcement: clamp to exact split limits, dedup, fill gaps ────
@@ -328,6 +417,8 @@ async def summary_skills_node(
             "candidate_skills": ", ".join(state["profile"].get("skills") or []),
             "candidate_summary": state["profile"].get("summary") or "",
         },
+        node_name="summary_skills",
+        gen_id=gen_id,
     )
 
     await log_progress(
@@ -387,6 +478,8 @@ async def experience_node(
     result = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, TailoredExperienceBatch, p),
         {"job_analysis": job_analysis, "entries": entries_text},
+        node_name="experience_writer",
+        gen_id=gen_id,
     )
 
     tailored_exps = []
@@ -455,6 +548,8 @@ async def project_node(
     result = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, TailoredProjectBatch, p),
         {"job_analysis": job_analysis, "entries": entries_text},
+        node_name="projects_writer",
+        gen_id=gen_id,
     )
 
     tailored_projs = []
@@ -544,6 +639,8 @@ async def extracurricular_node(
     result = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, TailoredExtracurricularBatch, p),
         {"job_analysis": job_analysis, "entries": entries_text},
+        node_name="extracurricular_writer",
+        gen_id=gen_id,
     )
 
     tailored = [
@@ -1302,6 +1399,8 @@ async def orphan_repair_node(
             lambda llm, p: llm,
             messages,
             timeout=120.0,
+            node_name="orphan_repair",
+            gen_id=gen_id,
         )
         content = resp.content
         if isinstance(content, list):

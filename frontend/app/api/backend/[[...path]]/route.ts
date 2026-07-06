@@ -59,6 +59,15 @@ async function handleProxy(
       responseHeaders.set("Content-Disposition", contentDisp)
     }
 
+    if (contentType.includes("text/event-stream")) {
+      responseHeaders.set("Cache-Control", "no-cache")
+      responseHeaders.set("Connection", "keep-alive")
+      return new NextResponse(backendRes.body, {
+        status: backendRes.status,
+        headers: responseHeaders,
+      })
+    }
+
     const resData = await backendRes.blob()
     return new NextResponse(resData, {
       status: backendRes.status,

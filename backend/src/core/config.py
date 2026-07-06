@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     ADMIN_EMAILS: str = "admin@example.com,user@example.com"
+    DEFAULT_DAILY_CAP: int = 5
+    DEFAULT_MONTHLY_CAP: int = 150
 
     @property
     def admin_emails(self) -> list[str]:

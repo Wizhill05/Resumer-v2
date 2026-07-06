@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select, case
+from sqlalchemy import select, case, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,14 +13,13 @@ from src.core.database import get_db
 from src.core.executor import trigger_pipeline
 from src.core.notify import send_completion_email
 from src.core.storage import StorageService
-from src.models.generation import Generation, UserRateLimit, GenerationLog
+from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
 from src.models.user import User
 from src.schemas.generation import GenerationCreate, GenerationOut
 from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/generate", tags=["generation"])
 
-MAX_DAILY_RUNS = 5
 STUCK_TIMEOUT_MINUTES = 15
 
 
@@ -41,6 +40,26 @@ async def check_rate_limit(user: User, db: AsyncSession) -> None:
 
     now = datetime.now(timezone.utc)
     reset_at = now + timedelta(hours=24)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    override_result = await db.execute(
+        select(UserCreditOverride).where(UserCreditOverride.user_id == user.id)
+    )
+    override = override_result.scalar_one_or_none()
+    daily_cap = override.daily_cap if override and override.daily_cap is not None else settings.DEFAULT_DAILY_CAP
+    monthly_cap = override.monthly_cap if override and override.monthly_cap is not None else settings.DEFAULT_MONTHLY_CAP
+
+    monthly_result = await db.execute(
+        select(func.count(Generation.id)).where(
+            Generation.user_id == user.id,
+            Generation.created_at >= month_start,
+        )
+    )
+    monthly_count = monthly_result.scalar() or 0
+    if monthly_cap and monthly_count >= monthly_cap:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Monthly cap reached: {monthly_cap} generations per month.",
+        )
 
     stmt = (
         pg_insert(UserRateLimit)
@@ -65,10 +84,10 @@ async def check_rate_limit(user: User, db: AsyncSession) -> None:
     await db.commit()
 
     count, reset = row[0], row[1]
-    if count > MAX_DAILY_RUNS:
+    if daily_cap and count > daily_cap:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit: {MAX_DAILY_RUNS} generations per day. Resets at {reset.isoformat()}",
+            detail=f"Rate limit: {daily_cap} generations per day. Resets at {reset.isoformat()}",
         )
 
 

@@ -110,6 +110,51 @@ class StorageService:
             logger.error("StorageService: Failed to delete %s: %s", key, e)
             return False
 
+    def list_objects(self, prefix: str = "", limit: int = 100, cursor: str | None = None) -> dict:
+        if not self.enabled or not self.s3_client:
+            return {"objects": [], "next_cursor": None, "enabled": False}
+        try:
+            params = {
+                "Bucket": settings.R2_BUCKET_NAME,
+                "Prefix": prefix,
+                "MaxKeys": min(limit, 1000),
+            }
+            if cursor:
+                params["ContinuationToken"] = cursor
+            res = self.s3_client.list_objects_v2(**params)
+            return {
+                "enabled": True,
+                "objects": [
+                    {
+                        "key": item["Key"],
+                        "size": item.get("Size", 0),
+                        "last_modified": item.get("LastModified"),
+                        "etag": item.get("ETag"),
+                    }
+                    for item in res.get("Contents", [])
+                ],
+                "next_cursor": res.get("NextContinuationToken"),
+            }
+        except Exception as e:
+            logger.error("StorageService: Failed to list objects: %s", e)
+            return {"objects": [], "next_cursor": None, "enabled": True, "error": str(e)}
+
+    def get_object_metadata(self, key: str) -> dict | None:
+        if not self.enabled or not self.s3_client:
+            return None
+        try:
+            res = self.s3_client.head_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
+            return {
+                "key": key,
+                "size": res.get("ContentLength"),
+                "content_type": res.get("ContentType"),
+                "last_modified": res.get("LastModified"),
+                "metadata": res.get("Metadata"),
+            }
+        except Exception as e:
+            logger.error("StorageService: Failed to read metadata for %s: %s", key, e)
+            return None
+
     def ensure_lifecycle_policy(self) -> None:
         """Idempotently apply a 90-day expiry rule to all objects in the bucket.
 
