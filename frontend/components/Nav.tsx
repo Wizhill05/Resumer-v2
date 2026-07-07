@@ -7,6 +7,7 @@ import { Menu, X } from "lucide-react"
 
 const defaultLinks = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard/generate", label: "Generate" },
   { href: "/profile", label: "Profile" },
   { href: "/dashboard/history", label: "History" },
 ]

@@ -78,7 +78,7 @@ function ItemRow({
   return (
     <div className="rounded border border-zinc-200 bg-white">
       <div className="flex min-w-0 items-center gap-2 px-3 py-2.5">
-        <button type="button" onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <button type="button" onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left">
           {open
             ? <ChevronDown size={13} className="shrink-0 text-zinc-400" />
             : <ChevronRight size={13} className="shrink-0 text-zinc-400" />}
@@ -87,10 +87,10 @@ function ItemRow({
             {sub && <p className="truncate text-xs text-zinc-400">{sub}</p>}
           </div>
         </button>
-        <button type="button" onClick={() => setOpen(!open)} className="shrink-0 rounded p-1 text-zinc-400 hover:text-zinc-700">
+        <button type="button" onClick={() => setOpen(!open)} className="shrink-0 cursor-pointer rounded p-1 text-zinc-400 hover:text-zinc-700">
           <Pencil size={12} />
         </button>
-        <button type="button" onClick={onDelete} className="shrink-0 rounded p-1 text-zinc-400 hover:text-red-500">
+        <button type="button" onClick={onDelete} className="shrink-0 cursor-pointer rounded p-1 text-zinc-400 hover:text-red-500">
           <Trash2 size={12} />
         </button>
       </div>
@@ -114,7 +114,7 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-2.5 rounded px-3 py-2 text-left text-sm transition-colors ${
+      className={`flex w-full cursor-pointer items-center gap-2.5 rounded px-3 py-2 text-left text-sm transition-colors ${
         active
           ? "bg-zinc-900 text-white"
           : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
@@ -140,7 +140,7 @@ function AddCard({ title, children }: { title: string; children: React.ReactNode
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-900"
+        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-900"
       >
         <Plus size={14} className="shrink-0 text-zinc-400" />
         {title}
@@ -663,7 +663,7 @@ function GeneratePanel({
                 type="button"
                 disabled={locked}
                 onClick={() => !locked && setFocus(opt.id)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors disabled:cursor-not-allowed ${selected ? "bg-zinc-900 text-white" : "hover:bg-zinc-50"} ${locked ? "opacity-40" : ""}`}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"} ${selected ? "bg-zinc-900 text-white" : "hover:bg-zinc-50"}`}
               >
                 <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${selected ? "border-white bg-white text-zinc-900" : "border-zinc-300"}`}>
                   {selected ? "✓" : ""}

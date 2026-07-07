@@ -1,9 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { useQuery } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Clock, UserRound } from "lucide-react"
+import { clearGuestDraft, loadGuestDraft } from "@/lib/guest-storage"
 
 type Profile = {
   full_name?: string
@@ -24,6 +27,9 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export function DashboardClient() {
+  const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const [importMessage, setImportMessage] = useState<string | null>(null)
   const { data: profile, isLoading: loadingProfile } = useQuery<Profile>({
     queryKey: ["profile"],
     queryFn: () => getJson("/api/backend/profile"),
@@ -55,6 +61,78 @@ export function DashboardClient() {
   ].filter(Boolean) as string[]
   const profileComplete = !isLoading && missing.length === 0
 
+  useEffect(() => {
+    if (searchParams.get("importGuestDraft") !== "1" || isLoading) return
+
+    const key = "resumer_guest_imported_v1"
+    const draft = loadGuestDraft()
+    const hasDraft =
+      Object.values(draft.profile).some(Boolean) ||
+      draft.experiences.length > 0 ||
+      draft.projects.length > 0 ||
+      draft.education.length > 0 ||
+      draft.extracurriculars.length > 0
+    if (!hasDraft || window.sessionStorage.getItem(key) === draft.updatedAt) return
+
+    const importDraft = async () => {
+      window.sessionStorage.setItem(key, draft.updatedAt)
+      const jobs: Promise<Response>[] = []
+      if (!profile?.full_name && Object.values(draft.profile).some(Boolean)) {
+        jobs.push(fetch("/api/backend/profile", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(draft.profile),
+        }))
+      }
+      if (experiences.length === 0) {
+        jobs.push(...draft.experiences.map((item, i) => fetch("/api/backend/profile/experiences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
+        })))
+      }
+      if (projects.length === 0) {
+        jobs.push(...draft.projects.map((item, i) => fetch("/api/backend/profile/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
+        })))
+      }
+      if (education.length === 0) {
+        jobs.push(...draft.education.map((item, i) => fetch("/api/backend/profile/education", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
+        })))
+      }
+      if (extracurriculars.length === 0) {
+        jobs.push(...draft.extracurriculars.map((item, i) => fetch("/api/backend/profile/extracurriculars", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
+        })))
+      }
+      if (jobs.length === 0) return
+      const results = await Promise.all(jobs)
+      const ok = results.every((res) => res.ok)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["profile"] }),
+        queryClient.invalidateQueries({ queryKey: ["experiences"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["education"] }),
+        queryClient.invalidateQueries({ queryKey: ["extracurriculars"] }),
+      ])
+      if (ok) {
+        clearGuestDraft()
+        setImportMessage("Trial data imported into your new account.")
+      } else {
+        setImportMessage("Some trial data could not import. Check Profile.")
+      }
+    }
+
+    importDraft().catch(() => setImportMessage("Trial data import failed. Check Profile."))
+  }, [searchParams, isLoading, profile?.full_name, experiences, projects, education, extracurriculars, queryClient])
+
   if (isLoading) {
     return (
       <div className="space-y-4 md:space-y-5">
@@ -68,6 +146,11 @@ export function DashboardClient() {
 
   return (
     <div className="space-y-4 md:space-y-5 pixel-enter">
+      {importMessage && (
+        <div className="panel border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800">
+          {importMessage}
+        </div>
+      )}
       {!profileComplete && (
         <section className="sticky top-3 z-10 panel-strong overflow-hidden bg-white">
           <div className="h-1.5 bg-[#ff4e26]" />

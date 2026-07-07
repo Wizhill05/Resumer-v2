@@ -74,11 +74,11 @@ export default async function Home() {
           <div className="flex items-center gap-2">
             <Link
               href="/try"
-              className="inline-flex min-h-9 items-center justify-center border-2 border-zinc-950 bg-white px-3 text-xs font-black uppercase tracking-wide text-zinc-950 shadow-[2px_2px_0_#18181b] transition hover:-translate-y-0.5 hover:shadow-[4px_4px_0_#18181b]"
+              className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-5 text-xs font-black uppercase tracking-wide text-zinc-950 shadow-[2px_2px_0_#18181b] transition hover:-translate-y-0.5 hover:bg-zinc-50 active:translate-y-px active:shadow-none"
             >
               Try free
             </Link>
-            <LoginModal />
+            <LoginModal triggerClassName="h-10 px-5 text-xs" />
           </div>
         </div>
       </nav>
@@ -106,11 +106,11 @@ export default async function Home() {
           <div className="login-highlight mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
             <Link
               href="/try"
-              className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] transition hover:-translate-y-0.5 hover:shadow-[5px_5px_0_#18181b] active:translate-y-0"
+              className="inline-flex h-12 items-center justify-center border border-zinc-950 bg-[#ff4e26] px-6 text-sm font-black uppercase tracking-wide text-white shadow-[2px_2px_0_#18181b] transition hover:-translate-y-0.5 hover:bg-[#e03d16] active:translate-y-px active:shadow-none"
             >
               Try free
             </Link>
-            <LoginModal />
+            <LoginModal triggerClassName="h-12 px-6 text-sm" />
             <span className="text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
               No login: 5/day. Login keeps history.
             </span>

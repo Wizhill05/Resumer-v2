@@ -19,6 +19,8 @@ import {
   Database,
   Play,
   Boxes,
+  Download,
+  MoreHorizontal,
 } from "lucide-react"
 
 type AnalyticsData = {
@@ -74,6 +76,7 @@ type GenerationItem = {
   completed_at?: string
   is_guest: boolean
   error_message?: string
+  intermediate_resume_count: number
 }
 
 type UserItem = {
@@ -700,40 +703,60 @@ export function AdminClient() {
                             <td className="p-3 text-zinc-500 font-mono text-[10px]">
                               {new Date(gen.created_at).toLocaleString()}
                             </td>
-                            <td className="p-3 text-right space-x-1.5">
-                              <Button 
-                                size="xs" 
-                                variant="outline" 
-                                className="px-2"
-                                onClick={() => {
-                                  stopLogStream()
-                                  setLiveLogs([])
-                                  setViewingLogsGenId(gen.id)
-                                }}
-                              >
-                                <Terminal size={12} className="mr-1" /> Logs
-                              </Button>
-                              <Button 
-                                size="xs" 
-                                variant="outline"
-                                className="px-2"
-                                disabled={gen.status !== "failed"}
-                                onClick={() => retryGenMutation.mutate(gen.id)}
-                              >
-                                <RefreshCw size={12} className="mr-1" /> Retry
-                              </Button>
-                              <Button 
-                                size="xs" 
-                                variant="ghost"
-                                className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => {
-                                  if (confirm("Delete this generation and its storage artifacts?")) {
-                                    deleteGenMutation.mutate(gen.id)
-                                  }
-                                }}
-                              >
-                                <Trash2 size={12} />
-                              </Button>
+                            <td className="p-3 text-right">
+                              <details className="relative inline-block text-left">
+                                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded bg-zinc-100 px-3 py-1.5 text-xs font-bold text-zinc-700 transition hover:bg-zinc-200">
+                                  <MoreHorizontal size={13} /> Options
+                                </summary>
+                                <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 text-left shadow-lg">
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                                    onClick={() => {
+                                      stopLogStream()
+                                      setLiveLogs([])
+                                      setViewingLogsGenId(gen.id)
+                                    }}
+                                  >
+                                    <Terminal size={12} /> Logs
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:text-zinc-300"
+                                    disabled={gen.status !== "completed"}
+                                    onClick={() => { window.location.href = `/api/backend/admin/generations/${gen.id}/download` }}
+                                  >
+                                    <Download size={12} /> Final resume
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:text-zinc-300"
+                                    disabled={gen.intermediate_resume_count === 0}
+                                    onClick={() => { window.location.href = `/api/backend/admin/generations/${gen.id}/intermediate/0/download` }}
+                                  >
+                                    <FileText size={12} /> Intermediate
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:text-zinc-300"
+                                    disabled={gen.status !== "failed"}
+                                    onClick={() => retryGenMutation.mutate(gen.id)}
+                                  >
+                                    <RefreshCw size={12} /> Retry
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                                    onClick={() => {
+                                      if (confirm("Delete this generation and its storage artifacts?")) {
+                                        deleteGenMutation.mutate(gen.id)
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 size={12} /> Delete
+                                  </button>
+                                </div>
+                              </details>
                             </td>
                           </tr>
                         )

@@ -30,6 +30,7 @@ class GenerationOut(BaseModel):
     company: str | None
     status: str
     model_used: str
+    job_description: str
     created_at: datetime
     completed_at: datetime | None
     thumb_storage_key: str | None = None

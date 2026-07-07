@@ -263,6 +263,7 @@ async def run_generation(gen_id: str) -> None:
             g = await update_db.get(Generation, gen_uuid)
             if g:
                 job_analysis = result.get("job_analysis") or {}
+                previous_metadata = dict(g.render_metadata or {})
                 g.status = "completed"
                 g.job_title = job_analysis.get("job_title") or g.job_title
                 g.company = job_analysis.get("company") or g.company
@@ -275,6 +276,7 @@ async def run_generation(gen_id: str) -> None:
                     "tailored_resume": result.get("tailored_resume"),
                     "font_size": result.get("font_size"),
                     "page_count": result.get("page_count"),
+                    "intermediate_resumes": previous_metadata.get("intermediate_resumes") or [],
                 }
                 await update_db.commit()
                 send_completion_email(user_email, g, result.get("pdf_bytes"))

@@ -1,4 +1,5 @@
 import asyncio
+import ast
 import gc
 import io
 import json
@@ -101,6 +102,81 @@ def _is_parse_error(exc: Exception) -> bool:
     return any(part in text for part in ["validation", "parse", "parser", "json", "schema"])
 
 
+def _replace_prompt_vars(prompt: str, values: dict[str, str]) -> str:
+    """Replace explicit prompt placeholders without interpreting literal JSON braces."""
+    for key, value in values.items():
+        prompt = prompt.replace("{" + key + "}", value)
+    return prompt
+
+
+def _clean_skill_category(category: Any) -> str:
+    text = re.sub(r"[_\-]+", " ", str(category or "")).strip()
+    text = re.sub(r"\s+", " ", text)
+    words = []
+    for word in text.split(" "):
+        if word.isupper() or "/" in word:
+            words.append(word)
+        else:
+            words.append(word[:1].upper() + word[1:])
+    return " ".join(words)
+
+
+def _coerce_skill_items(items: Any) -> list[str]:
+    if items is None:
+        return []
+
+    if isinstance(items, str):
+        text = items.strip()
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = ast.literal_eval(text)
+                if isinstance(parsed, (list, tuple)):
+                    items = parsed
+                else:
+                    items = [text]
+            except (ValueError, SyntaxError):
+                items = [text.strip("[]")]
+        else:
+            items = [part.strip() for part in text.split(",")]
+    elif not isinstance(items, (list, tuple, set)):
+        items = [items]
+
+    cleaned = []
+    seen = set()
+    for item in items:
+        if isinstance(item, (list, tuple, set)):
+            candidates = _coerce_skill_items(item)
+        else:
+            candidates = [str(item)]
+        for candidate in candidates:
+            skill = candidate.strip().strip("[]'")
+            skill = re.sub(r"\s+", " ", skill)
+            if not skill or skill in seen:
+                continue
+            seen.add(skill)
+            cleaned.append(skill)
+    return cleaned
+
+
+def _normalize_skills(skills: Any) -> dict[str, list[str]]:
+    if not isinstance(skills, dict):
+        return {}
+
+    normalized: dict[str, list[str]] = {}
+    for category, items in skills.items():
+        clean_category = _clean_skill_category(category)
+        clean_items = _coerce_skill_items(items)
+        if not clean_category or not clean_items:
+            continue
+        if clean_category in normalized:
+            normalized[clean_category].extend(
+                item for item in clean_items if item not in normalized[clean_category]
+            )
+        else:
+            normalized[clean_category] = clean_items
+    return normalized
+
+
 async def record_node_metric(
     gen_id: str | None,
     node_name: str | None,
@@ -144,8 +220,9 @@ async def invoke_with_fallback(
     timeout: float = 120.0,
     node_name: str | None = None,
     gen_id: str | None = None,
+    max_attempts_per_provider: int = 3,
 ):
-    """Try Cerebras first; on any failure fall back to Google.
+    """Retry each provider call before falling back to the next provider.
 
     chain_factory(llm, provider_name) -> a runnable chain.
     Each call pulls its own key from the respective pool — parallel calls
@@ -157,41 +234,53 @@ async def invoke_with_fallback(
     ]
     last_exc: Exception | None = None
     for index, (name, pool, factory) in enumerate(providers):
-        started = time.perf_counter()
         llm = None
         try:
             llm = factory(pool.next())
-            chain = chain_factory(llm, name)
-            result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
-            prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(result)
-            await record_node_metric(
-                gen_id,
-                node_name,
-                name,
-                getattr(llm, "model_name", None) or getattr(llm, "model", None),
-                "success",
-                (time.perf_counter() - started) * 1000,
-                fallback_used=index > 0,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-            )
-            return result
         except Exception as exc:
             last_exc = exc
-            await record_node_metric(
-                gen_id,
-                node_name,
-                name,
-                getattr(llm, "model_name", None) or getattr(llm, "model", None) if llm else None,
-                "error",
-                (time.perf_counter() - started) * 1000,
-                fallback_used=name != "google",
-                parse_error=_is_parse_error(exc),
-                error_message=str(exc)[:2000],
-            )
-            if name != "google":
-                print(f"[llm_fallback] {name} failed ({exc!r}). Retrying with Google...")
+            print(f"[llm_fallback] {name} unavailable ({exc!r}).")
+            continue
+
+        chain = chain_factory(llm, name)
+        for attempt in range(1, max_attempts_per_provider + 1):
+            started = time.perf_counter()
+            try:
+                result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
+                prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(result)
+                await record_node_metric(
+                    gen_id,
+                    node_name,
+                    name,
+                    getattr(llm, "model_name", None) or getattr(llm, "model", None),
+                    "success",
+                    (time.perf_counter() - started) * 1000,
+                    fallback_used=index > 0,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                )
+                return result
+            except Exception as exc:
+                last_exc = exc
+                await record_node_metric(
+                    gen_id,
+                    node_name,
+                    name,
+                    getattr(llm, "model_name", None) or getattr(llm, "model", None),
+                    "error",
+                    (time.perf_counter() - started) * 1000,
+                    fallback_used=index > 0,
+                    parse_error=_is_parse_error(exc),
+                    error_message=f"attempt {attempt}/{max_attempts_per_provider}: {str(exc)[:1900]}",
+                )
+                if attempt < max_attempts_per_provider:
+                    sleep_for = min(0.75 * (2 ** (attempt - 1)), 3.0)
+                    print(f"[llm_retry] {name} attempt {attempt} failed ({exc!r}). Retrying same call in {sleep_for:.2f}s...")
+                    await asyncio.sleep(sleep_for)
+
+        if name != "google":
+            print(f"[llm_fallback] {name} exhausted {max_attempts_per_provider} attempts. Falling back to Google...")
     raise RuntimeError(f"All LLM providers failed. Last error: {last_exc!r}") from last_exc
 
 
@@ -200,6 +289,11 @@ async def get_prompt_config(db: AsyncSession, name: str, default_system: str, de
         result = await db.execute(select(PromptConfig).where(PromptConfig.name == name))
         cfg = result.scalar_one_or_none()
         if cfg:
+            if "OUTPUT CONTRACT:" not in cfg.system_prompt:
+                cfg.system_prompt = default_system
+                cfg.user_prompt = default_user
+                await db.commit()
+                return default_system, default_user
             return cfg.system_prompt, cfg.user_prompt
         
         cfg = PromptConfig(name=name, system_prompt=default_system, user_prompt=default_user)
@@ -224,8 +318,24 @@ async def job_analysis_node(
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         "job_analysis",
-        default_system="You are an expert technical recruiter. Analyze the job description and extract key information.",
-        default_user="Job Description:\n{job_desc}\n\nKeywords/Focus:\n{keywords}\n\nInstructions:\n{instructions}",
+        default_system=(
+            "ROLE: Senior technical recruiter and resume-targeting analyst.\n"
+            "TASK: Convert a job description into a compact, factual targeting brief for downstream resume generation.\n"
+            "OUTPUT CONTRACT: Return only the structured JobAnalysis object with these fields: job_title, company, seniority, key_requirements, extracted_skills.\n"
+            "RULES:\n"
+            "- Extract facts from the job description first; do not invent company-specific details.\n"
+            "- If company is absent, use 'Unknown Company'.\n"
+            "- Infer seniority conservatively from title, years, scope, and responsibility.\n"
+            "- key_requirements: 5-10 concise responsibility/qualification phrases, ordered by hiring importance.\n"
+            "- extracted_skills: technical tools, domains, methods, and important soft skills explicitly stated or strongly implied.\n"
+            "- Merge duplicates and normalize variants, e.g. 'JS' to 'JavaScript'.\n"
+            "- No prose outside the structured output."
+        ),
+        default_user=(
+            "INPUT: Job Description\n{job_desc}\n\n"
+            "INPUT: User Keywords / Focus\n{keywords}\n\n"
+            "INPUT: Additional Instructions\n{instructions}"
+        ),
     )
     prompt = ChatPromptTemplate.from_messages([("system", sys_prompt), ("user", usr_prompt)])
 
@@ -289,18 +399,24 @@ async def selection_node(
         db,
         "selection",
         default_system=(
-            "You are an expert technical recruiter matching candidate history to a job.\n"
-            "Select EXACTLY {max_exp} experience entries and EXACTLY {max_proj} project entries that are most relevant to the target job description.\n"
-            "If fewer than {max_exp} experiences exist, select all of them. If fewer than {max_proj} projects exist, select all of them.\n"
-            "Rank them in order of relevance, with the most relevant first.\n"
-            "Only output valid indices within the range of the provided lists. Do not invent indices."
+            "ROLE: Technical recruiter ranking candidate evidence for one target job.\n"
+            "TASK: Select resume source entries that best prove fit for the job analysis.\n"
+            "OUTPUT CONTRACT: Return only the structured SelectedItems object with selected_experience_indices and selected_project_indices.\n"
+            "RULES:\n"
+            "- Select EXACTLY {max_exp} experience indices and EXACTLY {max_proj} project indices when enough entries exist.\n"
+            "- If fewer entries exist than requested, select all valid entries of that type.\n"
+            "- Use 0-based indices only. Never invent, duplicate, or use out-of-range indices.\n"
+            "- Order each list by relevance, strongest first.\n"
+            "- Prefer entries with direct skill overlap, domain similarity, measurable impact, recent work, and seniority match.\n"
+            "- Do not rewrite content here. Only select indices.\n"
+            "- No prose outside the structured output."
         ),
         default_user=(
-            "Job Title: {job_title}\n"
-            "Job Requirements: {requirements}\n"
-            "Extracted Job Skills: {skills}\n\n"
-            "--- Candidate Experiences ---\n{experiences}\n\n"
-            "--- Candidate Projects ---\n{projects}"
+            "INPUT: Target Job Title\n{job_title}\n\n"
+            "INPUT: Key Requirements\n{requirements}\n\n"
+            "INPUT: Extracted Skills\n{skills}\n\n"
+            "INPUT: Candidate Experiences\n{experiences}\n\n"
+            "INPUT: Candidate Projects\n{projects}"
         )
     )
     prompt = ChatPromptTemplate.from_messages(
@@ -393,20 +509,23 @@ async def summary_skills_node(
         db,
         "summary_skills",
         default_system=(
-            "You are a professional resume writer. Write a tailored professional summary of exactly 1-2 sentences "
-            "(maximum 2 lines / 30 words) that is highly concise and highlights the most important qualifications. "
-            "Then organize skills into logical categories matching requirements from the job analysis.\n\n"
-            "IMPORTANT skill-writing rules:\n"
-            "- You MUST include a 'Soft Skills' category containing relevant soft skills (e.g., leadership, "
-            "communication, problem-solving, teamwork, adaptability, time management) inferred from the "
-            "candidate's experience and the job requirements.\n"
-            "- You are FREE to include skills that the candidate did not explicitly list, as long as they are "
-            "clearly demonstrated by the candidate's experience or would be valuable for the target role. "
-            "Use the job analysis to identify skill gaps and fill them with plausible skills.\n"
-            "- Prioritize skills that directly match the job requirements and extracted skills from the job analysis.\n"
-            "- Keep a maximum of 5-6 skill categories total (including Soft Skills)."
+            "ROLE: Senior resume writer optimizing top-of-resume positioning for ATS and human reviewers.\n"
+            "TASK: Write a concise targeted summary and categorized skills from candidate material and job analysis.\n"
+            "OUTPUT CONTRACT: Return only the structured TailoredSummaryAndSkills object with summary and skills.\n"
+            "RULES:\n"
+            "- summary: exactly 1-2 sentences, maximum 30 words, no first person, no fluff.\n"
+            "- Anchor summary in candidate evidence and job priorities; do not claim unsupported years, degrees, employers, or certifications.\n"
+            "- skills: dictionary of 3-6 categories total. Each category value must be a list of short skill names.\n"
+            "- Must include a 'Soft Skills' category with relevant soft skills inferred from candidate evidence and role needs.\n"
+            "- Prioritize job-matching skills first; include plausible demonstrated skills, not random keyword stuffing.\n"
+            "- Use clean category names such as Languages, Frontend, Backend, Data, Cloud, Tools, Soft Skills.\n"
+            "- No prose outside the structured output."
         ),
-        default_user="Job Analysis:\n{job_analysis}\n\nCandidate Skills:\n{candidate_skills}\n\nCandidate Summary:\n{candidate_summary}"
+        default_user=(
+            "INPUT: Job Analysis\n{job_analysis}\n\n"
+            "INPUT: Candidate Skills\n{candidate_skills}\n\n"
+            "INPUT: Candidate Existing Summary\n{candidate_summary}"
+        )
     )
     prompt = ChatPromptTemplate.from_messages([("system", sys_prompt), ("user", usr_prompt)])
 
@@ -427,7 +546,9 @@ async def summary_skills_node(
         "summary_skills",
         "Successfully tailored summary and grouped skills.",
     )
-    return {"summary_draft": result.model_dump()}
+    summary_draft = result.model_dump()
+    summary_draft["skills"] = _normalize_skills(summary_draft.get("skills"))
+    return {"summary_draft": summary_draft}
 
 
 async def experience_node(
@@ -459,13 +580,24 @@ async def experience_node(
         db,
         "experience_writer",
         default_system=(
-            "You are an expert resume writer. Tailor ALL provided experience entries to target the job analysis. "
-            "Rewrite bullet points using action verbs and highlight metrics or accomplishments relevant to the requirements. "
-            "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
-            "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks. "
-            "Return EXACTLY {batch_len} entries in the same order as the input."
+            "ROLE: Senior technical resume writer.\n"
+            "TASK: Rewrite selected experience entries to prove fit for the target job while preserving truth.\n"
+            "OUTPUT CONTRACT: Return only the structured TailoredExperienceBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
+            "RULES:\n"
+            "- Preserve role, organization, dates, and location unless input is missing.\n"
+            "- Each entry should contain 2-4 bullet_points, limited by available source material.\n"
+            "- Start every bullet with a strong past-tense action verb.\n"
+            "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact.\n"
+            "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence.\n"
+            "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks, e.g. **35%**, **FastAPI**, **400ms**.\n"
+            "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
+            "- Keep bullets concise, specific, and ATS-readable. No periods required.\n"
+            "- No prose outside the structured output."
         ),
-        default_user="Job Analysis:\n{job_analysis}\n\nExperience Entries:\n{entries}"
+        default_user=(
+            "INPUT: Job Analysis\n{job_analysis}\n\n"
+            "INPUT: Experience Entries To Rewrite\n{entries}"
+        )
     )
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -529,13 +661,25 @@ async def project_node(
         db,
         "projects_writer",
         default_system=(
-            "You are an expert resume writer. Tailor ALL provided project entries to target the job analysis. "
-            "Highlight technologies and achievements relevant to the target role. "
-            "Crucial line-fit rule: Each bullet point must be written such that it fits either strictly on 1 line, or if it wraps to a 2nd line, it must fill at least 75% of that 2nd line (i.e., between 1.75 and 1.95 lines long). NEVER write a bullet point that ends as an orphan (e.g. 1.1 to 1.7 lines long, where only a few words spill over to the second line). "
-            "Every single number, statistic, percentage, and key metric (e.g. **35%**, **FastAPI**, **400ms**) MUST be bolded using markdown asterisks. "
-            "Return EXACTLY {batch_len} entries in the same order as the input."
+            "ROLE: Senior technical resume writer specializing in project sections.\n"
+            "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
+            "OUTPUT CONTRACT: Return only the structured TailoredProjectBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
+            "RULES:\n"
+            "- Preserve project name unless spelling cleanup is needed.\n"
+            "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
+            "- description: one concise sentence explaining what the project does and why it matters.\n"
+            "- technologies: normalized list of technologies from input plus clearly supported technologies only.\n"
+            "- bullet_points: 2-3 concise achievement bullets, each starting with a strong action verb.\n"
+            "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported.\n"
+            "- Do not invent metrics, deployments, users, awards, or technologies not supported by input.\n"
+            "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
+            "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
+            "- No prose outside the structured output."
         ),
-        default_user="Job Analysis:\n{job_analysis}\n\nProject Entries:\n{entries}"
+        default_user=(
+            "INPUT: Job Analysis\n{job_analysis}\n\n"
+            "INPUT: Project Entries To Rewrite\n{entries}"
+        )
     )
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -616,17 +760,23 @@ async def extracurricular_node(
         db,
         "extracurricular_writer",
         default_system=(
-            "You are an expert resume writer. For each extracurricular activity or achievement entry, "
-            "generate a SINGLE compelling descriptive sentence that captures the essence of the activity. "
-            "The sentence should read naturally, like: 'Led the winning team of Hacknight 2024 held at SCEM Mangalore' "
-            "or 'Presented AI automation project to 200+ attendees at the annual tech symposium'. "
-            "Use action verbs. Incorporate the organization name, event details, and any quantifiable impact naturally into the sentence. "
-            "Do NOT output section headers like 'Achievements' or 'Activities'. "
-            "Do NOT output the raw title verbatim — rewrite it into a natural sentence. "
-            "Each entry must produce exactly ONE sentence in the description field. "
-            "Return EXACTLY {batch_len} entries in the same order as the input."
+            "ROLE: Resume editor for achievements, activities, and extracurricular entries.\n"
+            "TASK: Convert each input entry into one polished resume sentence.\n"
+            "OUTPUT CONTRACT: Return only the structured TailoredExtracurricularBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
+            "RULES:\n"
+            "- Each description must be exactly one sentence.\n"
+            "- Start with a strong action verb when possible.\n"
+            "- Include organization, event, award, scope, or measurable impact if present in input.\n"
+            "- Do not output section headers such as Achievements, Activities, Awards, or Honors.\n"
+            "- Do not copy raw title verbatim; rewrite into natural resume language.\n"
+            "- Do not invent rankings, attendance, dates, awards, or impact.\n"
+            "- Keep sentence concise enough for one resume bullet.\n"
+            "- No prose outside the structured output."
         ),
-        default_user="Job Analysis:\n{job_analysis}\n\nExtracurricular Entries:\n{entries}"
+        default_user=(
+            "INPUT: Job Analysis\n{job_analysis}\n\n"
+            "INPUT: Extracurricular Entries To Rewrite\n{entries}"
+        )
     )
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -690,7 +840,7 @@ async def assembly_node(
 
     tailored_resume = {
         "summary": summary_draft.get("summary"),
-        "skills": summary_draft.get("skills") or {},
+        "skills": _normalize_skills(summary_draft.get("skills")),
         "experiences": experiences,
         "projects": projects,
         "education": education,
@@ -929,6 +1079,34 @@ async def render_node(
     # Detect orphans
     orphans = detect_orphans_in_weasyprint(best_doc)
     if orphans:
+        if state.get("repair_attempts", 0) == 0:
+            try:
+                gen_uuid = uuid.UUID(gen_id)
+                gen = await db.get(Generation, gen_uuid)
+                if gen:
+                    metadata = dict(gen.render_metadata or {})
+                    intermediates = list(metadata.get("intermediate_resumes") or [])
+                    intermediates.append(
+                        {
+                            "label": "Before orphan repair",
+                            "tailored_resume": state["tailored_resume"],
+                            "font_size": best_font_size,
+                            "page_count": best_page_count,
+                            "orphans": orphans,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                    )
+                    metadata["intermediate_resumes"] = intermediates
+                    gen.render_metadata = metadata
+                    await db.commit()
+            except Exception as e:
+                await log_progress(
+                    db,
+                    gen_id,
+                    "renderer",
+                    f"Intermediate resume snapshot skipped: {e}",
+                    "warning",
+                )
         await log_progress(
             db,
             gen_id,
@@ -1354,37 +1532,43 @@ async def orphan_repair_node(
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         "orphan_repair",
-        default_system="You are a precise resume editor. You ONLY output valid JSON. No explanation, no markdown fences.",
+        default_system=(
+            "ROLE: Precise resume line-wrap repair editor.\n"
+            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
+            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
+            "QUALITY BAR: Preserve meaning and truth while meeting character limits exactly."
+        ),
         default_user=(
-            "OUTPUT FORMAT — THIS IS MANDATORY:\n"
-            "You MUST respond with ONLY a raw JSON object. No explanation. No prose. No markdown fences.\n"
-            "Shape:\n"
+            "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
             "{\n"
             '  "bullets": [\n'
             '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
             '    {"index": 2, "replacement": "..."}\n'
             "  ]\n"
             "}\n\n"
-            "TASK: Rewrite resume bullet points to fix PDF line-wrap issues.\n"
-            "Font: Computer Modern Serif (proportional). Exact character limits given per bullet.\n\n"
+            "INPUT: Rendering Context\n"
+            "Font: Computer Modern Serif (proportional). Each bullet has exact visible-character target range.\n\n"
             "RULES:\n"
-            "- Character counts are VISIBLE characters only. Markdown bold markers (**) do NOT count.\n"
+            "- Return one replacement for every Bullet listed below, using same index values.\n"
+            "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
             "- Start every bullet with a strong action verb.\n"
-            "- Use markdown bold (e.g. **35%**, **FastAPI**, **400ms**) to highlight all numbers, statistical figures, percentages, key technologies, and key metrics in the bullet points. Every number or metric MUST be bolded.\n"
-            "- Add job-relevant technical detail when expanding (use keywords from the job).\n"
+            "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
+            "- Expand by adding job-relevant supported technical detail; shorten by removing lower-value wording first.\n"
             "- Keep the core meaning and factual claims of the original.\n"
-            "- Each rewritten bullet MUST stay within its target character range.\n"
-            "- No bullet may EVER exceed 2 rendered lines. Respect the HARD MAX.\n"
-            "- No emojis.\n\n"
-            "Job-relevant keywords: {kw_text}\n\n"
-            "{bullet_blocks}\n\n"
-            "Respond with ONLY the JSON object shown above. Nothing else."
+            "- Each replacement must stay within its target range and respect HARD MAX.\n"
+            "- No emojis, no trailing explanations, no omitted bullets.\n\n"
+            "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
+            "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
+            "Return only the raw JSON object."
         )
     )
 
-    formatted_usr_prompt = usr_prompt.format(
-        kw_text=kw_text,
-        bullet_blocks="\n\n".join(bullet_blocks)
+    formatted_usr_prompt = _replace_prompt_vars(
+        usr_prompt,
+        {
+            "kw_text": kw_text,
+            "bullet_blocks": "\n\n".join(bullet_blocks),
+        },
     )
 
     raw_response = ""

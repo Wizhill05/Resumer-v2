@@ -6,7 +6,7 @@ import { signInGithub, signInGoogle } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
 
-export function LoginModal({ triggerClassName }: { triggerClassName?: string }) {
+export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { triggerClassName?: string; callbackUrl?: string }) {
   const [open, setOpen] = useState(false)
 
   // Close on Escape key
@@ -30,7 +30,7 @@ export function LoginModal({ triggerClassName }: { triggerClassName?: string }) 
         variant="default"
         size="sm"
         onClick={() => setOpen(true)}
-        className={triggerClassName ?? "shadow-[3px_3px_0_#18181b] ring-2 ring-[#ff4e26]/20 hover:ring-[#ff4e26]/35"}
+        className={triggerClassName}
       >
         Login
       </Button>
@@ -75,6 +75,7 @@ export function LoginModal({ triggerClassName }: { triggerClassName?: string }) 
             {/* Login options */}
             <div className="flex flex-col gap-3">
               <form action={signInGithub}>
+                <input type="hidden" name="callbackUrl" value={callbackUrl} />
                 <button
                   type="submit"
                   className="flex min-h-14 w-full items-center gap-3 border-2 border-black bg-white px-5 py-4 text-left text-base font-bold transition-colors hover:bg-zinc-50 active:bg-zinc-100"
@@ -88,6 +89,7 @@ export function LoginModal({ triggerClassName }: { triggerClassName?: string }) 
               </form>
 
               <form action={signInGoogle}>
+                <input type="hidden" name="callbackUrl" value={callbackUrl} />
                 <button
                   type="submit"
                   className="flex min-h-14 w-full items-center gap-3 border-2 border-black bg-white px-5 py-4 text-left text-base font-bold transition-colors hover:bg-zinc-50 active:bg-zinc-100"

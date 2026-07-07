@@ -12,6 +12,7 @@ type HistoryRun = {
   created_at: string
   template_id: string
   model_used: string
+  job_description: string
   thumb_storage_key?: string
 }
 
@@ -101,6 +102,40 @@ function StatusDot({ status }: { status: string }) {
   return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-[5px]" />
 }
 
+function JobDescriptionPeek({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const [hovered, setHovered] = useState(false)
+
+  const copy = async (event: React.MouseEvent) => {
+    event.stopPropagation()
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="relative inline-flex cursor-pointer items-center border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-zinc-500 hover:border-zinc-900 hover:text-zinc-900"
+    >
+      {hovered ? "Copy Job Description" : "See job description"}
+      {hovered && (
+        <span className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-72 border border-zinc-900 bg-white p-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal text-zinc-700 shadow-[4px_4px_0_#18181b]">
+          {text.slice(0, 700)}{text.length > 700 ? "..." : ""}
+        </span>
+      )}
+      {copied && (
+        <span className="absolute -top-8 left-0 z-30 whitespace-nowrap border border-emerald-700 bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase text-emerald-700 shadow-[2px_2px_0_#166534]">
+          Copied
+        </span>
+      )}
+    </button>
+  )
+}
+
 function useDeleteRun() {
   const queryClient = useQueryClient()
   return async (id: string) => {
@@ -151,6 +186,7 @@ function LiveProgressRow({
             <span className="mx-1.5 text-zinc-300">·</span>
             <span className="text-amber-500 font-medium">generating ({percent}%)</span>
           </p>
+          <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
           
           {/* Progress bar */}
           <div className="w-full bg-zinc-100 h-1 mt-2 rounded-full overflow-hidden">
@@ -226,6 +262,7 @@ function LiveProgressGridCard({
         <p className="text-xs text-zinc-400 mt-0.5 truncate pl-3.5">
           {run.company ? `${run.company} · ` : ""}{date}
         </p>
+        <div className="mt-2 pl-3.5"><JobDescriptionPeek text={run.job_description} /></div>
       </div>
     </div>
   )
@@ -447,6 +484,7 @@ export function HistoryClient() {
                         <><span className="dot-span mx-1.5 text-zinc-300 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
                       )}
                     </p>
+                    <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
                   </div>
                 </div>
 

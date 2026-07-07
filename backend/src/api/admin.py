@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func, delete, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,6 +96,7 @@ class AdminGenerationOut(BaseModel):
     completed_at: datetime | None = None
     is_guest: bool
     error_message: str | None = None
+    intermediate_resume_count: int = 0
 
 
 def _message_content_to_text(content: Any) -> str:
@@ -366,6 +367,62 @@ async def render_template_sandbox(data: TemplateSandboxRequest):
     return {"template_id": data.template_id, "html": html, "manifest": manifest.model_dump()}
 
 
+async def _render_generation_pdf(
+    gen: Generation,
+    resume_data: dict[str, Any],
+    font_size: float | None,
+    filename_prefix: str,
+) -> Response:
+    template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not template_manifest:
+        raise HTTPException(status_code=500, detail="Template files missing.")
+
+    if gen.is_guest and gen.guest_input_snapshot:
+        profile_data = gen.guest_input_snapshot.get("profile") or {}
+    else:
+        async with AsyncSessionLocal() as db:
+            from src.models.profile import Profile
+            profile_res = await db.execute(select(Profile).where(Profile.user_id == gen.user_id))
+            profile = profile_res.scalar_one_or_none()
+            if not profile:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            profile_data = {
+                "full_name": profile.full_name,
+                "email": profile.email,
+                "phone": profile.phone,
+                "location": profile.location,
+                "linkedin_url": profile.linkedin_url,
+                "github_url": profile.github_url,
+                "portfolio_url": profile.portfolio_url,
+                "subtitle": profile.subtitle,
+            }
+
+    html = TemplateRegistryService.render_template(
+        gen.template_id,
+        {
+            "profile": profile_data,
+            "resume": resume_data,
+            "font_size": font_size or template_manifest.max_font_size,
+            "page_margin_mm": template_manifest.page_margin_mm,
+        },
+    )
+    if not html:
+        raise HTTPException(status_code=500, detail="Template rendering failed.")
+
+    try:
+        from weasyprint import HTML
+    except (OSError, ImportError) as exc:
+        raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {exc}")
+
+    pdf = HTML(string=html, base_url=str(settings.TEMPLATES_DIR / gen.template_id)).write_pdf()
+    filename = f"{filename_prefix}-{gen.id}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @router.get("/prompts", response_model=list[PromptConfigSchema], dependencies=[Depends(get_current_admin)])
 async def list_prompts(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(PromptConfig))
@@ -441,9 +498,44 @@ async def list_all_generations(
                 completed_at=gen.completed_at,
                 is_guest=gen.is_guest,
                 error_message=gen.error_message,
+                intermediate_resume_count=len((gen.render_metadata or {}).get("intermediate_resumes") or []),
             )
         )
     return output
+
+
+@router.get("/generations/{id}/intermediate/{index}/download", dependencies=[Depends(get_current_admin)])
+async def download_intermediate_resume(id: uuid.UUID, index: int, db: AsyncSession = Depends(get_db)):
+    gen_res = await db.execute(select(Generation).where(Generation.id == id))
+    gen = gen_res.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+
+    intermediates = (gen.render_metadata or {}).get("intermediate_resumes") or []
+    if index < 0 or index >= len(intermediates):
+        raise HTTPException(status_code=404, detail="Intermediate resume not found")
+
+    snapshot = intermediates[index]
+    resume_data = snapshot.get("tailored_resume")
+    if not resume_data:
+        raise HTTPException(status_code=404, detail="Intermediate resume data missing")
+    return await _render_generation_pdf(gen, resume_data, snapshot.get("font_size"), "intermediate")
+
+
+@router.get("/generations/{id}/download", dependencies=[Depends(get_current_admin)])
+async def download_final_resume(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    gen_res = await db.execute(select(Generation).where(Generation.id == id))
+    gen = gen_res.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    if gen.status != "completed":
+        raise HTTPException(status_code=400, detail="Generation is not completed yet")
+
+    metadata = gen.render_metadata or {}
+    resume_data = metadata.get("tailored_resume")
+    if not resume_data:
+        raise HTTPException(status_code=404, detail="Final resume data missing")
+    return await _render_generation_pdf(gen, resume_data, metadata.get("font_size"), "final")
 
 
 @router.delete("/generations/{id}", dependencies=[Depends(get_current_admin)])

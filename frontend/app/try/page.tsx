@@ -1,8 +1,13 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { TryClient } from "./TryClient"
 import { LoginModal } from "@/components/LoginModal"
+import { auth } from "@/lib/auth"
 
-export default function TryPage() {
+export default async function TryPage() {
+  const session = await auth()
+  if (session) redirect("/dashboard")
+
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-white text-zinc-950">
       {/* App nav */}
@@ -14,7 +19,7 @@ export default function TryPage() {
           <span className="hidden text-xs text-zinc-500 sm:block">
             Sign in to save your data and resume history
           </span>
-          <LoginModal />
+          <LoginModal callbackUrl="/dashboard?importGuestDraft=1" />
         </div>
       </header>
 
