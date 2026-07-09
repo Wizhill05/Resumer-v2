@@ -3,7 +3,6 @@ import ast
 import gc
 import io
 import json
-import math
 import re
 import time
 import uuid
@@ -21,6 +20,8 @@ from src.core.config import settings  # noqa: F401 (kept for other settings usag
 from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
 from src.models.generation import Generation, GenerationLog, GenerationNodeMetric, PromptConfig
+from src.services.font_fit import find_best_font_size
+from src.services.resume_render import build_resume_markdown
 from src.pipeline.state import ResumeGraphState
 from src.schemas.pipeline import (
     JobAnalysis,
@@ -1004,52 +1005,48 @@ async def render_node(
         "page_margin_mm": template_manifest.get("page_margin_mm", 15),
     }
 
-    # True binary search for the largest font size that fits target_pages.
-    low = template_manifest.get("min_font_size", 8.0)
-    high = template_manifest.get("max_font_size", 12.0)
+    # Discrete 0.05pt binary search via shared font_fit utility.
+    min_fs = template_manifest.get("min_font_size", 8.0)
+    max_fs = template_manifest.get("max_font_size", 12.0)
     target_pages = template_manifest.get("target_pages", 1)
     font_base_url = str(settings.TEMPLATES_DIR / template_id)
 
-    best_font_size = low
-    best_pdf_bytes = None
-    best_page_count = 999
-    best_doc = None
+    # Probe state: keep only the most recent *fitting* doc in memory.
+    # Overflow docs are freed immediately (mirrors original render_node GC pattern).
+    _last_fit_doc: list = [None]   # list-cell trick for closure mutation
+    attempt_counter = [0]
 
-    span = max(high - low, 0.01)
-    iterations = max(4, math.ceil(math.log2(span / 0.05)))
-
-    for attempt in range(iterations):
-        mid = (low + high) / 2
+    def _render_page_count(font_size: float) -> int:
+        attempt_counter[0] += 1
         html_rendered = TemplateRegistryService.render_template(
-            template_id, {**render_context, "font_size": mid}
+            template_id, {**render_context, "font_size": font_size}
         )
-
         doc = HTML(string=html_rendered, base_url=font_base_url).render()
-        page_count = len(doc.pages)
-        await log_progress(
-            db,
-            gen_id,
-            "renderer",
-            f"Render attempt {attempt + 1}/{iterations}: font_size={mid:.2f}pt -> page_count={page_count}",
-        )
-
-        if page_count <= target_pages:
-            # Fits — record and try a larger font.
-            best_font_size = mid
-            best_pdf_bytes = doc.write_pdf()
-            best_page_count = page_count
-            # Free the previous best doc before replacing it
-            if best_doc is not None:
-                del best_doc
-            best_doc = doc
-            low = mid
+        pages = len(doc.pages)
+        if pages <= target_pages:
+            # Fits — replace cached doc; old doc freed by reference drop
+            _last_fit_doc[0] = doc
         else:
-            # Overflow — discard immediately, do not hold in memory
+            # Overflow — discard immediately
             del doc
-            high = mid
+        return pages
 
-    if best_pdf_bytes is None:
-        # Even the smallest font overflowed; render at min and let content_reduction handle it.
+    fit_result = find_best_font_size(
+        render_page_count=_render_page_count,
+        min_font_size=min_fs,
+        max_font_size=max_fs,
+        target_pages=target_pages,
+    )
+
+    await log_progress(
+        db,
+        gen_id,
+        "renderer",
+        f"Font fit: {attempt_counter[0]} probes, best={fit_result.font_size:.2f}pt, "
+        f"pages={fit_result.page_count}, fits={fit_result.fits_target}",
+    )
+
+    if not fit_result.fits_target:
         await log_progress(
             db,
             gen_id,
@@ -1057,14 +1054,21 @@ async def render_node(
             "Warning: overflow at minimum font size; defaulting to minimum.",
             "warning",
         )
+
+    best_font_size = fit_result.font_size
+    best_page_count = fit_result.page_count
+
+    # Use cached fitting doc if available; otherwise re-render (overflow-only case)
+    best_doc = _last_fit_doc[0]
+    if best_doc is not None:
+        best_pdf_bytes = best_doc.write_pdf()
+    else:
         html_rendered = TemplateRegistryService.render_template(
-            template_id,
-            {**render_context, "font_size": low},
+            template_id, {**render_context, "font_size": best_font_size}
         )
         best_doc = HTML(string=html_rendered, base_url=font_base_url).render()
         best_pdf_bytes = best_doc.write_pdf()
         best_page_count = len(best_doc.pages)
-        best_font_size = low
 
     # Force GC to reclaim WeasyPrint/Cairo objects from discarded render iterations
     gc.collect()
@@ -1122,87 +1126,11 @@ async def render_node(
             "Orphan detection: no orphan lines found.",
         )
 
-    # Generate Markdown version for history / parsing / raw text copies
-    resume = state["tailored_resume"]
-    profile = state["profile"]
-    md_lines = [f"# {profile.get('full_name', '')}"]
-
-    contacts = [
-        x
-        for x in [profile.get("email"), profile.get("phone"), profile.get("location")]
-        if x
-    ]
-    if contacts:
-        md_lines.append(" | ".join(contacts))
-
-    links = [
-        x
-        for x in [
-            profile.get("linkedin_url"),
-            profile.get("github_url"),
-            profile.get("portfolio_url"),
-        ]
-        if x
-    ]
-    if links:
-        md_lines.append(" | ".join(links))
-
-    md_lines.append("")
-
-    if resume.get("summary"):
-        md_lines += ["## Professional Summary", resume["summary"], ""]
-
-    if resume.get("skills"):
-        md_lines.append("## Skills")
-        for category, items in resume["skills"].items():
-            skill_list = ", ".join(items) if isinstance(items, list) else str(items)
-            md_lines.append(f"**{category}:** {skill_list}")
-        md_lines.append("")
-
-    if resume.get("experiences"):
-        md_lines.append("## Experience")
-        for exp in resume["experiences"]:
-            date_range = (
-                f"{exp.get('start_date', '')} – {exp.get('end_date') or 'Present'}"
-            )
-            md_lines.append(f"### {exp.get('role')} — {exp.get('organization')}")
-            if exp.get("location"):
-                md_lines.append(f"_{exp['location']} | {date_range}_")
-            else:
-                md_lines.append(f"_{date_range}_")
-            for bullet in exp.get("bullet_points") or []:
-                md_lines.append(f"- {bullet}")
-            md_lines.append("")
-
-    if resume.get("projects"):
-        md_lines.append("## Projects")
-        for proj in resume["projects"]:
-            md_lines.append(f"### {proj.get('name')}")
-            if proj.get("technologies"):
-                md_lines.append(f"_Technologies: {', '.join(proj['technologies'])}_")
-            if proj.get("description"):
-                md_lines.append(proj["description"])
-            for bullet in proj.get("bullet_points") or []:
-                md_lines.append(f"- {bullet}")
-            md_lines.append("")
-
-    if resume.get("education"):
-        md_lines.append("## Education")
-        for edu in resume["education"]:
-            date_range = f"{edu.get('start_date', '')} – {edu.get('end_date', '')}"
-            md_lines.append(f"### {edu.get('degree')} — {edu.get('institution')}")
-            md_lines.append(f"_{date_range}_")
-            if edu.get("gpa"):
-                md_lines.append(f"GPA: {edu['gpa']}")
-            md_lines.append("")
-
-    if resume.get("extracurriculars"):
-        md_lines.append("## Extra-Curricular Activities & Achievements")
-        for ex in resume["extracurriculars"]:
-            md_lines.append(f"- {ex.get('description', '')}")
-        md_lines.append("")
-
-    md_content = "\n".join(md_lines)
+    # Generate Markdown version via shared helper
+    md_content = build_resume_markdown(
+        profile=state["profile"],
+        resume=state["tailored_resume"],
+    )
     return {
         "pdf_bytes": best_pdf_bytes,
         "markdown": md_content,

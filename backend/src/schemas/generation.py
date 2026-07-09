@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -37,3 +38,72 @@ class GenerationOut(BaseModel):
     content_split: dict | None = None
 
     model_config = {"from_attributes": True}
+
+
+# ── Editor schemas ─────────────────────────────────────────────────────────────
+
+
+class EditorManifest(BaseModel):
+    """Subset of template manifest exposed to the editor client."""
+    min_font_size: float
+    max_font_size: float
+    target_pages: int
+    page_margin_mm: float
+
+
+class EditorProfileOut(BaseModel):
+    """Profile contact block for the editor header display."""
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    location: str | None = None
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    portfolio_url: str | None = None
+    subtitle: str | None = None
+
+
+class EditorPayload(BaseModel):
+    """Response for GET /generate/{id}/editor."""
+    id: uuid.UUID
+    template_id: str
+    job_title: str | None = None
+    company: str | None = None
+    status: str
+    editor_revision: int
+    profile: EditorProfileOut
+    tailored_resume: dict[str, Any]
+    font_size: float | None = None
+    page_count: int | None = None
+    fit_warning: bool = False
+    manifest: EditorManifest
+
+
+class RenderHtmlRequest(BaseModel):
+    """Body for POST /generate/{id}/render-html (Jinja only, no WeasyPrint)."""
+    resume: dict[str, Any]
+    profile: dict[str, Any] | None = None
+    font_size: float | None = None  # defaults to manifest max_font_size
+
+
+class RenderHtmlResponse(BaseModel):
+    html: str
+    template_id: str
+
+
+class EditorSaveRequest(BaseModel):
+    """Body for POST /generate/{id}/save."""
+    resume: dict[str, Any]
+    profile: dict[str, Any] | None = None
+    expected_revision: int
+
+
+class EditorSaveResponse(BaseModel):
+    """Response for POST /generate/{id}/save."""
+    editor_revision: int
+    font_size: float
+    page_count: int
+    fit_warning: bool
+    pdf_storage_key: str | None = None
+    thumb_storage_key: str | None = None
+

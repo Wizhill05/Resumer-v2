@@ -1,4 +1,8 @@
 from datetime import datetime, timedelta, timezone
+import io
+import logging
+import re
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
@@ -16,6 +20,15 @@ from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
 from src.models.user import User
 from src.schemas.generation import GenerationCreate, GenerationOut
+from src.schemas.generation import (
+    EditorManifest,
+    EditorPayload,
+    EditorProfileOut,
+    EditorSaveRequest,
+    EditorSaveResponse,
+    RenderHtmlRequest,
+    RenderHtmlResponse,
+)
 from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/generate", tags=["generation"])
@@ -304,20 +317,22 @@ async def preview_generation(
     if gen.is_guest and gen.guest_input_snapshot:
         profile_data = gen.guest_input_snapshot.get("profile") or {}
     else:
-        profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
-        profile = profile_res.scalar_one_or_none()
-        if not profile:
-            raise HTTPException(status_code=404, detail="Profile not found")
-        profile_data = {
-            "full_name": profile.full_name,
-            "email": profile.email,
-            "phone": profile.phone,
-            "location": profile.location,
-            "linkedin_url": profile.linkedin_url,
-            "github_url": profile.github_url,
-            "portfolio_url": profile.portfolio_url,
-            "subtitle": profile.subtitle,
-        }
+        profile_data = metadata.get("profile")
+        if not profile_data:
+            profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+            profile = profile_res.scalar_one_or_none()
+            if not profile:
+                raise HTTPException(status_code=404, detail="Profile not found")
+            profile_data = {
+                "full_name": profile.full_name,
+                "email": profile.email,
+                "phone": profile.phone,
+                "location": profile.location,
+                "linkedin_url": profile.linkedin_url,
+                "github_url": profile.github_url,
+                "portfolio_url": profile.portfolio_url,
+                "subtitle": profile.subtitle,
+            }
 
     template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
     if not template_manifest:
@@ -434,10 +449,22 @@ async def download_generation(
         raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
     from src.models.profile import Profile
-    profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
-    profile = profile_res.scalar_one_or_none()
-    if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+    profile_data = metadata.get("profile")
+    if not profile_data:
+        profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+        profile = profile_res.scalar_one_or_none()
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        profile_data = {
+            "full_name": profile.full_name,
+            "email": profile.email,
+            "phone": profile.phone,
+            "location": profile.location,
+            "linkedin_url": profile.linkedin_url,
+            "github_url": profile.github_url,
+            "portfolio_url": profile.portfolio_url,
+            "subtitle": profile.subtitle,
+        }
 
     template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
     if not template_manifest:
@@ -447,16 +474,7 @@ async def download_generation(
     html_rendered = TemplateRegistryService.render_template(
         gen.template_id,
         {
-            "profile": {
-                "full_name": profile.full_name,
-                "email": profile.email,
-                "phone": profile.phone,
-                "location": profile.location,
-                "linkedin_url": profile.linkedin_url,
-                "github_url": profile.github_url,
-                "portfolio_url": profile.portfolio_url,
-                "subtitle": profile.subtitle,
-            },
+            "profile": profile_data,
             "resume": tailored_resume,
             "font_size": font_size or template_manifest.max_font_size,
             "page_margin_mm": template_manifest.page_margin_mm,
@@ -480,4 +498,301 @@ async def download_generation(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ── Editor endpoints ───────────────────────────────────────────────────────────
+
+
+async def _get_completed_gen_for_editor(
+    gen_id: str,
+    current_user,
+    db: AsyncSession,
+):
+    """Shared ownership + status guard for all editor routes."""
+    if not settings.ENABLE_RESUME_EDITOR:
+        raise HTTPException(status_code=503, detail="Resume editor is not enabled.")
+
+    try:
+        gen_uuid = uuid.UUID(gen_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Generation not found")
+
+    result = await db.execute(
+        select(Generation).where(
+            Generation.id == gen_uuid, Generation.user_id == current_user.id
+        )
+    )
+    gen = result.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    if gen.status != "completed":
+        raise HTTPException(status_code=400, detail="Generation is not completed yet.")
+    metadata = gen.render_metadata or {}
+    if not metadata.get("tailored_resume"):
+        raise HTTPException(
+            status_code=400, detail="Generation has no editable resume data."
+        )
+    return gen
+
+
+@router.get("/{gen_id}/editor", response_model=EditorPayload)
+async def get_editor_payload(
+    gen_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all data the split-pane editor needs to initialise."""
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
+
+    manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not manifest_obj:
+        raise HTTPException(status_code=500, detail="Template manifest missing.")
+
+    metadata = gen.render_metadata or {}
+
+    # Load profile (prefer override in metadata)
+    profile_data = metadata.get("profile")
+    if not profile_data:
+        from src.models.profile import Profile
+        profile_res = await db.execute(
+            select(Profile).where(Profile.user_id == current_user.id)
+        )
+        profile = profile_res.scalar_one_or_none()
+        profile_data = {
+            "full_name": profile.full_name if profile else None,
+            "email": profile.email if profile else None,
+            "phone": profile.phone if profile else None,
+            "location": profile.location if profile else None,
+            "linkedin_url": profile.linkedin_url if profile else None,
+            "github_url": profile.github_url if profile else None,
+            "portfolio_url": profile.portfolio_url if profile else None,
+            "subtitle": profile.subtitle if profile else None,
+        }
+
+    profile_out = EditorProfileOut(**profile_data)
+
+    return EditorPayload(
+        id=gen.id,
+        template_id=gen.template_id,
+        job_title=gen.job_title,
+        company=gen.company,
+        status=gen.status,
+        editor_revision=metadata.get("editor_revision", 0),
+        profile=profile_out,
+        tailored_resume=metadata["tailored_resume"],
+        font_size=metadata.get("font_size"),
+        page_count=metadata.get("page_count"),
+        fit_warning=metadata.get("fit_warning", False),
+        manifest=EditorManifest(
+            min_font_size=manifest_obj.min_font_size,
+            max_font_size=manifest_obj.max_font_size,
+            target_pages=manifest_obj.target_pages,
+            page_margin_mm=manifest_obj.page_margin_mm,
+        ),
+    )
+
+
+@router.post("/{gen_id}/render-html", response_model=RenderHtmlResponse)
+async def render_html_for_editor(
+    gen_id: str,
+    data: RenderHtmlRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Jinja-only render for live editor preview. No WeasyPrint, no PDF."""
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
+
+    manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not manifest_obj:
+        raise HTTPException(status_code=500, detail="Template manifest missing.")
+
+    # Resolve profile for header: check request data, metadata, then database
+    profile_data = None
+    if data.profile:
+        profile_data = data.profile
+    else:
+        metadata = gen.render_metadata or {}
+        profile_data = metadata.get("profile")
+
+    if not profile_data:
+        from src.models.profile import Profile
+        profile_res = await db.execute(
+            select(Profile).where(Profile.user_id == current_user.id)
+        )
+        profile = profile_res.scalar_one_or_none()
+        profile_data = {
+            "full_name": profile.full_name if profile else "",
+            "email": profile.email if profile else None,
+            "phone": profile.phone if profile else None,
+            "location": profile.location if profile else None,
+            "linkedin_url": profile.linkedin_url if profile else None,
+            "github_url": profile.github_url if profile else None,
+            "portfolio_url": profile.portfolio_url if profile else None,
+            "subtitle": profile.subtitle if profile else None,
+        }
+
+    font_size = data.font_size if data.font_size is not None else manifest_obj.max_font_size
+
+    from src.services.resume_render import render_resume_html
+
+    html = render_resume_html(
+        template_id=gen.template_id,
+        profile=profile_data,
+        resume=data.resume,
+        font_size=font_size,
+        page_margin_mm=manifest_obj.page_margin_mm,
+    )
+    if html is None:
+        raise HTTPException(status_code=500, detail="Template rendering failed.")
+
+    # Rewrite relative asset URLs so fonts/icons load in the browser iframe.
+    # CSS: url('fonts/...') → url('/api/backend/templates/{id}/assets/fonts/...')
+    # HTML: src="personal-classic/icons/..." → src="/api/backend/templates/{id}/assets/icons/..."
+    asset_base = f"/api/backend/templates/{gen.template_id}/assets"
+    html = re.sub(
+        r"""url\(['"]?(fonts/[^'")\s]+)['"]?\)""",
+        lambda m: f"url('{asset_base}/{m.group(1)}')",
+        html,
+    )
+    html = re.sub(
+        r"""src=["'](?:personal-classic/)?(icons/[^"']+)["']""",
+        lambda m: f'src="{asset_base}/{m.group(1)}"',
+        html,
+    )
+
+    return RenderHtmlResponse(html=html, template_id=gen.template_id)
+
+
+@router.post("/{gen_id}/save", response_model=EditorSaveResponse)
+async def save_editor(
+    gen_id: str,
+    data: EditorSaveRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist edited resume: WeasyPrint fit, R2 upload, metadata update."""
+    _log = logging.getLogger("resumer.editor.save")
+    _t0 = time.monotonic()
+
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
+
+    metadata = dict(gen.render_metadata or {})
+    current_revision = metadata.get("editor_revision", 0)
+    if data.expected_revision != current_revision:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Revision conflict: expected {data.expected_revision}, current {current_revision}. Reload and retry.",
+        )
+
+    manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not manifest_obj:
+        raise HTTPException(status_code=500, detail="Template manifest missing.")
+
+    # Resolve profile: check request data, metadata, then database
+    profile_data = None
+    if data.profile:
+        profile_data = data.profile
+    else:
+        profile_data = metadata.get("profile")
+
+    if not profile_data:
+        from src.models.profile import Profile
+        profile_res = await db.execute(
+            select(Profile).where(Profile.user_id == current_user.id)
+        )
+        profile = profile_res.scalar_one_or_none()
+        profile_data = {
+            "full_name": profile.full_name if profile else "",
+            "email": profile.email if profile else None,
+            "phone": profile.phone if profile else None,
+            "location": profile.location if profile else None,
+            "linkedin_url": profile.linkedin_url if profile else None,
+            "github_url": profile.github_url if profile else None,
+            "portfolio_url": profile.portfolio_url if profile else None,
+            "subtitle": profile.subtitle if profile else None,
+        }
+
+    # Run WeasyPrint binary search
+    from src.services.resume_render import build_resume_markdown, fit_and_render_pdf
+
+    try:
+        pdf_bytes, fit_result = fit_and_render_pdf(
+            template_id=gen.template_id,
+            profile=profile_data,
+            resume=data.resume,
+            manifest=manifest_obj.model_dump(),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF render failed: {e}")
+
+    # Markdown
+    md_text = build_resume_markdown(profile=profile_data, resume=data.resume)
+
+    # Thumbnail
+    thumb_bytes: bytes | None = None
+    try:
+        import pypdfium2 as pdfium  # type: ignore[import-untyped]
+
+        pdf_doc = pdfium.PdfDocument(pdf_bytes)
+        page = pdf_doc[0]
+        scale = 400 / page.get_width()
+        bitmap = page.render(scale=scale, rotation=0)
+        pil_image = bitmap.to_pil()
+        buf = io.BytesIO()
+        pil_image.save(buf, format="WEBP", quality=80)
+        thumb_bytes = buf.getvalue()
+    except Exception as thumb_err:
+        print(f"[editor/save] Thumbnail generation skipped: {thumb_err}")
+
+    # R2 upload
+    pdf_key = f"runs/{gen_id}/resume.pdf"
+    md_key = f"runs/{gen_id}/resume.md"
+    thumb_key = f"runs/{gen_id}/thumb.webp"
+
+    storage = StorageService()
+    pdf_uploaded = storage.upload_bytes(pdf_bytes, pdf_key, "application/pdf")
+    storage.upload_bytes(md_text.encode("utf-8"), md_key, "text/markdown")
+    thumb_uploaded = thumb_bytes and storage.upload_bytes(thumb_bytes, thumb_key, "image/webp")
+
+    # Snapshot original resume on first edit
+    new_revision = current_revision + 1
+    if current_revision == 0 and "pre_edit_snapshot" not in metadata:
+        metadata["pre_edit_snapshot"] = {
+            "tailored_resume": metadata.get("tailored_resume"),
+            "font_size": metadata.get("font_size"),
+            "page_count": metadata.get("page_count"),
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    metadata["tailored_resume"] = data.resume
+    metadata["profile"] = profile_data
+    metadata["font_size"] = fit_result.font_size
+    metadata["page_count"] = fit_result.page_count
+    metadata["fit_warning"] = not fit_result.fits_target
+    metadata["editor_revision"] = new_revision
+    metadata["edited_at"] = datetime.now(timezone.utc).isoformat()
+
+    gen.render_metadata = metadata
+    if pdf_uploaded:
+        gen.pdf_storage_key = pdf_key
+    if thumb_uploaded:
+        gen.thumb_storage_key = thumb_key
+
+    await db.commit()
+
+    _elapsed_ms = int((time.monotonic() - _t0) * 1000)
+    _log.info(
+        "editor.save gen=%s revision=%d font_size=%.2f page_count=%d fit_warning=%s elapsed_ms=%d",
+        gen_id, new_revision, fit_result.font_size, fit_result.page_count,
+        not fit_result.fits_target, _elapsed_ms,
+    )
+
+    return EditorSaveResponse(
+        editor_revision=new_revision,
+        font_size=fit_result.font_size,
+        page_count=fit_result.page_count,
+        fit_warning=not fit_result.fits_target,
+        pdf_storage_key=pdf_key if pdf_uploaded else None,
+        thumb_storage_key=thumb_key if thumb_uploaded else None,
     )

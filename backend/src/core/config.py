@@ -58,6 +58,9 @@ class Settings(BaseSettings):
 
     EXECUTION_MODE: str = "local"
 
+    # Feature flags
+    ENABLE_RESUME_EDITOR: bool = True
+
     BACKEND_DIR: Path = Path(__file__).resolve().parent.parent.parent
     TEMPLATES_DIR: Path = BACKEND_DIR / "templates"
 

@@ -276,6 +276,10 @@ async def run_generation(gen_id: str) -> None:
                     "tailored_resume": result.get("tailored_resume"),
                     "font_size": result.get("font_size"),
                     "page_count": result.get("page_count"),
+                    # fit_warning=True when pipeline used min_font_size and page_count > target_pages
+                    "fit_warning": (result.get("page_count") or 1) > 1
+                        and result.get("font_size") is not None,
+                    "editor_revision": 0,
                     "intermediate_resumes": previous_metadata.get("intermediate_resumes") or [],
                 }
                 await update_db.commit()

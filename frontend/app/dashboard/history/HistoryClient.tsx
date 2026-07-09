@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText } from "lucide-react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil } from "lucide-react"
 
 type HistoryRun = {
   id: string
@@ -320,6 +320,16 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
           <span className={`title-span text-sm font-semibold leading-snug truncate transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900"}`}>
             {run.job_title || "Tailored Resume"}
           </span>
+          {completed && (
+            <button
+              onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
+              className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border border-zinc-300 text-zinc-600 bg-white hover:bg-zinc-50 hover:border-zinc-400 rounded transition-colors"
+              aria-label="Edit resume"
+            >
+              <Pencil size={11} />
+              Edit
+            </button>
+          )}
         </div>
         <p className="date-p text-xs text-zinc-400 mt-0.5 truncate pl-3.5 transition-colors duration-150">
           {run.company ? `${run.company} · ` : ""}{date}
@@ -488,14 +498,26 @@ export function HistoryClient() {
                   </div>
                 </div>
 
-                {/* Right: delete */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
-                  className="delete-btn shrink-0 p-1.5 text-zinc-300 hover:!text-white rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                  aria-label="Delete"
-                >
-                  <Trash2 size={14} />
-                </button>
+                {/* Right: edit + delete */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {completed && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium border border-zinc-200 text-zinc-500 bg-white hover:bg-zinc-50 hover:border-zinc-400 hover:!text-zinc-700 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      aria-label="Edit"
+                    >
+                      <Pencil size={12} />
+                      Edit
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
+                    className="delete-btn shrink-0 p-1.5 text-zinc-300 hover:!text-white rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    aria-label="Delete"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             )
           })}
