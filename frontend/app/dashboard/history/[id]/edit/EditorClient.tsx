@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Save, Download, RotateCcw, X, Loader2 } from "lucide-react"
+import { Save, Download, RotateCcw, X, Loader2, Eye } from "lucide-react"
 import { ResumeJsonEditor } from "@/components/editor/ResumeJsonEditor"
 import { ResumeFormEditor } from "@/components/editor/ResumeFormEditor"
 import { ResumePreviewPane } from "@/components/editor/ResumePreviewPane"
@@ -38,12 +38,12 @@ export function EditorClient({ payload }: Props) {
   const [fitWarning, setFitWarning] = useState<boolean>(payload.fit_warning)
   const [revision, setRevision] = useState<number>(payload.editor_revision)
 
+  // Mobile preview view state
+  const [showMobilePreview, setShowMobilePreview] = useState(false)
+
   // Save state
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-
-  // Zoom
-  const [zoom] = useState<number>(0.75)
 
   // Live HTML preview (debounced)
   const { html, loading: previewLoading } = useDebouncedHtmlPreview({
@@ -152,37 +152,39 @@ export function EditorClient({ payload }: Props) {
   const title = [payload.job_title, payload.company].filter(Boolean).join(" — ") || "Resume Editor"
 
   return (
-    <div className="flex flex-col h-screen bg-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-white overflow-hidden pb-16 md:pb-0">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-200 bg-white shrink-0">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-zinc-300 bg-white shrink-0">
         <button
           onClick={handleClose}
-          className="p-1 text-zinc-400 hover:text-zinc-700 transition-colors"
+          className="p-1 text-zinc-500 hover:text-zinc-800 transition-colors"
           aria-label="Close editor"
         >
           <X size={16} />
         </button>
 
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-zinc-800 truncate">{title}</span>
-          {dirty && <span className="ml-2 text-xs text-amber-500">unsaved</span>}
+          <span className="text-sm font-semibold text-zinc-950 truncate">{title}</span>
+          {dirty && <span className="ml-2 text-xs text-amber-600 font-bold">unsaved</span>}
         </div>
 
-        {/* Fit info */}
-        <FontFitBar
-          fontPt={fitFontPt}
-          pageCount={fitPageCount}
-          fits={!fitWarning}
-          minFontSize={payload.manifest.min_font_size}
-          maxFontSize={payload.manifest.max_font_size}
-          targetPages={payload.manifest.target_pages}
-        />
+        {/* Fit info (hidden on mobile, visible on desktop) */}
+        <div className="hidden md:block">
+          <FontFitBar
+            fontPt={fitFontPt}
+            pageCount={fitPageCount}
+            fits={!fitWarning}
+            minFontSize={payload.manifest.min_font_size}
+            maxFontSize={payload.manifest.max_font_size}
+            targetPages={payload.manifest.target_pages}
+          />
+        </div>
 
-        <div className="flex items-center gap-1">
+        <div className="hidden md:flex items-center gap-1">
           <button
             onClick={handleReset}
             disabled={!dirty || saving}
-            className="px-2.5 py-1.5 text-xs border border-zinc-200 text-zinc-600 hover:border-zinc-400 disabled:opacity-40 transition-colors"
+            className="px-2.5 py-1.5 text-xs border border-zinc-300 text-zinc-700 hover:border-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors cursor-pointer font-medium"
             title="Reset to last saved"
           >
             <RotateCcw size={13} className="inline mr-1" />
@@ -192,7 +194,7 @@ export function EditorClient({ payload }: Props) {
           <button
             onClick={handleSave}
             disabled={!dirty || !!jsonError || saving}
-            className="px-2.5 py-1.5 text-xs border border-zinc-200 text-zinc-600 hover:border-zinc-400 disabled:opacity-40 transition-colors flex items-center gap-1"
+            className="px-2.5 py-1.5 text-xs border border-zinc-300 text-zinc-700 hover:border-zinc-500 hover:bg-zinc-50 disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer font-medium"
             title="Save (⌘S)"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
@@ -202,7 +204,7 @@ export function EditorClient({ payload }: Props) {
           <button
             onClick={handleExportPdf}
             disabled={saving}
-            className="px-2.5 py-1.5 text-xs bg-[#ff4e26] text-white hover:bg-[#e03d1a] disabled:opacity-40 transition-colors flex items-center gap-1"
+            className="px-2.5 py-1.5 text-xs bg-[#ff4e26] text-white hover:bg-[#e03d1a] disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer font-semibold shadow-sm"
           >
             <Download size={13} />
             Export PDF
@@ -223,16 +225,16 @@ export function EditorClient({ payload }: Props) {
       {/* Overflow warning */}
       {fitWarning && <FitWarningBanner pageCount={fitPageCount} />}
 
-      {/* Split pane */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left — Editor (45%) */}
-        <div className="w-[45%] min-w-0 border-r border-gray-200 flex flex-col overflow-hidden bg-white">
+      {/* Split pane / Content area */}
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Left — Editor (Full on mobile, 45% on desktop) */}
+        <div className="w-full md:w-[45%] min-w-0 md:border-r border-zinc-300 flex flex-col overflow-hidden bg-white">
           {/* Mode Toggler */}
-          <div className="flex border-b border-zinc-200 bg-zinc-100 shrink-0">
+          <div className="flex border-b border-zinc-300 bg-zinc-100 shrink-0">
             <button
               onClick={() => setEditorMode("form")}
-              className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center border-r border-zinc-200 outline-none transition-colors cursor-pointer ${
-                editorMode === "form" ? "bg-white text-zinc-900 border-b-2 border-b-[#ff4e26]" : "text-zinc-500 hover:text-zinc-900"
+              className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center border-r border-zinc-300 outline-none transition-colors cursor-pointer ${
+                editorMode === "form" ? "bg-white text-zinc-950 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 hover:text-zinc-950"
               }`}
             >
               Form Editor
@@ -240,7 +242,7 @@ export function EditorClient({ payload }: Props) {
             <button
               onClick={() => setEditorMode("json")}
               className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center outline-none transition-colors cursor-pointer ${
-                editorMode === "json" ? "bg-white text-zinc-900 border-b-2 border-b-[#ff4e26]" : "text-zinc-500 hover:text-zinc-900"
+                editorMode === "json" ? "bg-white text-zinc-950 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 hover:text-zinc-950"
               }`}
             >
               Raw JSON
@@ -258,16 +260,99 @@ export function EditorClient({ payload }: Props) {
           )}
         </div>
 
-        {/* Right — preview (55%) */}
-        <div className="flex-1 min-w-0 overflow-hidden">
+        {/* Right — Preview (Hidden on mobile, 55% on desktop) */}
+        <div className="hidden md:block flex-1 min-w-0 overflow-hidden">
           <ResumePreviewPane
             html={html}
             loading={previewLoading}
             manifest={payload.manifest}
-            zoom={zoom}
             onFitChange={handleFitChange}
           />
         </div>
+
+        {/* Mobile Full Screen Preview Drawer/Overlay */}
+        {showMobilePreview && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-zinc-100 md:hidden">
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-300 bg-white">
+              <button
+                onClick={() => setShowMobilePreview(false)}
+                className="flex items-center gap-1 py-1.5 text-xs border border-zinc-300 text-zinc-700 hover:border-zinc-500 bg-white px-2.5 rounded transition-colors cursor-pointer font-bold animate-fade-in"
+              >
+                <X size={14} />
+                Back to Edit
+              </button>
+
+              <FontFitBar
+                fontPt={fitFontPt}
+                pageCount={fitPageCount}
+                fits={!fitWarning}
+                minFontSize={payload.manifest.min_font_size}
+                maxFontSize={payload.manifest.max_font_size}
+                targetPages={payload.manifest.target_pages}
+              />
+            </div>
+
+            {/* Drawer Preview area */}
+            <div className="flex-1 overflow-hidden">
+              <ResumePreviewPane
+                html={html}
+                loading={previewLoading}
+                manifest={payload.manifest}
+                onFitChange={handleFitChange}
+              />
+            </div>
+
+            {/* Drawer Footer controls */}
+            <div className="h-16 border-t border-zinc-300 bg-white flex items-center justify-around px-4">
+              <button
+                onClick={handleSave}
+                disabled={!dirty || !!jsonError || saving}
+                className="flex-1 max-w-[130px] flex items-center justify-center gap-1 py-2 text-xs font-bold border border-zinc-300 text-zinc-700 bg-white hover:bg-zinc-50 disabled:opacity-40 rounded transition-colors cursor-pointer"
+              >
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                Save
+              </button>
+              <button
+                onClick={handleExportPdf}
+                disabled={saving}
+                className="flex-1 max-w-[130px] flex items-center justify-center gap-1 py-2 text-xs font-bold bg-[#ff4e26] text-white hover:bg-[#e03d1a] disabled:opacity-40 rounded transition-colors cursor-pointer"
+              >
+                <Download size={13} />
+                Export PDF
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Sticky Action Navigation Bar (Mobile Only) */}
+      <div className="fixed bottom-0 left-0 right-0 h-16 border-t border-zinc-300 bg-white flex items-center justify-around px-4 md:hidden z-40">
+        <button
+          onClick={() => setShowMobilePreview(true)}
+          className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-zinc-600 hover:text-zinc-950 cursor-pointer"
+        >
+          <Eye size={20} />
+          <span className="text-[10px] font-black uppercase tracking-wide mt-0.5">Preview</span>
+        </button>
+
+        <button
+          onClick={handleSave}
+          disabled={!dirty || !!jsonError || saving}
+          className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-zinc-600 hover:text-zinc-950 disabled:opacity-40 cursor-pointer"
+        >
+          {saving ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
+          <span className="text-[10px] font-black uppercase tracking-wide mt-0.5">{saving ? "Saving..." : "Save"}</span>
+        </button>
+
+        <button
+          onClick={handleExportPdf}
+          disabled={saving}
+          className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-[#ff4e26] hover:text-[#e03d1a] disabled:opacity-40 cursor-pointer"
+        >
+          <Download size={20} />
+          <span className="text-[10px] font-black uppercase tracking-wide mt-0.5">Export PDF</span>
+        </button>
       </div>
     </div>
   )

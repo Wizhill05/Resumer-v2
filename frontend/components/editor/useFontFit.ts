@@ -71,13 +71,23 @@ export function useFontFit({
       const root = doc.documentElement
       const body = doc.body
 
+      // Prevent viewport height latching by wrapping all child elements in a temporary div.
+      // A standard block div has height auto-calculated solely from its contents, ignoring viewport height.
+      const wrapper = doc.createElement("div")
+      wrapper.style.position = "relative"
+      wrapper.style.display = "flow-root" // contain margins
+
+      const originalNodes = Array.from(body.childNodes)
+      originalNodes.forEach((node) => wrapper.appendChild(node))
+      body.appendChild(wrapper)
+
       function setFont(pt: number) {
         root.style.setProperty("--resume-font-size", `${pt}pt`)
         // Small sync reflow: not ideal but binary search is ≤8 iterations
       }
 
       function measurePages(): number {
-        const h = body.scrollHeight
+        const h = wrapper.getBoundingClientRect().height
         return Math.max(1, Math.ceil(h / budgetPx - 1e-6))
       }
 
@@ -98,16 +108,34 @@ export function useFontFit({
         }
       }
 
+      let finalFontPt = maxFontSize
+      let finalPageCount = 1
+      let finalFits = true
+
       if (bestIdx === null) {
         // Even min overflows
         setFont(steps[0])
-        const pages = measurePages()
-        setFitState({ fontPt: steps[0], pageCount: pages, fits: false, searching: false })
+        finalFontPt = steps[0]
+        finalPageCount = measurePages()
+        finalFits = false
       } else {
         setFont(steps[bestIdx])
-        const pages = measurePages()
-        setFitState({ fontPt: steps[bestIdx], pageCount: pages, fits: true, searching: false })
+        finalFontPt = steps[bestIdx]
+        finalPageCount = measurePages()
+        finalFits = true
       }
+
+      // Restore original body structure
+      const restoredNodes = Array.from(wrapper.childNodes)
+      restoredNodes.forEach((node) => body.appendChild(node))
+      body.removeChild(wrapper)
+
+      setFitState({
+        fontPt: finalFontPt,
+        pageCount: finalPageCount,
+        fits: finalFits,
+        searching: false,
+      })
     },
     [minFontSize, maxFontSize, targetPages, pageMarginMm, iframeRef]
   )

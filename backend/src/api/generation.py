@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 import io
 import logging
 import re
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, status, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select, case, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -796,3 +797,43 @@ async def save_editor(
         pdf_storage_key=pdf_key if pdf_uploaded else None,
         thumb_storage_key=thumb_key if thumb_uploaded else None,
     )
+
+
+# ── Guest claim endpoint ───────────────────────────────────────────────────────
+
+
+@router.post("/claim-guest")
+async def claim_guest_generations(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    guest_token: str | None = Cookie(default=None, alias="resumer_guest_token"),
+):
+    """Transfer all guest generations matching the browser cookie to the logged-in user.
+
+    Called after a guest logs in so their trial resume appears in History.
+    Safe to call multiple times (idempotent — already-claimed rows won't match).
+    """
+    if not guest_token:
+        return {"claimed": 0}
+
+    token_hash = hashlib.sha256(guest_token.encode("utf-8")).hexdigest()
+
+    result = await db.execute(
+        select(Generation).where(
+            Generation.guest_token_hash == token_hash,
+            Generation.is_guest == True,  # noqa: E712
+        )
+    )
+    generations = result.scalars().all()
+
+    if not generations:
+        return {"claimed": 0}
+
+    for gen in generations:
+        gen.user_id = current_user.id
+        gen.is_guest = False
+        gen.guest_token_hash = None
+        gen.expires_at = None  # remove TTL — belongs to real account now
+
+    await db.commit()
+    return {"claimed": len(generations)}

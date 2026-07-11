@@ -123,7 +123,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
     >
       {hovered ? "Copy Job Description" : "See job description"}
       {hovered && (
-        <span className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-72 border border-zinc-900 bg-white p-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal text-zinc-700 shadow-[4px_4px_0_#18181b]">
+        <span className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-72 border border-zinc-900 bg-white p-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal text-zinc-700 shadow-[4px_4px_0_#18181b] hidden md:block">
           {text.slice(0, 700)}{text.length > 700 ? "..." : ""}
         </span>
       )}
@@ -499,11 +499,11 @@ export function HistoryClient() {
                 </div>
 
                 {/* Right: edit + delete */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   {completed && (
                     <button
                       onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium border border-zinc-200 text-zinc-500 bg-white hover:bg-zinc-50 hover:border-zinc-400 hover:!text-zinc-700 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold border border-zinc-300 text-zinc-700 bg-white hover:bg-zinc-50 hover:border-zinc-400 hover:!text-zinc-800 rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
                       aria-label="Edit"
                     >
                       <Pencil size={12} />
@@ -512,7 +512,7 @@ export function HistoryClient() {
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
-                    className="delete-btn shrink-0 p-1.5 text-zinc-300 hover:!text-white rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    className="delete-btn shrink-0 p-1.5 text-zinc-500 hover:text-red-600 md:text-zinc-300 md:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
                     aria-label="Delete"
                   >
                     <Trash2 size={14} />

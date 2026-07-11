@@ -64,6 +64,13 @@ export function DashboardClient() {
   useEffect(() => {
     if (searchParams.get("importGuestDraft") !== "1" || isLoading) return
 
+    // Always claim guest generations when redirected from /try — safe and idempotent
+    const claimKey = "resumer_guest_claimed_v1"
+    if (!window.sessionStorage.getItem(claimKey)) {
+      window.sessionStorage.setItem(claimKey, "1")
+      fetch("/api/backend/generate/claim-guest", { method: "POST" }).catch(() => {})
+    }
+
     const key = "resumer_guest_imported_v1"
     const draft = loadGuestDraft()
     const hasDraft =

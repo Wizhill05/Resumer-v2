@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import {
   AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
   Loader2, Plus, Trash2, Upload, X, Pencil, FileText,
-  Briefcase, FolderGit2, GraduationCap, Award, User, Lock,
+  Briefcase, FolderGit2, GraduationCap, Award, User, Lock, Menu,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -231,11 +231,11 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={importing}
-          className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 py-8 text-sm text-zinc-400 transition hover:border-zinc-400 hover:bg-zinc-100 disabled:opacity-50"
+          className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-[#ff4e26]/30 bg-[#ff4e26]/5 py-8 text-sm text-[#ff4e26] transition hover:border-[#ff4e26] hover:bg-[#ff4e26]/10 disabled:opacity-50 cursor-pointer"
         >
           {importing
-            ? <><Loader2 size={20} className="animate-spin" /><span className="text-xs font-medium text-zinc-600">{stageLabel}</span>{stageHint && <span className="text-xs text-zinc-400">{stageHint}</span>}</>
-            : <><Upload size={20} /><span className="font-medium text-zinc-600">Click to upload old resumes</span><span className="text-xs">PDF only · up to 5 files · 5 MB each</span></>
+            ? <><Loader2 size={20} className="animate-spin" /><span className="text-xs font-medium text-zinc-800">{stageLabel}</span>{stageHint && <span className="text-xs text-zinc-500">{stageHint}</span>}</>
+            : <><Upload size={20} className="text-[#ff4e26]" /><span className="font-bold text-zinc-800">Click to upload old resumes</span><span className="text-xs text-zinc-500 font-semibold">PDF only · up to 5 files · 5 MB each</span></>
           }
         </button>
         {importing && (
@@ -805,13 +805,43 @@ export function TryClient() {
     { id: "generate",        icon: FileText,    label: "Generate" },
   ]
 
+  const activeNavItem = nav.find((item) => item.id === active)
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col relative bg-zinc-50">
       <ConsentBanner accepted={accepted} onAccept={acceptCookies} />
 
+      {/* Mobile Top Tabs Header (hidden on desktop) */}
+      <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-zinc-100 border-b border-zinc-200 md:hidden shrink-0">
+        {nav.map((item) => {
+          const Icon = item.icon
+          const isActive = active === item.id
+          const shortLabel = item.id === "profile" ? "Profile" : item.id === "extracurriculars" ? "More" : item.label
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActive(item.id)}
+              className={`flex shrink-0 select-none items-center gap-1.5 border px-2.5 py-1.5 text-[11px] font-extrabold uppercase tracking-wide transition-colors rounded cursor-pointer ${
+                isActive
+                  ? "border-zinc-950 bg-zinc-950 text-white shadow-[1px_1px_0px_#18181b]"
+                  : "border-zinc-200 bg-white text-zinc-800 hover:border-zinc-400"
+              }`}
+            >
+              <Icon size={12} />
+              <span>{shortLabel}</span>
+              {item.count !== undefined && (
+                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-black ${isActive ? "bg-white/20 text-white" : "bg-zinc-250 text-zinc-500"}`}>
+                  {item.count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="flex min-h-0 flex-1">
-        {/* Sidebar */}
-        <nav className="flex w-52 shrink-0 flex-col gap-1 border-r border-zinc-200 bg-zinc-50 p-2">
+        {/* Sidebar (desktop only) */}
+        <nav className="hidden md:flex w-52 shrink-0 flex-col gap-1 border-r border-zinc-200 bg-zinc-50 p-2">
           {nav.map((item) => (
             <NavItem
               key={item.id}
@@ -833,7 +863,7 @@ export function TryClient() {
         </nav>
 
         {/* Main content + sticky footer */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col bg-white">
           {/* Scrollable content area */}
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} />}

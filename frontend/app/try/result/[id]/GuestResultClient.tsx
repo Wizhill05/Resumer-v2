@@ -86,6 +86,18 @@ export function GuestResultClient({ id }: { id: string }) {
         <div className="h-3 overflow-hidden border border-zinc-950 bg-white">
           <div className="h-full bg-[#ff4e26] transition-all duration-500" style={{ width: `${status === "completed" ? 100 : percent}%` }} />
         </div>
+        {/* Login nudge during generation — prompts user to sign in so the resume saves to their history */}
+        {status !== "completed" && status !== "failed" && (
+          <div className="flex items-center justify-between gap-3 border border-zinc-200 bg-zinc-50 px-3 py-2.5">
+            <p className="text-xs font-semibold text-zinc-600">
+              Sign in to save this resume to your history automatically.
+            </p>
+            <LoginModal
+              callbackUrl="/dashboard?importGuestDraft=1"
+              triggerClassName="shrink-0 border border-zinc-950 bg-white px-3 py-1.5 text-xs font-black uppercase tracking-wide text-zinc-950 hover:bg-zinc-100 shadow-[2px_2px_0_#18181b]"
+            />
+          </div>
+        )}
         {status === "failed" && <p className="text-sm font-bold text-red-700">{run?.error_message || "Pipeline failed. Try again with more complete details."}</p>}
         {status === "completed" && (
           <div className="border-2 border-emerald-300 bg-emerald-50 px-4 py-3">
@@ -108,7 +120,7 @@ export function GuestResultClient({ id }: { id: string }) {
             </span>
           )}
           <Link href="/try" className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-white px-5 text-sm font-black uppercase tracking-wide text-zinc-950 shadow-[3px_3px_0_#18181b]">Make another</Link>
-          <LoginModal triggerClassName="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b]" />
+          <LoginModal callbackUrl="/dashboard?importGuestDraft=1" triggerClassName="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b]" />
         </div>
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">Login saves history and keeps future resumes tied to your account.</p>
       </div>
