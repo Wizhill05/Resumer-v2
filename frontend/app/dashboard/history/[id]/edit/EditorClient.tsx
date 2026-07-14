@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Save, Download, RotateCcw, X, Loader2, Eye } from "lucide-react"
 import { ResumeJsonEditor } from "@/components/editor/ResumeJsonEditor"
@@ -45,12 +45,11 @@ export function EditorClient({ payload }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Live HTML preview (debounced)
-  const { html, loading: previewLoading } = useDebouncedHtmlPreview({
+  // Authoritative PDF preview (debounced)
+  const { preview, loading: previewLoading } = useDebouncedHtmlPreview({
     genId: payload.id,
     resume: parsedResume,
     profile: profile as Record<string, unknown>,
-    fontSizePt: payload.manifest.max_font_size, // client BS will override via CSS var
     enabled: parsedResume !== null,
   })
 
@@ -73,11 +72,11 @@ export function EditorClient({ payload }: Props) {
     if (!dirty) setDirty(true)
   }
 
-  function handleFitChange(fontPt: number, pageCount: number, fits: boolean) {
+  const handleFitChange = useCallback((fontPt: number, pageCount: number, fits: boolean) => {
     setFitFontPt(fontPt)
     setFitPageCount(pageCount)
     setFitWarning(!fits)
-  }
+  }, [])
 
   async function handleSave() {
     if (!parsedResume || jsonError) return
@@ -263,7 +262,7 @@ export function EditorClient({ payload }: Props) {
         {/* Right — Preview (Hidden on mobile, 55% on desktop) */}
         <div className="hidden md:block flex-1 min-w-0 overflow-hidden">
           <ResumePreviewPane
-            html={html}
+            preview={preview}
             loading={previewLoading}
             manifest={payload.manifest}
             onFitChange={handleFitChange}
@@ -296,7 +295,7 @@ export function EditorClient({ payload }: Props) {
             {/* Drawer Preview area */}
             <div className="flex-1 overflow-hidden">
               <ResumePreviewPane
-                html={html}
+                preview={preview}
                 loading={previewLoading}
                 manifest={payload.manifest}
                 onFitChange={handleFitChange}

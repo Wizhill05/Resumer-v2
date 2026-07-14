@@ -91,6 +91,14 @@ class RenderHtmlResponse(BaseModel):
     template_id: str
 
 
+class RenderPdfPreviewResponse(BaseModel):
+    """Authoritative, page-by-page editor preview rendered by WeasyPrint."""
+    page_images: list[str]
+    font_size: float
+    page_count: int
+    fit_warning: bool
+
+
 class EditorSaveRequest(BaseModel):
     """Body for POST /generate/{id}/save."""
     resume: dict[str, Any]

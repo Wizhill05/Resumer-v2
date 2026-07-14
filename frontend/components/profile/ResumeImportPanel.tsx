@@ -17,7 +17,7 @@ type ResumeImportDraft = {
   warnings?: ImportWarning[]
 }
 
-type Stage = "idle" | "parsing" | "extracting" | "done"
+type Stage = "idle" | "parsing" | "extracting" | "deduplicating" | "done"
 
 export function ResumeImportPanel() {
   const queryClient = useQueryClient()
@@ -31,40 +31,44 @@ export function ResumeImportPanel() {
     mutationFn: async (files: File[]) => {
       setFileCount(files.length)
 
-      // Stage 1: parse PDFs to text
       setStage("parsing")
       const formData = new FormData()
       files.forEach((file) => formData.append("files", file))
-      const parseRes = await fetch("/api/backend/profile/import/parse", { method: "POST", body: formData })
-      const parseBody = await parseRes.json()
-      if (!parseRes.ok) {
-        const detail = parseBody.detail
+      const startRes = await fetch("/api/backend/profile/import/start", { method: "POST", body: formData })
+      const startBody = await startRes.json()
+      if (!startRes.ok) {
+        const detail = startBody.detail
         const msg = Array.isArray(detail)
           ? detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join(", ")
           : typeof detail === "string"
           ? detail
-          : "Failed to parse resume"
+          : "Failed to start import"
         throw new Error(msg)
       }
 
-      // Stage 2: LLM extraction
-      setStage("extracting")
-      const extractRes = await fetch("/api/backend/profile/import/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parseBody),
-      })
-      const extractBody = await extractRes.json()
-      if (!extractRes.ok) {
-        const detail = extractBody.detail
-        const msg = Array.isArray(detail)
-          ? detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join(", ")
-          : typeof detail === "string"
-          ? detail
-          : "Failed to extract resume data"
-        throw new Error(msg)
+      const jobId = startBody.job_id
+      let jobStatus = "parsing"
+      let jobResult = null
+      let jobError = null
+
+      while (jobStatus === "parsing" || jobStatus === "extracting" || jobStatus === "deduplicating") {
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        const statusRes = await fetch(`/api/backend/profile/import/status/${jobId}`)
+        const statusBody = await statusRes.json()
+        if (!statusRes.ok) {
+          throw new Error("Failed to check import status")
+        }
+        jobStatus = statusBody.status
+        jobResult = statusBody.result
+        jobError = statusBody.error
+        setStage(jobStatus as Stage)
       }
-      return extractBody as ResumeImportDraft
+
+      if (jobStatus === "failed") {
+        throw new Error(jobError || "Import failed")
+      }
+
+      return jobResult as ResumeImportDraft
     },
     onSuccess: (data) => {
       setError(null)
@@ -115,6 +119,8 @@ export function ResumeImportPanel() {
       ? `Reading PDF${fileCount > 1 ? "s" : ""}…`
       : stage === "extracting"
       ? "Extracting data with AI…"
+      : stage === "deduplicating"
+      ? "Removing duplicates…"
       : "Extracting..."
 
   const stageHint =
@@ -122,6 +128,8 @@ export function ResumeImportPanel() {
       ? "Parsing document text"
       : stage === "extracting"
       ? "Running AI extraction — takes ~10s per file"
+      : stage === "deduplicating"
+      ? "Comparing with existing entries"
       : ""
 
   const isPending = importMutation.isPending
@@ -163,8 +171,9 @@ export function ResumeImportPanel() {
         <div className="space-y-1.5 border border-zinc-200 bg-zinc-50 p-3">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${stage === "parsing" || stage === "extracting" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
-              <span className={`h-2 w-2 rounded-full ${stage === "extracting" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "parsing" || stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
             </div>
             <p className="text-xs font-semibold text-zinc-700">{stageLabel}</p>
           </div>

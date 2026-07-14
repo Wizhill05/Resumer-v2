@@ -29,6 +29,7 @@ from src.schemas.generation import (
     EditorSaveResponse,
     RenderHtmlRequest,
     RenderHtmlResponse,
+    RenderPdfPreviewResponse,
 )
 from src.template_registry.service import TemplateRegistryService
 
@@ -663,6 +664,76 @@ async def render_html_for_editor(
     )
 
     return RenderHtmlResponse(html=html, template_id=gen.template_id)
+
+
+@router.post("/{gen_id}/render-pdf-preview", response_model=RenderPdfPreviewResponse)
+async def render_pdf_preview_for_editor(
+    gen_id: str,
+    data: RenderHtmlRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Render the same paginated document that the editor exports.
+
+    Browser layout cannot faithfully emulate WeasyPrint's page fragmentation.
+    Returning rasterized PDF pages makes each visible boundary authoritative,
+    including the final line on every page.
+    """
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
+    manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not manifest_obj:
+        raise HTTPException(status_code=500, detail="Template manifest missing.")
+
+    profile_data = data.profile or (gen.render_metadata or {}).get("profile")
+    if not profile_data:
+        from src.models.profile import Profile
+
+        profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+        profile = profile_res.scalar_one_or_none()
+        profile_data = {
+            "full_name": profile.full_name if profile else "",
+            "email": profile.email if profile else None,
+            "phone": profile.phone if profile else None,
+            "location": profile.location if profile else None,
+            "linkedin_url": profile.linkedin_url if profile else None,
+            "github_url": profile.github_url if profile else None,
+            "portfolio_url": profile.portfolio_url if profile else None,
+            "subtitle": profile.subtitle if profile else None,
+        }
+
+    from src.services.resume_render import fit_and_render_pdf
+
+    try:
+        pdf_bytes, fit_result = fit_and_render_pdf(
+            template_id=gen.template_id,
+            profile=profile_data,
+            resume=data.resume,
+            manifest=manifest_obj.model_dump(),
+        )
+
+        import base64
+        import pypdfium2 as pdfium  # type: ignore[import-untyped]
+
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        page_images: list[str] = []
+        for page_index in range(len(pdf)):
+            # 1.25x A4 keeps type legible without making every debounced response huge.
+            page = pdf[page_index]
+            bitmap = page.render(scale=1.25, rotation=0)
+            image = bitmap.to_pil()
+            buffer = io.BytesIO()
+            image.save(buffer, format="WEBP", quality=82, method=4)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            page_images.append(f"data:image/webp;base64,{encoded}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Preview render failed: {exc}") from exc
+
+    return RenderPdfPreviewResponse(
+        page_images=page_images,
+        font_size=fit_result.font_size,
+        page_count=fit_result.page_count,
+        fit_warning=not fit_result.fits_target,
+    )
 
 
 @router.post("/{gen_id}/save", response_model=EditorSaveResponse)

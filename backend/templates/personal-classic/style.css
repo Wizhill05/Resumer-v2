@@ -68,6 +68,24 @@ p, li, dl {
     margin: 0;
 }
 
+/* Keep meaningful resume units together when WeasyPrint starts a new page. */
+h2 {
+    break-after: avoid-page;
+}
+
+.resume-entry,
+.resume-entry dl,
+.resume-entry ul,
+.skills-table tr,
+.extracurriculars-section li {
+    break-inside: avoid-page;
+}
+
+li {
+    orphans: 2;
+    widows: 2;
+}
+
 p, dl, table {
     margin-left: 0.12in;
 }
@@ -121,6 +139,10 @@ dl dd {
 
 dl + ul {
     margin-top: 0.06em;
+}
+
+.resume-entry + .resume-entry {
+    margin-top: 0.45em;
 }
 
 h2 + ul {

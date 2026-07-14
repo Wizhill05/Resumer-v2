@@ -159,7 +159,7 @@ function AddCard({ title, children }: { title: string; children: React.ReactNode
 
 function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: (d: GuestDraft) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const [importStage, setImportStage] = useState<"idle" | "parsing" | "extracting">("idle")
+  const [importStage, setImportStage] = useState<"idle" | "parsing" | "extracting" | "deduplicating">("idle")
   const [fileCount, setFileCount] = useState(0)
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [importErr, setImportErr] = useState<string | null>(null)
@@ -171,35 +171,50 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
       ? `Reading PDF${fileCount > 1 ? "s" : ""}…`
       : importStage === "extracting"
       ? "Extracting with AI…"
+      : importStage === "deduplicating"
+      ? "Removing duplicates…"
       : "Extracting…"
 
   const stageHint =
     importStage === "parsing"
       ? "Parsing document text"
       : importStage === "extracting"
-      ? `Running AI extraction — ~10s per file`
+      ? "Running AI extraction — ~10s per file"
+      : importStage === "deduplicating"
+      ? "Comparing and merging sections"
       : ""
 
   const importFiles = async (files: File[]) => {
     setImportErr(null); setImportMsg(null); setFileCount(files.length); setImportStage("parsing")
     try {
-      // Stage 1: parse PDFs to text
       const fd = new FormData()
       files.forEach((f) => fd.append("files", f))
-      const parseRes = await fetch("/api/guest/import/parse", { method: "POST", body: fd })
-      const parseBody = await parseRes.json()
-      if (!parseRes.ok) throw new Error(parseBody.detail || parseBody.error || "Failed to parse PDF")
+      const startRes = await fetch("/api/guest/import/start", { method: "POST", body: fd })
+      const startBody = await startRes.json()
+      if (!startRes.ok) throw new Error(startBody.detail || startBody.error || "Failed to start import")
 
-      // Stage 2: LLM extraction
-      setImportStage("extracting")
-      const extractRes = await fetch("/api/guest/import/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parseBody),
-      })
-      const body = await extractRes.json()
-      if (!extractRes.ok) throw new Error(body.detail || body.error || "Import failed")
+      const jobId = startBody.job_id
+      let jobStatus = "parsing"
+      let jobResult = null
+      let jobError = null
 
+      while (jobStatus === "parsing" || jobStatus === "extracting" || jobStatus === "deduplicating") {
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        const statusRes = await fetch(`/api/guest/import/status/${jobId}`)
+        const statusBody = await statusRes.json()
+        if (!statusRes.ok) throw new Error(statusBody.detail || "Failed to check import status")
+
+        jobStatus = statusBody.status
+        jobResult = statusBody.result
+        jobError = statusBody.error
+        setImportStage(jobStatus as "idle" | "parsing" | "extracting" | "deduplicating")
+      }
+
+      if (jobStatus === "failed") {
+        throw new Error(jobError || "Import failed")
+      }
+
+      const body = jobResult
       const { draft: merged, skipped, added } = mergeGuestDraft(draft, body)
       updateDraft(merged)
 
@@ -241,10 +256,13 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
         {importing && (
           <div className="mt-2 flex items-center gap-2 px-1">
             <div className="flex gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "parsing" || importStage === "extracting" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
-              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "extracting" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "parsing" || importStage === "extracting" || importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "extracting" || importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
             </div>
-            <span className="text-xs text-zinc-500">{importStage === "parsing" ? "Step 1 of 2" : "Step 2 of 2"}</span>
+            <span className="text-xs text-zinc-500">
+              {importStage === "parsing" ? "Step 1 of 3" : importStage === "extracting" ? "Step 2 of 3" : "Step 3 of 3"}
+            </span>
           </div>
         )}
         {importMsg && (

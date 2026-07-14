@@ -1,10 +1,11 @@
 import asyncio
 import hashlib
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Response, UploadFile, status, BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -21,6 +22,7 @@ from src.schemas.guest import GuestGenerationCreate, GuestGenerationOut
 from src.schemas.profile import ResumeImportDraft
 from src.services.resume_import import MAX_FILES, extract_all_drafts, extract_resume_draft, extract_upload_text, merge_drafts
 from src.template_registry.service import TemplateRegistryService
+from src.services.import_jobs import import_jobs
 
 router = APIRouter(prefix="/guest", tags=["guest"])
 
@@ -185,6 +187,74 @@ async def extract_guest_resumes(
         raise HTTPException(status_code=502, detail="Could not extract data from any of the uploaded resumes.")
 
     return merge_drafts(drafts)
+
+
+async def run_guest_import_task(job_id: str, texts: list[str], filenames: list[str]):
+    try:
+        import_jobs[job_id]["status"] = "extracting"
+        tasks = [extract_resume_draft(text, filename) for text, filename in zip(texts, filenames)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        drafts = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                print(f"[guest/import/task] skipping {filenames[i]}: {result}")
+                if len(texts) == 1:
+                    raise result
+            else:
+                drafts.append(result)
+
+        if not drafts:
+            raise Exception("Could not extract data from any of the uploaded resumes.")
+
+        import_jobs[job_id]["status"] = "deduplicating"
+        await asyncio.sleep(1.0)  # Visual separation of stage for UI
+
+        merged = merge_drafts(drafts)
+        import_jobs[job_id]["result"] = jsonable_encoder(merged)
+        import_jobs[job_id]["status"] = "completed"
+    except Exception as e:
+        import_jobs[job_id]["error"] = str(e)
+        import_jobs[job_id]["status"] = "failed"
+
+
+@router.post("/import/start")
+async def start_guest_import(
+    background_tasks: BackgroundTasks,
+    response: Response,
+    files: list[UploadFile] = File(...),
+    resumer_guest_consent: str | None = Cookie(default=None, alias=CONSENT_COOKIE),
+    resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
+):
+    _guest_token(response, resumer_guest_consent, resumer_guest_token)
+    if len(files) > MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
+
+    texts = []
+    filenames = []
+    for file in files:
+        text = await extract_upload_text(file)
+        texts.append(text)
+        filenames.append(file.filename or "resume")
+
+    job_id = str(uuid.uuid4())
+    import_jobs[job_id] = {
+        "id": job_id,
+        "status": "parsing",
+        "result": None,
+        "error": None,
+        "created_at": time.time(),
+    }
+
+    background_tasks.add_task(run_guest_import_task, job_id, texts, filenames)
+    return {"job_id": job_id}
+
+
+@router.get("/import/status/{job_id}")
+async def get_guest_import_status(job_id: str):
+    if job_id not in import_jobs:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    return import_jobs[job_id]
 
 
 @router.post("/import/resumes", response_model=ResumeImportDraft)

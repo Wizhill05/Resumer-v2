@@ -58,6 +58,7 @@
 {% if resume.education %}
 <h2>EDUCATION</h2>
 {% for edu in resume.education %}
+<div class="resume-entry">
 <dl>
   <dt><strong>{{ edu.degree }}</strong> | {{ edu.institution }}{% if edu.location %}, {{ edu.location }}{% endif %}</dt>
   <dd>
@@ -67,6 +68,7 @@
     {% if edu.gpa %} | GPA: {{ edu.gpa }}{% endif %}
   </dd>
 </dl>
+</div>
 {% endfor %}
 {% endif %}
 
@@ -87,6 +89,7 @@
 {% if resume.projects %}
 <h2>PROJECTS</h2>
 {% for project in resume.projects %}
+<div class="resume-entry">
 {% set project_link = (project.github_url or project.live_url or '') | trim %}
 {% set project_summary = (project.project_summary or '') | trim %}
 {% set link_label = project_link | replace('https://', '') | replace('http://', '') | replace('www.', '') | replace('github.com/', '') %}
@@ -104,6 +107,7 @@
   <li>{{ bullet | markdown }}</li>
 {% endfor %}
 </ul>
+</div>
 {% endfor %}
 {% endif %}
 
@@ -111,6 +115,7 @@
 {% if resume.experiences %}
 <h2>EXPERIENCE</h2>
 {% for exp in resume.experiences %}
+<div class="resume-entry">
 <dl>
   <dt><strong>{{ exp.role }} | {{ exp.organization }}{% if exp.location %} | {{ exp.location }}{% endif %}</strong></dt>
   <dd>
@@ -124,6 +129,7 @@
   <li>{{ bullet | markdown }}</li>
 {% endfor %}
 </ul>
+</div>
 {% endfor %}
 {% endif %}
 

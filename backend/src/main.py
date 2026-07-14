@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,6 +8,7 @@ from src.core.config import settings
 from src.core.storage import StorageService
 from src.api import profile, generation, system, imports, guest, admin
 from src.template_registry import router as template_router
+from src.services.import_jobs import cleanup_old_jobs
 
 
 @asynccontextmanager
@@ -24,7 +26,16 @@ async def lifespan(app: FastAPI):
     # Idempotently ensure R2 bucket has a 90-day lifecycle expiry rule.
     StorageService().ensure_lifecycle_policy()
 
+    # Ephemeral import jobs cleanup loop
+    cleanup_task = asyncio.create_task(cleanup_old_jobs())
+
     yield
+
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="Resumer API", version="2.0.0", lifespan=lifespan)

@@ -2,7 +2,8 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil } from "lucide-react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy } from "lucide-react"
+import { createPortal } from "react-dom"
 
 type HistoryRun = {
   id: string
@@ -103,8 +104,21 @@ function StatusDot({ status }: { status: string }) {
 }
 
 function JobDescriptionPeek({ text }: { text: string }) {
+  const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [hovered, setHovered] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsOpen(false)
+    }
+    window.addEventListener("keydown", handler)
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.removeEventListener("keydown", handler)
+      document.body.style.overflow = ""
+    }
+  }, [isOpen])
 
   const copy = async (event: React.MouseEvent) => {
     event.stopPropagation()
@@ -114,25 +128,67 @@ function JobDescriptionPeek({ text }: { text: string }) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={copy}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="relative inline-flex cursor-pointer items-center border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-zinc-500 hover:border-zinc-900 hover:text-zinc-900"
-    >
-      {hovered ? "Copy Job Description" : "See job description"}
-      {hovered && (
-        <span className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-72 border border-zinc-900 bg-white p-3 text-left text-[11px] font-semibold normal-case leading-relaxed tracking-normal text-zinc-700 shadow-[4px_4px_0_#18181b] hidden md:block">
-          {text.slice(0, 700)}{text.length > 700 ? "..." : ""}
-        </span>
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setIsOpen(true)
+        }}
+        className="inline-flex min-h-11 cursor-pointer touch-manipulation items-center border border-zinc-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-zinc-700 transition-colors active:border-zinc-900 active:bg-zinc-100 active:text-zinc-900 sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-zinc-500 sm:hover:border-zinc-900 sm:hover:text-zinc-900"
+      >
+        See job description
+      </button>
+
+      {isOpen && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Job Description"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsOpen(false)
+          }}
+        >
+          <div
+            className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col border-3 border-black bg-white shadow-[8px_8px_0_#000] transition-all"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-900">
+                Job Description
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={copy}
+                  className="flex min-h-9 cursor-pointer touch-manipulation items-center gap-1 border border-zinc-200 px-2 py-1 text-[10px] font-bold uppercase active:border-zinc-900 active:bg-zinc-100 sm:hover:border-zinc-900 sm:hover:bg-zinc-50"
+                >
+                  <Copy size={12} />
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="flex min-h-9 min-w-9 cursor-pointer touch-manipulation items-center justify-center border border-zinc-200 p-1 active:border-zinc-900 active:bg-zinc-100 sm:hover:border-zinc-900 sm:hover:bg-zinc-50"
+                  aria-label="Close modal"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed text-zinc-700 whitespace-pre-wrap select-text">
+              {text || "No job description text available."}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
-      {copied && (
-        <span className="absolute -top-8 left-0 z-30 whitespace-nowrap border border-emerald-700 bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase text-emerald-700 shadow-[2px_2px_0_#166534]">
-          Copied
-        </span>
-      )}
-    </button>
+    </>
   )
 }
 
@@ -201,7 +257,7 @@ function LiveProgressRow({
       {/* Right: delete */}
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-        className="shrink-0 p-1.5 text-zinc-300 hover:text-red-500 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+        className="shrink-0 rounded p-1.5 text-zinc-400 transition-colors active:text-red-500 md:text-zinc-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
         aria-label="Delete"
       >
         <Trash2 size={14} />
@@ -244,7 +300,7 @@ function LiveProgressGridCard({
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-          className="absolute top-2 right-2 p-1.5 bg-white/90 border border-gray-200 rounded text-zinc-400 hover:text-red-500 hover:border-red-300 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          className="absolute top-2 right-2 rounded border border-gray-200 bg-white/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
           aria-label="Delete"
         >
           <Trash2 size={13} />
@@ -303,7 +359,7 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-          className="absolute top-2 right-2 p-1.5 bg-white/90 border border-gray-200 rounded text-zinc-400 hover:text-red-500 hover:border-red-300 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+          className="absolute top-2 right-2 rounded border border-gray-200 bg-white/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
           aria-label="Delete"
         >
           <Trash2 size={13} />

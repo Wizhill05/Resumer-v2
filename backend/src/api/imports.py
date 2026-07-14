@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, BackgroundTasks
+from fastapi.encoders import jsonable_encoder
 import asyncio
+import time
+import uuid
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import get_current_user
-from src.core.database import get_db
+from src.core.database import get_db, AsyncSessionLocal
 from src.models.profile import Profile, UserEducation, UserExperience, UserProject, UserExtracurricular
 from src.models.user import User
 from src.schemas.profile import GitHubProjectDraft, GitHubProjectImportRequest, ImportApplyRequest, ResumeImportDraft
@@ -21,6 +24,7 @@ from src.services.resume_import import (
 )
 from src.services.import_utils import unique_strings
 from src.services.import_utils import normalize_text, similar
+from src.services.import_jobs import import_jobs
 
 router = APIRouter(prefix="/profile/import", tags=["profile-import"])
 
@@ -107,6 +111,81 @@ async def extract_resumes(
 
     draft = merge_drafts(drafts)
     return add_duplicates(draft, await load_existing_profile_data(db, current_user))
+
+
+async def run_auth_import_task(job_id: str, texts: list[str], filenames: list[str], user_id: uuid.UUID):
+    try:
+        import_jobs[job_id]["status"] = "extracting"
+        tasks = [extract_resume_draft(text, filename) for text, filename in zip(texts, filenames)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        drafts = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                print(f"[auth/import/task] skipping {filenames[i]}: {result}")
+                if len(texts) == 1:
+                    raise result
+            else:
+                drafts.append(result)
+
+        if not drafts:
+            raise Exception("Could not extract data from any of the uploaded resumes.")
+
+        import_jobs[job_id]["status"] = "deduplicating"
+        await asyncio.sleep(1.0)  # Visual separation of stage for UI
+
+        merged = merge_drafts(drafts)
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(User).where(User.id == user_id))
+            current_user = result.scalar_one()
+            profile_data = await load_existing_profile_data(db, current_user)
+            final_draft = add_duplicates(merged, profile_data)
+
+        import_jobs[job_id]["result"] = jsonable_encoder(final_draft)
+        import_jobs[job_id]["status"] = "completed"
+    except Exception as e:
+        import_jobs[job_id]["error"] = str(e)
+        import_jobs[job_id]["status"] = "failed"
+
+
+@router.post("/start")
+async def start_auth_import(
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    if len(files) > MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
+
+    texts = []
+    filenames = []
+    for file in files:
+        text = await extract_upload_text(file)
+        texts.append(text)
+        filenames.append(file.filename or "resume")
+
+    job_id = str(uuid.uuid4())
+    import_jobs[job_id] = {
+        "id": job_id,
+        "status": "parsing",
+        "result": None,
+        "error": None,
+        "created_at": time.time(),
+    }
+
+    background_tasks.add_task(run_auth_import_task, job_id, texts, filenames, current_user.id)
+    return {"job_id": job_id}
+
+
+@router.get("/status/{job_id}")
+async def get_auth_import_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    if job_id not in import_jobs:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    return import_jobs[job_id]
 
 
 @router.post("/resumes", response_model=ResumeImportDraft)
