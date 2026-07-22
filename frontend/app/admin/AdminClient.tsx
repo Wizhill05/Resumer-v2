@@ -539,7 +539,7 @@ export function AdminClient() {
                             <span className="capitalize">{status}</span>
                             <span>{count} ({Math.round(percent)}%)</span>
                           </div>
-                          <div className="w-full bg-zinc-100 h-2.5 rounded-none overflow-hidden">
+                          <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-2.5 rounded-none overflow-hidden">
                             <div className={`h-full ${barColor}`} style={{ width: `${percent}%` }} />
                           </div>
                         </div>
@@ -674,10 +674,10 @@ export function AdminClient() {
                     </thead>
                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700 font-medium">
                       {generations.map((gen) => {
-                        let statusColor = "bg-zinc-100 text-zinc-700"
-                        if (gen.status === "completed") statusColor = "bg-green-100 text-green-700"
-                        if (gen.status === "failed") statusColor = "bg-red-100 text-red-700"
-                        if (gen.status === "in_progress") statusColor = "bg-amber-100 text-amber-700 animate-pulse"
+                        let statusColor = "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                        if (gen.status === "completed") statusColor = "bg-green-100 dark:bg-green-950/60 text-green-700 dark:text-green-300"
+                        if (gen.status === "failed") statusColor = "bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300"
+                        if (gen.status === "in_progress") statusColor = "bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 animate-pulse"
 
                         return (
                           <tr key={gen.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
@@ -705,13 +705,13 @@ export function AdminClient() {
                             </td>
                             <td className="p-3 text-right">
                               <details className="relative inline-block text-left">
-                                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 transition hover:bg-zinc-200">
+                                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition hover:bg-zinc-200 dark:hover:bg-zinc-700">
                                   <MoreHorizontal size={13} /> Options
                                 </summary>
                                 <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-1 text-left shadow-lg">
                                   <button
                                     type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                                     onClick={() => {
                                       stopLogStream()
                                       setLiveLogs([])

@@ -23,10 +23,21 @@
     background-color: #fbfbf3;
     color: #000000;
     font-family: var(--font-space-grotesk), sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
   }
   :is(.dark) body {
     background-color: #0a0a0a;
     color: #e4e4e7;
+  }
+  @media (min-width: 1024px) {
+    body {
+      zoom: 0.9;
+      min-height: calc(100vh / 0.9);
+      min-height: calc(100dvh / 0.9);
+    }
   }
 }
 

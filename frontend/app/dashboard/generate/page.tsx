@@ -9,7 +9,7 @@ export default async function GeneratePage() {
   if (!session) redirect("/")
 
   return (
-    <main className="min-h-screen flex flex-col app-bg text-black dark:text-white">
+    <main className="flex-1 flex flex-col app-bg text-black dark:text-white">
       <Nav />
 
       <div className="page-wrap flex-1 max-w-4xl space-y-4 md:space-y-5">

@@ -160,7 +160,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-4 space-y-3 bg-zinc-50">
+    <div className="flex-1 overflow-auto p-4 space-y-3 bg-zinc-50 dark:bg-zinc-950">
       {/* 1. PERSONAL DETAILS */}
       <Section
         title="Personal Details"
@@ -262,13 +262,13 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
       >
         <div className="space-y-3">
           {Object.entries(resume.skills || {}).map(([category, list]) => (
-            <div key={category} className="border border-zinc-200 bg-zinc-50 p-2.5 rounded space-y-2">
+            <div key={category} className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 p-2.5 rounded space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <input
                   type="text"
                   defaultValue={category}
                   onBlur={(e) => updateSkillCategoryName(category, e.target.value)}
-                  className="font-bold text-xs uppercase tracking-wider text-zinc-700 bg-transparent border-b border-transparent hover:border-zinc-300 focus:border-zinc-500 outline-none px-1 py-0.5"
+                  className="font-bold text-xs uppercase tracking-wider text-zinc-700 dark:text-zinc-300 bg-transparent border-b border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 focus:border-zinc-500 outline-none px-1 py-0.5"
                 />
                 <button
                   onClick={() => deleteSkillCategory(category)}
@@ -618,7 +618,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
       >
         <div className="space-y-3">
           {(resume.extracurriculars || []).map((ex, idx) => (
-            <div key={idx} className="border border-zinc-200 bg-white p-3 rounded relative group/extra">
+            <div key={idx} className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 p-3 rounded relative group/extra">
               <div className="flex gap-2 items-start">
                 <Textarea
                   value={ex.description || ""}

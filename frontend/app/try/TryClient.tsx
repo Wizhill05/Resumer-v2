@@ -76,15 +76,15 @@ function ItemRow({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded border border-zinc-200 bg-white">
+    <div className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
       <div className="flex min-w-0 items-center gap-2 px-3 py-2.5">
         <button type="button" onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left">
           {open
             ? <ChevronDown size={13} className="shrink-0 text-zinc-400" />
             : <ChevronRight size={13} className="shrink-0 text-zinc-400" />}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-zinc-900">{title}</p>
-            {sub && <p className="truncate text-xs text-zinc-400">{sub}</p>}
+            <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</p>
+            {sub && <p className="truncate text-xs text-zinc-400 dark:text-zinc-500">{sub}</p>}
           </div>
         </button>
         <button type="button" onClick={() => setOpen(!open)} className="shrink-0 cursor-pointer rounded p-1 text-zinc-400 hover:text-zinc-700">
@@ -95,7 +95,7 @@ function ItemRow({
         </button>
       </div>
       {open && (
-        <div className="border-t border-zinc-100 bg-zinc-50 px-3 pb-3 pt-2 space-y-3">
+        <div className="border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 pb-3 pt-2 space-y-3">
           {children}
         </div>
       )}
@@ -116,8 +116,8 @@ function NavItem({
       onClick={onClick}
       className={`flex w-full cursor-pointer items-center gap-2.5 rounded px-3 py-2 text-left text-sm transition-colors ${
         active
-          ? "bg-zinc-900 text-white"
-          : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+          ? "bg-zinc-900 dark:bg-zinc-800 text-white"
+          : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800 hover:text-zinc-900"
       }`}
     >
       <Icon size={15} className="shrink-0" />
@@ -136,18 +136,18 @@ function NavItem({
 function AddCard({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded border border-dashed border-zinc-300 bg-zinc-50">
+    <div className="rounded border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-900"
+        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
       >
         <Plus size={14} className="shrink-0 text-zinc-400" />
         {title}
         {open ? <ChevronDown size={13} className="ml-auto text-zinc-400" /> : <ChevronRight size={13} className="ml-auto text-zinc-400" />}
       </button>
       {open && (
-        <div className="border-t border-zinc-200 bg-white px-3 pb-3 pt-2 space-y-3">
+        <div className="border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 pb-3 pt-2 space-y-3">
           {children}
         </div>
       )}
@@ -234,8 +234,8 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900">Import & Profile</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Upload old resumes to auto-fill, then patch any missing fields.</p>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Import & Profile</h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Upload old resumes to auto-fill, then patch any missing fields.</p>
       </div>
 
       {/* Drop zone */}
@@ -249,8 +249,8 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
           className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-[#ff4e26]/30 bg-[#ff4e26]/5 py-8 text-sm text-[#ff4e26] transition hover:border-[#ff4e26] hover:bg-[#ff4e26]/10 disabled:opacity-50 cursor-pointer"
         >
           {importing
-            ? <><Loader2 size={20} className="animate-spin" /><span className="text-xs font-medium text-zinc-800">{stageLabel}</span>{stageHint && <span className="text-xs text-zinc-500">{stageHint}</span>}</>
-            : <><Upload size={20} className="text-[#ff4e26]" /><span className="font-bold text-zinc-800">Click to upload old resumes</span><span className="text-xs text-zinc-500 font-semibold">PDF only · up to 5 files · 5 MB each</span></>
+            ? <><Loader2 size={20} className="animate-spin" /><span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{stageLabel}</span>{stageHint && <span className="text-xs text-zinc-500 dark:text-zinc-400">{stageHint}</span>}</>
+            : <><Upload size={20} className="text-[#ff4e26]" /><span className="font-bold text-zinc-800 dark:text-zinc-200">Click to upload old resumes</span><span className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">PDF only · up to 5 files · 5 MB each</span></>
           }
         </button>
         {importing && (
@@ -260,7 +260,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
               <span className={`h-1.5 w-1.5 rounded-full ${importStage === "extracting" || importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
               <span className={`h-1.5 w-1.5 rounded-full ${importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
             </div>
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
               {importStage === "parsing" ? "Step 1 of 3" : importStage === "extracting" ? "Step 2 of 3" : "Step 3 of 3"}
             </span>
           </div>
@@ -342,12 +342,12 @@ function ExperiencePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraf
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900">Experience</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Add work experience entries. At least 2 needed for most focus modes.</p>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Experience</h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add work experience entries. At least 2 needed for most focus modes.</p>
       </div>
 
       {draft.experiences.length === 0 && (
-        <p className="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-400">No experience added yet. Import a resume above or add manually.</p>
+        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No experience added yet. Import a resume above or add manually.</p>
       )}
 
       <div className="space-y-2">
@@ -423,12 +423,12 @@ function ProjectsPanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft:
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900">Projects</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Add projects. At least 2 needed for most focus modes.</p>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Projects</h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add projects. At least 2 needed for most focus modes.</p>
       </div>
 
       {draft.projects.length === 0 && (
-        <p className="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-400">No projects added yet. Import a resume or add manually.</p>
+        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No projects added yet. Import a resume or add manually.</p>
       )}
 
       <div className="space-y-2">
@@ -506,12 +506,12 @@ function EducationPanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900">Education</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Degrees, diplomas, certifications.</p>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Education</h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Degrees, diplomas, certifications.</p>
       </div>
 
       {draft.education.length === 0 && (
-        <p className="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-400">No education added yet.</p>
+        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No education added yet.</p>
       )}
 
       <div className="space-y-2">
@@ -577,12 +577,12 @@ function ExtracurricularsPanel({ draft, updateDraft }: { draft: GuestDraft; upda
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900">Extracurriculars</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Clubs, volunteering, leadership, sports, etc.</p>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Extracurriculars</h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Clubs, volunteering, leadership, sports, etc.</p>
       </div>
 
       {draft.extracurriculars.length === 0 && (
-        <p className="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-400">No extracurriculars added yet.</p>
+        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No extracurriculars added yet.</p>
       )}
 
       <div className="space-y-2">
@@ -656,8 +656,8 @@ function GeneratePanel({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900">Generate resume</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Choose a focus, paste the job post, and generate.</p>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Generate resume</h2>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Choose a focus, paste the job post, and generate.</p>
       </div>
 
       {error && (
@@ -669,8 +669,8 @@ function GeneratePanel({
       )}
 
       {/* Focus picker */}
-      <div className="rounded-lg border border-zinc-200 bg-white">
-        <p className="border-b border-zinc-100 px-4 py-2.5 text-xs font-semibold text-zinc-600">Content focus</p>
+      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+        <p className="border-b border-zinc-100 dark:border-zinc-800 px-4 py-2.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400">Content focus</p>
         <div className="divide-y divide-zinc-100">
           {FOCUS_OPTIONS.map((opt) => {
             const locked = draft.experiences.length < opt.experience || draft.projects.length < opt.projects
@@ -681,7 +681,7 @@ function GeneratePanel({
                 type="button"
                 disabled={locked}
                 onClick={() => !locked && setFocus(opt.id)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"} ${selected ? "bg-zinc-900 text-white" : "hover:bg-zinc-50"}`}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"} ${selected ? "bg-zinc-900 dark:bg-zinc-800 text-white" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
               >
                 <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${selected ? "border-white bg-white text-zinc-900" : "border-zinc-300"}`}>
                   {selected ? "✓" : ""}
@@ -691,7 +691,7 @@ function GeneratePanel({
                   <p className={`mt-0.5 text-xs ${selected ? "text-zinc-300" : "text-zinc-500"}`}>{opt.desc}</p>
                 </div>
                 {locked && (
-                  <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-400">
+                  <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500">
                     <Lock size={11} />
                     {`Need ${Math.max(0, opt.experience - draft.experiences.length)} exp · ${Math.max(0, opt.projects - draft.projects.length)} proj`}
                   </span>
@@ -703,8 +703,8 @@ function GeneratePanel({
       </div>
 
       {/* Job description */}
-      <div className="rounded-lg border border-zinc-200 bg-white">
-        <p className="border-b border-zinc-100 px-4 py-2.5 text-xs font-semibold text-zinc-600">
+      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+        <p className="border-b border-zinc-100 dark:border-zinc-800 px-4 py-2.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
           Job description <span className="font-normal text-red-500">required</span>
         </p>
         <div className="space-y-3 p-4">
@@ -727,8 +727,8 @@ function GeneratePanel({
       </div>
 
       {/* Status summary */}
-      <div className="rounded border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-600 space-y-1">
-        <p className="font-semibold text-zinc-700">Ready to generate?</p>
+      <div className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-3 text-xs text-zinc-600 space-y-1">
+        <p className="font-semibold text-zinc-700 dark:text-zinc-300">Ready to generate?</p>
         {[
           { label: "Name", ok: !!draft.profile.full_name?.trim(), hint: "Add name in Profile" },
           { label: `Experience (need ${activeFocus.experience})`, ok: draft.experiences.length >= activeFocus.experience, hint: `Add ${activeFocus.experience - draft.experiences.length} more` },
@@ -826,11 +826,11 @@ export function TryClient() {
   const activeNavItem = nav.find((item) => item.id === active)
 
   return (
-    <div className="flex h-full flex-col relative bg-zinc-50">
+    <div className="flex h-full flex-col relative bg-zinc-50 dark:bg-zinc-950">
       <ConsentBanner accepted={accepted} onAccept={acceptCookies} />
 
       {/* Mobile Top Tabs Header (hidden on desktop) */}
-      <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-zinc-100 border-b border-zinc-200 md:hidden shrink-0">
+      <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 md:hidden shrink-0">
         {nav.map((item) => {
           const Icon = item.icon
           const isActive = active === item.id
@@ -841,8 +841,8 @@ export function TryClient() {
               onClick={() => setActive(item.id)}
               className={`flex shrink-0 select-none items-center gap-1.5 border px-2.5 py-1.5 text-[11px] font-extrabold uppercase tracking-wide transition-colors rounded cursor-pointer ${
                 isActive
-                  ? "border-zinc-950 bg-zinc-950 text-white shadow-[1px_1px_0px_#18181b]"
-                  : "border-zinc-200 bg-white text-zinc-800 hover:border-zinc-400"
+                  ? "border-zinc-950 dark:border-zinc-700 bg-zinc-950 dark:bg-zinc-800 text-white shadow-[1px_1px_0px_#18181b]"
+                  : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-400 dark:hover:border-zinc-500"
               }`}
             >
               <Icon size={12} />
@@ -859,7 +859,7 @@ export function TryClient() {
 
       <div className="flex min-h-0 flex-1">
         {/* Sidebar (desktop only) */}
-        <nav className="hidden md:flex w-52 shrink-0 flex-col gap-1 border-r border-zinc-200 bg-zinc-50 p-2">
+        <nav className="hidden md:flex w-52 shrink-0 flex-col gap-1 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-2">
           {nav.map((item) => (
             <NavItem
               key={item.id}
@@ -871,17 +871,17 @@ export function TryClient() {
             />
           ))}
           <div className="mt-auto pt-3">
-            <div className="rounded border border-zinc-200 bg-white px-2.5 py-2">
+            <div className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Privacy</p>
               <p className="mt-0.5 text-[11px] font-semibold leading-snug text-zinc-600">
-                All data stays on <span className="font-black text-zinc-900">your device</span> unless you log in.
+                All data stays on <span className="font-black text-zinc-900 dark:text-zinc-100">your device</span> unless you log in.
               </p>
             </div>
           </div>
         </nav>
 
         {/* Main content + sticky footer */}
-        <div className="flex min-w-0 flex-1 flex-col bg-white">
+        <div className="flex min-w-0 flex-1 flex-col bg-white dark:bg-zinc-950">
           {/* Scrollable content area */}
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} />}
@@ -902,7 +902,7 @@ export function TryClient() {
           </div>
 
           {/* Sticky generate bar — always visible */}
-          <div className="shrink-0 border-t border-zinc-200 bg-white px-5 py-3">
+          <div className="shrink-0 border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-5 py-3">
             <div className="flex items-center gap-3">
               <Button
                 type="button"
@@ -921,7 +921,7 @@ export function TryClient() {
                 }
               </Button>
               <div className="shrink-0 text-right">
-                <p className="text-xs font-semibold text-zinc-700">5 free / day</p>
+                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">5 free / day</p>
                 <p className="text-[10px] text-zinc-400">No login needed</p>
               </div>
             </div>

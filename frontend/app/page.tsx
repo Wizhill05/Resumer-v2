@@ -53,28 +53,28 @@ export default async function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#fbfbf3] text-zinc-950">
+    <main className="flex-1 flex flex-col overflow-hidden bg-[#fbfbf3] dark:bg-zinc-950 text-zinc-950 dark:text-white">
       <div className="landing-noise" aria-hidden="true" />
       <nav className="relative z-20 px-5 py-4 md:px-8">
-        <div className="mx-auto flex max-w-7xl items-center justify-between border-b border-zinc-950/15 pb-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between border-b border-zinc-950/15 dark:border-white/15 pb-4">
           <span className="resumer-mark px-3 py-1.5 text-xl font-black md:text-2xl">
             Resumer
           </span>
-          <div className="hidden items-center gap-6 text-xs font-black uppercase tracking-[0.22em] text-zinc-500 md:flex">
-            <a href="#flow" className="transition hover:text-zinc-950">
+          <div className="hidden items-center gap-6 text-xs font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400 md:flex">
+            <a href="#flow" className="transition hover:text-zinc-950 dark:hover:text-white">
               Make
             </a>
-            <a href="#trust" className="transition hover:text-zinc-950">
+            <a href="#trust" className="transition hover:text-zinc-950 dark:hover:text-white">
               Fork
             </a>
-            <a href="#launch" className="transition hover:text-zinc-950">
+            <a href="#launch" className="transition hover:text-zinc-950 dark:hover:text-white">
               Login
             </a>
           </div>
           <div className="flex items-center gap-2">
             <Link
               href="/try"
-              className="inline-flex h-10 items-center justify-center border border-zinc-950 bg-white px-5 text-xs font-black uppercase tracking-wide text-zinc-950 shadow-[2px_2px_0_#18181b] transition hover:-translate-y-0.5 hover:bg-zinc-50 active:translate-y-px active:shadow-none"
+              className="inline-flex h-10 items-center justify-center border border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-5 text-xs font-black uppercase tracking-wide text-zinc-950 dark:text-zinc-100 shadow-[2px_2px_0_#18181b] dark:shadow-[2px_2px_0_#3f3f46] transition hover:-translate-y-0.5 hover:bg-zinc-50 dark:hover:bg-zinc-800 active:translate-y-px active:shadow-none"
             >
               Try free
             </Link>
@@ -94,24 +94,24 @@ export default async function Home() {
         />
 
         <div className="relative z-10 max-w-3xl landing-rise">
-          <p className="mb-5 inline-flex border border-zinc-950 bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.28em] shadow-[2px_2px_0_#18181b]">
+          <p className="mb-5 inline-flex border border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1 text-xs font-black uppercase tracking-[0.28em] shadow-[2px_2px_0_#18181b] dark:shadow-[2px_2px_0_#3f3f46] dark:text-zinc-200">
             resumer.aryansingh.space
           </p>
-          <h1 className="max-w-4xl text-4xl font-black uppercase text-zinc-950 sm:text-5xl lg:text-7xl">
+          <h1 className="max-w-4xl text-4xl font-black uppercase text-zinc-950 dark:text-white sm:text-5xl lg:text-7xl">
             Quality job-focused resumes on the fly.
           </h1>
-          <p className="mt-5 max-w-2xl text-base font-bold leading-7 text-zinc-600 md:text-lg">
+          <p className="mt-5 max-w-2xl text-base font-bold leading-7 text-zinc-600 dark:text-zinc-400 md:text-lg">
             Try 5 free resumes every day without logging in. Import old resumes, paste a job post, download a tailored draft.
           </p>
           <div className="login-highlight mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
             <Link
               href="/try"
-              className="inline-flex h-12 items-center justify-center border border-zinc-950 bg-[#ff4e26] px-6 text-sm font-black uppercase tracking-wide text-white shadow-[2px_2px_0_#18181b] transition hover:-translate-y-0.5 hover:bg-[#e03d16] active:translate-y-px active:shadow-none"
+              className="inline-flex h-12 items-center justify-center border border-zinc-950 dark:border-zinc-700 bg-[#ff4e26] px-6 text-sm font-black uppercase tracking-wide text-white shadow-[2px_2px_0_#18181b] dark:shadow-[2px_2px_0_#3f3f46] transition hover:-translate-y-0.5 hover:bg-[#e03d16] active:translate-y-px active:shadow-none"
             >
               Try free
             </Link>
             <LoginModal triggerClassName="h-12 px-6 text-sm" />
-            <span className="text-xs font-black uppercase tracking-[0.24em] text-zinc-500">
+            <span className="text-xs font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
               No login: 5/day. Login keeps history.
             </span>
           </div>
@@ -125,14 +125,14 @@ export default async function Home() {
               <span className="text-[#ff4e26]">Parsed</span>
             </div>
             <div className="grid gap-3">
-              <div className="h-4 w-4/5 rounded-full bg-zinc-950" />
-              <div className="h-4 w-2/3 rounded-full bg-zinc-200" />
-              <div className="h-4 w-11/12 rounded-full bg-zinc-200" />
+              <div className="h-4 w-4/5 rounded-full bg-zinc-950 dark:bg-zinc-100" />
+              <div className="h-4 w-2/3 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+              <div className="h-4 w-11/12 rounded-full bg-zinc-200 dark:bg-zinc-700" />
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {outcomes.map((item) => (
                   <span
                     key={item}
-                    className="border border-zinc-950 bg-[#fbfbf3] px-2 py-3 text-center text-[10px] font-black uppercase tracking-[0.2em]"
+                    className="border border-zinc-950 dark:border-zinc-700 bg-[#fbfbf3] dark:bg-zinc-800 px-2 py-3 text-center text-[10px] font-black uppercase tracking-[0.2em] dark:text-zinc-200"
                   >
                     {item}
                   </span>
@@ -204,7 +204,7 @@ export default async function Home() {
                 <h3 className="mt-10 text-2xl font-black uppercase tracking-[-0.025em]">
                   {step.title}
                 </h3>
-                <p className="mt-3 text-sm font-bold leading-7 tracking-[-0.005em] text-zinc-600">
+                <p className="mt-3 text-sm font-bold leading-7 tracking-[-0.005em] text-zinc-600 dark:text-zinc-400">
                   {step.text}
                 </p>
               </article>
@@ -251,7 +251,7 @@ export default async function Home() {
               </p>
             </div>
             <div className="landing-ui-card p-6">
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-4 text-xs font-black uppercase tracking-[0.24em] text-zinc-400">
+              <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-4 text-xs font-black uppercase tracking-[0.24em] text-zinc-400">
                 <span>Recent</span>
                 <span>PDF</span>
               </div>
@@ -259,7 +259,7 @@ export default async function Home() {
                 {["Campus recruiter", "Backend sprint", "Stealth startup"].map((role) => (
                   <div
                     key={role}
-                    className="flex items-center justify-between border border-zinc-200 bg-zinc-50 p-3 text-sm font-black"
+                    className="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 text-sm font-black dark:text-zinc-100"
                   >
                     <span>{role}</span>
                     <span className="h-3 w-3 bg-[#ff4e26]" />
@@ -304,22 +304,22 @@ export default async function Home() {
           className="landing-glow left-1/2 top-20 -translate-x-1/2 bg-[#ff4e26]/20"
           aria-hidden="true"
         />
-        <div className="landing-ui-card relative overflow-hidden bg-white p-8 md:p-12">
+        <div className="landing-ui-card relative overflow-hidden bg-white dark:bg-zinc-900 p-8 md:p-12">
           <div
             className="absolute right-0 top-0 h-40 w-40 bg-[#ff4e26]"
             aria-hidden="true"
           />
           <div className="relative max-w-4xl">
-            <h2 className="text-6xl font-black uppercase leading-[0.9] tracking-[-0.055em] md:text-9xl">
+            <h2 className="text-6xl font-black uppercase leading-[0.9] tracking-[-0.055em] md:text-9xl dark:text-white">
               Your data, your call.
             </h2>
-            <p className="mt-7 max-w-lg text-lg font-bold leading-relaxed tracking-[-0.01em] text-zinc-600">
+            <p className="mt-7 max-w-lg text-lg font-bold leading-relaxed tracking-[-0.01em] text-zinc-600 dark:text-zinc-400">
               Use hosted for speed. Try without login. Fork when trust matters.
             </p>
             <div className="login-highlight mt-9 flex flex-col gap-4 sm:flex-row sm:items-center">
               <Link
                 href="/try"
-                className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] transition hover:-translate-y-0.5 hover:shadow-[5px_5px_0_#18181b] active:translate-y-0"
+                className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46] transition hover:-translate-y-0.5 hover:shadow-[5px_5px_0_#18181b] active:translate-y-0"
               >
                 Try 5 free today
               </Link>
@@ -328,7 +328,7 @@ export default async function Home() {
                 href="https://github.com/Wizhill05/resumer-v2"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-white px-5 text-sm font-black uppercase tracking-wide text-zinc-950 shadow-[3px_3px_0_#18181b] transition hover:-translate-y-0.5 hover:shadow-[5px_5px_0_#18181b] active:translate-y-0"
+                className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-5 text-sm font-black uppercase tracking-wide text-zinc-950 dark:text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46] transition hover:-translate-y-0.5 hover:shadow-[5px_5px_0_#18181b] active:translate-y-0"
               >
                 GitHub
               </a>
