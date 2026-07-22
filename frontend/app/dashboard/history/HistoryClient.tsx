@@ -18,19 +18,36 @@ type HistoryRun = {
 }
 
 const nodeProgressMap: Record<string, number> = {
-  job_analysis: 15,
-  summary_skills: 25,
-  experience_writer: 30,
-  projects_writer: 35,
-  assembly: 40,
-  renderer: 45,
-  orphan_repair: 65,
-  content_reduction: 75,
+  job_analysis: 10,
+  selection: 18,
+  summary_skills: 26,
+  experience_writer: 34,
+  projects_writer: 42,
+  extracurricular_writer: 50,
+  assembly: 58,
+  renderer: 68,
+  orphan_repair: 76,
+  content_reduction: 84,
   saver: 95,
+}
+
+const nodeLabels: Record<string, string> = {
+  job_analysis: "Analyzing job post",
+  selection: "Selecting content",
+  summary_skills: "Writing summary & skills",
+  experience_writer: "Writing experience",
+  projects_writer: "Writing projects",
+  extracurricular_writer: "Writing extracurriculars",
+  assembly: "Assembling resume",
+  renderer: "Rendering PDF",
+  orphan_repair: "Fixing layout issues",
+  content_reduction: "Optimizing fit",
+  saver: "Saving files",
 }
 
 function useLiveProgress(runId: string, enabled: boolean, onDone: () => void) {
   const [percent, setPercent] = useState(10)
+  const [stepLabel, setStepLabel] = useState("Starting")
   const onDoneRef = useRef(onDone)
   useEffect(() => {
     onDoneRef.current = onDone
@@ -69,6 +86,8 @@ function useLiveProgress(runId: string, enabled: boolean, onDone: () => void) {
           if (log.node) {
             const p = nodeProgressMap[log.node]
             if (p) setPercent((prev) => Math.max(prev, p))
+            const label = nodeLabels[log.node]
+            if (label) setStepLabel(label)
           }
         }
         if (data.status === "completed" || data.status === "failed") {
@@ -90,7 +109,7 @@ function useLiveProgress(runId: string, enabled: boolean, onDone: () => void) {
     }
   }, [runId, enabled])
 
-  return percent
+  return { percent, stepLabel }
 }
 
 type ViewMode = "list" | "grid"
@@ -135,7 +154,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
           e.stopPropagation()
           setIsOpen(true)
         }}
-        className="inline-flex min-h-11 cursor-pointer touch-manipulation items-center border border-zinc-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-zinc-700 transition-colors active:border-zinc-900 active:bg-zinc-100 active:text-zinc-900 sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-zinc-500 sm:hover:border-zinc-900 sm:hover:text-zinc-900"
+        className="inline-flex min-h-11 cursor-pointer touch-manipulation items-center border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300 transition-colors active:border-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-700 active:text-zinc-900 dark:active:text-white sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-zinc-500 dark:sm:text-zinc-400 sm:hover:border-zinc-900 dark:sm:hover:border-zinc-400 sm:hover:text-zinc-900 dark:sm:hover:text-white"
       >
         See job description
       </button>
@@ -152,19 +171,19 @@ function JobDescriptionPeek({ text }: { text: string }) {
           }}
         >
           <div
-            className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col border-3 border-black bg-white shadow-[8px_8px_0_#000] transition-all"
+            className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col border-3 border-black dark:border-zinc-600 bg-white dark:bg-zinc-900 shadow-[8px_8px_0_#000] dark:shadow-[8px_8px_0_#3f3f46] transition-all"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 px-4 py-3">
+              <span className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
                 Job Description
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={copy}
-                  className="flex min-h-9 cursor-pointer touch-manipulation items-center gap-1 border border-zinc-200 px-2 py-1 text-[10px] font-bold uppercase active:border-zinc-900 active:bg-zinc-100 sm:hover:border-zinc-900 sm:hover:bg-zinc-50"
+                  className="flex min-h-9 cursor-pointer touch-manipulation items-center gap-1 border border-zinc-200 dark:border-zinc-600 px-2 py-1 text-[10px] font-bold uppercase dark:text-zinc-300 active:border-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-700 sm:hover:border-zinc-900 dark:sm:hover:border-zinc-400 sm:hover:bg-zinc-50 dark:sm:hover:bg-zinc-800"
                 >
                   <Copy size={12} />
                   {copied ? "Copied!" : "Copy"}
@@ -172,7 +191,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className="flex min-h-9 min-w-9 cursor-pointer touch-manipulation items-center justify-center border border-zinc-200 p-1 active:border-zinc-900 active:bg-zinc-100 sm:hover:border-zinc-900 sm:hover:bg-zinc-50"
+                  className="flex min-h-9 min-w-9 cursor-pointer touch-manipulation items-center justify-center border border-zinc-200 dark:border-zinc-600 p-1 dark:text-zinc-300 active:border-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-700 sm:hover:border-zinc-900 dark:sm:hover:border-zinc-400 sm:hover:bg-zinc-50 dark:sm:hover:bg-zinc-800"
                   aria-label="Close modal"
                 >
                   <X size={14} />
@@ -181,7 +200,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed text-zinc-700 whitespace-pre-wrap select-text">
+            <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap select-text">
               {text || "No job description text available."}
             </div>
           </div>
@@ -212,40 +231,40 @@ function LiveProgressRow({
   onDelete: (id: string) => void
   refetch: () => void
 }) {
-  const percent = useLiveProgress(run.id, true, refetch)
+  const { percent, stepLabel } = useLiveProgress(run.id, true, refetch)
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   })
 
   return (
-    <div className="flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group bg-zinc-50/50">
+    <div className="flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group bg-zinc-50/50 dark:bg-zinc-800/50">
       {/* Left: dot + info */}
       <div className="flex items-start gap-3 min-w-0 flex-1">
         <StatusDot status="in_progress" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-sm font-semibold leading-snug text-zinc-900">
+            <span className="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">
               {run.job_title || "Tailored Resume"}
             </span>
             {run.company && (
-              <span className="text-sm text-zinc-400 font-normal truncate">
+              <span className="text-sm text-zinc-400 dark:text-zinc-500 font-normal truncate">
                 at {run.company}
               </span>
             )}
           </div>
-          <p className="text-xs text-zinc-400 mt-0.5">
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
             {date}
-            <span className="mx-1.5 text-zinc-300">·</span>
+            <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
             {run.template_id}
-            <span className="mx-1.5 text-zinc-300">·</span>
+            <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
             {run.model_used}
-            <span className="mx-1.5 text-zinc-300">·</span>
-            <span className="text-amber-500 font-medium">generating ({percent}%)</span>
+            <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
+            <span className="text-amber-500 font-medium">{stepLabel} ({percent}%)</span>
           </p>
           <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
           
           {/* Progress bar */}
-          <div className="w-full bg-zinc-100 h-1 mt-2 rounded-full overflow-hidden">
+          <div className="w-full bg-zinc-100 dark:bg-zinc-700 h-1 mt-2 rounded-full overflow-hidden">
             <div
               className="bg-[#ff4e26] h-full transition-all duration-500 ease-out"
               style={{ width: `${percent}%` }}
@@ -275,21 +294,21 @@ function LiveProgressGridCard({
   onDelete: (id: string) => void
   refetch: () => void
 }) {
-  const percent = useLiveProgress(run.id, true, refetch)
+  const { percent, stepLabel } = useLiveProgress(run.id, true, refetch)
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   })
 
   return (
-    <div className="bg-white border border-gray-200 overflow-hidden flex flex-col group hover:border-gray-400 transition-colors">
+    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 overflow-hidden flex flex-col group hover:border-gray-400 dark:hover:border-zinc-500 transition-colors">
       {/* Thumbnail placeholder with progress */}
-      <div className="relative border-b border-gray-200 bg-zinc-50" style={{ aspectRatio: "210/297" }}>
+      <div className="relative border-b border-gray-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800" style={{ aspectRatio: "210/297" }}>
         <div className="w-full h-full flex flex-col items-center justify-center p-4 gap-3">
-          <FileText size={28} className="text-zinc-300" />
-          <span className="text-xs text-amber-500 font-medium">Generating… {percent}%</span>
+          <FileText size={28} className="text-zinc-300 dark:text-zinc-600" />
+          <span className="text-xs text-amber-500 font-medium">{stepLabel}… {percent}%</span>
           
           {/* Progress bar */}
-          <div className="w-2/3 bg-zinc-200 h-1 rounded-full overflow-hidden">
+          <div className="w-2/3 bg-zinc-200 dark:bg-zinc-700 h-1 rounded-full overflow-hidden">
             <div
               className="bg-[#ff4e26] h-full transition-all duration-500 ease-out"
               style={{ width: `${percent}%` }}
@@ -300,7 +319,7 @@ function LiveProgressGridCard({
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-          className="absolute top-2 right-2 rounded border border-gray-200 bg-white/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+          className="absolute top-2 right-2 rounded border border-gray-200 dark:border-zinc-600 bg-white/90 dark:bg-zinc-800/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
           aria-label="Delete"
         >
           <Trash2 size={13} />
@@ -311,11 +330,11 @@ function LiveProgressGridCard({
       <div className="px-3 py-3">
         <div className="flex items-start gap-1.5">
           <StatusDot status="in_progress" />
-          <span className="text-sm font-semibold leading-snug truncate text-zinc-900">
+          <span className="text-sm font-semibold leading-snug truncate text-zinc-900 dark:text-zinc-100">
             {run.job_title || "Tailored Resume"}
           </span>
         </div>
-        <p className="text-xs text-zinc-400 mt-0.5 truncate pl-3.5">
+        <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 truncate pl-3.5">
           {run.company ? `${run.company} · ` : ""}{date}
         </p>
         <div className="mt-2 pl-3.5"><JobDescriptionPeek text={run.job_description} /></div>
@@ -332,10 +351,10 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
   const failed = run.status === "failed"
 
   return (
-    <div className="bg-white border border-gray-200 overflow-hidden flex flex-col group hover:border-gray-400 transition-colors">
+    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 overflow-hidden flex flex-col group hover:border-gray-400 dark:hover:border-zinc-500 transition-colors">
       {/* Thumbnail */}
       <div
-        className={`relative border-b border-gray-200 bg-zinc-50 ${completed ? "cursor-pointer" : ""}`}
+        className={`relative border-b border-gray-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 ${completed ? "cursor-pointer" : ""}`}
         style={{ aspectRatio: "210/297" }}
         onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
       >
@@ -343,12 +362,12 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
           <img
             src={`/api/backend/generate/${run.id}/thumb`}
             alt={`${run.job_title || "Resume"} preview`}
-            className="w-full h-full object-cover object-top"
+            className="w-full h-full object-cover object-top dark:invert dark:hue-rotate-180"
             loading="lazy"
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center gap-2">
-            <FileText size={28} className="text-zinc-300" />
+            <FileText size={28} className="text-zinc-300 dark:text-zinc-600" />
             {failed && <span className="text-xs text-red-400 font-medium">Failed</span>}
             {!completed && !failed && (
               <span className="text-xs text-amber-500 font-medium">Processing…</span>
@@ -359,7 +378,7 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-          className="absolute top-2 right-2 rounded border border-gray-200 bg-white/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+          className="absolute top-2 right-2 rounded border border-gray-200 dark:border-zinc-600 bg-white/90 dark:bg-zinc-800/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
           aria-label="Delete"
         >
           <Trash2 size={13} />
@@ -373,13 +392,13 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
       >
         <div className="flex items-start gap-1.5">
           <StatusDot status={run.status} />
-          <span className={`title-span text-sm font-semibold leading-snug truncate transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900"}`}>
+          <span className={`title-span text-sm font-semibold leading-snug truncate transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
             {run.job_title || "Tailored Resume"}
           </span>
           {completed && (
             <button
               onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-              className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border border-zinc-300 text-zinc-600 bg-white hover:bg-zinc-50 hover:border-zinc-400 rounded transition-colors"
+              className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors"
               aria-label="Edit resume"
             >
               <Pencil size={11} />
@@ -387,7 +406,7 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
             </button>
           )}
         </div>
-        <p className="date-p text-xs text-zinc-400 mt-0.5 truncate pl-3.5 transition-colors duration-150">
+        <p className="date-p text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 truncate pl-3.5 transition-colors duration-150">
           {run.company ? `${run.company} · ` : ""}{date}
         </p>
       </div>
@@ -419,13 +438,13 @@ export function HistoryClient() {
 
   if (isLoading) {
     return (
-      <div className="bg-white border border-gray-200 divide-y divide-gray-100">
+      <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 divide-y divide-gray-100 dark:divide-zinc-800">
         {[...Array(3)].map((_, i) => (
           <div key={i} className="px-5 py-4 flex items-start gap-3">
-            <div className="w-2 h-2 rounded-full bg-gray-200 mt-[5px] shrink-0" />
+            <div className="w-2 h-2 rounded-full bg-gray-200 dark:bg-zinc-700 mt-[5px] shrink-0" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 bg-gray-200 rounded w-48" />
-              <div className="h-3 bg-gray-100 rounded w-64" />
+              <div className="h-4 bg-gray-200 dark:bg-zinc-700 rounded w-48 animate-pulse" />
+              <div className="h-3 bg-gray-100 dark:bg-zinc-800 rounded w-64 animate-pulse" />
             </div>
           </div>
         ))}
@@ -435,32 +454,32 @@ export function HistoryClient() {
 
   if (error) {
     return (
-      <div className="px-5 py-4 bg-red-50 border border-red-200 text-sm text-red-700">
+      <div className="px-5 py-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400">
         {error instanceof Error ? error.message : "Failed to load history"}
       </div>
     )
   }
 
   return (
-    <div className="bg-white border border-gray-200 pixel-enter">
+    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 pixel-enter">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-        <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-zinc-800">
+        <span className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
           {runs.length} {runs.length === 1 ? "generation" : "generations"}
         </span>
         <div className="flex items-center gap-2">
           {/* View toggle — desktop only */}
-          <div className="hidden md:flex items-center gap-0.5 border border-gray-200 rounded p-0.5">
+          <div className="hidden md:flex items-center gap-0.5 border border-gray-200 dark:border-zinc-700 rounded p-0.5">
             <button
               onClick={() => setView("list")}
-              className={`p-1 rounded transition-colors ${view === "list" ? "bg-zinc-900 text-white" : "text-zinc-400 hover:text-zinc-700"}`}
+              className={`p-1 rounded transition-colors ${view === "list" ? "bg-zinc-900 dark:bg-zinc-200 text-white dark:text-zinc-900" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"}`}
               aria-label="List view"
             >
               <LayoutList size={14} />
             </button>
             <button
               onClick={() => setView("grid")}
-              className={`p-1 rounded transition-colors ${view === "grid" ? "bg-zinc-900 text-white" : "text-zinc-400 hover:text-zinc-700"}`}
+              className={`p-1 rounded transition-colors ${view === "grid" ? "bg-zinc-900 dark:bg-zinc-200 text-white dark:text-zinc-900" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"}`}
               aria-label="Grid view"
             >
               <LayoutGrid size={14} />
@@ -468,7 +487,7 @@ export function HistoryClient() {
           </div>
           <button
             onClick={() => refetch()}
-            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-black transition-colors py-1 px-2 rounded hover:bg-zinc-50"
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-black dark:hover:text-white transition-colors py-1 px-2 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800"
           >
             <RefreshCw size={11} />
             Refresh
@@ -478,8 +497,8 @@ export function HistoryClient() {
 
       {runs.length === 0 ? (
         <div className="px-5 py-16 text-center">
-          <p className="text-sm font-semibold text-zinc-400">No generations yet</p>
-          <p className="text-xs text-zinc-300 mt-1">Your tailored resumes will appear here</p>
+          <p className="text-sm font-semibold text-zinc-400 dark:text-zinc-500">No generations yet</p>
+          <p className="text-xs text-zinc-300 dark:text-zinc-600 mt-1">Your tailored resumes will appear here</p>
         </div>
       ) : view === "grid" ? (
         /* ── Grid view ── */
@@ -494,7 +513,7 @@ export function HistoryClient() {
         </div>
       ) : (
         /* ── List view ── */
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-gray-100 dark:divide-zinc-800">
           {runs.map((run) => {
             if (run.status === "in_progress" || run.status === "pending") {
               return (
@@ -522,7 +541,7 @@ export function HistoryClient() {
                   completed
                     ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.at-span]:text-zinc-200 hover:[&_.date-p]:text-zinc-200 hover:[&_.dot-span]:text-zinc-200 hover:[&_.delete-btn]:text-zinc-200 hover:scale-[1.012] hover:shadow-sm hover:z-10 hover:relative"
                     : failed
-                    ? "hover:bg-zinc-50"
+                    ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                     : "",
                 ].join(" ")}
               >
@@ -531,23 +550,23 @@ export function HistoryClient() {
                   <StatusDot status={run.status} />
                   <div className="min-w-0">
                     <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className={`title-span text-sm font-semibold leading-snug transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900"}`}>
+                      <span className={`title-span text-sm font-semibold leading-snug transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
                         {run.job_title || "Tailored Resume"}
                       </span>
                       {run.company && (
-                        <span className="at-span text-sm text-zinc-400 font-normal truncate transition-colors duration-150">
+                        <span className="at-span text-sm text-zinc-400 dark:text-zinc-500 font-normal truncate transition-colors duration-150">
                           at {run.company}
                         </span>
                       )}
                     </div>
-                    <p className="date-p text-xs text-zinc-400 mt-0.5 transition-colors duration-150">
+                    <p className="date-p text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 transition-colors duration-150">
                       {date}
-                      <span className="dot-span mx-1.5 text-zinc-300 transition-colors duration-150">·</span>
+                      <span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
                       {run.template_id}
-                      <span className="dot-span mx-1.5 text-zinc-300 transition-colors duration-150">·</span>
+                      <span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
                       {run.model_used}
                       {failed && (
-                        <><span className="dot-span mx-1.5 text-zinc-300 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
+                        <><span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
                       )}
                     </p>
                     <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
@@ -559,7 +578,7 @@ export function HistoryClient() {
                   {completed && (
                     <button
                       onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold border border-zinc-300 text-zinc-700 bg-white hover:bg-zinc-50 hover:border-zinc-400 hover:!text-zinc-800 rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 hover:!text-zinc-800 dark:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
                       aria-label="Edit"
                     >
                       <Pencil size={12} />

@@ -200,7 +200,7 @@ export function GenerateClient() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <Label className="text-sm font-extrabold uppercase tracking-wider">Template</Label>
-                <p className="mt-1 text-xs font-medium text-zinc-500">Controls resume structure and rendering.</p>
+                <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Controls resume structure and rendering.</p>
               </div>
               <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">1</span>
             </div>
@@ -213,13 +213,13 @@ export function GenerateClient() {
                     type="button"
                     onClick={() => setSelectedTemplate(tpl.id)}
                     className={`flex items-start gap-3 border p-3 text-left transition-colors ${
-                      selected ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-200 bg-white hover:border-zinc-500"
+                      selected ? "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-700 text-white" : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-500 dark:hover:border-zinc-500"
                     }`}
                   >
                     <FileText className="mt-0.5 shrink-0" size={18} />
                     <span>
                       <span className="block text-sm font-extrabold uppercase tracking-wide">{tpl.name}</span>
-                      <span className={`mt-0.5 block text-xs font-medium leading-relaxed ${selected ? "text-white/75" : "text-zinc-500"}`}>
+                      <span className={`mt-0.5 block text-xs font-medium leading-relaxed ${selected ? "text-white/75" : "text-zinc-500 dark:text-zinc-400"}`}>
                         {tpl.description}
                       </span>
                     </span>
@@ -234,18 +234,18 @@ export function GenerateClient() {
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
                   <Label className="text-sm font-extrabold uppercase tracking-wider">Content Focus</Label>
-                  <p className="mt-1 text-xs font-medium leading-relaxed text-zinc-500">
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
                     Choose how many saved projects and experience entries the resume should prioritize.
                   </p>
                 </div>
                 <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">2</span>
               </div>
 
-              <div className="mb-3 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600 sm:w-max">
-                <span className="inline-flex items-center gap-1 border border-zinc-200 bg-zinc-50 px-2 py-1">
+              <div className="mb-3 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-400 sm:w-max">
+                <span className="inline-flex items-center gap-1 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1">
                   <FolderGit2 size={13} /> Your projects: {profileProjects.length}
                 </span>
-                <span className="inline-flex items-center gap-1 border border-zinc-200 bg-zinc-50 px-2 py-1">
+                <span className="inline-flex items-center gap-1 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1">
                   <Briefcase size={13} /> Your experience: {profileExperiences.length}
                 </span>
               </div>
@@ -261,18 +261,18 @@ export function GenerateClient() {
                       onClick={() => opt.enabled && setSliderIndex(idx)}
                       className={`flex items-start justify-between gap-3 border p-3 text-left transition-colors ${
                         selected && opt.enabled
-                          ? "border-zinc-950 bg-[#ff4e26]/10"
+                          ? "border-zinc-950 dark:border-zinc-400 bg-[#ff4e26]/10"
                           : opt.enabled
-                            ? "border-zinc-200 bg-white hover:border-zinc-500"
-                            : "border-zinc-200 bg-zinc-50 text-zinc-400"
+                            ? "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-500 dark:hover:border-zinc-500"
+                            : "border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500"
                       }`}
                     >
                       <span className="min-w-0">
                         <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-extrabold uppercase tracking-wide text-zinc-950">{opt.name}</span>
-                          <span className="text-xs font-bold text-zinc-500">{opt.projects} projects + {opt.experience} experience</span>
+                          <span className="text-sm font-extrabold uppercase tracking-wide text-zinc-950 dark:text-zinc-100">{opt.name}</span>
+                          <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">{opt.projects} projects + {opt.experience} experience</span>
                         </span>
-                        <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">{opt.desc}</span>
+                        <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">{opt.desc}</span>
                         {!opt.enabled && (
                           <span className="mt-1 flex items-center gap-1 text-xs font-bold text-red-600">
                             <Lock size={12} /> {getLockReason(opt)}
@@ -285,8 +285,8 @@ export function GenerateClient() {
                 })}
               </div>
 
-              <div className="mt-3 flex flex-col gap-2 border border-zinc-200 bg-zinc-50 p-3 text-xs font-bold text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
-                <span>Selected: <span className="text-zinc-950">{activeOption?.name}</span></span>
+              <div className="mt-3 flex flex-col gap-2 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 text-xs font-bold text-zinc-600 dark:text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
+                <span>Selected: <span className="text-zinc-950 dark:text-zinc-100">{activeOption?.name}</span></span>
                 <span>Needs {projectsCount} projects and {experienceCount} experience entries.</span>
               </div>
             </section>
@@ -296,7 +296,7 @@ export function GenerateClient() {
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <Label htmlFor="job" className="text-sm font-extrabold uppercase tracking-wider">Job Description</Label>
-                <p className="mt-1 text-xs font-medium text-zinc-500">Paste the full posting for better keyword matching.</p>
+                <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Paste the full posting for better keyword matching.</p>
               </div>
               <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">{activeTemplate && splits.length > 1 ? "3" : "2"}</span>
             </div>
@@ -343,8 +343,8 @@ export function GenerateClient() {
       {step === "submitted" && (
         <div className="mx-auto max-w-xl space-y-4 py-6 md:py-10">
           <div className="panel-strong space-y-3 p-5 text-center md:p-7">
-            <h3 className="text-xl font-extrabold uppercase tracking-tight text-black">Generation Started</h3>
-            <p className="text-sm font-medium leading-relaxed text-zinc-600">
+            <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white">Generation Started</h3>
+            <p className="text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">
               Your resume is being generated. It usually takes 5-10 minutes. Check History for progress and downloads.
             </p>
           </div>
@@ -370,26 +370,26 @@ export function GenerateClient() {
 
       {showErrorModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 md:items-center md:p-4">
-          <div className="w-full max-w-md border-t border-zinc-900 bg-white p-4 shadow-2xl md:border md:p-6">
+          <div className="w-full max-w-md border-t border-zinc-900 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-2xl md:border md:p-6">
             <div className="flex gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-red-50 text-red-600">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-red-50 dark:bg-red-950/40 text-red-600">
                 <AlertCircle size={20} />
               </div>
               <div>
-                <h3 className="text-lg font-extrabold uppercase tracking-tight">Need More Profile Material</h3>
-                <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-600">
+                <h3 className="text-lg font-extrabold uppercase tracking-tight dark:text-white">Need More Profile Material</h3>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">
                   This focus needs more saved projects or experience before generation can start.
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-2 border border-zinc-200 bg-zinc-50 p-3 text-sm font-bold">
+            <div className="mt-4 grid gap-2 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 text-sm font-bold">
               <div className="flex justify-between gap-3">
-                <span className="text-zinc-500">Projects</span>
+                <span className="text-zinc-500 dark:text-zinc-400">Projects</span>
                 <span>{profileProjects.length} available / {projectsCount} needed</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-zinc-500">Experience</span>
+                <span className="text-zinc-500 dark:text-zinc-400">Experience</span>
                 <span>{profileExperiences.length} available / {experienceCount} needed</span>
               </div>
             </div>

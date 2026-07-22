@@ -9,14 +9,14 @@ export default async function HistoryPage() {
   if (!session) redirect("/")
 
   return (
-    <main className="min-h-screen flex flex-col app-bg text-black">
+    <main className="min-h-screen flex flex-col app-bg text-black dark:text-white">
       <Nav />
 
       <div className="page-wrap flex-1 space-y-4 md:space-y-5">
         <div className="page-header space-y-1">
           <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Step 3</p>
           <h1 className="text-2xl font-extrabold uppercase tracking-tight md:text-3xl">Generation History</h1>
-          <p className="max-w-2xl text-sm font-medium leading-relaxed text-zinc-600">
+          <p className="max-w-2xl text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">
             View and download your previously tailored resume versions.
           </p>
         </div>

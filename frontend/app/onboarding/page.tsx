@@ -9,7 +9,7 @@ export default async function OnboardingPage() {
   if (!session) redirect("/")
 
   return (
-    <main className="min-h-screen flex flex-col app-bg text-black">
+    <main className="min-h-screen flex flex-col app-bg text-black dark:text-white">
       <Nav />
       <div className="page-wrap flex-1 space-y-4 md:space-y-5">
         <div className="page-header space-y-1">

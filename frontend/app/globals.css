@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@custom-variant dark (&:is(.dark *));
+
 @theme {
   --font-sans: var(--font-space-grotesk), sans-serif;
   --color-brand-orange: #ff4e26;
@@ -14,10 +16,17 @@
   * {
     border-color: #d4d4d8;
   }
+  :is(.dark *) {
+    border-color: #27272a;
+  }
   body {
     background-color: #fbfbf3;
     color: #000000;
     font-family: var(--font-space-grotesk), sans-serif;
+  }
+  :is(.dark) body {
+    background-color: #0a0a0a;
+    color: #e4e4e7;
   }
 }
 
@@ -26,6 +35,10 @@
     background-color: #fbfbf3;
     background-image: linear-gradient(#00000008 1px, transparent 1px), linear-gradient(90deg, #00000008 1px, transparent 1px);
     background-size: 28px 28px;
+  }
+  :is(.dark) .app-bg {
+    background-color: #0a0a0a;
+    background-image: linear-gradient(#ffffff06 1px, transparent 1px), linear-gradient(90deg, #ffffff06 1px, transparent 1px);
   }
 
   .page-wrap {
@@ -48,6 +61,12 @@
     box-shadow: 0 1px 0 #0000000a;
     padding: 1rem;
   }
+  :is(.dark) .page-header {
+    background: #18181b;
+    border-color: #27272a;
+    border-left-color: #ff4e26;
+    box-shadow: 0 1px 0 #ffffff08;
+  }
 
   @media (min-width: 768px) {
     .page-header {
@@ -60,15 +79,29 @@
     border: 1px solid #e4e4e7;
     box-shadow: 0 1px 0 #0000000a;
   }
+  :is(.dark) .panel {
+    background: #18181b;
+    border-color: #27272a;
+    box-shadow: 0 1px 0 #ffffff08;
+  }
 
   .panel-strong {
     background: #ffffff;
     border: 2px solid #18181b;
     box-shadow: 3px 3px 0 #18181b;
   }
+  :is(.dark) .panel-strong {
+    background: #18181b;
+    border-color: #3f3f46;
+    box-shadow: 3px 3px 0 #3f3f46;
+  }
 
   @media (max-width: 767px) {
     .panel-strong {
+      border-width: 1px;
+      box-shadow: none;
+    }
+    :is(.dark) .panel-strong {
       border-width: 1px;
       box-shadow: none;
     }
@@ -79,9 +112,15 @@
     border: 1px solid #e4e4e7;
     transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
   }
-
   .compact-card:hover {
     border-color: #a1a1aa;
+  }
+  :is(.dark) .compact-card {
+    background: #18181b;
+    border-color: #27272a;
+  }
+  :is(.dark) .compact-card:hover {
+    border-color: #52525b;
   }
 
   .resumer-mark {
@@ -95,6 +134,12 @@
     letter-spacing: -0.08em;
     text-transform: uppercase;
   }
+  :is(.dark) .resumer-mark {
+    border-color: #52525b;
+    background: linear-gradient(135deg, #27272a 0%, #18181b 100%);
+    color: #fafafa;
+    box-shadow: 0 1px 0 #3f3f46 inset, 0 10px 22px #0000004a, 2px 2px 0 #3f3f46;
+  }
 
   .resumer-mark::after {
     content: "";
@@ -103,11 +148,19 @@
     border-top: 1px solid #ffffffcc;
     pointer-events: none;
   }
+  :is(.dark) .resumer-mark::after {
+    border-top-color: #ffffff1a;
+  }
 
   .soft-skeleton {
     border: 1px solid #e4e4e7;
     background: linear-gradient(135deg, #ffffff, #f4f4f5);
     box-shadow: inset 0 1px 0 #ffffff, 0 1px 0 #00000008;
+  }
+  :is(.dark) .soft-skeleton {
+    border-color: #27272a;
+    background: linear-gradient(135deg, #18181b, #1c1c20);
+    box-shadow: inset 0 1px 0 #27272a, 0 1px 0 #ffffff06;
   }
 
   .loading-dot {
@@ -307,6 +360,10 @@
   background-image: linear-gradient(#00000008 1px, transparent 1px), linear-gradient(90deg, #00000008 1px, transparent 1px);
   background-size: 28px 28px;
 }
+:is(.dark) .texture-bg {
+  background-color: #0a0a0a;
+  background-image: linear-gradient(#ffffff06 1px, transparent 1px), linear-gradient(90deg, #ffffff06 1px, transparent 1px);
+}
 
 /* Neo-brutalist utility components */
 .brutalist-card {
@@ -316,10 +373,18 @@
   border-radius: 0px;
   transition: all 0.15s ease-in-out;
 }
+:is(.dark) .brutalist-card {
+  background-color: #18181b;
+  border-color: #52525b;
+  box-shadow: 4px 4px 0px #3f3f46;
+}
 
 .brutalist-card:hover {
   transform: translate(-1px, -1px);
   box-shadow: 5px 5px 0px #000000;
+}
+:is(.dark) .brutalist-card:hover {
+  box-shadow: 5px 5px 0px #3f3f46;
 }
 
 .brutalist-button {
@@ -337,6 +402,10 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+}
+:is(.dark) .brutalist-button {
+  border-color: #52525b;
+  box-shadow: 3px 3px 0px #3f3f46;
 }
 
 .brutalist-button:hover:not(:disabled) {
@@ -357,6 +426,12 @@
   box-shadow: 2px 2px 0px #9ca3af;
   cursor: not-allowed;
 }
+:is(.dark) .brutalist-button:disabled {
+  background-color: #27272a;
+  color: #52525b;
+  border-color: #3f3f46;
+  box-shadow: 2px 2px 0px #27272a;
+}
 
 .brutalist-input {
   background-color: #ffffff;
@@ -369,6 +444,11 @@
   border-radius: 0px;
   width: 100%;
   transition: all 0.15s ease-in-out;
+}
+:is(.dark) .brutalist-input {
+  background-color: #18181b;
+  border-color: #3f3f46;
+  color: #e4e4e7;
 }
 
 .brutalist-input:focus {
@@ -386,6 +466,12 @@
   box-shadow: 2px 2px 0px #000000;
   display: inline-block;
 }
+:is(.dark) .brutalist-tag {
+  background-color: #27272a;
+  border-color: #52525b;
+  color: #e4e4e7;
+  box-shadow: 2px 2px 0px #27272a;
+}
 
 @keyframes pixel-enter {
   0% { opacity: 0; transform: translateY(4px); }
@@ -400,6 +486,11 @@
   border: 1px solid #e4e4e7;
   background: linear-gradient(135deg, #ffffff, #f4f4f5);
   box-shadow: inset 0 1px 0 #ffffff, 0 1px 0 #00000008;
+}
+:is(.dark) .pixel-skeleton {
+  border-color: #27272a;
+  background: linear-gradient(135deg, #18181b, #1c1c20);
+  box-shadow: inset 0 1px 0 #27272a, 0 1px 0 #ffffff06;
 }
 
 /* 8-bit style progress bar */

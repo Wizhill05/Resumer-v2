@@ -15,20 +15,37 @@ type GuestRun = {
 }
 
 const nodeProgressMap: Record<string, number> = {
-  job_analysis: 15,
-  summary_skills: 25,
-  experience_writer: 35,
-  projects_writer: 45,
-  assembly: 55,
-  renderer: 70,
-  orphan_repair: 80,
-  content_reduction: 88,
+  job_analysis: 10,
+  selection: 18,
+  summary_skills: 26,
+  experience_writer: 34,
+  projects_writer: 42,
+  extracurricular_writer: 50,
+  assembly: 58,
+  renderer: 68,
+  orphan_repair: 76,
+  content_reduction: 84,
   saver: 95,
+}
+
+const nodeLabels: Record<string, string> = {
+  job_analysis: "Analyzing job post",
+  selection: "Selecting content",
+  summary_skills: "Writing summary & skills",
+  experience_writer: "Writing experience",
+  projects_writer: "Writing projects",
+  extracurricular_writer: "Writing extracurriculars",
+  assembly: "Assembling resume",
+  renderer: "Rendering PDF",
+  orphan_repair: "Fixing layout issues",
+  content_reduction: "Optimizing fit",
+  saver: "Saving files",
 }
 
 export function GuestResultClient({ id }: { id: string }) {
   const [run, setRun] = useState<GuestRun | null>(null)
   const [percent, setPercent] = useState(10)
+  const [stepLabel, setStepLabel] = useState("Starting")
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -52,6 +69,7 @@ export function GuestResultClient({ id }: { id: string }) {
         for (const log of data.logs ?? []) {
           since = log.id
           if (log.node && nodeProgressMap[log.node]) setPercent((prev) => Math.max(prev, nodeProgressMap[log.node]))
+          if (log.node && nodeLabels[log.node]) setStepLabel(nodeLabels[log.node])
         }
         if (data.status === "completed") setPercent(100)
         if (active) setRun((old) => old ? { ...old, status: data.status } : old)
@@ -116,7 +134,7 @@ export function GuestResultClient({ id }: { id: string }) {
             </a>
           ) : status === "failed" ? null : (
             <span className="inline-flex min-h-12 cursor-not-allowed items-center justify-center border-2 border-zinc-300 bg-zinc-100 px-5 text-sm font-black uppercase tracking-wide text-zinc-400">
-              <Loader2 className="mr-2 animate-spin" size={18} /> Generating...
+              <Loader2 className="mr-2 animate-spin" size={18} /> {stepLabel}…
             </span>
           )}
           <Link href="/try" className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 bg-white px-5 text-sm font-black uppercase tracking-wide text-zinc-950 shadow-[3px_3px_0_#18181b]">Make another</Link>

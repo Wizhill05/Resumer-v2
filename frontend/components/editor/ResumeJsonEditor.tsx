@@ -50,7 +50,7 @@ export function ResumeJsonEditor({ value, onChange }: Props) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-3 py-1.5 border-b border-zinc-200 bg-white flex items-center gap-2 text-xs text-zinc-500">
+      <div className="px-3 py-1.5 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
         <span className="font-mono">JSON</span>
         {isError && !isEmpty && (
           <span className="text-red-500 truncate max-w-xs">{localError}</span>
@@ -67,7 +67,7 @@ export function ResumeJsonEditor({ value, onChange }: Props) {
           value={value}
           onChange={handleChange}
           spellCheck={false}
-          className={`w-full min-h-full font-mono text-xs resize-none p-3 outline-none bg-white leading-relaxed ${
+          className={`w-full min-h-full font-mono text-xs resize-none p-3 outline-none bg-white dark:bg-zinc-950 dark:text-zinc-200 leading-relaxed ${
             isError && !isEmpty ? "border-l-4 border-red-400" : "border-l-4 border-transparent"
           }`}
           style={{ fontFamily: "'Fira Code', 'Cascadia Code', 'Menlo', monospace" }}

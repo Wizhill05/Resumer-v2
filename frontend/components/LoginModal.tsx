@@ -49,7 +49,7 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
           />
 
           {/* Modal */}
-          <div className="relative z-10 w-full max-w-lg border-3 border-black bg-white p-6 shadow-[8px_8px_0px_#000000] sm:p-8 md:p-10">
+          <div className="relative z-10 w-full max-w-lg border-3 border-black dark:border-zinc-600 bg-white dark:bg-zinc-900 p-6 shadow-[8px_8px_0px_#000000] dark:shadow-[8px_8px_0px_#3f3f46] sm:p-8 md:p-10">
             {/* Close */}
             <button
               onClick={() => setOpen(false)}
@@ -64,10 +64,10 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
               <div className="resumer-mark px-3 py-1 text-lg font-black mb-4">
                 <span className="text-xl font-extrabold uppercase tracking-tight">Resumer</span>
               </div>
-              <h2 className="text-3xl font-extrabold uppercase leading-tight tracking-[-0.03em] md:text-4xl">
+              <h2 className="text-3xl font-extrabold uppercase leading-tight tracking-[-0.03em] md:text-4xl dark:text-white">
                 Sign in to continue
               </h2>
-              <p className="mt-2 text-base font-semibold text-zinc-500">
+              <p className="mt-2 text-base font-semibold text-zinc-500 dark:text-zinc-400">
                 Choose a provider to get started
               </p>
             </div>
@@ -78,7 +78,7 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
                 <input type="hidden" name="callbackUrl" value={callbackUrl} />
                 <button
                   type="submit"
-                  className="flex min-h-14 w-full items-center gap-3 border-2 border-black bg-white px-5 py-4 text-left text-base font-bold transition-colors hover:bg-zinc-50 active:bg-zinc-100"
+                  className="flex min-h-14 w-full items-center gap-3 border-2 border-black dark:border-zinc-600 bg-white dark:bg-zinc-800 px-5 py-4 text-left text-base font-bold dark:text-zinc-100 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700 active:bg-zinc-100 dark:active:bg-zinc-600"
                 >
                   {/* GitHub icon */}
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -92,7 +92,7 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
                 <input type="hidden" name="callbackUrl" value={callbackUrl} />
                 <button
                   type="submit"
-                  className="flex min-h-14 w-full items-center gap-3 border-2 border-black bg-white px-5 py-4 text-left text-base font-bold transition-colors hover:bg-zinc-50 active:bg-zinc-100"
+                  className="flex min-h-14 w-full items-center gap-3 border-2 border-black dark:border-zinc-600 bg-white dark:bg-zinc-800 px-5 py-4 text-left text-base font-bold dark:text-zinc-100 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700 active:bg-zinc-100 dark:active:bg-zinc-600"
                 >
                   {/* Google icon */}
                   <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
@@ -106,7 +106,7 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
               </form>
             </div>
 
-            <p className="mt-6 text-center text-sm font-semibold text-zinc-400">
+            <p className="mt-6 text-center text-sm font-semibold text-zinc-400 dark:text-zinc-500">
               Free beta. 5 generations per day.
             </p>
           </div>

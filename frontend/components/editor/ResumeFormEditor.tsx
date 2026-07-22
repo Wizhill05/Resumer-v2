@@ -296,7 +296,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
 
           <button
             onClick={addSkillCategory}
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 hover:border-zinc-400 bg-white text-zinc-500 hover:text-zinc-700 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Skill Category
@@ -364,7 +364,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
               </div>
 
               {/* Bullet points */}
-              <div className="mt-3.5 space-y-2.5 border-t border-zinc-100 pt-3">
+              <div className="mt-3.5 space-y-2.5 border-t border-zinc-100 dark:border-zinc-700 pt-3">
                 <Label>Bullet Points</Label>
                 {(exp.bullet_points || []).map((bullet: string, bIdx: number) => (
                   <div key={bIdx} className="flex gap-2 items-start">
@@ -386,7 +386,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                 ))}
                 <button
                   onClick={() => addBulletPoint("experiences", idx)}
-                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-zinc-300 hover:border-zinc-400 text-zinc-500 hover:text-zinc-700 bg-white px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
+                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 bg-white dark:bg-zinc-800 px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
                 >
                   <Plus size={11} /> Add Bullet Point
                 </button>
@@ -405,7 +405,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                 bullet_points: [],
               })
             }
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 hover:border-zinc-400 bg-white text-zinc-500 hover:text-zinc-700 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Experience
@@ -471,7 +471,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
               </div>
 
               {/* Bullet points */}
-              <div className="mt-3.5 space-y-2.5 border-t border-zinc-100 pt-3">
+              <div className="mt-3.5 space-y-2.5 border-t border-zinc-100 dark:border-zinc-700 pt-3">
                 <Label>Bullet Points</Label>
                 {(proj.bullet_points || []).map((bullet: string, bIdx: number) => (
                   <div key={bIdx} className="flex gap-2 items-start">
@@ -493,7 +493,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                 ))}
                 <button
                   onClick={() => addBulletPoint("projects", idx)}
-                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-zinc-300 hover:border-zinc-400 text-zinc-500 hover:text-zinc-700 bg-white px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
+                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 bg-white dark:bg-zinc-800 px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
                 >
                   <Plus size={11} /> Add Bullet Point
                 </button>
@@ -512,7 +512,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                 live_url: "",
               })
             }
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 hover:border-zinc-400 bg-white text-zinc-500 hover:text-zinc-700 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Project
@@ -601,7 +601,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                 gpa: "",
               })
             }
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 hover:border-zinc-400 bg-white text-zinc-500 hover:text-zinc-700 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Education
@@ -637,7 +637,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                   {idx > 0 && (
                     <button
                       onClick={() => reorderArrayItem("extracurriculars", idx, "up")}
-                      className="text-zinc-400 hover:text-zinc-900 p-0.5 cursor-pointer"
+                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 p-0.5 cursor-pointer"
                     >
                       <ArrowUp size={11} />
                     </button>
@@ -645,7 +645,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                   {idx < (resume.extracurriculars || []).length - 1 && (
                     <button
                       onClick={() => reorderArrayItem("extracurriculars", idx, "down")}
-                      className="text-zinc-400 hover:text-zinc-900 p-0.5 cursor-pointer"
+                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 p-0.5 cursor-pointer"
                     >
                       <ArrowDown size={11} />
                     </button>
@@ -657,7 +657,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
 
           <button
             onClick={() => addArrayItem("extracurriculars", { description: "" })}
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 hover:border-zinc-400 bg-white text-zinc-500 hover:text-zinc-700 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Achievement
@@ -692,7 +692,7 @@ function InlineEditSkill({
 
   if (editing) {
     return (
-      <div className="inline-flex items-center gap-1 border border-zinc-300 bg-white px-1.5 py-0.5 rounded">
+      <div className="inline-flex items-center gap-1 border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1.5 py-0.5 rounded">
         <input
           type="text"
           autoFocus
@@ -700,7 +700,7 @@ function InlineEditSkill({
           onChange={(e) => setVal(e.target.value)}
           onBlur={submit}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          className="text-[11px] font-semibold outline-none w-20"
+          className="text-[11px] font-semibold outline-none w-20 bg-transparent dark:text-zinc-100"
         />
       </div>
     )
@@ -709,7 +709,7 @@ function InlineEditSkill({
   return (
     <span
       onClick={() => setEditing(true)}
-      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white border border-zinc-300 text-zinc-800 px-2 py-0.5 rounded shadow-sm cursor-pointer hover:border-zinc-400 select-none"
+      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-800 dark:text-zinc-200 px-2 py-0.5 rounded shadow-sm cursor-pointer hover:border-zinc-400 select-none"
       title="Click to edit skill"
     >
       {value}
@@ -744,7 +744,7 @@ function InlineAddSkill({ onAdd }: { onAdd: (val: string) => void }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-[10px] font-bold border border-dashed border-zinc-350 hover:border-zinc-500 text-zinc-600 bg-white hover:text-zinc-800 px-2 py-0.5 rounded transition-all cursor-pointer"
+        className="inline-flex items-center gap-1 text-[10px] font-bold border border-dashed border-zinc-350 dark:border-zinc-600 hover:border-zinc-500 text-zinc-600 dark:text-zinc-400 bg-white dark:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 px-2 py-0.5 rounded transition-all cursor-pointer"
       >
         <Plus size={10} /> Add
       </button>
@@ -752,7 +752,7 @@ function InlineAddSkill({ onAdd }: { onAdd: (val: string) => void }) {
   }
 
   return (
-    <div className="inline-flex items-center gap-1 border border-zinc-400 bg-white px-1.5 py-0.5 rounded">
+    <div className="inline-flex items-center gap-1 border border-zinc-400 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1.5 py-0.5 rounded">
       <input
         type="text"
         autoFocus
@@ -760,7 +760,7 @@ function InlineAddSkill({ onAdd }: { onAdd: (val: string) => void }) {
         onChange={(e) => setVal(e.target.value)}
         onBlur={submit}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        className="text-[11px] font-semibold outline-none w-14"
+        className="text-[11px] font-semibold outline-none w-14 bg-transparent dark:text-zinc-100"
       />
     </div>
   )
@@ -781,10 +781,10 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="border border-zinc-300 bg-white rounded-md overflow-hidden shadow-sm">
+    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-md overflow-hidden shadow-sm">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-50/80 hover:bg-zinc-100 text-left font-black uppercase text-xs tracking-wider text-zinc-800 outline-none border-b border-zinc-200 cursor-pointer transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-50/80 dark:bg-zinc-800/80 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left font-black uppercase text-xs tracking-wider text-zinc-800 dark:text-zinc-200 outline-none border-b border-zinc-200 dark:border-zinc-700 cursor-pointer transition-colors"
       >
         <span className="text-zinc-500 shrink-0">{icon}</span>
         <span>{title}</span>
@@ -792,7 +792,7 @@ function Section({
           {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
       </button>
-      {isExpanded && <div className="p-3 bg-white">{children}</div>}
+      {isExpanded && <div className="p-3 bg-white dark:bg-zinc-900">{children}</div>}
     </div>
   )
 }
@@ -813,18 +813,18 @@ function ItemCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="border border-zinc-300 bg-white rounded overflow-hidden shadow-sm">
+    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-zinc-100/70 border-b border-zinc-200">
-        <span className="text-[11px] font-bold text-zinc-700 truncate">{title}</span>
+      <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-zinc-100/70 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700">
+        <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 truncate">{title}</span>
         <div className="flex items-center gap-1 shrink-0">
           {index > 0 && (
-            <button onClick={() => onMove("up")} className="p-1 hover:bg-zinc-200/80 text-zinc-500 hover:text-zinc-900 rounded cursor-pointer transition-colors" title="Move Up">
+            <button onClick={() => onMove("up")} className="p-1 hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 rounded cursor-pointer transition-colors" title="Move Up">
               <ArrowUp size={11} />
             </button>
           )}
           {index < totalItems - 1 && (
-            <button onClick={() => onMove("down")} className="p-1 hover:bg-zinc-200/80 text-zinc-500 hover:text-zinc-900 rounded cursor-pointer transition-colors" title="Move Down">
+            <button onClick={() => onMove("down")} className="p-1 hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 rounded cursor-pointer transition-colors" title="Move Down">
               <ArrowDown size={11} />
             </button>
           )}
@@ -840,7 +840,7 @@ function ItemCard({
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1">{children}</div>
+  return <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1">{children}</div>
 }
 
 // Style overrides
@@ -848,7 +848,7 @@ function Input(props: React.ComponentProps<"input">) {
   return (
     <input
       {...props}
-      className="w-full h-8 text-xs font-semibold px-2 border border-zinc-300 rounded focus:border-zinc-800 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all placeholder:text-zinc-400"
+      className="w-full h-8 text-xs font-semibold px-2 border border-zinc-300 dark:border-zinc-600 rounded focus:border-zinc-800 dark:focus:border-zinc-400 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-500 bg-white dark:bg-zinc-800 dark:text-zinc-100"
     />
   )
 }
@@ -857,7 +857,7 @@ function Textarea({ className = "", ...props }: React.ComponentProps<"textarea">
   return (
     <textarea
       {...props}
-      className={`w-full p-2 text-xs font-semibold border border-zinc-300 rounded focus:border-zinc-800 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all resize-y placeholder:text-zinc-400 ${className}`}
+      className={`w-full p-2 text-xs font-semibold border border-zinc-300 dark:border-zinc-600 rounded focus:border-zinc-800 dark:focus:border-zinc-400 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all resize-y placeholder:text-zinc-400 dark:placeholder:text-zinc-500 bg-white dark:bg-zinc-800 dark:text-zinc-100 ${className}`}
     />
   )
 }

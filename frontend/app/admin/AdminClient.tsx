@@ -378,10 +378,10 @@ export function AdminClient() {
   // Access check
   if (analyticsErr?.message === "Access Denied" || analyticsErr?.message === "Unauthorized") {
     return (
-      <div className="mx-auto max-w-md p-8 text-center bg-white border border-zinc-200 mt-12 pixel-enter">
+      <div className="mx-auto max-w-md p-8 text-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 mt-12 pixel-enter">
         <Lock className="mx-auto text-red-500 mb-4" size={48} />
         <h2 className="text-xl font-bold uppercase text-red-600">Access Denied</h2>
-        <p className="mt-2 text-zinc-600 text-sm font-semibold">
+        <p className="mt-2 text-zinc-600 dark:text-zinc-400 text-sm font-semibold">
           Your account does not have admin permissions to access this control panel.
         </p>
       </div>
@@ -440,7 +440,7 @@ export function AdminClient() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
       {/* Tab select bar */}
-      <div className="flex flex-wrap gap-2 border-b border-zinc-200 pb-3 mb-6">
+      <div className="flex flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-700 pb-3 mb-6">
         <Button 
           variant={activeTab === "analytics" ? "default" : "outline"} 
           onClick={() => setActiveTab("analytics")}
@@ -501,20 +501,20 @@ export function AdminClient() {
             <>
               {/* Stat grid */}
               <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-                <div className="panel-strong bg-white p-4">
+                <div className="panel-strong p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Total Users</p>
-                  <p className="text-3xl font-black text-black mt-1">{analytics.total_users}</p>
+                  <p className="text-3xl font-black text-black dark:text-white mt-1">{analytics.total_users}</p>
                 </div>
-                <div className="panel-strong bg-white p-4">
+                <div className="panel-strong p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Total Builds</p>
                   <p className="text-3xl font-black text-[#ff4e26] mt-1">{analytics.total_generations}</p>
                   <p className="mt-1 text-[10px] font-bold uppercase text-zinc-500">{analytics.total_guest_generations} guest</p>
                 </div>
-                <div className="panel-strong bg-white p-4">
+                <div className="panel-strong p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Avg Latency</p>
-                  <p className="text-3xl font-black text-black mt-1">{analytics.average_generation_latency_seconds}s</p>
+                  <p className="text-3xl font-black text-black dark:text-white mt-1">{analytics.average_generation_latency_seconds}s</p>
                 </div>
-                <div className="panel-strong bg-white p-4">
+                <div className="panel-strong p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">LLM Failure Rate</p>
                   <p className="text-3xl font-black mt-1 text-red-600">{analytics.failure_rate_percent}%</p>
                 </div>
@@ -523,8 +523,8 @@ export function AdminClient() {
               {/* Advanced info section */}
               <div className="grid gap-6 md:grid-cols-2">
                 {/* Generation Queue Breakdown */}
-                <div className="panel-strong bg-white p-5 space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wide border-b pb-2 text-zinc-800">Generation Queue</h3>
+                <div className="panel-strong p-5 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">Generation Queue</h3>
                   <div className="space-y-3">
                     {Object.entries(analytics.generations_by_status).map(([status, count]) => {
                       const percent = analytics.total_generations > 0 ? (count / analytics.total_generations * 100) : 0
@@ -549,21 +549,21 @@ export function AdminClient() {
                 </div>
 
                 {/* API Key pool Status */}
-                <div className="panel-strong bg-white p-5 space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wide border-b pb-2 text-zinc-800">LLM Api Key Pools</h3>
+                <div className="panel-strong p-5 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">LLM Api Key Pools</h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="border border-zinc-200 p-4 text-center bg-zinc-50">
-                      <p className="text-xs font-bold text-zinc-600 uppercase">Cerebras Keys</p>
-                      <p className="text-2xl font-black text-black mt-1">{analytics.keys_status.cerebras.configured_keys_count}</p>
+                    <div className="border border-zinc-200 dark:border-zinc-700 p-4 text-center bg-zinc-50 dark:bg-zinc-800">
+                      <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase">Cerebras Keys</p>
+                      <p className="text-2xl font-black text-black dark:text-white mt-1">{analytics.keys_status.cerebras.configured_keys_count}</p>
                       <span className="text-[10px] text-green-600 font-bold uppercase">Online (Primary)</span>
                     </div>
-                    <div className="border border-zinc-200 p-4 text-center bg-zinc-50">
-                      <p className="text-xs font-bold text-zinc-600 uppercase">Google Keys</p>
-                      <p className="text-2xl font-black text-black mt-1">{analytics.keys_status.google.configured_keys_count}</p>
+                    <div className="border border-zinc-200 dark:border-zinc-700 p-4 text-center bg-zinc-50 dark:bg-zinc-800">
+                      <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase">Google Keys</p>
+                      <p className="text-2xl font-black text-black dark:text-white mt-1">{analytics.keys_status.google.configured_keys_count}</p>
                       <span className="text-[10px] text-amber-600 font-bold uppercase">Online (Fallback)</span>
                     </div>
                   </div>
-                  <p className="text-[11px] text-zinc-500 font-semibold italic">
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold italic">
                     Keys are managed via environment variables and loaded in a round-robin rotation.
                   </p>
                 </div>
@@ -579,7 +579,7 @@ export function AdminClient() {
       {activeTab === "generations" && (
         <div className="space-y-4 pixel-enter">
           {viewingLogsGenId ? (
-            <div className="panel-strong bg-white p-5 space-y-4">
+            <div className="panel-strong p-5 space-y-4">
               <div className="flex flex-wrap justify-between gap-2 items-center border-b pb-3">
                 <h3 className="font-bold uppercase text-sm tracking-wide">Logs for Generation {viewingLogsGenId}</h3>
                 <div className="flex gap-2">
@@ -598,7 +598,7 @@ export function AdminClient() {
               {loadingLogs ? (
                 <div className="soft-skeleton h-40" />
               ) : logs.length === 0 && liveLogs.length === 0 ? (
-                <p className="text-xs text-zinc-500 font-semibold italic text-center py-8">No logs found for this run.</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold italic text-center py-8">No logs found for this run.</p>
               ) : (
                 <div className="bg-zinc-950 p-4 text-white font-mono text-xs overflow-y-auto max-h-[450px] space-y-1.5 leading-relaxed">
                   {(liveLogs.length > 0 ? liveLogs : logs).map((log) => {
@@ -627,7 +627,7 @@ export function AdminClient() {
                 </Button>
               </div>
 
-              <div className="grid gap-2 rounded-none border border-zinc-200 bg-white p-3 md:grid-cols-[1fr_160px_160px]">
+              <div className="grid gap-2 rounded-none border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 md:grid-cols-[1fr_160px_160px]">
                 <Input
                   value={generationSearch}
                   onChange={(e) => setGenerationSearch(e.target.value)}
@@ -637,7 +637,7 @@ export function AdminClient() {
                 <select
                   value={generationStatus}
                   onChange={(e) => setGenerationStatus(e.target.value)}
-                  className="h-9 border border-zinc-200 bg-white px-2 text-xs font-semibold"
+                  className="h-9 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 text-xs font-semibold"
                 >
                   <option value="">All statuses</option>
                   <option value="pending">Pending</option>
@@ -648,7 +648,7 @@ export function AdminClient() {
                 <select
                   value={generationUserType}
                   onChange={(e) => setGenerationUserType(e.target.value)}
-                  className="h-9 border border-zinc-200 bg-white px-2 text-xs font-semibold"
+                  className="h-9 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 text-xs font-semibold"
                 >
                   <option value="">All users</option>
                   <option value="user">Signed-in</option>
@@ -659,12 +659,12 @@ export function AdminClient() {
               {loadingGenerations ? (
                 <div className="soft-skeleton h-64" />
               ) : generations.length === 0 ? (
-                <p className="text-sm text-zinc-500 italic py-12 text-center bg-white border border-zinc-200">No generations run yet.</p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 italic py-12 text-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">No generations run yet.</p>
               ) : (
-                <div className="overflow-x-auto border border-zinc-200 bg-white">
+                <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-zinc-100 border-b border-zinc-200 font-bold text-zinc-700">
+                      <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-700 dark:text-zinc-300">
                         <th className="p-3">Job & User</th>
                         <th className="p-3">Model</th>
                         <th className="p-3">Status</th>
@@ -672,7 +672,7 @@ export function AdminClient() {
                         <th className="p-3 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-200 font-medium">
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700 font-medium">
                       {generations.map((gen) => {
                         let statusColor = "bg-zinc-100 text-zinc-700"
                         if (gen.status === "completed") statusColor = "bg-green-100 text-green-700"
@@ -680,16 +680,16 @@ export function AdminClient() {
                         if (gen.status === "in_progress") statusColor = "bg-amber-100 text-amber-700 animate-pulse"
 
                         return (
-                          <tr key={gen.id} className="hover:bg-zinc-50">
+                          <tr key={gen.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                             <td className="p-3">
-                              <p className="font-extrabold uppercase text-black">
+                              <p className="font-extrabold uppercase text-black dark:text-white">
                                 {gen.job_title || "Unknown title"}
                               </p>
                               <p className="text-[10px] text-zinc-500">
                                 {gen.company || "No company"} &bull; {gen.email || (gen.is_guest ? "Guest" : gen.user_id)}
                               </p>
                             </td>
-                            <td className="p-3 text-zinc-600 font-mono text-[10px]">{gen.model_used}</td>
+                            <td className="p-3 text-zinc-600 dark:text-zinc-400 font-mono text-[10px]">{gen.model_used}</td>
                             <td className="p-3">
                               <span className={`px-2 py-0.5 font-bold uppercase text-[9px] ${statusColor}`}>
                                 {gen.status}
@@ -700,18 +700,18 @@ export function AdminClient() {
                                 </p>
                               )}
                             </td>
-                            <td className="p-3 text-zinc-500 font-mono text-[10px]">
+                            <td className="p-3 text-zinc-500 dark:text-zinc-400 font-mono text-[10px]">
                               {new Date(gen.created_at).toLocaleString()}
                             </td>
                             <td className="p-3 text-right">
                               <details className="relative inline-block text-left">
-                                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded bg-zinc-100 px-3 py-1.5 text-xs font-bold text-zinc-700 transition hover:bg-zinc-200">
+                                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold text-zinc-700 transition hover:bg-zinc-200">
                                   <MoreHorizontal size={13} /> Options
                                 </summary>
-                                <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 text-left shadow-lg">
+                                <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-1 text-left shadow-lg">
                                   <button
                                     type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800"
                                     onClick={() => {
                                       stopLogStream()
                                       setLiveLogs([])
@@ -722,7 +722,7 @@ export function AdminClient() {
                                   </button>
                                   <button
                                     type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:text-zinc-300"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800 disabled:text-zinc-300"
                                     disabled={gen.status !== "completed"}
                                     onClick={() => { window.location.href = `/api/backend/admin/generations/${gen.id}/download` }}
                                   >
@@ -730,7 +730,7 @@ export function AdminClient() {
                                   </button>
                                   <button
                                     type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:text-zinc-300"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800 disabled:text-zinc-300"
                                     disabled={gen.intermediate_resume_count === 0}
                                     onClick={() => { window.location.href = `/api/backend/admin/generations/${gen.id}/intermediate/0/download` }}
                                   >
@@ -738,7 +738,7 @@ export function AdminClient() {
                                   </button>
                                   <button
                                     type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:text-zinc-300"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800 disabled:text-zinc-300"
                                     disabled={gen.status !== "failed"}
                                     onClick={() => retryGenMutation.mutate(gen.id)}
                                   >
@@ -774,7 +774,7 @@ export function AdminClient() {
       {activeTab === "prompts" && (
         <div className="grid gap-6 md:grid-cols-[250px_1fr] pixel-enter">
           {/* Prompt Selection List */}
-          <div className="panel-strong bg-white p-4 space-y-3">
+          <div className="panel-strong p-4 space-y-3">
             <h3 className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Prompt list</h3>
             <div className="space-y-1">
               {loadingPrompts ? (
@@ -788,7 +788,7 @@ export function AdminClient() {
                     className={`w-full text-left px-3 py-2 text-xs font-semibold border transition-colors ${
                       selectedPrompt?.name === p.name
                         ? "border-[#ff4e26] bg-orange-50 text-[#ff4e26]"
-                        : "border-zinc-200 hover:bg-zinc-50"
+                        : "border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800"
                     }`}
                     onClick={() => selectPromptForEditing(p)}
                   >
@@ -800,12 +800,12 @@ export function AdminClient() {
           </div>
 
           {/* Prompt Editor */}
-          <div className="panel-strong bg-white p-5 space-y-4">
+          <div className="panel-strong p-5 space-y-4">
             {selectedPrompt ? (
               <>
                 <div className="flex justify-between items-center border-b pb-3">
-                  <h3 className="font-bold text-black uppercase text-sm">Edit Prompt: {selectedPrompt.name}</h3>
-                  <span className="text-[10px] text-zinc-500 font-mono">
+                  <h3 className="font-bold text-black dark:text-white uppercase text-sm">Edit Prompt: {selectedPrompt.name}</h3>
+                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
                     Last updated: {selectedPrompt.updated_at ? new Date(selectedPrompt.updated_at).toLocaleString() : "Never"}
                   </span>
                 </div>
@@ -877,7 +877,7 @@ export function AdminClient() {
                     <div className="space-y-2">
                       <h5 className="text-[10px] font-extrabold uppercase text-zinc-500">Recent test runs</h5>
                       {promptRuns.slice(0, 5).map((run) => (
-                        <div key={run.id} className="border border-zinc-200 p-2 text-xs">
+                        <div key={run.id} className="border border-zinc-200 dark:border-zinc-700 p-2 text-xs">
                           <div className="flex justify-between font-bold">
                             <span>{run.prompt_name}</span>
                             <span>{run.status} · {Math.round(run.latency_ms || 0)}ms</span>
@@ -902,33 +902,33 @@ export function AdminClient() {
       {activeTab === "metrics" && (
         <div className="space-y-4 pixel-enter">
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
-            <div className="panel-strong bg-white p-4">
+            <div className="panel-strong p-4">
               <p className="text-[10px] font-extrabold uppercase text-zinc-500">Calls</p>
               <p className="text-2xl font-black">{metricSummary?.recorded_calls ?? 0}</p>
             </div>
-            <div className="panel-strong bg-white p-4">
+            <div className="panel-strong p-4">
               <p className="text-[10px] font-extrabold uppercase text-zinc-500">Tokens</p>
               <p className="text-2xl font-black">{metricSummary?.total_tokens ?? 0}</p>
             </div>
-            <div className="panel-strong bg-white p-4">
+            <div className="panel-strong p-4">
               <p className="text-[10px] font-extrabold uppercase text-zinc-500">Avg Latency</p>
               <p className="text-2xl font-black">{metricSummary?.average_node_latency_ms ?? 0}ms</p>
             </div>
-            <div className="panel-strong bg-white p-4">
+            <div className="panel-strong p-4">
               <p className="text-[10px] font-extrabold uppercase text-zinc-500">Fallbacks</p>
               <p className="text-2xl font-black text-amber-600">{metricSummary?.fallback_count ?? 0}</p>
             </div>
-            <div className="panel-strong bg-white p-4">
+            <div className="panel-strong p-4">
               <p className="text-[10px] font-extrabold uppercase text-zinc-500">Parse Errors</p>
               <p className="text-2xl font-black text-red-600">{metricSummary?.parse_error_count ?? 0}</p>
             </div>
           </div>
-          <div className="overflow-x-auto border border-zinc-200 bg-white">
+          <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
             <table className="w-full text-left text-xs">
-              <thead className="bg-zinc-100 font-bold text-zinc-700">
+              <thead className="bg-zinc-100 dark:bg-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
                 <tr><th className="p-3">Node</th><th className="p-3">Provider</th><th className="p-3">Calls</th><th className="p-3">Avg Latency</th><th className="p-3">Errors</th><th className="p-3">Tokens</th></tr>
               </thead>
-              <tbody className="divide-y divide-zinc-200">
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700">
                 {metricNodes.map((row) => (
                   <tr key={`${row.node_name}-${row.provider}`}>
                     <td className="p-3 font-bold">{row.node_name}</td>
@@ -948,17 +948,17 @@ export function AdminClient() {
       {/* STORAGE TAB */}
       {activeTab === "storage" && (
         <div className="space-y-4 pixel-enter">
-          <div className="rounded-none border border-zinc-200 bg-white p-3 flex gap-2">
+          <div className="rounded-none border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 flex gap-2">
             <Input value={storagePrefix} onChange={(e) => setStoragePrefix(e.target.value)} placeholder="Prefix filter" className="h-9 text-xs" />
             <Button size="sm" variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["admin", "storage"] })}>Refresh</Button>
           </div>
           {storageList?.error && <p className="text-sm font-bold text-red-600">{storageList.error}</p>}
-          <div className="overflow-x-auto border border-zinc-200 bg-white">
+          <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
             <table className="w-full text-left text-xs">
-              <thead className="bg-zinc-100 font-bold text-zinc-700">
+              <thead className="bg-zinc-100 dark:bg-zinc-800 font-bold text-zinc-700 dark:text-zinc-300">
                 <tr><th className="p-3">Key</th><th className="p-3">Size</th><th className="p-3">Modified</th><th className="p-3 text-right">Actions</th></tr>
               </thead>
-              <tbody className="divide-y divide-zinc-200">
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700">
                 {(storageList?.objects ?? []).map((obj) => (
                   <tr key={obj.key}>
                     <td className="p-3 font-mono break-all">{obj.key}</td>
@@ -979,14 +979,14 @@ export function AdminClient() {
       {/* TEMPLATE SANDBOX TAB */}
       {activeTab === "templates" && (
         <div className="grid gap-4 md:grid-cols-2 pixel-enter">
-          <div className="panel-strong bg-white p-4 space-y-3">
+          <div className="panel-strong p-4 space-y-3">
             <Label className="text-xs font-bold">Template ID</Label>
             <Input value={templateId} onChange={(e) => setTemplateId(e.target.value)} className="h-9 text-xs" />
             <Label className="text-xs font-bold">Render Context JSON</Label>
             <Textarea rows={16} className="font-mono text-xs" value={templateContext} onChange={(e) => setTemplateContext(e.target.value)} />
             <Button onClick={() => renderTemplateMutation.mutate()} disabled={renderTemplateMutation.isPending}>Render Sandbox</Button>
           </div>
-          <div className="panel-strong bg-white p-4">
+          <div className="panel-strong p-4">
             {templateHtml ? (
               <iframe className="h-[650px] w-full border border-zinc-200" srcDoc={templateHtml} />
             ) : (
@@ -1003,7 +1003,7 @@ export function AdminClient() {
             <h3 className="text-sm font-bold uppercase tracking-wide">User Account Limit Overview</h3>
           </div>
 
-          <div className="rounded-none border border-zinc-200 bg-white p-3">
+          <div className="rounded-none border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3">
             <Input
               value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)}
@@ -1015,10 +1015,10 @@ export function AdminClient() {
           {loadingUsers ? (
             <div className="soft-skeleton h-64" />
           ) : (
-            <div className="overflow-x-auto border border-zinc-200 bg-white">
+            <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-zinc-100 border-b border-zinc-200 font-bold text-zinc-700">
+                  <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-700 dark:text-zinc-300">
                     <th className="p-3">Name & Email</th>
                     <th className="p-3">Joined Date</th>
                     <th className="p-3">Used Count (24h)</th>
@@ -1026,11 +1026,11 @@ export function AdminClient() {
                     <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-200 font-medium">
+                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700 font-medium">
                   {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-zinc-50">
+                    <tr key={u.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                       <td className="p-3">
-                        <p className="font-bold text-black">{u.name || "No name"}</p>
+                        <p className="font-bold text-black dark:text-white">{u.name || "No name"}</p>
                         <p className="text-[10px] text-zinc-500">{u.email}</p>
                       </td>
                       <td className="p-3 text-zinc-500">

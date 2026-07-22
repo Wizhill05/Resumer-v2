@@ -159,13 +159,13 @@ export function DashboardClient() {
         </div>
       )}
       {!profileComplete && (
-        <section className="sticky top-3 z-10 panel-strong overflow-hidden bg-white">
+        <section className="sticky top-3 z-10 panel-strong overflow-hidden">
           <div className="h-1.5 bg-[#ff4e26]" />
           <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile needed</p>
-              <h2 className="text-xl font-extrabold uppercase tracking-tight">Import source material first</h2>
-              <p className="mt-1 text-sm font-semibold leading-relaxed text-zinc-600">
+              <h2 className="text-xl font-extrabold uppercase tracking-tight dark:text-white">Import source material first</h2>
+              <p className="mt-1 text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
                 Missing: {missing.join(", ")}. Upload old resumes or paste GitHub project links to fill this faster.
               </p>
             </div>
@@ -177,13 +177,13 @@ export function DashboardClient() {
       )}
 
       {profileComplete && (
-        <section className="panel-strong overflow-hidden bg-white">
+        <section className="panel-strong overflow-hidden">
           <div className="h-1.5 bg-[#ff4e26]" />
           <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center md:p-6">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile ready</p>
-              <h2 className="text-2xl font-extrabold uppercase tracking-tight md:text-4xl">Generate resume now</h2>
-              <p className="mt-1 max-w-2xl text-sm font-semibold leading-relaxed text-zinc-600">
+              <h2 className="text-2xl font-extrabold uppercase tracking-tight md:text-4xl dark:text-white">Generate resume now</h2>
+              <p className="mt-1 max-w-2xl text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
                 You have source material in every profile section. Paste job post and choose focus next.
               </p>
             </div>
@@ -200,11 +200,11 @@ export function DashboardClient() {
           return (
             <Link key={section.key} href={section.href} className="group block">
               <section className="compact-card h-full p-5">
-                <div className="mb-3 flex h-10 w-10 items-center justify-center border border-zinc-900 bg-white text-black group-hover:bg-zinc-950 group-hover:text-white">
+                <div className="mb-3 flex h-10 w-10 items-center justify-center border border-zinc-900 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white group-hover:bg-zinc-950 group-hover:text-white">
                   <Icon size={18} />
                 </div>
-                <h3 className="text-base font-extrabold uppercase tracking-tight">{section.label}</h3>
-                <p className="mt-2 text-sm font-semibold leading-relaxed text-zinc-600">
+                <h3 className="text-base font-extrabold uppercase tracking-tight dark:text-white">{section.label}</h3>
+                <p className="mt-2 text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
                   {section.desc}
                 </p>
               </section>
@@ -213,8 +213,8 @@ export function DashboardClient() {
         })}
       </div>
 
-      <div className="panel flex flex-col gap-2 p-3 text-xs font-bold text-zinc-600 md:flex-row md:items-center md:justify-between md:px-4">
-        <span className="uppercase tracking-wider text-zinc-400">Typical generation time</span>
+      <div className="panel flex flex-col gap-2 p-3 text-xs font-bold text-zinc-600 dark:text-zinc-400 md:flex-row md:items-center md:justify-between md:px-4">
+        <span className="uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Typical generation time</span>
         <span>5-10 minutes. Safe to close tab after starting.</span>
       </div>
     </div>
