@@ -21,6 +21,7 @@ class GenerationCreate(BaseModel):
     model_used: str = "gemma-4-31b-it"
     # Optional — backend falls back to template default when absent.
     content_split: ContentSplitRequest | None = None
+    send_email: bool | None = None
 
 
 class GenerationOut(BaseModel):
@@ -36,6 +37,7 @@ class GenerationOut(BaseModel):
     completed_at: datetime | None
     thumb_storage_key: str | None = None
     content_split: dict | None = None
+    send_email: bool | None = None
 
     model_config = {"from_attributes": True}
 

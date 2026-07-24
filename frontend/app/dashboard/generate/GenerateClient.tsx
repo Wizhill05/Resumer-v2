@@ -67,6 +67,17 @@ export function GenerateClient() {
     },
   })
 
+  const { data: profileData } = useQuery({
+    queryKey: ["profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/backend/profile")
+      if (!res.ok) return null
+      return res.json()
+    },
+  })
+
+  const [sendEmail, setSendEmail] = useState<boolean | null>(null)
+
   const activeTemplate = useMemo(
     () => templates.find((t) => t.id === selectedTemplate) ?? null,
     [templates, selectedTemplate]
@@ -151,6 +162,7 @@ export function GenerateClient() {
           keywords: keywords ? keywords.split(",").map((k) => k.trim()) : [],
           instructions: instructions || null,
           content_split: { projects: projectsCount, experience: experienceCount },
+          send_email: sendEmail,
         }),
       })
 
@@ -331,6 +343,46 @@ export function GenerateClient() {
                   onChange={(e) => setInstructions(e.target.value)}
                 />
               </div>
+            </div>
+          </section>
+
+          {/* Email Notification Option Section */}
+          <section className="panel p-4 md:p-5">
+            <div className="mb-3">
+              <Label className="text-sm font-extrabold uppercase tracking-wider">Email Completion Notification</Label>
+              <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Choose whether to receive an email with the PDF attached when this generation finishes.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {[
+                {
+                  val: null,
+                  title: "Profile Default",
+                  sub: profileData?.notify_on_completion ?? true ? "Send Email (Default)" : "Skip Email (Default)",
+                },
+                { val: true, title: "Send Email", sub: "Always send for this build" },
+                { val: false, title: "Skip Email", sub: "Never send for this build" },
+              ].map((opt) => {
+                const active = sendEmail === opt.val
+                return (
+                  <button
+                    key={opt.title}
+                    type="button"
+                    onClick={() => setSendEmail(opt.val)}
+                    className={`flex flex-col border-2 p-3 text-left transition-all ${
+                      active
+                        ? "bg-[#ff4e26] text-white border-black shadow-[2px_2px_0px_#000]"
+                        : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 hover:border-zinc-400"
+                    }`}
+                  >
+                    <span className="text-xs font-extrabold uppercase tracking-wider">{opt.title}</span>
+                    <span className={`text-[11px] font-medium mt-0.5 ${active ? "text-white/80" : "text-zinc-500 dark:text-zinc-400"}`}>
+                      {opt.sub}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </section>
 

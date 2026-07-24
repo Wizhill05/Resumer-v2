@@ -339,3 +339,73 @@ def send_completion_email(to_email: str | None, gen, pdf_bytes: bytes | None = N
     except Exception as e:
         # Email is best-effort; never crash the pipeline over a failed notification.
         print(f"[notify] send_completion_email failed: {e}")
+
+
+def send_admin_support_alert(report_id: str, message: str, category: str | None, sender_email: str | None) -> None:
+    """Send an alert to admin emails when a new support report is filed."""
+    if not settings.RESEND_API_KEY:
+        return
+    admin_list = settings.admin_emails
+    if not admin_list or admin_list == ["*"]:
+        return
+
+    try:
+        import resend
+        resend.api_key = settings.RESEND_API_KEY
+        subject = f"🚨 [Support Alert] New {category or 'General'} Report"
+        html_body = f"""
+        <div style="font-family: sans-serif; max-width: 600px; padding: 20px; border: 2px solid #000;">
+          <h2 style="background: #ff4e26; color: #fff; padding: 10px 15px; margin: 0; text-transform: uppercase;">New Support Report</h2>
+          <div style="padding: 15px; background: #fafafa;">
+            <p><strong>Report ID:</strong> {report_id}</p>
+            <p><strong>Sender:</strong> {sender_email or 'Anonymous'}</p>
+            <p><strong>Category:</strong> {category or 'other'}</p>
+            <hr style="border: 1px solid #ddd;" />
+            <p><strong>Message:</strong></p>
+            <blockquote style="background: #fff; padding: 12px; border-left: 4px solid #ff4e26; margin: 0;">
+              {message}
+            </blockquote>
+            <p style="margin-top: 20px;"><a href="{settings.FRONTEND_URL}/admin" style="background: #000; color: #fff; padding: 10px 20px; text-decoration: none; font-weight: bold;">View in Admin Panel</a></p>
+          </div>
+        </div>
+        """
+        for admin_email in admin_list:
+            if admin_email and admin_email != "*":
+                resend.Emails.send({
+                    "from": settings.NOTIFICATION_FROM_EMAIL,
+                    "to": admin_email,
+                    "subject": subject,
+                    "html": html_body,
+                })
+    except Exception as e:
+        print(f"[notify] send_admin_support_alert failed: {e}")
+
+
+def send_support_resolved_email(to_email: str, report_id: str, admin_note: str) -> None:
+    """Send resolution email to user when admin marks ticket as resolved."""
+    if not settings.RESEND_API_KEY or not to_email:
+        return
+
+    try:
+        import resend
+        resend.api_key = settings.RESEND_API_KEY
+        subject = "Your Resumer support request has been resolved"
+        html_body = f"""
+        <div style="font-family: sans-serif; max-width: 600px; padding: 20px; border: 2px solid #000;">
+          <h2 style="background: #0f172a; color: #fff; padding: 10px 15px; margin: 0; text-transform: uppercase;">Support Request Resolved</h2>
+          <div style="padding: 15px; background: #ffffff;">
+            <p>Hi there,</p>
+            <p>Your support ticket (<strong>#{report_id}</strong>) has been marked as <strong>Resolved</strong> by our team.</p>
+            {f'<p><strong>Admin Note:</strong></p><blockquote style="background: #f1f5f9; padding: 12px; border-left: 4px solid #0f172a; margin: 0;">{admin_note}</blockquote>' if admin_note else ''}
+            <p style="margin-top: 20px;">Thank you for helping us improve Resumer!</p>
+          </div>
+        </div>
+        """
+        resend.Emails.send({
+            "from": settings.NOTIFICATION_FROM_EMAIL,
+            "to": to_email,
+            "subject": subject,
+            "html": html_body,
+        })
+    except Exception as e:
+        print(f"[notify] send_support_resolved_email failed: {e}")

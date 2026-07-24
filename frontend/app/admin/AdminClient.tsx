@@ -21,6 +21,13 @@ import {
   Boxes,
   Download,
   MoreHorizontal,
+  MessageSquare,
+  Star,
+  Volume2,
+  Image as ImageIcon,
+  CheckCircle,
+  MessageCircle,
+  X,
 } from "lucide-react"
 
 type AnalyticsData = {
@@ -124,6 +131,64 @@ type StorageList = {
   error?: string
 }
 
+type SupportReportItem = {
+  id: string
+  user_id?: string
+  user_email?: string
+  user_name?: string
+  email_override?: string
+  message: string
+  status: string
+  category?: string
+  admin_note?: string
+  auto_summary?: string
+  sentiment_score?: number
+  generation_id?: string
+  created_at: string
+  updated_at?: string
+  resolved_at?: string
+  attachment_count: number
+}
+
+type ReportAttachmentDetail = {
+  id: string
+  attachment_type: "screenshot" | "voice_recording"
+  storage_key: string
+  presigned_url?: string
+  filename?: string
+  mime_type?: string
+  file_size_bytes?: number
+  transcription?: string
+  created_at: string
+}
+
+type SupportReportDetail = SupportReportItem & {
+  attachments: ReportAttachmentDetail[]
+}
+
+type FeedbackRatingItem = {
+  id: string
+  user_id: string
+  user_email?: string
+  user_name?: string
+  generation_id?: string
+  generation_job_title?: string
+  star_rating: number
+  comment?: string
+  dismissed: boolean
+  created_at: string
+}
+
+type FeedbackAnalytics = {
+  total_reports: number
+  open_count: number
+  resolved_count: number
+  avg_rating: number
+  total_ratings: number
+  rating_distribution: Record<string, number>
+  reports_by_category: Record<string, number>
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) {
@@ -136,7 +201,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export function AdminClient() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"analytics" | "generations" | "prompts" | "users" | "metrics" | "storage" | "templates">("analytics")
+  const [activeTab, setActiveTab] = useState<"analytics" | "generations" | "prompts" | "users" | "metrics" | "storage" | "templates" | "feedback">("analytics")
   const [generationSearch, setGenerationSearch] = useState("")
   const [generationStatus, setGenerationStatus] = useState("")
   const [generationUserType, setGenerationUserType] = useState("")
@@ -148,6 +213,15 @@ export function AdminClient() {
   const [templateId, setTemplateId] = useState("personal-classic")
   const [templateContext, setTemplateContext] = useState("{}")
   const [templateHtml, setTemplateHtml] = useState("")
+
+  // Feedback Tab States
+  const [feedbackSubTab, setFeedbackSubTab] = useState<"reports" | "ratings">("reports")
+  const [reportSearch, setReportSearch] = useState("")
+  const [reportStatusFilter, setReportStatusFilter] = useState("")
+  const [reportCategoryFilter, setReportCategoryFilter] = useState("")
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
+  const [editingAdminNote, setEditingAdminNote] = useState("")
+  const [editingReportStatus, setEditingReportStatus] = useState("open")
   
   // States for Prompt editor
   const [selectedPrompt, setSelectedPrompt] = useState<PromptConfig | null>(null)
@@ -230,6 +304,68 @@ export function AdminClient() {
     queryKey: ["admin", "storage", storagePrefix],
     queryFn: () => fetchJson<StorageList>(`/api/backend/admin/storage/objects?prefix=${encodeURIComponent(storagePrefix)}`),
     enabled: activeTab === "storage",
+  })
+
+  // Feedback Queries
+  const { data: feedbackAnalytics } = useQuery<FeedbackAnalytics>({
+    queryKey: ["admin", "feedback", "analytics"],
+    queryFn: () => fetchJson<FeedbackAnalytics>("/api/backend/admin/feedback/analytics"),
+    enabled: activeTab === "feedback",
+  })
+
+  const { data: supportReports = [], isLoading: loadingReports } = useQuery<SupportReportItem[]>({
+    queryKey: ["admin", "feedback", "reports", reportSearch, reportStatusFilter, reportCategoryFilter],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: "50" })
+      if (reportSearch.trim()) params.set("search", reportSearch.trim())
+      if (reportStatusFilter) params.set("status_filter", reportStatusFilter)
+      if (reportCategoryFilter) params.set("category_filter", reportCategoryFilter)
+      return fetchJson<SupportReportItem[]>(`/api/backend/admin/feedback/reports?${params}`)
+    },
+    enabled: activeTab === "feedback" && feedbackSubTab === "reports",
+  })
+
+  const { data: feedbackRatings = [], isLoading: loadingRatings } = useQuery<FeedbackRatingItem[]>({
+    queryKey: ["admin", "feedback", "ratings"],
+    queryFn: () => fetchJson<FeedbackRatingItem[]>("/api/backend/admin/feedback/ratings?limit=50"),
+    enabled: activeTab === "feedback" && feedbackSubTab === "ratings",
+  })
+
+  const { data: selectedReportDetail } = useQuery<SupportReportDetail>({
+    queryKey: ["admin", "feedback", "report", selectedReportId],
+    queryFn: () => fetchJson<SupportReportDetail>(`/api/backend/admin/feedback/reports/${selectedReportId}`),
+    enabled: !!selectedReportId,
+  })
+
+  // Feedback Mutations
+  const updateReportStatusMutation = useMutation({
+    mutationFn: async (payload: { id: string; status: string; admin_note?: string }) => {
+      const res = await fetch(`/api/backend/admin/feedback/reports/${payload.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: payload.status, admin_note: payload.admin_note }),
+      })
+      if (!res.ok) throw new Error("Failed to update report")
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "feedback"] })
+      alert("Report updated successfully!")
+    },
+  })
+
+  const deleteReportMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      const res = await fetch(`/api/backend/admin/feedback/reports/${reportId}`, {
+        method: "DELETE",
+      })
+      if (!res.ok) throw new Error("Failed to delete report")
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "feedback"] })
+      setSelectedReportId(null)
+    },
   })
 
   // Mutations
@@ -483,12 +619,19 @@ export function AdminClient() {
         >
           <Boxes className="mr-2" size={16} /> Storage
         </Button>
-        <Button 
-          variant={activeTab === "templates" ? "default" : "outline"} 
+        <Button
+          variant={activeTab === "templates" ? "default" : "outline"}
           onClick={() => setActiveTab("templates")}
           size="sm"
         >
           <Play className="mr-2" size={16} /> Templates
+        </Button>
+        <Button
+          variant={activeTab === "feedback" ? "default" : "outline"}
+          onClick={() => setActiveTab("feedback")}
+          size="sm"
+        >
+          <MessageSquare className="mr-2" size={16} /> Feedback & Support
         </Button>
       </div>
 
@@ -1108,6 +1251,368 @@ export function AdminClient() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 8. FEEDBACK & SUPPORT TAB ── */}
+      {activeTab === "feedback" && (
+        <div className="space-y-6 pixel-enter">
+          {/* Metrics Header */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="panel-strong p-4 bg-white dark:bg-zinc-900 border-2 border-black">
+              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Reports</p>
+              <p className="text-2xl font-black mt-1">{feedbackAnalytics?.total_reports ?? 0}</p>
+            </div>
+            <div className="panel-strong p-4 bg-white dark:bg-zinc-900 border-2 border-black">
+              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Open Tickets</p>
+              <p className="text-2xl font-black mt-1 text-[#ff4e26]">{feedbackAnalytics?.open_count ?? 0}</p>
+            </div>
+            <div className="panel-strong p-4 bg-white dark:bg-zinc-900 border-2 border-black">
+              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Avg Star Rating</p>
+              <p className="text-2xl font-black mt-1 text-amber-500 flex items-center gap-1">
+                ⭐ {feedbackAnalytics?.avg_rating ?? "N/A"}
+              </p>
+            </div>
+            <div className="panel-strong p-4 bg-white dark:bg-zinc-900 border-2 border-black">
+              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Reviews</p>
+              <p className="text-2xl font-black mt-1">{feedbackAnalytics?.total_ratings ?? 0}</p>
+            </div>
+          </div>
+
+          {/* Sub-tab Toggle & Controls */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-700 pb-3">
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={feedbackSubTab === "reports" ? "default" : "outline"}
+                onClick={() => setFeedbackSubTab("reports")}
+              >
+                <MessageSquare size={14} className="mr-1.5" /> Support Reports ({supportReports.length})
+              </Button>
+              <Button
+                size="sm"
+                variant={feedbackSubTab === "ratings" ? "default" : "outline"}
+                onClick={() => setFeedbackSubTab("ratings")}
+              >
+                <Star size={14} className="mr-1.5" /> Ratings & Reviews ({feedbackRatings.length})
+              </Button>
+            </div>
+
+            {feedbackSubTab === "reports" && (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Input
+                  placeholder="Search reports..."
+                  className="h-8 text-xs w-44"
+                  value={reportSearch}
+                  onChange={(e) => setReportSearch(e.target.value)}
+                />
+                <select
+                  value={reportStatusFilter}
+                  onChange={(e) => setReportStatusFilter(e.target.value)}
+                  className="h-8 text-xs border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 font-mono"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+                <select
+                  value={reportCategoryFilter}
+                  onChange={(e) => setReportCategoryFilter(e.target.value)}
+                  className="h-8 text-xs border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 font-mono"
+                >
+                  <option value="">All Categories</option>
+                  <option value="bug">Bug</option>
+                  <option value="billing">Billing</option>
+                  <option value="feedback">Feedback</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Sub-tab 1: Reports Table */}
+          {feedbackSubTab === "reports" && (
+            <div className="panel-strong bg-white dark:bg-zinc-900 border-2 border-black overflow-hidden">
+              {loadingReports ? (
+                <div className="p-8 text-center text-xs font-mono text-zinc-500">Loading reports...</div>
+              ) : supportReports.length === 0 ? (
+                <div className="p-8 text-center text-xs font-mono text-zinc-500">No support reports found.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-sans">
+                    <thead className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
+                      <tr>
+                        <th className="p-3">Created</th>
+                        <th className="p-3">Sender</th>
+                        <th className="p-3">Category</th>
+                        <th className="p-3">Summary / Message</th>
+                        <th className="p-3 text-center">Files</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                      {supportReports.map((report) => (
+                        <tr key={report.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                          <td className="p-3 font-mono text-zinc-500 text-[11px] whitespace-nowrap">
+                            {new Date(report.created_at).toLocaleString()}
+                          </td>
+                          <td className="p-3">
+                            <p className="font-bold text-zinc-900 dark:text-zinc-100">{report.user_email || "Anonymous"}</p>
+                            {report.user_name && <p className="text-[10px] text-zinc-500">{report.user_name}</p>}
+                          </td>
+                          <td className="p-3">
+                            <span className="inline-block px-2 py-0.5 border border-black dark:border-zinc-600 text-[10px] font-black uppercase bg-zinc-100 dark:bg-zinc-800">
+                              {report.category || "other"}
+                            </span>
+                          </td>
+                          <td className="p-3 max-w-xs">
+                            <p className="font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                              {report.auto_summary || report.message}
+                            </p>
+                            {report.sentiment_score !== undefined && (
+                              <span className={`text-[10px] font-mono font-bold ${report.sentiment_score < -0.2 ? "text-red-500" : report.sentiment_score > 0.2 ? "text-emerald-500" : "text-zinc-400"}`}>
+                                Sentiment: {report.sentiment_score}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center font-mono font-bold">
+                            {report.attachment_count > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-[#ff4e26]">
+                                <ImageIcon size={12} /> {report.attachment_count}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-400">-</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase border ${
+                              report.status === "open"
+                                ? "bg-red-50 text-red-600 border-red-300"
+                                : report.status === "in_progress"
+                                ? "bg-amber-50 text-amber-600 border-amber-300"
+                                : "bg-emerald-50 text-emerald-600 border-emerald-300"
+                            }`}>
+                              {report.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right space-x-1.5">
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedReportId(report.id)
+                                setEditingAdminNote(report.admin_note || "")
+                                setEditingReportStatus(report.status)
+                              }}
+                            >
+                              View Details
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              className="text-red-500 hover:text-red-700"
+                              onClick={() => {
+                                if (confirm("Delete this support report and its files?")) {
+                                  deleteReportMutation.mutate(report.id)
+                                }
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sub-tab 2: Ratings List */}
+          {feedbackSubTab === "ratings" && (
+            <div className="panel-strong bg-white dark:bg-zinc-900 border-2 border-black overflow-hidden">
+              {loadingRatings ? (
+                <div className="p-8 text-center text-xs font-mono text-zinc-500">Loading ratings...</div>
+              ) : feedbackRatings.length === 0 ? (
+                <div className="p-8 text-center text-xs font-mono text-zinc-500">No ratings submitted yet.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-sans">
+                    <thead className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
+                      <tr>
+                        <th className="p-3">Date</th>
+                        <th className="p-3">User</th>
+                        <th className="p-3">Rating</th>
+                        <th className="p-3">Comment</th>
+                        <th className="p-3">Target Role</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                      {feedbackRatings.map((rating) => (
+                        <tr key={rating.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                          <td className="p-3 font-mono text-zinc-500 text-[11px] whitespace-nowrap">
+                            {new Date(rating.created_at).toLocaleString()}
+                          </td>
+                          <td className="p-3 font-bold text-zinc-900 dark:text-zinc-100">
+                            {rating.user_email || "User"}
+                          </td>
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="flex items-center gap-0.5 text-amber-500">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  size={14}
+                                  className={star <= rating.star_rating ? "fill-amber-400 text-amber-500" : "text-zinc-300 dark:text-zinc-700"}
+                                />
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-3 text-zinc-700 dark:text-zinc-300 italic max-w-sm">
+                            {rating.comment || <span className="text-zinc-400 not-italic">No comment left</span>}
+                          </td>
+                          <td className="p-3 font-mono text-zinc-500 text-[11px]">
+                            {rating.generation_job_title || "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Report Detail Modal */}
+          {selectedReportId && selectedReportDetail && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+              <div className="relative w-full max-w-2xl border-3 border-black dark:border-zinc-600 bg-white dark:bg-zinc-900 p-6 shadow-[8px_8px_0px_#000] max-h-[90vh] overflow-y-auto space-y-5">
+                <button
+                  onClick={() => setSelectedReportId(null)}
+                  className="absolute top-4 right-4 text-zinc-500 hover:text-black dark:hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+
+                <div className="space-y-1">
+                  <span className="px-2 py-0.5 bg-[#ff4e26] text-white text-[10px] font-black uppercase border border-black">
+                    {selectedReportDetail.category || "Report"}
+                  </span>
+                  <h3 className="text-xl font-extrabold uppercase">Support Ticket Details</h3>
+                  <p className="text-xs font-mono text-zinc-500">
+                    ID: {selectedReportDetail.id} · From: {selectedReportDetail.user_email || "Anonymous"}
+                  </p>
+                </div>
+
+                {/* AI Executive Summary if present */}
+                {selectedReportDetail.auto_summary && (
+                  <div className="p-3 bg-zinc-100 dark:bg-zinc-800 border-2 border-black space-y-1">
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#ff4e26]">AI Executive Summary</p>
+                    <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{selectedReportDetail.auto_summary}</p>
+                  </div>
+                )}
+
+                {/* Full Message */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-extrabold uppercase text-zinc-500">Full Message</Label>
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 font-sans text-sm text-zinc-900 dark:text-zinc-100 whitespace-pre-wrap">
+                    {selectedReportDetail.message}
+                  </div>
+                </div>
+
+                {/* Attachments Section */}
+                {selectedReportDetail.attachments && selectedReportDetail.attachments.length > 0 && (
+                  <div className="space-y-3">
+                    <Label className="text-xs font-extrabold uppercase text-zinc-500">Attached Files</Label>
+                    <div className="space-y-3">
+                      {selectedReportDetail.attachments.map((att) => (
+                        <div key={att.id} className="p-3 border-2 border-black bg-zinc-50 dark:bg-zinc-800 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="font-bold uppercase text-[#ff4e26]">{att.attachment_type}</span>
+                            <span className="text-zinc-500">{att.filename || "file"}</span>
+                          </div>
+
+                          {att.attachment_type === "screenshot" && att.presigned_url && (
+                            <div className="border border-black overflow-hidden max-h-60 bg-black">
+                              {/* eslint-disable-next-html-element-suppression */}
+                              <img src={att.presigned_url} alt="Screenshot" className="w-full object-contain max-h-60" />
+                            </div>
+                          )}
+
+                          {att.attachment_type === "voice_recording" && att.presigned_url && (
+                            <div className="space-y-2">
+                              <audio controls src={att.presigned_url} className="w-full h-8" />
+                              {att.transcription && (
+                                <div className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-xs font-sans text-zinc-800 dark:text-zinc-200">
+                                  <span className="font-extrabold uppercase text-[10px] text-emerald-600 block">Voice Transcription:</span>
+                                  {att.transcription}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Admin Status & Notes Editor */}
+                <div className="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-extrabold uppercase">Ticket Status</Label>
+                      <select
+                        value={editingReportStatus}
+                        onChange={(e) => setEditingReportStatus(e.target.value)}
+                        className="w-full p-2 text-xs border-2 border-black bg-white dark:bg-zinc-800 font-extrabold uppercase"
+                      >
+                        <option value="open">Open</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-extrabold uppercase">Admin Response Note</Label>
+                    <Textarea
+                      rows={3}
+                      value={editingAdminNote}
+                      onChange={(e) => setEditingAdminNote(e.target.value)}
+                      placeholder="Add an internal note or message sent to the user on resolution..."
+                      className="border-2 border-black font-sans text-xs"
+                    />
+                  </div>
+
+                  <div className="flex gap-2 justify-end pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedReportId(null)}
+                      className="border-2 border-black font-bold uppercase text-xs"
+                    >
+                      Close
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        updateReportStatusMutation.mutate({
+                          id: selectedReportDetail.id,
+                          status: editingReportStatus,
+                          admin_note: editingAdminNote.trim() || undefined,
+                        })
+                      }}
+                      className="bg-[#ff4e26] hover:bg-[#e03d16] text-white border-2 border-black font-extrabold uppercase text-xs shadow-[2px_2px_0px_#000]"
+                    >
+                      Save Status & Respond
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

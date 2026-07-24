@@ -18,6 +18,13 @@ export const metadata: Metadata = {
   },
   description:
     "Build ATS-friendly, job-focused resumes from messy job descriptions and export polished PDF drafts faster.",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
   alternates: {
     canonical: "/",
   },

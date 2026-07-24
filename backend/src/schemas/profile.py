@@ -67,6 +67,7 @@ class ProfileUpdate(BaseModel):
     subtitle: str | None = None
     summary: str | None = None
     skills: list[str] | None = None
+    notify_on_completion: bool | None = None
 
     @field_validator("skills", mode="before")
     @classmethod

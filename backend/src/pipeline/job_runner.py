@@ -282,8 +282,26 @@ async def run_generation(gen_id: str) -> None:
                     "editor_revision": 0,
                     "intermediate_resumes": previous_metadata.get("intermediate_resumes") or [],
                 }
+
+                # Update user's first_generation_completed flag if non-guest
+                should_notify: bool = True
+                if g.user_id and not g.is_guest:
+                    u = await update_db.get(User, g.user_id)
+                    if u and not u.first_generation_completed:
+                        u.first_generation_completed = True
+
+                    if g.send_email is not None:
+                        should_notify = g.send_email
+                    else:
+                        profile_res = await update_db.execute(
+                            select(Profile).where(Profile.user_id == g.user_id)
+                        )
+                        profile = profile_res.scalar_one_or_none()
+                        should_notify = profile.notify_on_completion if profile else True
+
                 await update_db.commit()
-                send_completion_email(user_email, g, result.get("pdf_bytes"))
+                if should_notify:
+                    send_completion_email(user_email, g, result.get("pdf_bytes"))
 
     except Exception as e:
         # Persist terminal failure — covers both claim-phase and graph-phase errors.

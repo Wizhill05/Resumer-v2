@@ -55,6 +55,7 @@ class Settings(BaseSettings):
 
     RESEND_API_KEY: str = ""
     NOTIFICATION_FROM_EMAIL: str = "Resumer <noreply@aryansingh.space>"
+    SUPPORT_WEBHOOK_URL: str = ""
 
     EXECUTION_MODE: str = "local"
 

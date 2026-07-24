@@ -7,7 +7,16 @@ from alembic import context
 # Import all models so autogenerate detects them
 from src.models.user import Base  # noqa: F401
 from src.models.profile import Profile, UserProject, UserExperience, UserEducation  # noqa: F401
-from src.models.generation import Generation, GenerationLog, GuestRateLimit, PromptConfig, UserRateLimit  # noqa: F401
+from src.models.generation import (  # noqa: F401
+    Generation,
+    GenerationLog,
+    GuestRateLimit,
+    PromptConfig,
+    UserRateLimit,
+    SupportReport,
+    ReportAttachment,
+    FeedbackRating,
+)
 from src.core.config import settings
 
 config = context.config

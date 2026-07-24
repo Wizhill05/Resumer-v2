@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.storage import StorageService
-from src.api import profile, generation, system, imports, guest, admin
+from src.api import profile, generation, system, imports, guest, admin, feedback
 from src.template_registry import router as template_router
 from src.services.import_jobs import cleanup_old_jobs
 
@@ -55,3 +55,4 @@ app.include_router(generation.router)
 app.include_router(guest.router)
 app.include_router(template_router)
 app.include_router(admin.router)
+app.include_router(feedback.router)

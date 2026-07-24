@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import ARRAY, Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import ARRAY, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +25,7 @@ class Profile(Base):
     subtitle: Mapped[str | None] = mapped_column(String)
     summary: Mapped[str | None] = mapped_column(Text)
     skills: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    notify_on_completion: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef } from "react"
 import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy } from "lucide-react"
 import { createPortal } from "react-dom"
+import { FeedbackModal } from "@/components/FeedbackModal"
 
 type HistoryRun = {
   id: string
@@ -425,6 +426,7 @@ export function HistoryClient() {
   })
 
   const [view, setView] = useState<ViewMode>("list")
+  const [activeGenForFeedback, setActiveGenForFeedback] = useState<string | null>(null)
   const deleteRun = useDeleteRun()
 
   const hasActive = runs.some((r) => r.status === "pending" || r.status === "in_progress")
@@ -435,6 +437,23 @@ export function HistoryClient() {
     }, 5_000)
     return () => clearInterval(timer)
   }, [hasActive, refetch])
+
+  // Check if post-generation rating modal should pop up
+  useEffect(() => {
+    if (runs.length > 0) {
+      const completedRun = runs.find((r) => r.status === "completed")
+      if (completedRun) {
+        fetch(`/api/backend/feedback/rating/check?generation_id=${completedRun.id}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.should_prompt) {
+              setActiveGenForFeedback(completedRun.id)
+            }
+          })
+          .catch(() => {})
+      }
+    }
+  }, [runs])
 
   if (isLoading) {
     return (
@@ -597,6 +616,13 @@ export function HistoryClient() {
             )
           })}
         </div>
+      )}
+
+      {activeGenForFeedback && (
+        <FeedbackModal
+          generationId={activeGenForFeedback}
+          onClose={() => setActiveGenForFeedback(null)}
+        />
       )}
     </div>
   )

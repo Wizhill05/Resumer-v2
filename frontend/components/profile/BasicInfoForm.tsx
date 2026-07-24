@@ -1,6 +1,6 @@
 "use client"
 
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2 } from "lucide-react"
+import { Loader2, Mail } from "lucide-react"
 
 const schema = z.object({
   full_name: z.string().min(1, "Name is required"),
@@ -21,6 +21,7 @@ const schema = z.object({
   subtitle: z.string().optional(),
   summary: z.string().optional(),
   skills: z.string().optional(), // Raw comma-separated string for editing
+  notify_on_completion: z.boolean().optional(),
 })
 
 type FormData = z.infer<typeof schema>
@@ -37,7 +38,7 @@ export function BasicInfoForm() {
     },
   })
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, control, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     values: profile ? {
       full_name: profile.full_name || "",
@@ -50,6 +51,7 @@ export function BasicInfoForm() {
       subtitle: profile.subtitle || "",
       summary: profile.summary || "",
       skills: profile.skills ? profile.skills.join(", ") : "",
+      notify_on_completion: profile.notify_on_completion ?? true,
     } : undefined,
   })
 
@@ -148,6 +150,39 @@ export function BasicInfoForm() {
       <div className="space-y-2">
         <Label htmlFor="summary">Professional Summary</Label>
         <Textarea id="summary" rows={4} {...register("summary")} />
+      </div>
+
+      {/* Email Notification Default Toggle */}
+      <div className="panel flex items-start justify-between gap-4 p-4 border-2 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-[2px_2px_0px_#000]">
+        <div className="space-y-1">
+          <Label className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 text-zinc-900 dark:text-zinc-100">
+            <Mail size={14} className="text-[#ff4e26]" /> Receive Completion Emails
+          </Label>
+          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            Automatically send an email with the PDF attachment when a resume generation completes.
+          </p>
+        </div>
+        <Controller
+          control={control}
+          name="notify_on_completion"
+          render={({ field }) => (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={field.value ?? true}
+              onClick={() => field.onChange(!(field.value ?? true))}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border-2 border-black transition-colors ${
+                field.value ?? true ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 bg-white border border-black transition-transform ${
+                  field.value ?? true ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          )}
+        />
       </div>
 
       <Button type="submit" disabled={mutation.isPending} className="w-full sm:w-auto">

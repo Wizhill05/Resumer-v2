@@ -200,6 +200,7 @@ async def start_generation(
         model_used=data.model_used,
         status="pending",
         content_split=resolved_split,
+        send_email=data.send_email,
     )
     db.add(gen)
     await db.commit()

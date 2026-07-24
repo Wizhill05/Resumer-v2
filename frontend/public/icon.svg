@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Neo-brutalist shadow -->
+  <rect x="4" y="4" width="26" height="26" rx="2" fill="#000"/>
+  <!-- Orange background -->
+  <rect x="1" y="1" width="26" height="26" rx="2" fill="#ff4e26" stroke="#000" stroke-width="2"/>
+  <!-- Bold R letterform -->
+  <text x="14" y="22" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="20" fill="#fff" text-anchor="middle" stroke="#000" stroke-width="0.5">R</text>
+</svg>

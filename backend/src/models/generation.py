@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 
@@ -32,6 +34,7 @@ class Generation(Base):
     render_metadata: Mapped[dict | None] = mapped_column(JSONB)
     content_split: Mapped[dict | None] = mapped_column(JSONB)
     is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
+    send_email: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     guest_token_hash: Mapped[str | None] = mapped_column(String)
     guest_input_snapshot: Mapped[dict | None] = mapped_column(JSONB)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -147,3 +150,73 @@ class PromptTestRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class SupportReport(Base):
+    __tablename__ = "support_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    email_override: Mapped[str | None] = mapped_column(String)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="open", nullable=False)
+    admin_note: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String)
+    auto_summary: Mapped[str | None] = mapped_column(Text)
+    sentiment_score: Mapped[float | None] = mapped_column(Float)
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("generations.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReportAttachment(Base):
+    __tablename__ = "report_attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    report_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("support_reports.id", ondelete="CASCADE"), nullable=False
+    )
+    attachment_type: Mapped[str] = mapped_column(String, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String, nullable=False)
+    filename: Mapped[str | None] = mapped_column(String)
+    mime_type: Mapped[str | None] = mapped_column(String)
+    file_size_bytes: Mapped[int | None] = mapped_column(Integer)
+    transcription: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class FeedbackRating(Base):
+    __tablename__ = "feedback_ratings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("generations.id", ondelete="SET NULL"), nullable=True
+    )
+    star_rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text)
+    shown_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+

@@ -21,7 +21,6 @@ Resumer-v2 is an AI-powered resume builder designed to generate tailored, ATS-aw
 
 To avoid environment lockups, permission errors, or unnecessary tool calls, follow these strict rules:
 
-- **No Docker Commands:** DO NOT run Docker commands (`docker-compose`, `docker build`, `docker run`, etc.) directly in the agent shell. If Docker actions are needed, instruct the user to run them manually.
 - **No Localhost Frontend Runs:** DO NOT attempt to start or run the frontend server (`pnpm dev`, `next dev`) on localhost inside the agent session. If the frontend needs to be running or tested, tell the user to start it manually in their own terminal.
 - **Accessing the Old Project:**
   - The previous version of this project is located at `D:\Technical\Programming\AI\Resumer`.

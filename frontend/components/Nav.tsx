@@ -11,6 +11,7 @@ const defaultLinks = [
   { href: "/dashboard/generate", label: "Generate" },
   { href: "/profile", label: "Profile" },
   { href: "/dashboard/history", label: "History" },
+  { href: "/support", label: "Support" },
 ]
 
 const ADMIN_CACHE_KEY = "resumer_is_admin"
