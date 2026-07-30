@@ -119,9 +119,9 @@ export function ExtracurricularForm() {
   }
 
   const renderForm = () => (
-    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 bg-zinc-50 p-4 pixel-enter">
-      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 pb-2">
-        <h3 className="font-semibold text-black uppercase tracking-tight">
+    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter">
+      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
+        <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
           {editingId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
         </h3>
         <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
@@ -133,7 +133,7 @@ export function ExtracurricularForm() {
         <div className="space-y-2">
           <Label htmlFor="title">Title / Activity / Award</Label>
           <Input id="title" {...register("title")} />
-          {errors.title && <p className="text-red-600 text-xs font-bold">{errors.title.message}</p>}
+          {errors.title && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.title.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -167,7 +167,7 @@ export function ExtracurricularForm() {
         />
       </div>
 
-      <div className="flex gap-3 border-t border-zinc-200 pt-3">
+      <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
         <Button type="submit" disabled={saveMutation.isPending}>
           {saveMutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save"}
         </Button>
@@ -193,8 +193,8 @@ export function ExtracurricularForm() {
   return (
     <div className="space-y-4 pixel-enter">
       {!isAdding && (
-        <div className="flex items-center justify-between gap-3 border border-zinc-200 bg-zinc-50 p-3">
-          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 sm:text-sm">
+        <div className="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
+          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 sm:text-sm">
             {extracurriculars.length} entries
           </h3>
           <Button
@@ -223,22 +223,22 @@ export function ExtracurricularForm() {
       <div className="space-y-3">
         {extracurriculars.map((ex) => (
           <div key={ex.id} className="space-y-3">
-          <div className="flex items-start justify-between gap-3 border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-400 md:p-4">
+          <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
             <div className="min-w-0 space-y-1.5">
-              <h4 className="text-base font-extrabold uppercase tracking-tight text-black">{ex.title}</h4>
+              <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">{ex.title}</h4>
               {ex.organization && (
-                <p className="text-sm font-bold text-zinc-700 uppercase tracking-wide">
+                <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
                   {ex.organization}
                 </p>
               )}
-              <p className="text-xs font-bold text-zinc-500 uppercase">
+              <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
                 {ex.start_date || "N/A"} to {ex.end_date || "Present"}
               </p>
               {ex.description && (
-                <p className="text-xs font-semibold text-zinc-600 mt-1 italic">{ex.description}</p>
+                <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mt-1 italic">{ex.description}</p>
               )}
               {ex.bullet_points && ex.bullet_points.length > 0 && (
-                <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600">
+                <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
                   {ex.bullet_points.map((b: string, i: number) => (
                     <li key={i}>{b}</li>
                   ))}
@@ -246,8 +246,8 @@ export function ExtracurricularForm() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(ex)} className="border-transparent hover:border-black">
-                <Edit2 size={14} className="text-black" />
+              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(ex)} className="border-transparent hover:border-black dark:hover:border-zinc-400">
+                <Edit2 size={14} className="text-black dark:text-zinc-200" />
               </Button>
               <Button
                 size="icon-sm"

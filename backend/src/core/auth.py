@@ -43,6 +43,8 @@ async def get_optional_user(
         await db.commit()
         await db.refresh(user)
 
+    user.github_username = payload.get("github_username")
+    user.github_access_token = payload.get("github_access_token")
     return user
 
 

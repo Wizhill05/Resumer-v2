@@ -153,7 +153,7 @@ export function BasicInfoForm() {
       </div>
 
       {/* Email Notification Default Toggle */}
-      <div className="panel flex items-start justify-between gap-4 p-4 border-2 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-[2px_2px_0px_#000]">
+      <div className="panel flex items-start justify-between gap-4 p-4 border-2 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-[2px_2px_0px_#000] dark:shadow-[2px_2px_0px_#3f3f46]">
         <div className="space-y-1">
           <Label className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 text-zinc-900 dark:text-zinc-100">
             <Mail size={14} className="text-[#ff4e26]" /> Receive Completion Emails

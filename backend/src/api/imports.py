@@ -11,7 +11,8 @@ from src.core.auth import get_current_user
 from src.core.database import get_db, AsyncSessionLocal
 from src.models.profile import Profile, UserEducation, UserExperience, UserProject, UserExtracurricular
 from src.models.user import User
-from src.schemas.profile import GitHubProjectDraft, GitHubProjectImportRequest, ImportApplyRequest, ResumeImportDraft
+import requests
+from src.schemas.profile import GitHubProjectDraft, GitHubProjectImportRequest, GitHubRepoItem, GitHubReposResponse, ImportApplyRequest, ResumeImportDraft
 from src.services.github_import import import_github_project
 from src.services.resume_import import (
     MAX_FILES,
@@ -208,6 +209,61 @@ async def import_github_project_route(
     db: AsyncSession = Depends(get_db),
 ):
     return await import_github_project(data.url, db, current_user)
+
+
+@router.get("/github-repos", response_model=GitHubReposResponse)
+async def get_github_user_repos(
+    username: str | None = None,
+    current_user: User = Depends(get_current_user),
+):
+    headers = {"Accept": "application/vnd.github+json"}
+    github_user = getattr(current_user, "github_username", None)
+    access_token = getattr(current_user, "github_access_token", None)
+    target_username = username.strip() if username else github_user
+
+    if not target_username and access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+        url = "https://api.github.com/user/repos?sort=updated&per_page=100"
+    elif target_username:
+        if access_token and target_username == github_user:
+            headers["Authorization"] = f"Bearer {access_token}"
+            url = "https://api.github.com/user/repos?sort=updated&per_page=100"
+        else:
+            url = f"https://api.github.com/users/{target_username}/repos?sort=updated&per_page=100"
+    else:
+        return GitHubReposResponse(repos=[], connected=False, github_username=None)
+
+    try:
+        res = requests.get(url, headers=headers, timeout=8)
+        if res.status_code == 404:
+            raise HTTPException(status_code=404, detail="GitHub user or repositories not found")
+        if res.status_code >= 400:
+            raise HTTPException(status_code=400, detail="Failed to fetch GitHub repositories")
+        data = res.json()
+        items = []
+        if isinstance(data, list):
+            for repo in data:
+                if isinstance(repo, dict) and not repo.get("fork"):
+                    items.append(
+                        GitHubRepoItem(
+                            name=repo.get("name") or "",
+                            full_name=repo.get("full_name") or "",
+                            description=repo.get("description"),
+                            html_url=repo.get("html_url") or "",
+                            language=repo.get("language"),
+                            stargazers_count=repo.get("stargazers_count") or 0,
+                            updated_at=repo.get("updated_at"),
+                        )
+                    )
+        return GitHubReposResponse(
+            repos=items,
+            connected=bool(github_user or access_token),
+            github_username=target_username or github_user,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to load repositories: {str(e)}")
 
 
 @router.post("/apply")

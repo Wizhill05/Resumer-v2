@@ -19,6 +19,8 @@ async function handleProxy(
     name: session.user.name,
     picture: session.user.image,
     provider: (session as { token?: { provider?: string } }).token?.provider ?? "unknown",
+    github_username: (session as { githubUsername?: string; token?: { githubUsername?: string } }).githubUsername ?? (session as { token?: { githubUsername?: string } }).token?.githubUsername ?? null,
+    github_access_token: (session as { githubAccessToken?: string; token?: { githubAccessToken?: string } }).githubAccessToken ?? (session as { token?: { githubAccessToken?: string } }).token?.githubAccessToken ?? null,
   }
   const backendToken = await signBackendToken(tokenPayload)
 

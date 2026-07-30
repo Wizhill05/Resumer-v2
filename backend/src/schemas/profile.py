@@ -257,6 +257,22 @@ class GitHubProjectImportRequest(BaseModel):
     url: str
 
 
+class GitHubRepoItem(BaseModel):
+    name: str
+    full_name: str
+    description: str | None = None
+    html_url: str
+    language: str | None = None
+    stargazers_count: int = 0
+    updated_at: str | None = None
+
+
+class GitHubReposResponse(BaseModel):
+    repos: list[GitHubRepoItem] = Field(default_factory=list)
+    connected: bool = False
+    github_username: str | None = None
+
+
 class GitHubProjectDraft(ProjectCreate):
     duplicate_candidates: list[DuplicateCandidate] = Field(default_factory=list)
     warnings: list[ImportWarning] = Field(default_factory=list)

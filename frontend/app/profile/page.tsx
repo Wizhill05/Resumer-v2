@@ -26,11 +26,11 @@ export default async function ProfilePage() {
 
         {/* Account section */}
         <div className="pt-2">
-          <h2 className="mb-3 text-xs font-extrabold uppercase tracking-widest text-zinc-400">Account</h2>
+          <h2 className="mb-3 text-xs font-extrabold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">Account</h2>
           <div className="panel flex flex-col items-start justify-between gap-3 p-4 sm:flex-row sm:items-center">
             <div>
-              <p className="font-bold text-sm">{session.user?.name ?? "User"}</p>
-              <p className="text-xs text-zinc-500">{session.user?.email ?? ""}</p>
+              <p className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{session.user?.name ?? "User"}</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">{session.user?.email ?? ""}</p>
             </div>
             <form
               action={async () => {
@@ -38,7 +38,7 @@ export default async function ProfilePage() {
                 await signOut({ redirectTo: "/" })
               }}
             >
-              <Button type="submit" variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
+              <Button type="submit" variant="outline" size="sm" className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 dark:border-red-900/60">
                 Sign Out
               </Button>
             </form>

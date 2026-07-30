@@ -139,8 +139,8 @@ export function ResumeImportPanel() {
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Fast import</p>
-          <h2 className="text-lg font-extrabold uppercase tracking-tight">Upload old resumes</h2>
-          <p className="text-sm font-medium text-zinc-600">PDF only. Max 5 files, 5MB each. We stage results before saving.</p>
+          <h2 className="text-lg font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">Upload old resumes</h2>
+          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">PDF only. Max 5 files, 5MB each. We stage results before saving.</p>
         </div>
         <div className="flex gap-2">
           <input
@@ -168,32 +168,32 @@ export function ResumeImportPanel() {
 
       {/* Stage progress indicator */}
       {isPending && (
-        <div className="space-y-1.5 border border-zinc-200 bg-zinc-50 p-3">
+        <div className="space-y-1.5 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${stage === "parsing" || stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
-              <span className={`h-2 w-2 rounded-full ${stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
-              <span className={`h-2 w-2 rounded-full ${stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "parsing" || stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"}`} />
             </div>
-            <p className="text-xs font-semibold text-zinc-700">{stageLabel}</p>
+            <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{stageLabel}</p>
           </div>
-          {stageHint && <p className="text-xs text-zinc-500">{stageHint}</p>}
+          {stageHint && <p className="text-xs text-zinc-500 dark:text-zinc-400">{stageHint}</p>}
         </div>
       )}
 
       {error && (
-        <div className="flex items-start gap-2 border border-red-200 bg-red-50 p-2">
-          <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600" />
-          <p className="text-xs font-bold text-red-700">{error}</p>
+        <div className="flex items-start gap-2 border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 p-2">
+          <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
+          <p className="text-xs font-bold text-red-700 dark:text-red-300">{error}</p>
         </div>
       )}
 
       {draft && (
-        <div className="space-y-3 border border-zinc-200 bg-zinc-50 p-3">
+        <div className="space-y-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-extrabold uppercase">Review import draft</p>
-              <p className="text-xs font-semibold text-zinc-600">{counts.join(" • ")}</p>
+              <p className="text-sm font-extrabold uppercase text-zinc-900 dark:text-zinc-100">Review import draft</p>
+              <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">{counts.join(" • ")}</p>
             </div>
             <Button type="button" variant="ghost" size="icon-sm" onClick={() => { setDraft(null); setStage("idle") }} className="border-transparent">
               <X size={14} />
@@ -201,21 +201,21 @@ export function ResumeImportPanel() {
           </div>
 
           {(draft.warnings?.filter(w => w.scope === "general").length ?? 0) > 0 && (
-            <div className="flex items-start gap-2 border border-yellow-200 bg-yellow-50 p-2">
-              <AlertCircle size={14} className="mt-0.5 shrink-0 text-yellow-700" />
+            <div className="flex items-start gap-2 border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50 dark:bg-yellow-950/40 p-2">
+              <AlertCircle size={14} className="mt-0.5 shrink-0 text-yellow-700 dark:text-yellow-400" />
               <div className="space-y-0.5">
                 {draft.warnings?.filter(w => w.scope === "general").map((w, i) => (
-                  <p key={i} className="text-xs font-semibold text-yellow-900">{w.message}</p>
+                  <p key={i} className="text-xs font-semibold text-yellow-900 dark:text-yellow-200">{w.message}</p>
                 ))}
               </div>
             </div>
           )}
 
           {(draft.duplicate_candidates?.length ?? 0) > 0 && (
-            <div className="space-y-1 border border-yellow-200 bg-yellow-50 p-2">
-              <p className="text-xs font-extrabold uppercase text-yellow-800">Duplicates detected</p>
+            <div className="space-y-1 border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50 dark:bg-yellow-950/40 p-2">
+              <p className="text-xs font-extrabold uppercase text-yellow-800 dark:text-yellow-300">Duplicates detected</p>
               {draft.duplicate_candidates?.slice(0, 4).map((dup, index) => (
-                <p key={index} className="text-xs font-semibold text-yellow-900">
+                <p key={index} className="text-xs font-semibold text-yellow-900 dark:text-yellow-200">
                   {dup.imported_type}: {dup.reason} ({Math.round(dup.confidence * 100)}%, {dup.suggested_action})
                 </p>
               ))}
@@ -223,10 +223,10 @@ export function ResumeImportPanel() {
           )}
 
           {(draft.warnings?.filter(w => w.scope !== "general").length ?? 0) > 0 && (
-            <div className="space-y-1 border border-zinc-200 bg-white p-2">
-              <p className="text-xs font-extrabold uppercase text-zinc-700">Warnings</p>
+            <div className="space-y-1 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2">
+              <p className="text-xs font-extrabold uppercase text-zinc-700 dark:text-zinc-300">Warnings</p>
               {draft.warnings?.filter(w => w.scope !== "general").slice(0, 4).map((warning, index) => (
-                <p key={index} className="text-xs font-semibold text-zinc-600">{warning.scope}: {warning.message}</p>
+                <p key={index} className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">{warning.scope}: {warning.message}</p>
               ))}
             </div>
           )}

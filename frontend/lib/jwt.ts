@@ -7,6 +7,8 @@ export async function signBackendToken(payload: {
   name?: string | null
   picture?: string | null
   provider?: string | null
+  github_username?: string | null
+  github_access_token?: string | null
 }) {
   if (!NEXTAUTH_SECRET) {
     throw new Error("NEXTAUTH_SECRET is not set. Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"")

@@ -121,9 +121,9 @@ export function EducationForm() {
   }
 
   const renderForm = () => (
-    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 bg-zinc-50 p-4 pixel-enter">
-      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 pb-2">
-        <h3 className="font-semibold text-black uppercase tracking-tight">
+    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter">
+      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
+        <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
           {editingId ? "Edit Education" : "Add Education"}
         </h3>
         <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
@@ -135,13 +135,13 @@ export function EducationForm() {
         <div className="space-y-2">
           <Label htmlFor="degree">Degree / Major</Label>
           <Input id="degree" placeholder="e.g. B.S. in Computer Science" {...register("degree")} />
-          {errors.degree && <p className="text-red-600 text-xs font-bold">{errors.degree.message}</p>}
+          {errors.degree && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.degree.message}</p>}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="institution">Institution / School</Label>
           <Input id="institution" placeholder="e.g. Stanford University" {...register("institution")} />
-          {errors.institution && <p className="text-red-600 text-xs font-bold">{errors.institution.message}</p>}
+          {errors.institution && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.institution.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -170,7 +170,7 @@ export function EducationForm() {
         </div>
       </div>
 
-      <div className="flex gap-3 border-t border-zinc-200 pt-3">
+      <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
         <Button type="submit" disabled={saveMutation.isPending}>
           {saveMutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save"}
         </Button>
@@ -196,8 +196,8 @@ export function EducationForm() {
   return (
     <div className="space-y-4 pixel-enter">
       {!isAdding && (
-        <div className="flex items-center justify-between gap-3 border border-zinc-200 bg-zinc-50 p-3">
-          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 sm:text-sm">
+        <div className="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
+          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 sm:text-sm">
             {educationList.length} education entries
           </h3>
           <Button
@@ -227,20 +227,20 @@ export function EducationForm() {
       <div className="space-y-3">
         {educationList.map((edu) => (
           <div key={edu.id} className="space-y-3">
-          <div className="flex items-start justify-between gap-3 border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-400 md:p-4">
+          <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
             <div className="min-w-0 space-y-1.5">
-              <h4 className="text-base font-extrabold uppercase tracking-tight text-black">{edu.degree}</h4>
-              <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 sm:text-sm">
-                {edu.institution} — <span className="text-zinc-600">{edu.location || "Location N/A"}</span>
+              <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">{edu.degree}</h4>
+              <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
+                {edu.institution} — <span className="text-zinc-600 dark:text-zinc-400">{edu.location || "Location N/A"}</span>
               </p>
-              <p className="text-xs font-bold text-zinc-500 uppercase">
+              <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
                 {edu.start_date || "Start N/A"} to {edu.end_date || "Present"}
               </p>
-              {edu.gpa && <p className="text-xs font-bold text-zinc-600 mt-1 uppercase">GPA: {edu.gpa}</p>}
+              {edu.gpa && <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 mt-1 uppercase">GPA: {edu.gpa}</p>}
               {edu.coursework && edu.coursework.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {edu.coursework.map((c: string) => (
-                    <span key={c} className="border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600">
+                    <span key={c} className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600 dark:text-zinc-300">
                       {c}
                     </span>
                   ))}
@@ -248,8 +248,8 @@ export function EducationForm() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(edu)} className="border-transparent hover:border-black">
-                <Edit2 size={14} className="text-black" />
+              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(edu)} className="border-transparent hover:border-black dark:hover:border-zinc-400">
+                <Edit2 size={14} className="text-black dark:text-zinc-200" />
               </Button>
               <Button
                 size="icon-sm"

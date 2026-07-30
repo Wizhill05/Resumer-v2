@@ -17,16 +17,33 @@ TIMEOUT = 8
 
 
 def parse_github_url(url: str) -> tuple[str, str, str]:
-    parsed = urlparse(url.strip())
-    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {"github.com", "www.github.com"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only GitHub repository URLs are supported")
-    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    cleaned = url.strip()
+    if not cleaned:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GitHub repository URL or path cannot be empty")
+
+    if cleaned.startswith("http://") or cleaned.startswith("https://"):
+        parsed = urlparse(cleaned)
+        if parsed.netloc.lower() not in {"github.com", "www.github.com"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only GitHub repository URLs are supported")
+        parts = [part for part in parsed.path.strip("/").split("/") if part]
+    else:
+        if cleaned.lower().startswith("github.com/"):
+            cleaned = cleaned[11:]
+        elif cleaned.lower().startswith("www.github.com/"):
+            cleaned = cleaned[15:]
+        parts = [part for part in cleaned.strip("/").split("/") if part]
+
     if len(parts) < 2:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid GitHub repository URL")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid GitHub repository. Please enter owner/repo or a full URL")
+
     owner, repo = parts[0], parts[1].removesuffix(".git")
-    if not owner.replace("-", "").replace("_", "").isalnum() or not repo.replace("-", "").replace("_", "").replace(".", "").isalnum():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid GitHub repository URL")
-    return owner, repo, f"https://github.com/{owner}/{repo}"
+    is_valid_owner = owner.replace("-", "").replace("_", "").isalnum()
+    is_valid_repo = repo.replace("-", "").replace("_", "").replace(".", "").isalnum()
+    if not is_valid_owner or not is_valid_repo:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid GitHub repository URL or format")
+
+    canonical_url = f"https://github.com/{owner}/{repo}"
+    return owner, repo, canonical_url
 
 
 def github_get(path: str) -> dict | list:
