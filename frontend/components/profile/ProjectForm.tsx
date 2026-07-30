@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { signIn, useSession } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -59,9 +58,19 @@ type GitHubRepoItem = {
   stargazers_count: number;
 };
 
+export function parseGitHubUsername(input: string | undefined | null): string {
+  if (!input) return "";
+  let clean = input.trim();
+  clean = clean.replace(/^@/, "");
+  if (clean.includes("github.com/")) {
+    const parts = clean.split("github.com/")[1].split("/").filter(Boolean);
+    return parts[0] || "";
+  }
+  return clean.split("/")[0] || "";
+}
+
 export function ProjectForm() {
   const queryClient = useQueryClient();
-  const { data: session } = useSession();
   const [mounted, setMounted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -75,14 +84,41 @@ export function ProjectForm() {
   const [githubMessage, setGithubMessage] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<ImportedProject | null>(null);
 
-  const isGitHubConnected = Boolean(
-    (session as { githubUsername?: string })?.githubUsername ||
-    (session as { token?: { provider?: string } })?.token?.provider === "github"
-  );
-
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch basic user profile to extract github_url automatically
+  const { data: profile } = useQuery<{ github_url?: string }>({
+    queryKey: ["profile"],
+    queryFn: async () => {
+      const res = await fetch("/api/backend/profile");
+      if (!res.ok) throw new Error("Failed to load profile");
+      return res.json();
+    },
+  });
+
+  const profileGithubUsername = parseGitHubUsername(profile?.github_url);
+  const effectiveUsername = githubOwner.trim() || profileGithubUsername;
+
+  // Query GitHub repos whenever a username is present
+  const { data: githubReposData, isLoading: isLoadingRepos, refetch: refetchRepos } = useQuery<{
+    repos: GitHubRepoItem[];
+    connected: boolean;
+    github_username: string | null;
+  }>({
+    queryKey: ["github-repos", effectiveUsername],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (effectiveUsername) {
+        params.set("username", effectiveUsername);
+      }
+      const res = await fetch(`/api/backend/profile/import/github-repos?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch GitHub repositories");
+      return res.json();
+    },
+    enabled: Boolean(effectiveUsername),
+  });
 
   // Lock scroll and listen for Escape key when modal is open
   useEffect(() => {
@@ -110,25 +146,6 @@ export function ProjectForm() {
       if (!res.ok) throw new Error("Failed to load projects");
       return res.json();
     },
-  });
-
-  // Query GitHub repos if user is connected or specified a username
-  const { data: githubReposData, isLoading: isLoadingRepos, refetch: refetchRepos } = useQuery<{
-    repos: GitHubRepoItem[];
-    connected: boolean;
-    github_username: string | null;
-  }>({
-    queryKey: ["github-repos", githubOwner],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (githubOwner.trim()) {
-        params.set("username", githubOwner.trim());
-      }
-      const res = await fetch(`/api/backend/profile/import/github-repos?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch GitHub repositories");
-      return res.json();
-    },
-    enabled: isGitHubConnected || Boolean(githubOwner.trim()),
   });
 
   const {
@@ -245,11 +262,12 @@ export function ProjectForm() {
     if (selectedRepoUrl) {
       target = selectedRepoUrl;
     } else if (githubInputMode === "fields") {
-      if (!githubOwner.trim() || !githubRepoName.trim()) {
-        setGithubMessage("Please fill in both Username and Repository name.");
+      const owner = githubOwner.trim() || profileGithubUsername;
+      if (!owner || !githubRepoName.trim()) {
+        setGithubMessage("Please provide a GitHub Username and Repository name.");
         return;
       }
-      target = `${githubOwner.trim()}/${githubRepoName.trim()}`;
+      target = `${owner}/${githubRepoName.trim()}`;
     } else {
       if (!githubUrl.trim()) {
         setGithubMessage("Please enter a GitHub URL or owner/repo.");
@@ -424,7 +442,7 @@ export function ProjectForm() {
                 <FolderGit2 className="text-[#ff4e26]" size={22} /> Import using GitHub
               </h3>
               <p className="max-w-xl text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-                Enter your username &amp; repo, select from your connected GitHub account, or paste a link. We extract metadata, README, dependencies, and stage a resume-ready project.
+                Choose a repository from your GitHub projects dropdown menu below, or enter a username &amp; repository. We extract metadata, README, and stage your project for review.
               </p>
             </div>
             <Button
@@ -452,79 +470,83 @@ export function ProjectForm() {
             </Button>
           </div>
 
-          {/* GitHub Connection Status / Action Banner */}
+          {/* GitHub Linked Username Header */}
           <div className="flex flex-wrap items-center justify-between gap-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 p-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-            {isGitHubConnected ? (
+            {effectiveUsername ? (
               <div className="flex items-center gap-2">
                 <svg className="h-4 w-4 fill-current text-zinc-900 dark:text-zinc-100" viewBox="0 0 24 24">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
                 <span>
-                  Connected as <strong className="text-black dark:text-white">{githubReposData?.github_username || (session as { githubUsername?: string })?.githubUsername || "GitHub User"}</strong>
+                  GitHub Profile Linked: <strong className="text-black dark:text-white">@{effectiveUsername}</strong>
                 </span>
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <svg className="h-4 w-4 fill-current text-zinc-600 dark:text-zinc-400" viewBox="0 0 24 24">
+              <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
-                <span>Logged in via Google or non-GitHub account</span>
+                <span>Enter a GitHub username or repo below to view repositories</span>
               </div>
-            )}
-
-            {!isGitHubConnected && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => signIn("github")}
-                className="gap-1.5 border-zinc-400 dark:border-zinc-600 text-xs font-bold"
-              >
-                <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-                </svg> Connect GitHub Account
-              </Button>
             )}
           </div>
 
-          {/* Repositories Dropdown (When connected or fetched) */}
+          {/* Repositories Dropdown (When repos are fetched) */}
           {userRepos.length > 0 && (
-            <div className="space-y-1.5 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-3">
+            <div className="space-y-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-extrabold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                  Select from your GitHub Repositories ({userRepos.length})
+                  Select a repository to import ({userRepos.length} public repos found)
                 </Label>
                 <button
                   type="button"
                   onClick={() => refetchRepos()}
                   className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white"
                 >
-                  <RefreshCw size={11} className={isLoadingRepos ? "animate-spin" : ""} /> Refresh Repos
+                  <RefreshCw size={11} className={isLoadingRepos ? "animate-spin" : ""} /> Refresh
                 </button>
               </div>
-              <select
-                value={selectedRepoUrl}
-                onChange={(e) => {
-                  setSelectedRepoUrl(e.target.value);
-                  if (e.target.value) {
-                    setGithubUrl(e.target.value);
-                  }
-                }}
-                className="w-full h-11 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-[#ff4e26]"
-              >
-                <option value="">-- Choose a repository --</option>
-                {userRepos.map((repo) => (
-                  <option key={repo.full_name} value={repo.html_url}>
-                    {repo.full_name} {repo.language ? `(${repo.language})` : ""} {repo.stargazers_count ? `★ ${repo.stargazers_count}` : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                <select
+                  value={selectedRepoUrl}
+                  onChange={(e) => {
+                    setSelectedRepoUrl(e.target.value);
+                    if (e.target.value) {
+                      setGithubUrl(e.target.value);
+                    }
+                  }}
+                  className="w-full h-11 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-[#ff4e26]"
+                >
+                  <option value="">-- Choose a repository from your list --</option>
+                  {userRepos.map((repo) => (
+                    <option key={repo.full_name} value={repo.html_url}>
+                      {repo.full_name} {repo.language ? `(${repo.language})` : ""} {repo.stargazers_count ? `★ ${repo.stargazers_count}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={handleImportSubmit}
+                  disabled={githubImportMutation.isPending || !selectedRepoUrl}
+                >
+                  {githubImportMutation.isPending ? (
+                    <>
+                      <Loader2 className="animate-spin" size={18} /> Reading...
+                    </>
+                  ) : (
+                    <>
+                      <FolderGit2 size={18} /> Import Selected Project
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* Input Controls Mode Selector */}
-          <div className="space-y-3">
+          {/* Manual Input Controls Mode Selector */}
+          <div className="space-y-3 pt-1">
             <div className="flex gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-2">
               <button
                 type="button"
@@ -560,13 +582,13 @@ export function ProjectForm() {
               <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-[1fr_1fr_auto]">
                 <div>
                   <Label htmlFor="githubOwner" className="text-xs font-bold text-zinc-600 dark:text-zinc-400">
-                    GitHub Username / Owner
+                    GitHub Username
                   </Label>
                   <Input
                     id="githubOwner"
                     value={githubOwner}
                     onChange={(e) => setGithubOwner(e.target.value)}
-                    placeholder="e.g. facebook"
+                    placeholder={profileGithubUsername || "e.g. facebook"}
                     className="h-11 text-sm font-semibold mt-1"
                   />
                 </div>
@@ -587,12 +609,12 @@ export function ProjectForm() {
                     type="button"
                     size="lg"
                     onClick={handleImportSubmit}
-                    disabled={githubImportMutation.isPending || !githubOwner.trim() || !githubRepoName.trim()}
+                    disabled={githubImportMutation.isPending || (!githubOwner.trim() && !profileGithubUsername) || !githubRepoName.trim()}
                     className="h-11 w-full sm:w-auto"
                   >
                     {githubImportMutation.isPending ? (
                       <>
-                        <Loader2 className="animate-spin" size={18} /> Reading repo...
+                        <Loader2 className="animate-spin" size={18} /> Reading...
                       </>
                     ) : (
                       <>
@@ -602,14 +624,11 @@ export function ProjectForm() {
                   </Button>
                 </div>
               </div>
-            ) : (
+            ) : !selectedRepoUrl ? (
               <div className="grid gap-2 md:grid-cols-[1fr_auto]">
                 <Input
-                  value={selectedRepoUrl || githubUrl}
-                  onChange={(event) => {
-                    setGithubUrl(event.target.value);
-                    if (selectedRepoUrl) setSelectedRepoUrl("");
-                  }}
+                  value={githubUrl}
+                  onChange={(event) => setGithubUrl(event.target.value)}
                   placeholder="https://github.com/owner/repo or owner/repo"
                   className="h-11 text-base font-semibold"
                 />
@@ -617,11 +636,11 @@ export function ProjectForm() {
                   type="button"
                   size="lg"
                   onClick={handleImportSubmit}
-                  disabled={githubImportMutation.isPending || (!githubUrl.trim() && !selectedRepoUrl)}
+                  disabled={githubImportMutation.isPending || !githubUrl.trim()}
                 >
                   {githubImportMutation.isPending ? (
                     <>
-                      <Loader2 className="animate-spin" size={18} /> Reading repo...
+                      <Loader2 className="animate-spin" size={18} /> Reading...
                     </>
                   ) : (
                     <>
@@ -630,7 +649,7 @@ export function ProjectForm() {
                   )}
                 </Button>
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2 text-[11px] font-extrabold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
