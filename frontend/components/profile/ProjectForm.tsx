@@ -102,7 +102,12 @@ export function ProjectForm() {
   const effectiveUsername = githubOwner.trim() || profileGithubUsername;
 
   // Query GitHub repos whenever a username is present
-  const { data: githubReposData, isLoading: isLoadingRepos, refetch: refetchRepos } = useQuery<{
+  const {
+    data: githubReposData,
+    isLoading: isLoadingRepos,
+    isError: isReposError,
+    refetch: refetchRepos,
+  } = useQuery<{
     repos: GitHubRepoItem[];
     connected: boolean;
     github_username: string | null;
@@ -492,56 +497,81 @@ export function ProjectForm() {
             )}
           </div>
 
-          {/* Repositories Dropdown (When repos are fetched) */}
-          {userRepos.length > 0 && (
+          {/* Repositories Dropdown (Always visible when a username is present) */}
+          {effectiveUsername && (
             <div className="space-y-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-extrabold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                  Select a repository to import ({userRepos.length} public repos found)
+                  Select a repository to import ({isLoadingRepos ? "Loading..." : `${userRepos.length} public repos found`})
                 </Label>
                 <button
                   type="button"
                   onClick={() => refetchRepos()}
-                  className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+                  disabled={isLoadingRepos}
+                  className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white disabled:opacity-50"
                 >
                   <RefreshCw size={11} className={isLoadingRepos ? "animate-spin" : ""} /> Refresh
                 </button>
               </div>
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                <select
-                  value={selectedRepoUrl}
-                  onChange={(e) => {
-                    setSelectedRepoUrl(e.target.value);
-                    if (e.target.value) {
-                      setGithubUrl(e.target.value);
-                    }
-                  }}
-                  className="w-full h-11 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-[#ff4e26]"
-                >
-                  <option value="">-- Choose a repository from your list --</option>
-                  {userRepos.map((repo) => (
-                    <option key={repo.full_name} value={repo.html_url}>
-                      {repo.full_name} {repo.language ? `(${repo.language})` : ""} {repo.stargazers_count ? `★ ${repo.stargazers_count}` : ""}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={handleImportSubmit}
-                  disabled={githubImportMutation.isPending || !selectedRepoUrl}
-                >
-                  {githubImportMutation.isPending ? (
-                    <>
-                      <Loader2 className="animate-spin" size={18} /> Reading...
-                    </>
-                  ) : (
-                    <>
-                      <FolderGit2 size={18} /> Import Selected Project
-                    </>
-                  )}
-                </Button>
-              </div>
+
+              {isLoadingRepos ? (
+                <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                  <Loader2 className="animate-spin" size={16} /> Fetching public repositories for @{effectiveUsername}...
+                </div>
+              ) : isReposError ? (
+                <div className="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400">
+                  <span>Failed to load repositories. Please try again.</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => refetchRepos()}
+                    className="h-7 text-xs font-bold"
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : userRepos.length === 0 ? (
+                <div className="py-3 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                  No public repositories found for @{effectiveUsername}.
+                </div>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <select
+                    value={selectedRepoUrl}
+                    onChange={(e) => {
+                      setSelectedRepoUrl(e.target.value);
+                      if (e.target.value) {
+                        setGithubUrl(e.target.value);
+                      }
+                    }}
+                    className="w-full h-11 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-[#ff4e26]"
+                  >
+                    <option value="">-- Choose a repository from your list --</option>
+                    {userRepos.map((repo) => (
+                      <option key={repo.full_name} value={repo.html_url}>
+                        {repo.full_name} {repo.language ? `(${repo.language})` : ""} {repo.stargazers_count ? `★ ${repo.stargazers_count}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    size="lg"
+                    onClick={handleImportSubmit}
+                    disabled={githubImportMutation.isPending || !selectedRepoUrl}
+                  >
+                    {githubImportMutation.isPending ? (
+                      <>
+                        <Loader2 className="animate-spin" size={18} /> Reading...
+                      </>
+                    ) : (
+                      <>
+                        <FolderGit2 size={18} /> Import Selected Project
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
