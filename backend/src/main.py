@@ -1,5 +1,16 @@
+import sys
 import asyncio
 from contextlib import asynccontextmanager
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    try:
+        import uvicorn.loops.asyncio
+        import uvicorn.loops.auto
+        uvicorn.loops.asyncio.asyncio_loop_factory = lambda use_subprocess=False: asyncio.SelectorEventLoop
+        uvicorn.loops.auto.auto_loop_factory = lambda use_subprocess=False: asyncio.SelectorEventLoop
+    except ImportError:
+        pass
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

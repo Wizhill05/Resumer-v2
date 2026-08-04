@@ -1,8 +1,20 @@
+import sys
+import asyncio
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.core.config import settings
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    try:
+        import uvicorn.loops.asyncio
+        import uvicorn.loops.auto
+        uvicorn.loops.asyncio.asyncio_loop_factory = lambda use_subprocess=False: asyncio.SelectorEventLoop
+        uvicorn.loops.auto.auto_loop_factory = lambda use_subprocess=False: asyncio.SelectorEventLoop
+    except ImportError:
+        pass
 
 # Force async psycopg3 driver scheme if user provided standard postgres URL
 db_url = settings.DATABASE_URL
