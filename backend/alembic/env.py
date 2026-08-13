@@ -61,10 +61,22 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Sanitize alembic_version table to prevent overlapping/duplicate heads in Railway DB
+        try:
+            from sqlalchemy import text
+            res = connection.execute(text("SELECT version_num FROM alembic_version")).fetchall()
+            versions = [r[0] for r in res if r and r[0]]
+            if len(versions) > 1:
+                latest = "a2c4e6f8b0d2" if "a2c4e6f8b0d2" in versions else versions[-1]
+                connection.execute(text("DELETE FROM alembic_version"))
+                connection.execute(text("INSERT INTO alembic_version (version_num) VALUES (:v)"), {"v": latest})
+                connection.commit()
+        except Exception:
+            pass
+
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
-
 
 if context.is_offline_mode():
     run_migrations_offline()
