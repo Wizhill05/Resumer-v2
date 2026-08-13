@@ -3,23 +3,23 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme {
-  --font-sans: var(--font-space-grotesk), sans-serif;
-  --color-brand-orange: var(--color-brand-orange);
-  --color-brand-orange-hover: var(--color-brand-orange-hover);
-  --color-brand-bg: #fbfbf3;
-  --color-brand-card: #ffffff;
-  --color-brand-border: #000000;
-}
-
 :root {
-  --color-brand-orange: #ff4e26;
-  --color-brand-orange-hover: #e03d16;
+  --brand-orange: #ff4e26;
+  --brand-orange-hover: #e03d16;
 }
 
 :is(.dark) {
-  --color-brand-orange: #f97316;
-  --color-brand-orange-hover: #ea580c;
+  --brand-orange: #f97316;
+  --brand-orange-hover: #ea580c;
+}
+
+@theme {
+  --font-sans: var(--font-space-grotesk), sans-serif;
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-hover: var(--brand-orange-hover);
+  --color-brand-bg: #fbfbf3;
+  --color-brand-card: #ffffff;
+  --color-brand-border: #000000;
 }
 @layer base {
   * {
@@ -119,7 +119,6 @@
     border-color: #3f3f46;
     box-shadow: 3px 3px 0 #3f3f46;
   }
-
   @media (max-width: 767px) {
     .panel-strong {
       border-width: 1px;
@@ -130,6 +129,15 @@
       box-shadow: none;
     }
   }
+
+  .compact-card {
+    background: #ffffff;
+    border: 1px solid #e4e4e7;
+    transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+  }
+  .compact-card:hover {
+    border-color: #a1a1aa;
+  }
   :is(.dark) .compact-card {
     background: #242427;
     border-color: #3f3f46;
@@ -137,34 +145,24 @@
   :is(.dark) .compact-card:hover {
     border-color: #52525b;
   }
-    border-color: #a1a1aa;
-  }
-  :is(.dark) .compact-card {
-    background: #18181b;
-    border-color: #27272a;
-  }
-  :is(.dark) .compact-card:hover {
-    border-color: #52525b;
-  }
 
   .resumer-mark {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    border: 2px solid #000000;
+    background: #ffffff;
+    color: #000000;
+    box-shadow: 3px 3px 0px #000000;
+    letter-spacing: -0.05em;
+    text-transform: uppercase;
+  }
   :is(.dark) .resumer-mark {
     border-color: #52525b;
     background: #242427;
     color: #fafafa;
     box-shadow: 3px 3px 0px #f97316;
   }
-    letter-spacing: -0.05em;
-    text-transform: uppercase;
-  }
-  :is(.dark) .resumer-mark {
-    border-color: #52525b;
-    background: #18181b;
-    color: #fafafa;
-    box-shadow: 3px 3px 0px #f97316;
-  }
-
   .resumer-mark::after {
     content: "";
     position: absolute;
