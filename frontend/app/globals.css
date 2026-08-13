@@ -5,13 +5,22 @@
 
 @theme {
   --font-sans: var(--font-space-grotesk), sans-serif;
-  --color-brand-orange: #ff4e26;
-  --color-brand-orange-hover: #e03d16;
+  --color-brand-orange: var(--color-brand-orange);
+  --color-brand-orange-hover: var(--color-brand-orange-hover);
   --color-brand-bg: #fbfbf3;
   --color-brand-card: #ffffff;
   --color-brand-border: #000000;
 }
 
+:root {
+  --color-brand-orange: #ff4e26;
+  --color-brand-orange-hover: #e03d16;
+}
+
+:is(.dark) {
+  --color-brand-orange: #d65235;
+  --color-brand-orange-hover: #b8432a;
+}
 @layer base {
   * {
     border-color: #d4d4d8;
@@ -41,7 +50,7 @@
     box-shadow: 0 0 0 2px #ff4e26, 6px 6px 0px #000000;
   }
   :is(.dark) .auth-panel-ring {
-    box-shadow: 0 0 0 2px #ff4e26, 6px 6px 0px #ff4e26;
+    box-shadow: 0 0 0 2px #d65235, 6px 6px 0px #d65235;
   }
 
   .app-bg {
@@ -79,7 +88,7 @@
   :is(.dark) .page-header {
     background: #18181b;
     border-color: #27272a;
-    border-left-color: #ff4e26;
+    border-left-color: #d65235;
     box-shadow: 0 1px 0 #ffffff08;
   }
 
@@ -153,7 +162,7 @@
     border-color: #52525b;
     background: #18181b;
     color: #fafafa;
-    box-shadow: 3px 3px 0px #ff4e26;
+    box-shadow: 3px 3px 0px #d65235;
   }
 
   .resumer-mark::after {
@@ -419,6 +428,7 @@
   gap: 8px;
 }
 :is(.dark) .brutalist-button {
+  background-color: #d65235;
   border-color: #52525b;
   box-shadow: 3px 3px 0px #3f3f46;
 }
