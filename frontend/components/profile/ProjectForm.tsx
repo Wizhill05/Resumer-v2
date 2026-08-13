@@ -222,6 +222,23 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     },
   });
 
+  const handleDirectSaveImport = useCallback(async () => {
+    if (!importPreview) return;
+    const formData: FormData = {
+      name: importPreview.name || "Untitled Project",
+      description: importPreview.description || "",
+      technologies: importPreview.technologies ? importPreview.technologies.join(", ") : "",
+      github_url: importPreview.github_url || "",
+      live_url: importPreview.live_url || "",
+      start_date: importPreview.start_date || "",
+      end_date: importPreview.end_date || "",
+      bullet_points: importPreview.bullet_points ? importPreview.bullet_points.join("\n") : "",
+    };
+    try {
+      await saveMutation.mutateAsync(formData);
+    } catch {}
+  }, [importPreview, saveMutation]);
+
   const performSave = useCallback(async (): Promise<boolean> => {
     if (!formActive) return true;
     if (!isDirty) {
@@ -790,7 +807,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     {importPreview.name || "Untitled project"}
                   </h3>
                   <p className="mt-1 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-                    Review these extracted details, then save the form below to add it.
+                    Review these extracted details and save directly, or edit the form below.
                   </p>
                 </div>
                 <Button
@@ -865,10 +882,23 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-200 dark:border-zinc-700 pt-3">
-                <Button type="button" onClick={() => setImportPreview(null)}>
-                  Review Form
+                <Button
+                  type="button"
+                  onClick={handleDirectSaveImport}
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} /> Saving...
+                    </>
+                  ) : (
+                    "Save Project"
+                  )}
                 </Button>
-                <Button type="button" variant="outline" onClick={handleCancel}>
+                <Button type="button" variant="outline" onClick={() => setImportPreview(null)}>
+                  Edit
+                </Button>
+                <Button type="button" variant="ghost" onClick={handleCancel}>
                   Discard Import
                 </Button>
               </div>
