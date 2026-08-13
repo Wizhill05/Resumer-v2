@@ -88,6 +88,9 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
       return res.json()
     },
     onSuccess: (updated) => {
+      try {
+        localStorage.removeItem("resumer_draft_basic_info")
+      } catch {}
       queryClient.invalidateQueries({ queryKey: ["profile"] })
       // Re-reset form state to updated values so isDirty resets
       reset({
@@ -131,10 +134,14 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
     }
   }, [isDirty, performSave, onDirtyChange])
 
-  // Auto-save on debounced typing (2000ms)
+  // LocalStorage draft sync + 5-second inactivity DB auto-save
   const formValues = watch()
   useEffect(() => {
     if (!isDirty) return
+
+    try {
+      localStorage.setItem("resumer_draft_basic_info", JSON.stringify(formValues))
+    } catch {}
 
     clearTimeout(debounceTimerRef.current!)
 
@@ -142,7 +149,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
       if (isDirty && isValid && !mutation.isPending) {
         performSave()
       }
-    }, 2000)
+    }, 5000)
 
     return () => {
       clearTimeout(debounceTimerRef.current!)
@@ -174,13 +181,6 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   return (
     <form
       onSubmit={handleSubmit(() => performSave())}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          if (isDirty && isValid && !mutation.isPending) {
-            performSave()
-          }
-        }
-      }}
       className="space-y-5 pixel-enter"
     >
       <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-700">

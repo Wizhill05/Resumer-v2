@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -58,9 +58,9 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isDirty, isValid },
   } = useForm<FormData>({
-    resolver: zodResolver(schema),
   })
 
   const formActive = isAdding || editingId !== null
@@ -97,11 +97,13 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
       return res.json()
     },
     onSuccess: () => {
+      try {
+        localStorage.removeItem("resumer_draft_education")
+      } catch {}
       queryClient.invalidateQueries({ queryKey: ["education"] })
       handleCancel()
     },
   })
-
   const performSave = useCallback(async (): Promise<boolean> => {
     if (!formActive) return true
     if (!isDirty) {
@@ -131,6 +133,29 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
     }
   }, [formActive, isDirty, performSave, onDirtyChange])
 
+  // LocalStorage draft sync + 5-second inactivity DB auto-save
+  const formValues = watch()
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    if (!formActive || !isDirty) return
+
+    try {
+      localStorage.setItem("resumer_draft_education", JSON.stringify(formValues))
+    } catch {}
+
+    clearTimeout(debounceTimerRef.current!)
+
+    debounceTimerRef.current = setTimeout(() => {
+      if (formActive && isDirty && isValid && !saveMutation.isPending) {
+        performSave()
+      }
+    }, 5000)
+
+    return () => {
+      clearTimeout(debounceTimerRef.current!)
+    }
+  }, [formValues, formActive, isDirty, isValid, saveMutation.isPending, performSave])
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/backend/profile/education/${id}`, {
@@ -167,13 +192,6 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
   const renderForm = () => (
     <form
       onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          if (isDirty && isValid && !saveMutation.isPending) {
-            performSave()
-          }
-        }
-      }}
       className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
     >
       <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">

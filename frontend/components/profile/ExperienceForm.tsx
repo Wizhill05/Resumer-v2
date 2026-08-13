@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -57,6 +57,7 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isDirty, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -96,6 +97,9 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
       return res.json()
     },
     onSuccess: () => {
+      try {
+        localStorage.removeItem("resumer_draft_experience")
+      } catch {}
       queryClient.invalidateQueries({ queryKey: ["experiences"] })
       handleCancel()
     },
@@ -130,6 +134,29 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
     }
   }, [formActive, isDirty, performSave, onDirtyChange])
 
+  // LocalStorage draft sync + 5-second inactivity DB auto-save
+  const formValues = watch()
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    if (!formActive || !isDirty) return
+
+    try {
+      localStorage.setItem("resumer_draft_experience", JSON.stringify(formValues))
+    } catch {}
+
+    clearTimeout(debounceTimerRef.current!)
+
+    debounceTimerRef.current = setTimeout(() => {
+      if (formActive && isDirty && isValid && !saveMutation.isPending) {
+        performSave()
+      }
+    }, 5000)
+
+    return () => {
+      clearTimeout(debounceTimerRef.current!)
+    }
+  }, [formValues, formActive, isDirty, isValid, saveMutation.isPending, performSave])
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/backend/profile/experiences/${id}`, {
@@ -165,13 +192,6 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
   const renderForm = () => (
     <form
       onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          if (isDirty && isValid && !saveMutation.isPending) {
-            performSave()
-          }
-        }
-      }}
       className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
     >
       <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
