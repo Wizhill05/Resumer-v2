@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -10,14 +10,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, Plus, Trash2, Edit2, X } from "lucide-react"
+import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge"
 
 const schema = z.object({
-  title: z.string().min(1, "Title/Activity Name is required"),
+  title: z.string().min(1, "Title is required"),
   organization: z.string().optional(),
   description: z.string().optional(),
-  start_date: z.string().or(z.literal("")), // ISO date string (YYYY-MM-DD) or empty
+  start_date: z.string().or(z.literal("")),
   end_date: z.string().or(z.literal("")),
-  bullet_points: z.string().optional(), // Raw newlines string for editing
+  bullet_points: z.string().optional(),
   sort_order: z.number().optional(),
 })
 
@@ -34,7 +35,11 @@ type ExtracurricularItem = {
   sort_order?: number
 }
 
-export function ExtracurricularForm() {
+interface ExtracurricularFormProps {
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void
+}
+
+export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps) {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
@@ -48,9 +53,22 @@ export function ExtracurricularForm() {
     },
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isDirty, isValid },
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
+
+  const formActive = isAdding || editingId !== null
+
+  const handleCancel = useCallback(() => {
+    reset()
+    setEditingId(null)
+    setIsAdding(false)
+  }, [reset])
 
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -79,11 +97,38 @@ export function ExtracurricularForm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["extracurriculars"] })
-      reset()
-      setEditingId(null)
-      setIsAdding(false)
+      handleCancel()
     },
   })
+
+  const performSave = useCallback(async (): Promise<boolean> => {
+    if (!formActive) return true
+    if (!isDirty) {
+      handleCancel()
+      return true
+    }
+    return new Promise<boolean>((resolve) => {
+      handleSubmit(
+        async (data) => {
+          try {
+            await saveMutation.mutateAsync(data)
+            resolve(true)
+          } catch {
+            resolve(false)
+          }
+        },
+        () => {
+          resolve(false)
+        }
+      )()
+    })
+  }, [formActive, isDirty, handleCancel, handleSubmit, saveMutation])
+
+  useEffect(() => {
+    if (onDirtyChange) {
+      onDirtyChange(formActive && isDirty, performSave)
+    }
+  }, [formActive, isDirty, performSave, onDirtyChange])
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -112,33 +157,57 @@ export function ExtracurricularForm() {
     })
   }
 
-  const handleCancel = () => {
-    reset()
-    setEditingId(null)
-    setIsAdding(false)
-  }
+  let status: SaveStatus = "saved"
+  if (saveMutation.isPending) status = "saving"
+  else if (saveMutation.isError) status = "error"
+  else if (isDirty) status = "unsaved"
 
   const renderForm = () => (
-    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter">
+    <form
+      onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+      onBlur={() => {
+        if (isDirty && isValid && !saveMutation.isPending) {
+          performSave()
+        }
+      }}
+      className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
+    >
       <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
-        <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
-          {editingId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
-        </h3>
-        <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
+        <div className="flex items-center gap-3">
+          <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
+            {editingId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
+          </h3>
+          <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleCancel}
+          className="border-transparent"
+        >
           <X size={16} />
         </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="title">Title / Activity / Award</Label>
-          <Input id="title" {...register("title")} />
-          {errors.title && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.title.message}</p>}
+          <Label htmlFor="title">Title / Award / Activity</Label>
+          <Input
+            id="title"
+            placeholder="e.g. Hackathon Winner, Open Source Contributor"
+            {...register("title")}
+          />
+          {errors.title && (
+            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              {errors.title.message}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="organization">Organization / Issuer</Label>
-          <Input id="organization" {...register("organization")} />
+          <Label htmlFor="organization">Organization / Host (optional)</Label>
+          <Input id="organization" placeholder="e.g. MLH, IEEE" {...register("organization")} />
         </div>
 
         <div className="space-y-2">
@@ -147,31 +216,46 @@ export function ExtracurricularForm() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
+          <Label htmlFor="end_date">End Date</Label>
           <Input id="end_date" type="date" {...register("end_date")} />
+        </div>
+
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="description">Short Description / Role</Label>
+          <Input
+            id="description"
+            placeholder="e.g. Led a team of 4 to build a web application"
+            {...register("description")}
+          />
         </div>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="description">Brief Description (Optional)</Label>
-        <Textarea id="description" rows={2} {...register("description")} />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="bullet_points">Highlights (Optional, one per line)</Label>
+        <Label htmlFor="bullet_points">Key Achievements (one per line)</Label>
         <Textarea
           id="bullet_points"
           rows={4}
-          placeholder="- Won 1st place out of 50 teams at hackathon&#10;- Organized weekly technical workshops for 100+ students"
+          placeholder="- Awarded 1st place out of 50 teams&#10;- Mentored 20+ junior developers"
           {...register("bullet_points")}
         />
       </div>
 
       <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
         <Button type="submit" disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save"}
+          {saveMutation.isPending ? (
+            <>
+              <Loader2 className="animate-spin" size={16} /> Saving...
+            </>
+          ) : (
+            "Save"
+          )}
         </Button>
-        <Button type="button" variant="outline" onClick={handleCancel} disabled={saveMutation.isPending}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleCancel}
+          disabled={saveMutation.isPending}
+        >
           Cancel
         </Button>
       </div>
@@ -195,7 +279,7 @@ export function ExtracurricularForm() {
       {!isAdding && (
         <div className="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
           <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 sm:text-sm">
-            {extracurriculars.length} entries
+            {extracurriculars.length} activities & achievements
           </h3>
           <Button
             onClick={() => {
@@ -213,7 +297,7 @@ export function ExtracurricularForm() {
             }}
             size="sm"
           >
-            <Plus size={16} /> Add Activity / Achievement
+            <Plus size={16} /> Add Activity
           </Button>
         </div>
       )}
@@ -223,45 +307,56 @@ export function ExtracurricularForm() {
       <div className="space-y-3">
         {extracurriculars.map((ex) => (
           <div key={ex.id} className="space-y-3">
-          <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
-            <div className="min-w-0 space-y-1.5">
-              <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">{ex.title}</h4>
-              {ex.organization && (
-                <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
-                  {ex.organization}
-                </p>
-              )}
-              <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
-                {ex.start_date || "N/A"} to {ex.end_date || "Present"}
-              </p>
-              {ex.description && (
-                <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mt-1 italic">{ex.description}</p>
-              )}
-              {ex.bullet_points && ex.bullet_points.length > 0 && (
-                <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                  {ex.bullet_points.map((b: string, i: number) => (
-                    <li key={i}>{b}</li>
-                  ))}
-                </ul>
-              )}
+            <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
+              <div className="min-w-0 space-y-1.5">
+                <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">
+                  {ex.title}
+                </h4>
+                {ex.organization && (
+                  <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
+                    {ex.organization}
+                  </p>
+                )}
+                {(ex.start_date || ex.end_date) && (
+                  <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
+                    {ex.start_date || "Start N/A"} to {ex.end_date || "Present"}
+                  </p>
+                )}
+                {ex.description && (
+                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300 mt-1">
+                    {ex.description}
+                  </p>
+                )}
+                {ex.bullet_points && ex.bullet_points.length > 0 && (
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    {ex.bullet_points.map((b: string, i: number) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => startEdit(ex)}
+                  className="border-transparent hover:border-black dark:hover:border-zinc-400"
+                >
+                  <Edit2 size={14} className="text-black dark:text-zinc-200" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (confirm("Are you sure?")) deleteMutation.mutate(ex.id)
+                  }}
+                  className="border-transparent hover:border-red-500 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(ex)} className="border-transparent hover:border-black dark:hover:border-zinc-400">
-                <Edit2 size={14} className="text-black dark:text-zinc-200" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => {
-                  if (confirm("Are you sure?")) deleteMutation.mutate(ex.id)
-                }}
-                className="border-transparent hover:border-red-500 hover:text-red-500"
-              >
-                <Trash2 size={14} />
-              </Button>
-            </div>
-          </div>
-          {editingId === ex.id && renderForm()}
+            {editingId === ex.id && renderForm()}
           </div>
         ))}
       </div>

@@ -216,29 +216,55 @@ async def get_github_user_repos(
     username: str | None = None,
     current_user: User = Depends(get_current_user),
 ):
-    headers = {"Accept": "application/vnd.github+json"}
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Resumer-v2/1.0",
+    }
     github_user = getattr(current_user, "github_username", None)
     access_token = getattr(current_user, "github_access_token", None)
     target_username = username.strip() if username else github_user
 
-    if not target_username and access_token:
+    attempt_auth = False
+    if access_token:
+        if not target_username or (github_user and target_username.lower() == github_user.lower()):
+            attempt_auth = True
+
+    res = None
+    if attempt_auth:
         headers["Authorization"] = f"Bearer {access_token}"
         url = "https://api.github.com/user/repos?sort=updated&per_page=100"
-    elif target_username:
-        if access_token and target_username == github_user:
-            headers["Authorization"] = f"Bearer {access_token}"
-            url = "https://api.github.com/user/repos?sort=updated&per_page=100"
-        else:
+        try:
+            res = requests.get(url, headers=headers, timeout=8)
+            if res.status_code in (401, 403):
+                # Access token expired or invalid; fall back to unauthenticated public repo fetch
+                res = None
+        except Exception:
+            res = None
+
+    if res is None:
+        headers.pop("Authorization", None)
+        if target_username:
             url = f"https://api.github.com/users/{target_username}/repos?sort=updated&per_page=100"
-    else:
-        return GitHubReposResponse(repos=[], connected=False, github_username=None)
+            try:
+                res = requests.get(url, headers=headers, timeout=8)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to reach GitHub API: {str(e)}")
+        else:
+            return GitHubReposResponse(repos=[], connected=False, github_username=None)
 
     try:
-        res = requests.get(url, headers=headers, timeout=8)
         if res.status_code == 404:
             raise HTTPException(status_code=404, detail="GitHub user or repositories not found")
         if res.status_code >= 400:
-            raise HTTPException(status_code=400, detail="Failed to fetch GitHub repositories")
+            error_detail = "Failed to fetch GitHub repositories"
+            try:
+                body = res.json()
+                if isinstance(body, dict) and body.get("message"):
+                    error_detail = f"GitHub API error: {body['message']}"
+            except Exception:
+                pass
+            raise HTTPException(status_code=res.status_code if res.status_code < 500 else 400, detail=error_detail)
+
         data = res.json()
         items = []
         if isinstance(data, list):

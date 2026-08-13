@@ -5,12 +5,9 @@ import { createPortal } from "react-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, AlertCircle, RefreshCw } from "lucide-react";
+import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge";
 import { Textarea } from "@/components/ui/textarea";
-import { FolderGit2, Loader2, Plus, Trash2, Edit2, X, RefreshCw } from "lucide-react";
 
 const schema = z.object({
   name: z.string().min(1, "Project Name is required"),
@@ -69,12 +66,15 @@ export function parseGitHubUsername(input: string | undefined | null): string {
   return clean.split("/")[0] || "";
 }
 
-export function ProjectForm() {
+interface ProjectFormProps {
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void;
+}
+
+export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   const queryClient = useQueryClient();
   const [mounted, setMounted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-
   // GitHub import state
   const [githubInputMode, setGithubInputMode] = useState<"fields" | "url">("fields");
   const [githubOwner, setGithubOwner] = useState("");
@@ -158,11 +158,48 @@ export function ProjectForm() {
     handleSubmit,
     reset,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
+  const formActive = isAdding || editingId !== null;
+
+  const handleCancel = useCallback(() => {
+    reset();
+    setEditingId(null);
+    setIsAdding(false);
+    setImportPreview(null);
+  }, [reset]);
+
+  const performSave = useCallback(async (): Promise<boolean> => {
+    if (!formActive) return true;
+    if (!isDirty) {
+      handleCancel();
+      return true;
+    }
+    return new Promise<boolean>((resolve) => {
+      handleSubmit(
+        async (data) => {
+          try {
+            await saveMutation.mutateAsync(data);
+            resolve(true);
+          } catch {
+            resolve(false);
+          }
+        },
+        () => {
+          resolve(false);
+        }
+      )();
+    });
+  }, [formActive, isDirty, handleCancel, handleSubmit, saveMutation]);
+
+  useEffect(() => {
+    if (onDirtyChange) {
+      onDirtyChange(formActive && isDirty, performSave);
+    }
+  }, [formActive, isDirty, performSave, onDirtyChange]);
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const payload = {
@@ -303,23 +340,30 @@ export function ProjectForm() {
     });
   };
 
-  const handleCancel = () => {
-    reset();
-    setEditingId(null);
-    setIsAdding(false);
-    setImportPreview(null);
-  };
+  // handleCancel defined above via useCallback
+
+  let status: SaveStatus = "saved";
+  if (saveMutation.isPending) status = "saving";
+  else if (saveMutation.isError) status = "error";
+  else if (isDirty) status = "unsaved";
 
   const renderForm = () => (
     <form
       onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+      onBlur={() => {
+        if (isDirty && isValid && !saveMutation.isPending) {
+          performSave();
+        }
+      }}
       className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
     >
       <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
-        <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
-          {editingId ? "Edit Project" : "Add Project"}
-        </h3>
-        <Button
+        <div className="flex items-center gap-3">
+          <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
+            {editingId ? "Edit Project" : "Add Project"}
+          </h3>
+          <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+        </div>
           type="button"
           variant="ghost"
           size="sm"

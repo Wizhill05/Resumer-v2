@@ -1,14 +1,15 @@
 "use client"
 
+import { useEffect, useRef, useCallback, useState } from "react"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Mail } from "lucide-react"
+import { Mail } from "lucide-react"
+import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge"
 
 const schema = z.object({
   full_name: z.string().min(1, "Name is required"),
@@ -20,14 +21,19 @@ const schema = z.object({
   portfolio_url: z.string().url("Invalid URL").or(z.literal("")),
   subtitle: z.string().optional(),
   summary: z.string().optional(),
-  skills: z.string().optional(), // Raw comma-separated string for editing
+  skills: z.string().optional(),
   notify_on_completion: z.boolean().optional(),
 })
 
 type FormData = z.infer<typeof schema>
 
-export function BasicInfoForm() {
+interface BasicInfoFormProps {
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void
+}
+
+export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   const queryClient = useQueryClient()
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ["profile"],
@@ -38,21 +44,30 @@ export function BasicInfoForm() {
     },
   })
 
-  const { register, handleSubmit, control, formState: { errors } } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    control,
+    watch,
+    reset,
+    formState: { errors, isDirty, isValid },
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
-    values: profile ? {
-      full_name: profile.full_name || "",
-      email: profile.email || "",
-      phone: profile.phone || "",
-      location: profile.location || "",
-      linkedin_url: profile.linkedin_url || "",
-      github_url: profile.github_url || "",
-      portfolio_url: profile.portfolio_url || "",
-      subtitle: profile.subtitle || "",
-      summary: profile.summary || "",
-      skills: profile.skills ? profile.skills.join(", ") : "",
-      notify_on_completion: profile.notify_on_completion ?? true,
-    } : undefined,
+    values: profile
+      ? {
+          full_name: profile.full_name || "",
+          email: profile.email || "",
+          phone: profile.phone || "",
+          location: profile.location || "",
+          linkedin_url: profile.linkedin_url || "",
+          github_url: profile.github_url || "",
+          portfolio_url: profile.portfolio_url || "",
+          subtitle: profile.subtitle || "",
+          summary: profile.summary || "",
+          skills: profile.skills ? profile.skills.join(", ") : "",
+          notify_on_completion: profile.notify_on_completion ?? true,
+        }
+      : undefined,
   })
 
   const mutation = useMutation({
@@ -72,13 +87,76 @@ export function BasicInfoForm() {
       if (!res.ok) throw new Error("Failed to update profile")
       return res.json()
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ["profile"] })
+      // Re-reset form state to updated values so isDirty resets
+      reset({
+        full_name: updated.full_name || "",
+        email: updated.email || "",
+        phone: updated.phone || "",
+        location: updated.location || "",
+        linkedin_url: updated.linkedin_url || "",
+        github_url: updated.github_url || "",
+        portfolio_url: updated.portfolio_url || "",
+        subtitle: updated.subtitle || "",
+        summary: updated.summary || "",
+        skills: updated.skills ? updated.skills.join(", ") : "",
+        notify_on_completion: updated.notify_on_completion ?? true,
+      })
     },
   })
 
-  const onSubmit = (data: FormData) => {
-    mutation.mutate(data)
+  const performSave = useCallback(async (): Promise<boolean> => {
+    return new Promise<boolean>((resolve) => {
+      handleSubmit(
+        async (data) => {
+          try {
+            await mutation.mutateAsync(data)
+            resolve(true)
+          } catch {
+            resolve(false)
+          }
+        },
+        () => {
+          resolve(false)
+        }
+      )()
+    })
+  }, [handleSubmit, mutation])
+
+  // Register dirty state & save handler with parent ProfileClient
+  useEffect(() => {
+    if (onDirtyChange) {
+      onDirtyChange(isDirty, performSave)
+    }
+  }, [isDirty, performSave, onDirtyChange])
+
+  // Auto-save on debounced typing (800ms)
+  const formValues = watch()
+  useEffect(() => {
+    if (!isDirty) return
+
+    clearTimeout(debounceTimerRef.current!)
+
+    debounceTimerRef.current = setTimeout(() => {
+      if (isDirty && isValid && !mutation.isPending) {
+        performSave()
+      }
+    }, 800)
+
+    return () => {
+      clearTimeout(debounceTimerRef.current!)
+    }
+  }, [formValues, isDirty, isValid, mutation.isPending, performSave])
+
+  // Save status badge status computation
+  let status: SaveStatus = "saved"
+  if (mutation.isPending) {
+    status = "saving"
+  } else if (mutation.isError) {
+    status = "error"
+  } else if (isDirty) {
+    status = "unsaved"
   }
 
   if (isLoading) {
@@ -94,23 +172,49 @@ export function BasicInfoForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 pixel-enter">
+    <form
+      onSubmit={handleSubmit(() => performSave())}
+      onBlur={() => {
+        if (isDirty && isValid && !mutation.isPending) {
+          performSave()
+        }
+      }}
+      className="space-y-5 pixel-enter"
+    >
+      <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-700">
+        <h2 className="text-sm font-extrabold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
+          Basic Details
+        </h2>
+        <SaveStatusBadge
+          status={status}
+          onSaveNow={isDirty ? performSave : undefined}
+        />
+      </div>
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="full_name">Full Name</Label>
           <Input id="full_name" {...register("full_name")} />
-          {errors.full_name && <p className="text-red-600 text-xs font-bold">{errors.full_name.message}</p>}
+          {errors.full_name && (
+            <p className="text-red-600 text-xs font-bold">{errors.full_name.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="subtitle">Subtitle / Headline</Label>
-          <Input id="subtitle" placeholder="e.g. Final Year Undergraduate" {...register("subtitle")} />
+          <Input
+            id="subtitle"
+            placeholder="e.g. Final Year Undergraduate"
+            {...register("subtitle")}
+          />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" {...register("email")} />
-          {errors.email && <p className="text-red-600 text-xs font-bold">{errors.email.message}</p>}
+          {errors.email && (
+            <p className="text-red-600 text-xs font-bold">{errors.email.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -126,19 +230,25 @@ export function BasicInfoForm() {
         <div className="space-y-2">
           <Label htmlFor="linkedin_url">LinkedIn URL</Label>
           <Input id="linkedin_url" {...register("linkedin_url")} />
-          {errors.linkedin_url && <p className="text-red-600 text-xs font-bold">{errors.linkedin_url.message}</p>}
+          {errors.linkedin_url && (
+            <p className="text-red-600 text-xs font-bold">{errors.linkedin_url.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="github_url">GitHub URL</Label>
           <Input id="github_url" {...register("github_url")} />
-          {errors.github_url && <p className="text-red-600 text-xs font-bold">{errors.github_url.message}</p>}
+          {errors.github_url && (
+            <p className="text-red-600 text-xs font-bold">{errors.github_url.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="portfolio_url">Portfolio URL</Label>
           <Input id="portfolio_url" {...register("portfolio_url")} />
-          {errors.portfolio_url && <p className="text-red-600 text-xs font-bold">{errors.portfolio_url.message}</p>}
+          {errors.portfolio_url && (
+            <p className="text-red-600 text-xs font-bold">{errors.portfolio_url.message}</p>
+          )}
         </div>
 
         <div className="space-y-2 md:col-span-2">
@@ -170,7 +280,11 @@ export function BasicInfoForm() {
               type="button"
               role="switch"
               aria-checked={field.value ?? true}
-              onClick={() => field.onChange(!(field.value ?? true))}
+              onClick={() => {
+                const newVal = !(field.value ?? true)
+                field.onChange(newVal)
+                if (isValid) performSave()
+              }}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border-2 border-black transition-colors ${
                 field.value ?? true ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"
               }`}
@@ -184,10 +298,6 @@ export function BasicInfoForm() {
           )}
         />
       </div>
-
-      <Button type="submit" disabled={mutation.isPending} className="w-full sm:w-auto">
-        {mutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save Changes"}
-      </Button>
     </form>
   )
 }

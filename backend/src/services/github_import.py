@@ -47,7 +47,11 @@ def parse_github_url(url: str) -> tuple[str, str, str]:
 
 
 def github_get(path: str) -> dict | list:
-    response = requests.get(f"https://api.github.com{path}", headers={"Accept": "application/vnd.github+json"}, timeout=TIMEOUT, allow_redirects=False)
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Resumer-v2/1.0",
+    }
+    response = requests.get(f"https://api.github.com{path}", headers=headers, timeout=TIMEOUT, allow_redirects=False)
     if response.status_code == 404:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GitHub repository not found or not public")
     if response.status_code >= 400:

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -9,15 +9,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, Plus, Trash2, Edit2, X } from "lucide-react"
+import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge"
 
 const schema = z.object({
-  degree: z.string().min(1, "Degree is required"),
-  institution: z.string().min(1, "Institution/School is required"),
+  degree: z.string().min(1, "Degree/Field of study is required"),
+  institution: z.string().min(1, "School/Institution is required"),
   location: z.string().optional(),
-  start_date: z.string().or(z.literal("")), // ISO date string (YYYY-MM-DD) or empty
+  start_date: z.string().or(z.literal("")),
   end_date: z.string().or(z.literal("")),
   gpa: z.string().optional(),
-  coursework: z.string().optional(), // Raw comma-separated string for coursework
+  coursework: z.string().optional(),
   sort_order: z.number().optional(),
 })
 
@@ -35,7 +36,11 @@ type EducationItem = {
   sort_order?: number
 }
 
-export function EducationForm() {
+interface EducationFormProps {
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void
+}
+
+export function EducationForm({ onDirtyChange }: EducationFormProps) {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
@@ -49,9 +54,22 @@ export function EducationForm() {
     },
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isDirty, isValid },
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
+
+  const formActive = isAdding || editingId !== null
+
+  const handleCancel = useCallback(() => {
+    reset()
+    setEditingId(null)
+    setIsAdding(false)
+  }, [reset])
 
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -80,11 +98,38 @@ export function EducationForm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["education"] })
-      reset()
-      setEditingId(null)
-      setIsAdding(false)
+      handleCancel()
     },
   })
+
+  const performSave = useCallback(async (): Promise<boolean> => {
+    if (!formActive) return true
+    if (!isDirty) {
+      handleCancel()
+      return true
+    }
+    return new Promise<boolean>((resolve) => {
+      handleSubmit(
+        async (data) => {
+          try {
+            await saveMutation.mutateAsync(data)
+            resolve(true)
+          } catch {
+            resolve(false)
+          }
+        },
+        () => {
+          resolve(false)
+        }
+      )()
+    })
+  }, [formActive, isDirty, handleCancel, handleSubmit, saveMutation])
+
+  useEffect(() => {
+    if (onDirtyChange) {
+      onDirtyChange(formActive && isDirty, performSave)
+    }
+  }, [formActive, isDirty, performSave, onDirtyChange])
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -114,34 +159,62 @@ export function EducationForm() {
     })
   }
 
-  const handleCancel = () => {
-    reset()
-    setEditingId(null)
-    setIsAdding(false)
-  }
+  let status: SaveStatus = "saved"
+  if (saveMutation.isPending) status = "saving"
+  else if (saveMutation.isError) status = "error"
+  else if (isDirty) status = "unsaved"
 
   const renderForm = () => (
-    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter">
+    <form
+      onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+      onBlur={() => {
+        if (isDirty && isValid && !saveMutation.isPending) {
+          performSave()
+        }
+      }}
+      className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
+    >
       <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
-        <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
-          {editingId ? "Edit Education" : "Add Education"}
-        </h3>
-        <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
+        <div className="flex items-center gap-3">
+          <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
+            {editingId ? "Edit Education" : "Add Education"}
+          </h3>
+          <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleCancel}
+          className="border-transparent"
+        >
           <X size={16} />
         </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="degree">Degree / Major</Label>
+          <Label htmlFor="degree">Degree / Field of Study</Label>
           <Input id="degree" placeholder="e.g. B.S. in Computer Science" {...register("degree")} />
-          {errors.degree && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.degree.message}</p>}
+          {errors.degree && (
+            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              {errors.degree.message}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="institution">Institution / School</Label>
-          <Input id="institution" placeholder="e.g. Stanford University" {...register("institution")} />
-          {errors.institution && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.institution.message}</p>}
+          <Label htmlFor="institution">School / Institution</Label>
+          <Input
+            id="institution"
+            placeholder="e.g. Stanford University"
+            {...register("institution")}
+          />
+          {errors.institution && (
+            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              {errors.institution.message}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -151,7 +224,7 @@ export function EducationForm() {
 
         <div className="space-y-2">
           <Label htmlFor="gpa">GPA</Label>
-          <Input id="gpa" placeholder="e.g. 3.8 / 4.0" {...register("gpa")} />
+          <Input id="gpa" placeholder="e.g. 3.8/4.0" {...register("gpa")} />
         </div>
 
         <div className="space-y-2">
@@ -160,21 +233,36 @@ export function EducationForm() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="end_date">End Date</Label>
+          <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
           <Input id="end_date" type="date" {...register("end_date")} />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="coursework">Related Coursework (comma separated)</Label>
-          <Input id="coursework" placeholder="Algorithms, Database Systems" {...register("coursework")} />
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="coursework">Relevant Coursework (comma separated)</Label>
+          <Input
+            id="coursework"
+            placeholder="Data Structures, Algorithms, Web Development"
+            {...register("coursework")}
+          />
         </div>
       </div>
 
       <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
         <Button type="submit" disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save"}
+          {saveMutation.isPending ? (
+            <>
+              <Loader2 className="animate-spin" size={16} /> Saving...
+            </>
+          ) : (
+            "Save"
+          )}
         </Button>
-        <Button type="button" variant="outline" onClick={handleCancel} disabled={saveMutation.isPending}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleCancel}
+          disabled={saveMutation.isPending}
+        >
           Cancel
         </Button>
       </div>
@@ -227,43 +315,60 @@ export function EducationForm() {
       <div className="space-y-3">
         {educationList.map((edu) => (
           <div key={edu.id} className="space-y-3">
-          <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
-            <div className="min-w-0 space-y-1.5">
-              <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">{edu.degree}</h4>
-              <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
-                {edu.institution} — <span className="text-zinc-600 dark:text-zinc-400">{edu.location || "Location N/A"}</span>
-              </p>
-              <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
-                {edu.start_date || "Start N/A"} to {edu.end_date || "Present"}
-              </p>
-              {edu.gpa && <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 mt-1 uppercase">GPA: {edu.gpa}</p>}
-              {edu.coursework && edu.coursework.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {edu.coursework.map((c: string) => (
-                    <span key={c} className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600 dark:text-zinc-300">
-                      {c}
-                    </span>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
+              <div className="min-w-0 space-y-1.5">
+                <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">
+                  {edu.degree}
+                </h4>
+                <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
+                  {edu.institution} —{" "}
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    {edu.location || "Location N/A"}
+                  </span>
+                </p>
+                <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
+                  {edu.start_date || "Start N/A"} to {edu.end_date || "Present"}
+                </p>
+                {edu.gpa && (
+                  <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 mt-1 uppercase">
+                    GPA: {edu.gpa}
+                  </p>
+                )}
+                {edu.coursework && edu.coursework.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {edu.coursework.map((c: string) => (
+                      <span
+                        key={c}
+                        className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600 dark:text-zinc-300"
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => startEdit(edu)}
+                  className="border-transparent hover:border-black dark:hover:border-zinc-400"
+                >
+                  <Edit2 size={14} className="text-black dark:text-zinc-200" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (confirm("Are you sure?")) deleteMutation.mutate(edu.id)
+                  }}
+                  className="border-transparent hover:border-red-500 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(edu)} className="border-transparent hover:border-black dark:hover:border-zinc-400">
-                <Edit2 size={14} className="text-black dark:text-zinc-200" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => {
-                  if (confirm("Are you sure?")) deleteMutation.mutate(edu.id)
-                }}
-                className="border-transparent hover:border-red-500 hover:text-red-500"
-              >
-                <Trash2 size={14} />
-              </Button>
-            </div>
-          </div>
-          {editingId === edu.id && renderForm()}
+            {editingId === edu.id && renderForm()}
           </div>
         ))}
       </div>

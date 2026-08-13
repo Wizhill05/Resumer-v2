@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -10,14 +10,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, Plus, Trash2, Edit2, X } from "lucide-react"
+import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge"
 
 const schema = z.object({
   role: z.string().min(1, "Role/Title is required"),
   organization: z.string().min(1, "Company/Organization is required"),
   location: z.string().optional(),
-  start_date: z.string().or(z.literal("")), // ISO date string (YYYY-MM-DD) or empty
+  start_date: z.string().or(z.literal("")),
   end_date: z.string().or(z.literal("")),
-  bullet_points: z.string().optional(), // Raw newlines string for editing
+  bullet_points: z.string().optional(),
   sort_order: z.number().optional(),
 })
 
@@ -34,7 +35,11 @@ type ExperienceItem = {
   sort_order?: number
 }
 
-export function ExperienceForm() {
+interface ExperienceFormProps {
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void
+}
+
+export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
@@ -48,9 +53,22 @@ export function ExperienceForm() {
     },
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isDirty, isValid },
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
   })
+
+  const formActive = isAdding || editingId !== null
+
+  const handleCancel = useCallback(() => {
+    reset()
+    setEditingId(null)
+    setIsAdding(false)
+  }, [reset])
 
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -79,11 +97,38 @@ export function ExperienceForm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["experiences"] })
-      reset()
-      setEditingId(null)
-      setIsAdding(false)
+      handleCancel()
     },
   })
+
+  const performSave = useCallback(async (): Promise<boolean> => {
+    if (!formActive) return true
+    if (!isDirty) {
+      handleCancel()
+      return true
+    }
+    return new Promise<boolean>((resolve) => {
+      handleSubmit(
+        async (data) => {
+          try {
+            await saveMutation.mutateAsync(data)
+            resolve(true)
+          } catch {
+            resolve(false)
+          }
+        },
+        () => {
+          resolve(false)
+        }
+      )()
+    })
+  }, [formActive, isDirty, handleCancel, handleSubmit, saveMutation])
+
+  useEffect(() => {
+    if (onDirtyChange) {
+      onDirtyChange(formActive && isDirty, performSave)
+    }
+  }, [formActive, isDirty, performSave, onDirtyChange])
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -112,19 +157,35 @@ export function ExperienceForm() {
     })
   }
 
-  const handleCancel = () => {
-    reset()
-    setEditingId(null)
-    setIsAdding(false)
-  }
+  let status: SaveStatus = "saved"
+  if (saveMutation.isPending) status = "saving"
+  else if (saveMutation.isError) status = "error"
+  else if (isDirty) status = "unsaved"
 
   const renderForm = () => (
-    <form onSubmit={handleSubmit((data) => saveMutation.mutate(data))} className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter">
+    <form
+      onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+      onBlur={() => {
+        if (isDirty && isValid && !saveMutation.isPending) {
+          performSave()
+        }
+      }}
+      className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
+    >
       <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
-        <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight">
-          {editingId ? "Edit Experience" : "Add Experience"}
-        </h3>
-        <Button type="button" variant="ghost" size="sm" onClick={handleCancel} className="border-transparent">
+        <div className="flex items-center gap-3">
+          <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight">
+            {editingId ? "Edit Experience" : "Add Experience"}
+          </h3>
+          <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleCancel}
+          className="border-transparent"
+        >
           <X size={16} />
         </Button>
       </div>
@@ -133,13 +194,21 @@ export function ExperienceForm() {
         <div className="space-y-2">
           <Label htmlFor="role">Role / Job Title</Label>
           <Input id="role" {...register("role")} />
-          {errors.role && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.role.message}</p>}
+          {errors.role && (
+            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              {errors.role.message}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="organization">Company / Organization</Label>
           <Input id="organization" {...register("organization")} />
-          {errors.organization && <p className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.organization.message}</p>}
+          {errors.organization && (
+            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              {errors.organization.message}
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -170,9 +239,20 @@ export function ExperienceForm() {
 
       <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
         <Button type="submit" disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Save"}
+          {saveMutation.isPending ? (
+            <>
+              <Loader2 className="animate-spin" size={16} /> Saving...
+            </>
+          ) : (
+            "Save"
+          )}
         </Button>
-        <Button type="button" variant="outline" onClick={handleCancel} disabled={saveMutation.isPending}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleCancel}
+          disabled={saveMutation.isPending}
+        >
           Cancel
         </Button>
       </div>
@@ -224,40 +304,50 @@ export function ExperienceForm() {
       <div className="space-y-3">
         {experiences.map((exp) => (
           <div key={exp.id} className="space-y-3">
-          <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
-            <div className="min-w-0 space-y-1.5">
-              <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">{exp.role}</h4>
-              <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
-                {exp.organization} — <span className="text-zinc-600 dark:text-zinc-400">{exp.location || "Location N/A"}</span>
-              </p>
-              <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
-                {exp.start_date || "Start N/A"} to {exp.end_date || "Present"}
-              </p>
-              {exp.bullet_points && exp.bullet_points.length > 0 && (
-                <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-                  {exp.bullet_points.map((b: string, i: number) => (
-                    <li key={i}>{b}</li>
-                  ))}
-                </ul>
-              )}
+            <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
+              <div className="min-w-0 space-y-1.5">
+                <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">
+                  {exp.role}
+                </h4>
+                <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
+                  {exp.organization} —{" "}
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    {exp.location || "Location N/A"}
+                  </span>
+                </p>
+                <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
+                  {exp.start_date || "Start N/A"} to {exp.end_date || "Present"}
+                </p>
+                {exp.bullet_points && exp.bullet_points.length > 0 && (
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                    {exp.bullet_points.map((b: string, i: number) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => startEdit(exp)}
+                  className="border-transparent hover:border-black dark:hover:border-zinc-400"
+                >
+                  <Edit2 size={14} className="text-black dark:text-zinc-200" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (confirm("Are you sure?")) deleteMutation.mutate(exp.id)
+                  }}
+                  className="border-transparent hover:border-red-500 hover:text-red-500"
+                >
+                  <Trash2 size={14} />
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="icon-sm" variant="ghost" onClick={() => startEdit(exp)} className="border-transparent hover:border-black dark:hover:border-zinc-400">
-                <Edit2 size={14} className="text-black dark:text-zinc-200" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => {
-                  if (confirm("Are you sure?")) deleteMutation.mutate(exp.id)
-                }}
-                className="border-transparent hover:border-red-500 hover:text-red-500"
-              >
-                <Trash2 size={14} />
-              </Button>
-            </div>
-          </div>
-          {editingId === exp.id && renderForm()}
+            {editingId === exp.id && renderForm()}
           </div>
         ))}
       </div>
