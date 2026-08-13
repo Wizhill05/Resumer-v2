@@ -17,9 +17,6 @@ import {
   ArrowDown
 } from "lucide-react"
 import type { EditorProfile, TailoredResume } from "@/lib/resume-schema"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 
 type Props = {
   resume: TailoredResume
