@@ -203,7 +203,7 @@ export function EditorClient({ payload }: Props) {
           <button
             onClick={handleExportPdf}
             disabled={saving}
-            className="px-2.5 py-1.5 text-xs bg-[#ff4e26] text-white hover:bg-[#e03d1a] disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer font-semibold shadow-sm"
+            className="px-2.5 py-1.5 text-xs bg-[#ff4e26] text-white hover:bg-[#e03d16] disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer font-semibold shadow-sm"
           >
             <Download size={13} />
             Export PDF
@@ -315,7 +315,7 @@ export function EditorClient({ payload }: Props) {
               <button
                 onClick={handleExportPdf}
                 disabled={saving}
-                className="flex-1 max-w-[130px] flex items-center justify-center gap-1 py-2 text-xs font-bold bg-[#ff4e26] text-white hover:bg-[#e03d1a] disabled:opacity-40 rounded transition-colors cursor-pointer"
+                className="flex-1 max-w-[130px] flex items-center justify-center gap-1 py-2 text-xs font-bold bg-[#ff4e26] text-white hover:bg-[#e03d16] disabled:opacity-40 rounded transition-colors cursor-pointer"
               >
                 <Download size={13} />
                 Export PDF
@@ -347,7 +347,7 @@ export function EditorClient({ payload }: Props) {
         <button
           onClick={handleExportPdf}
           disabled={saving}
-          className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-[#ff4e26] hover:text-[#e03d1a] disabled:opacity-40 cursor-pointer"
+          className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-[#ff4e26] hover:text-[#e03d16] disabled:opacity-40 cursor-pointer"
         >
           <Download size={20} />
           <span className="text-[10px] font-black uppercase tracking-wide mt-0.5">Export PDF</span>

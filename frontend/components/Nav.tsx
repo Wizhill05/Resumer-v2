@@ -84,7 +84,7 @@ export function Nav() {
                   href={link.href}
                   className={`px-3 py-1.5 transition-colors ${
                     active
-                      ? "bg-orange-50 dark:bg-orange-950/50 text-[#ff4e26] dark:text-[#d65235]"
+                      ? "bg-orange-50 dark:bg-orange-950/50 text-[#ff4e26]"
                       : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white"
                   }`}
                 >
@@ -166,7 +166,7 @@ export function Nav() {
               href={link.href}
               className={`flex items-center border-b border-zinc-100 dark:border-zinc-800 px-4 py-3 text-sm font-semibold transition-colors last:border-b-0 ${
                 active
-                  ? "border-l-4 border-l-[#ff4e26] dark:border-l-[#d65235] bg-orange-50 dark:bg-orange-950/30 pl-3 text-[#ff4e26] dark:text-[#d65235]"
+                  ? "border-l-4 border-l-[#ff4e26] dark:border-l-[#ff4e26] bg-orange-50 dark:bg-orange-950/30 pl-3 text-[#ff4e26]"
                   : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:text-black dark:hover:text-white"
               }`}
             >

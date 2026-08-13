@@ -104,7 +104,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
       />
 
       {/* Modal Container */}
-      <div className="relative z-10 w-full max-w-md border-3 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 sm:p-8 shadow-[8px_8px_0px_#000000] dark:shadow-[8px_8px_0px_#d65235] animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative z-10 w-full max-w-md border-3 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 sm:p-8 shadow-[8px_8px_0px_#000000] dark:shadow-[8px_8px_0px_#ff4e26] animate-in fade-in zoom-in-95 duration-200">
         <button
           onClick={handleDismiss}
           className="absolute top-4 right-4 p-1 text-zinc-500 hover:text-black dark:hover:text-white transition-colors"
@@ -126,7 +126,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
         ) : (
           <div className="space-y-6">
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#ff4e26]/10 dark:bg-[#d65235]/15 text-[#ff4e26] dark:text-[#d65235] border border-[#ff4e26] dark:border-[#d65235] text-xs font-black uppercase tracking-wider">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#ff4e26]/10 dark:bg-[#ff4e26]/15 text-[#ff4e26] border border-[#ff4e26] text-xs font-black uppercase tracking-wider">
                 <HeartHandshake size={14} />
                 <span>Feedback & Rating</span>
               </div>
@@ -155,7 +155,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                       size={36}
                       className={
                         active
-                          ? "fill-[#ff4e26] dark:fill-[#d65235] text-[#ff4e26] dark:text-[#d65235] drop-shadow-[2px_2px_0px_#000]"
+                          ? "fill-[#ff4e26] dark:fill-[#ff4e26] text-[#ff4e26] drop-shadow-[2px_2px_0px_#000]"
                           : "text-zinc-300 dark:text-zinc-700"
                       }
                     />
@@ -196,7 +196,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                 type="button"
                 onClick={handleSubmit}
                 disabled={isSubmitting || rating === 0}
-                className="flex-1 bg-[#ff4e26] dark:bg-[#d65235] hover:bg-[#e03d16] dark:hover:bg-[#b8432a] text-white font-extrabold uppercase text-xs border-2 border-black shadow-[3px_3px_0px_#000000] disabled:opacity-50"
+                className="flex-1 bg-[#ff4e26] hover:bg-[#e03d16] dark:hover:bg-[#e03d16] text-white font-extrabold uppercase text-xs border-2 border-black shadow-[3px_3px_0px_#000000] disabled:opacity-50"
               >
                 {isSubmitting ? "Submitting..." : "Submit Rating"}
               </Button>

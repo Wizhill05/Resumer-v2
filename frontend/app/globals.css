@@ -9,8 +9,8 @@
 }
 
 :is(.dark) {
-  --brand-orange: #f97316;
-  --brand-orange-hover: #ea580c;
+  --brand-orange: #ff4e26;
+  --brand-orange-hover: #e03d16;
 }
 
 @theme {
@@ -50,7 +50,7 @@
     box-shadow: 0 0 0 2px #ff4e26, 6px 6px 0px #000000;
   }
   :is(.dark) .auth-panel-ring {
-    box-shadow: 0 0 0 2px #f97316, 6px 6px 0px #f97316;
+    box-shadow: 0 0 0 2px #ff4e26, 6px 6px 0px #ff4e26;
   }
 
   .app-bg {
@@ -88,7 +88,7 @@
   :is(.dark) .page-header {
     background: #242427;
     border-color: #3f3f46;
-    border-left-color: #f97316;
+    border-left-color: #ff4e26;
     box-shadow: 0 1px 0 #ffffff08;
   }
 
@@ -161,7 +161,7 @@
     border-color: #52525b;
     background: #242427;
     color: #fafafa;
-    box-shadow: 3px 3px 0px #f97316;
+    box-shadow: 3px 3px 0px #ff4e26;
   }
   .resumer-mark::after {
     content: "";
@@ -426,7 +426,7 @@
   gap: 8px;
 }
 :is(.dark) .brutalist-button {
-  background-color: #f97316;
+  background-color: #ff4e26;
   border-color: #52525b;
   box-shadow: 3px 3px 0px #3f3f46;
 }

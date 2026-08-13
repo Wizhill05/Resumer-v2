@@ -56,7 +56,7 @@ export function SaveStatusBadge({ status, onSaveNow, errorMessage }: SaveStatusB
         <button
           type="button"
           onClick={onSaveNow}
-          className="ml-1 text-[#ff4e26] dark:text-[#d65235] hover:underline font-extrabold cursor-pointer"
+          className="ml-1 text-[#ff4e26] hover:underline font-extrabold cursor-pointer"
         >
           Save Now
         </button>
