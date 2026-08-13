@@ -8,6 +8,9 @@ import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, AlertCircle, RefreshCw } from "lucide-react";
 import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const schema = z.object({
