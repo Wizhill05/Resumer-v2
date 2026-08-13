@@ -19,14 +19,26 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const handleDismiss = () => {
+    try {
+      localStorage.setItem("resumer_feedback_prompted", "true")
+    } catch {}
+    fetch("/api/backend/feedback/rating/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ generation_id: generationId || null }),
+    }).catch(() => {})
+    onClose()
+  }
+
   // Close on Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose()
+      if (e.key === "Escape") handleDismiss()
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [onClose])
+  }, [handleDismiss])
 
   // Lock body scroll while modal is active
   useEffect(() => {
@@ -46,6 +58,9 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
     setError(null)
 
     try {
+      try {
+        localStorage.setItem("resumer_feedback_prompted", "true")
+      } catch {}
       const res = await fetch("/api/backend/feedback/rating", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,13 +100,13 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
+        onClick={handleDismiss}
       />
 
       {/* Modal Container */}
       <div className="relative z-10 w-full max-w-md border-3 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 sm:p-8 shadow-[8px_8px_0px_#000000] dark:shadow-[8px_8px_0px_#ff4e26] animate-in fade-in zoom-in-95 duration-200">
         <button
-          onClick={onClose}
+          onClick={handleDismiss}
           className="absolute top-4 right-4 p-1 text-zinc-500 hover:text-black dark:hover:text-white transition-colors"
           aria-label="Close"
         >
@@ -113,7 +128,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
             <div className="space-y-2">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#ff4e26]/10 text-[#ff4e26] border border-[#ff4e26] text-xs font-black uppercase tracking-wider">
                 <HeartHandshake size={14} />
-                <span>First Generation Completed</span>
+                <span>Feedback & Rating</span>
               </div>
               <h2 className="text-2xl font-extrabold uppercase tracking-tight md:text-3xl">
                 Tell us about your experience

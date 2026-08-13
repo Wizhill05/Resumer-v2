@@ -440,6 +440,10 @@ export function HistoryClient() {
 
   // Check if post-generation rating modal should pop up
   useEffect(() => {
+    try {
+      if (localStorage.getItem("resumer_feedback_prompted") === "true") return
+    } catch {}
+
     if (runs.length > 0) {
       const completedRun = runs.find((r) => r.status === "completed")
       if (completedRun) {

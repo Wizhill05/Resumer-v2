@@ -7,13 +7,13 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import get_current_user, get_optional_user
 from src.core.database import get_db
 from src.core.storage import StorageService
-from src.models.generation import FeedbackRating, ReportAttachment, SupportReport
+from src.models.generation import FeedbackRating, Generation, ReportAttachment, SupportReport
 from src.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -235,18 +235,63 @@ async def check_feedback_prompt(
 ):
     """
     Check if the post-generation feedback modal should be prompted to the current user.
+    Only prompts on the SECOND (or higher) completed generation and only ONCE per user.
     """
+    # 1. Check if user already has ANY rating or dismissal record
     stmt = select(FeedbackRating).where(FeedbackRating.user_id == current_user.id)
-    if generation_id:
-        stmt = stmt.where(FeedbackRating.generation_id == generation_id)
-
     result = await db.execute(stmt)
-    rating = result.scalar_one_or_none()
+    existing_rating = result.scalar_one_or_none()
 
-    already_rated = rating is not None and not rating.dismissed
-    should_prompt = current_user.first_generation_completed and not already_rated
+    if existing_rating is not None:
+        return RatingCheckResponse(
+            should_prompt=False,
+            already_rated=not existing_rating.dismissed,
+        )
+
+    # 2. Count total completed generations for current user
+    count_stmt = (
+        select(func.count(Generation.id))
+        .where(
+            Generation.user_id == current_user.id,
+            Generation.status == "completed",
+        )
+    )
+    count_result = await db.execute(count_stmt)
+    completed_count = count_result.scalar() or 0
+
+    # 3. Only prompt if the user has completed AT LEAST 2 generations
+    should_prompt = completed_count >= 2
 
     return RatingCheckResponse(
         should_prompt=should_prompt,
-        already_rated=already_rated,
+        already_rated=False,
     )
+
+
+@router.post("/rating/dismiss")
+async def dismiss_feedback_prompt(
+    generation_id: Optional[uuid.UUID] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Permanently dismiss the post-generation rating modal for the current user.
+    """
+    stmt = select(FeedbackRating).where(FeedbackRating.user_id == current_user.id)
+    result = await db.execute(stmt)
+    rating = result.scalar_one_or_none()
+
+    if not rating:
+        rating = FeedbackRating(
+            user_id=current_user.id,
+            generation_id=generation_id,
+            star_rating=0,
+            comment=None,
+            dismissed=True,
+        )
+        db.add(rating)
+    else:
+        rating.dismissed = True
+
+    await db.commit()
+    return {"status": "dismissed"}
