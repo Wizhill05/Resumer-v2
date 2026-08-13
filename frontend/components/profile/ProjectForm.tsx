@@ -173,34 +173,6 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     setImportPreview(null);
   }, [reset]);
 
-  const performSave = useCallback(async (): Promise<boolean> => {
-    if (!formActive) return true;
-    if (!isDirty) {
-      handleCancel();
-      return true;
-    }
-    return new Promise<boolean>((resolve) => {
-      handleSubmit(
-        async (data) => {
-          try {
-            await saveMutation.mutateAsync(data);
-            resolve(true);
-          } catch {
-            resolve(false);
-          }
-        },
-        () => {
-          resolve(false);
-        }
-      )();
-    });
-  }, [formActive, isDirty, handleCancel, handleSubmit, saveMutation]);
-
-  useEffect(() => {
-    if (onDirtyChange) {
-      onDirtyChange(formActive && isDirty, performSave);
-    }
-  }, [formActive, isDirty, performSave, onDirtyChange]);
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const payload = {
@@ -242,6 +214,35 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       setIsAdding(false);
     },
   });
+
+  const performSave = useCallback(async (): Promise<boolean> => {
+    if (!formActive) return true;
+    if (!isDirty) {
+      handleCancel();
+      return true;
+    }
+    return new Promise<boolean>((resolve) => {
+      handleSubmit(
+        async (data) => {
+          try {
+            await saveMutation.mutateAsync(data);
+            resolve(true);
+          } catch {
+            resolve(false);
+          }
+        },
+        () => {
+          resolve(false);
+        }
+      )();
+    });
+  }, [formActive, isDirty, handleCancel, handleSubmit, saveMutation]);
+
+  useEffect(() => {
+    if (onDirtyChange) {
+      onDirtyChange(formActive && isDirty, performSave);
+    }
+  }, [formActive, isDirty, performSave, onDirtyChange]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
