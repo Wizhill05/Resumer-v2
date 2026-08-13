@@ -364,6 +364,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
           </h3>
           <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
         </div>
+        <Button
           type="button"
           variant="ghost"
           size="sm"
