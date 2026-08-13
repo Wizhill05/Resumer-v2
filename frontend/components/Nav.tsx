@@ -65,7 +65,7 @@ export function Nav() {
 
   return (
     <>
-      <nav className="sticky top-0 z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-950/95 px-4 py-2.5 backdrop-blur md:px-6">
+      <nav className="sticky top-0 z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 px-4 py-2.5 backdrop-blur md:px-6">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <Link
             href="/dashboard"
@@ -150,7 +150,7 @@ export function Nav() {
 
       {/* Slide-down panel */}
       <div
-        className="fixed left-0 right-0 z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-lg transition-all duration-200 ease-out md:hidden"
+        className="fixed left-0 right-0 z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg transition-all duration-200 ease-out md:hidden"
         style={{
           top: "49px",
           transform: open ? "translateY(0)" : "translateY(-8px)",

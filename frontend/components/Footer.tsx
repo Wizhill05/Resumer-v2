@@ -9,7 +9,7 @@ interface FooterProps {
 export function Footer({ variant = "simple" }: FooterProps) {
   if (variant === "simple") {
     return (
-      <footer className="mt-auto border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white py-5 px-4 sm:px-6 lg:px-8 font-sans">
+      <footer className="mt-auto border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white py-5 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Left: Logo & copyright */}
           <div className="flex items-center gap-3">
@@ -54,7 +54,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
   }
 
   return (
-    <footer className="mt-auto border-t-2 border-black dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-950 text-zinc-900 dark:text-white pt-16 pb-10 px-4 sm:px-6 lg:px-8 font-sans transition-colors">
+    <footer className="mt-auto border-t-2 border-black dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-900 text-zinc-900 dark:text-white pt-16 pb-10 px-4 sm:px-6 lg:px-8 font-sans transition-colors">
       <div className="mx-auto max-w-7xl">
         {/* Main Minimal Link Row */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 pb-12 border-b border-zinc-300 dark:border-zinc-800">

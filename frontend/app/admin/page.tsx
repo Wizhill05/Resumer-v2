@@ -9,7 +9,7 @@ export default async function AdminPage() {
   if (!session) redirect("/")
 
   return (
-    <main className="flex-1 flex flex-col bg-[#fbfbf3] dark:bg-zinc-950 text-black dark:text-white">
+    <main className="flex-1 flex flex-col bg-[#fbfbf3] dark:bg-zinc-900 text-black dark:text-white">
       <Nav />
       <div className="border-b border-zinc-200 bg-zinc-900">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-4 py-5 md:flex-row md:items-end md:px-6 md:py-8">

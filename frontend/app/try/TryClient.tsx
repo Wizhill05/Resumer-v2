@@ -826,7 +826,7 @@ export function TryClient() {
   const activeNavItem = nav.find((item) => item.id === active)
 
   return (
-    <div className="flex h-full flex-col relative bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex h-full flex-col relative bg-zinc-50 dark:bg-zinc-900">
       <ConsentBanner accepted={accepted} onAccept={acceptCookies} />
 
       {/* Mobile Top Tabs Header (hidden on desktop) */}
@@ -881,7 +881,7 @@ export function TryClient() {
         </nav>
 
         {/* Main content + sticky footer */}
-        <div className="flex min-w-0 flex-1 flex-col bg-white dark:bg-zinc-950">
+        <div className="flex min-w-0 flex-1 flex-col bg-white dark:bg-zinc-900">
           {/* Scrollable content area */}
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} />}

@@ -151,7 +151,7 @@ export function EditorClient({ payload }: Props) {
   const title = [payload.job_title, payload.company].filter(Boolean).join(" — ") || "Resume Editor"
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 overflow-hidden pb-16 md:pb-0">
+    <div className="flex flex-col h-screen bg-white dark:bg-zinc-900 overflow-hidden pb-16 md:pb-0">
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0">
         <button
@@ -227,13 +227,13 @@ export function EditorClient({ payload }: Props) {
       {/* Split pane / Content area */}
       <div className="flex flex-1 overflow-hidden relative">
         {/* Left — Editor (Full on mobile, 45% on desktop) */}
-        <div className="w-full md:w-[45%] min-w-0 md:border-r border-zinc-300 dark:border-zinc-700 flex flex-col overflow-hidden bg-white dark:bg-zinc-950">
+        <div className="w-full md:w-[45%] min-w-0 md:border-r border-zinc-300 dark:border-zinc-700 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
           {/* Mode Toggler */}
           <div className="flex border-b border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 shrink-0">
             <button
               onClick={() => setEditorMode("form")}
               className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center border-r border-zinc-300 dark:border-zinc-700 outline-none transition-colors cursor-pointer ${
-                editorMode === "form" ? "bg-white dark:bg-zinc-950 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
+                editorMode === "form" ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
               }`}
             >
               Form Editor
@@ -241,7 +241,7 @@ export function EditorClient({ payload }: Props) {
             <button
               onClick={() => setEditorMode("json")}
               className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center outline-none transition-colors cursor-pointer ${
-                editorMode === "json" ? "bg-white dark:bg-zinc-950 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
+                editorMode === "json" ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
               }`}
             >
               Raw JSON

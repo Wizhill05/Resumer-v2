@@ -11,7 +11,7 @@ export default async function DashboardPage() {
   const firstName = session.user?.name?.split(" ")[0] ?? "there"
 
   return (
-    <main className="flex-1 flex flex-col bg-[#fbfbf3] dark:bg-zinc-950 text-black dark:text-white">
+    <main className="flex-1 flex flex-col bg-[#fbfbf3] dark:bg-zinc-900 text-black dark:text-white">
       <Nav />
 
       <div className="border-b border-zinc-200 bg-[#ff4e26]">

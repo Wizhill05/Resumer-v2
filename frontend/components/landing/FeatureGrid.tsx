@@ -29,7 +29,7 @@ const FEATURES = [
 
 export function FeatureGrid() {
   return (
-    <section id="flow" className="py-12 sm:py-16 lg:py-20 border-t-2 border-black dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
+    <section id="flow" className="py-12 sm:py-16 lg:py-20 border-t-2 border-black dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="mb-12 text-center max-w-3xl mx-auto">

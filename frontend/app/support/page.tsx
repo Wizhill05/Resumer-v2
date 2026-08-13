@@ -7,7 +7,7 @@ export default async function SupportPage() {
   const session = await auth()
 
   return (
-    <main className="flex-1 flex flex-col bg-[#fbfbf3] dark:bg-zinc-950 text-black dark:text-white min-h-screen font-sans">
+    <main className="flex-1 flex flex-col bg-[#fbfbf3] dark:bg-zinc-900 text-black dark:text-white min-h-screen font-sans">
       <Nav />
 
       <div className="page-wrap flex-1 space-y-4 md:space-y-6 py-6 md:py-8">

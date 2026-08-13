@@ -67,7 +67,7 @@ export function ResumeJsonEditor({ value, onChange }: Props) {
           value={value}
           onChange={handleChange}
           spellCheck={false}
-          className={`w-full min-h-full font-mono text-xs resize-none p-3 outline-none bg-white dark:bg-zinc-950 dark:text-zinc-200 leading-relaxed ${
+          className={`w-full min-h-full font-mono text-xs resize-none p-3 outline-none bg-white dark:bg-zinc-900 dark:text-zinc-200 leading-relaxed ${
             isError && !isEmpty ? "border-l-4 border-red-400" : "border-l-4 border-transparent"
           }`}
           style={{ fontFamily: "'Fira Code', 'Cascadia Code', 'Menlo', monospace" }}

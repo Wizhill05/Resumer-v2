@@ -160,7 +160,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-4 space-y-3 bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex-1 overflow-auto p-4 space-y-3 bg-zinc-50 dark:bg-zinc-900">
       {/* 1. PERSONAL DETAILS */}
       <Section
         title="Personal Details"

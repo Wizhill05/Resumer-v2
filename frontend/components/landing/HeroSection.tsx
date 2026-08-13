@@ -4,7 +4,7 @@ import { ArrowUpRight, FileText } from "lucide-react"
 
 export function HeroSection() {
   return (
-    <section className="relative flex w-full min-h-screen md:h-screen md:h-[100dvh] md:min-h-[100dvh] flex-col justify-between overflow-hidden px-4 py-6 md:py-4 sm:px-6 lg:px-8 bg-[#fbfbf3] dark:bg-zinc-950">
+    <section className="relative flex w-full min-h-screen md:h-screen md:h-[100dvh] md:min-h-[100dvh] flex-col justify-between overflow-hidden px-4 py-6 md:py-4 sm:px-6 lg:px-8 bg-[#fbfbf3] dark:bg-zinc-900">
       {/* Structural Industrial Crosshairs Corner Accents */}
       <div className="absolute top-3 left-3 text-zinc-400 dark:text-zinc-700 font-mono text-xs select-none pointer-events-none">
         +

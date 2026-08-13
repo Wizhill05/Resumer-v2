@@ -566,7 +566,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
           </div>
 
           {/* GitHub Linked Username Header */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 p-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+          <div className="flex flex-wrap items-center justify-between gap-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
             {effectiveUsername ? (
               <div className="flex items-center gap-2">
                 <svg className="h-4 w-4 fill-current text-zinc-900 dark:text-zinc-100" viewBox="0 0 24 24">
@@ -589,7 +589,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
           {/* Repositories Dropdown (Always visible when a username is present) */}
           {effectiveUsername && (
-            <div className="space-y-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50 p-3">
+            <div className="space-y-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-extrabold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
                   Select a repository to import ({isLoadingRepos ? "Loading..." : `${userRepos.length} public repos found`})
