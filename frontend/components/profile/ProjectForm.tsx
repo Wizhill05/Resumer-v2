@@ -355,9 +355,11 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   const renderForm = () => (
     <form
       onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
-      onBlur={() => {
-        if (isDirty && isValid && !saveMutation.isPending) {
-          performSave();
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          if (isDirty && isValid && !saveMutation.isPending) {
+            performSave();
+          }
         }
       }}
       className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"

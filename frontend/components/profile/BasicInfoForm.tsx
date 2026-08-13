@@ -131,7 +131,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
     }
   }, [isDirty, performSave, onDirtyChange])
 
-  // Auto-save on debounced typing (800ms)
+  // Auto-save on debounced typing (2000ms)
   const formValues = watch()
   useEffect(() => {
     if (!isDirty) return
@@ -142,7 +142,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
       if (isDirty && isValid && !mutation.isPending) {
         performSave()
       }
-    }, 800)
+    }, 2000)
 
     return () => {
       clearTimeout(debounceTimerRef.current!)
@@ -174,9 +174,11 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   return (
     <form
       onSubmit={handleSubmit(() => performSave())}
-      onBlur={() => {
-        if (isDirty && isValid && !mutation.isPending) {
-          performSave()
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          if (isDirty && isValid && !mutation.isPending) {
+            performSave()
+          }
         }
       }}
       className="space-y-5 pixel-enter"
