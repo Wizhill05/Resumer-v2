@@ -95,6 +95,18 @@ class StorageService:
             logger.error("StorageService: Failed to generate presigned URL for %s: %s", key, e)
             return None
 
+    def generate_presigned_download_url(
+        self,
+        key: str,
+        filename: str | None = None,
+        expires_in: int = 3600,
+    ) -> str | None:
+        """Generate a clean presigned download URL for S3/R2 storage."""
+        return self.get_presigned_url(
+            key=key,
+            expires_in=expires_in,
+        )
+
     def delete_file(self, key: str) -> bool:
         if not self.enabled or not self.s3_client:
             return False

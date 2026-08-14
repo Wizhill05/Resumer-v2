@@ -17,6 +17,11 @@ from src.models.generation import (  # noqa: F401
     ReportAttachment,
     FeedbackRating,
 )
+from src.models.oauth import (  # noqa: F401
+    OAuthClient,
+    OAuthAuthorizationCode,
+    OAuthRefreshToken,
+)
 from src.core.config import settings
 
 config = context.config

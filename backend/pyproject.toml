@@ -26,9 +26,17 @@ dependencies = [
     "Pillow>=10",
     "resend>=2.0.0",
     "requests>=2.32.0",
+    "mcp>=2.0.0",
 ]
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.22.1",
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

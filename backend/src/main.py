@@ -17,9 +17,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.storage import StorageService
-from src.api import profile, generation, system, imports, guest, admin, feedback
+from src.api import profile, generation, system, imports, guest, admin, feedback, oauth
+from src.core.oauth import ensure_oauth_schema
 from src.template_registry import router as template_router
 from src.services.import_jobs import cleanup_old_jobs
+from src.mcp.server import mcp_server, get_mcp_app
 
 
 @asynccontextmanager
@@ -37,10 +39,17 @@ async def lifespan(app: FastAPI):
     # Idempotently ensure R2 bucket has a 90-day lifecycle expiry rule.
     StorageService().ensure_lifecycle_policy()
 
+    # Idempotently ensure OAuth tables and columns exist in PostgreSQL.
+    await ensure_oauth_schema()
+
     # Ephemeral import jobs cleanup loop
     cleanup_task = asyncio.create_task(cleanup_old_jobs())
-
-    yield
+    try:
+        mcp_server.session_manager._has_started = False
+        async with mcp_server.session_manager.run():
+            yield
+    finally:
+        mcp_server.session_manager._has_started = False
 
     cleanup_task.cancel()
     try:
@@ -51,9 +60,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Resumer API", version="2.0.0", lifespan=lifespan)
 
+cors_origins = [settings.FRONTEND_URL]
+for o in ["https://chatgpt.com", "https://chat.openai.com", "https://gemini.google.com", "http://localhost:3000"]:
+    if o not in cors_origins:
+        cors_origins.append(o)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,3 +82,7 @@ app.include_router(guest.router)
 app.include_router(template_router)
 app.include_router(admin.router)
 app.include_router(feedback.router)
+app.include_router(oauth.router)
+
+# Remote MCP Sub-application (Streamable HTTP + SSE)
+app.mount("", get_mcp_app())

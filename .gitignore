@@ -17,3 +17,5 @@ node_modules/
 docs/
 .vscode
 frontend/bun.lock
+.vercel/
+omp-html/

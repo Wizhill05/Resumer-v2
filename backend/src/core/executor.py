@@ -10,21 +10,21 @@ import asyncio
 from src.core.config import settings
 
 
-async def trigger_pipeline(gen_id: str) -> None:
+async def trigger_pipeline(gen_id: str) -> asyncio.Task[None]:
     mode = settings.EXECUTION_MODE
     if mode == "local":
-        _trigger_local(gen_id)
+        return _trigger_local(gen_id)
     else:
         raise RuntimeError(f"Unknown EXECUTION_MODE={mode!r}; only 'local' is supported")
 
 
-def _trigger_local(gen_id: str) -> None:
+def _trigger_local(gen_id: str) -> asyncio.Task[None]:
     """Run in-process via a detached asyncio task. Exceptions are logged via a done-callback."""
     from src.pipeline.job_runner import run_generation
 
     task = asyncio.create_task(run_generation(gen_id))
     task.add_done_callback(_log_task_exception)
-
+    return task
 
 def _log_task_exception(task: asyncio.Task) -> None:
     if task.cancelled():

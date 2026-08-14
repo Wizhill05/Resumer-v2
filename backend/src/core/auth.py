@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -14,17 +14,35 @@ bearer = HTTPBearer(auto_error=False)
 
 
 async def get_optional_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
-    if not credentials:
+    token: str | None = None
+    if credentials:
+        token = credentials.credentials
+    elif request:
+        # Check cookies
+        for cookie_name in [
+            "authjs.session-token",
+            "__Secure-authjs.session-token",
+            "next-auth.session-token",
+            "__Secure-next-auth.session-token",
+            "token",
+        ]:
+            if cookie_name in request.cookies:
+                token = request.cookies[cookie_name]
+                break
+        if not token:
+            token = request.query_params.get("token")
+
+    if not token:
         return None
-    token = credentials.credentials
+
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
     except JWTError:
         return None
-
     email: str | None = payload.get("email")
     if not email:
         return None
