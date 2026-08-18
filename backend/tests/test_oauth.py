@@ -146,14 +146,12 @@ async def test_oauth_authorize_get_login_page(client: AsyncClient):
         "state": "state_123",
         "code_challenge": "dRl9_fTku4PZgEU78ZyIsNzVY2pCJHJds9aUGAajlz0",
         "code_challenge_method": "S256",
-    })
-    assert res.status_code == 200
-    html = res.text
-    assert "Continue with Google" in html
-    assert "Continue with GitHub" in html
-    assert "api/auth/signin/google" in html
-    assert "api/auth/signin/github" in html
-
+    }, follow_redirects=False)
+    assert res.status_code == 302
+    location = res.headers["location"]
+    assert "/oauth/authorize" in location
+    assert "client_id=chatgpt" in location
+    assert "backend_url=" in location
 # ── Full OAuth 2.1 PKCE Flow ─────────────────────────────────────────────────
 
 @pytest.mark.asyncio
