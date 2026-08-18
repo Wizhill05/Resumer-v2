@@ -83,6 +83,40 @@ async def test_oauth_protected_resource_metadata(client: AsyncClient):
     assert "authorization_servers" in data
 
 
+@pytest.mark.asyncio
+async def test_oauth_discovery_metadata_aliases(client: AsyncClient):
+    headers = {"x-forwarded-proto": "https", "x-forwarded-host": "resumer-backend.aryansingh.space"}
+    for path in [
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/mcp",
+        "/mcp/.well-known/oauth-authorization-server",
+        "/.well-known/openid-configuration",
+        "/.well-known/openid-configuration/mcp",
+        "/mcp/.well-known/openid-configuration",
+    ]:
+        res = await client.get(path, headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["authorization_endpoint"] == "https://resumer-backend.aryansingh.space/oauth/authorize"
+        assert data["token_endpoint"] == "https://resumer-backend.aryansingh.space/oauth/token"
+
+    for path in [
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/mcp/.well-known/oauth-protected-resource",
+    ]:
+        res = await client.get(path, headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["resource"] == "https://resumer-backend.aryansingh.space"
+        assert data["authorization_servers"] == ["https://resumer-backend.aryansingh.space"]
+
+
+@pytest.mark.asyncio
+async def test_favicon_endpoint(client: AsyncClient):
+    res = await client.get("/favicon.ico")
+    assert res.status_code == 204
+
 # ── Dynamic Client Registration (RFC 7591) ───────────────────────────────────
 
 @pytest.mark.asyncio
@@ -220,3 +254,87 @@ async def test_full_oauth_pkce_flow(client: AsyncClient):
         "client_id": client_id,
     })
     assert replay_new_res.status_code == 400
+
+@pytest.mark.asyncio
+async def test_token_exchange_json_payload(client: AsyncClient):
+    reg_res = await client.post("/oauth/register", json={
+        "client_name": "JSON Client App",
+        "redirect_uris": ["https://chatgpt.com/oauth/callback"],
+    })
+    client_id = reg_res.json()["client_id"]
+
+    code_verifier = "a_secret_verifier_with_json_payload_test_1234567"
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+    auth_res = await client.post("/oauth/authorize", data={
+        "client_id": client_id,
+        "redirect_uri": "https://chatgpt.com/oauth/callback",
+        "scope": "profile:read profile:write resume:generate",
+        "state": "json_state",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "email": "json_user@example.com",
+    }, follow_redirects=False)
+    assert auth_res.status_code == 302
+
+    from urllib.parse import parse_qs, urlparse
+    parsed = urlparse(auth_res.headers["location"])
+    auth_code = parse_qs(parsed.query)["code"][0]
+
+    # Token exchange using Content-Type: application/json
+    token_res = await client.post("/oauth/token", json={
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "code_verifier": code_verifier,
+        "redirect_uri": "https://chatgpt.com/oauth/callback",
+        "client_id": client_id,
+    })
+    assert token_res.status_code == 200
+    token_data = token_res.json()
+    assert "access_token" in token_data
+    assert "refresh_token" in token_data
+
+
+@pytest.mark.asyncio
+async def test_oauth_authorize_with_signed_token(client: AsyncClient, async_db: AsyncSession):
+    from jose import jwt
+    user = User(id=uuid.uuid4(), email="bridge_user@example.com", name="Bridge User")
+    async_db.add(user)
+    await async_db.commit()
+
+    user_token = jwt.encode(
+        {"email": "bridge_user@example.com", "name": "Bridge User"},
+        settings.JWT_SECRET,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+    # GET /oauth/authorize with token query param
+    res = await client.get("/oauth/authorize", params={
+        "response_type": "code",
+        "client_id": "chatgpt",
+        "redirect_uri": "https://chatgpt.com/oauth/callback",
+        "scope": "profile:read profile:write resume:generate resume:edit",
+        "state": "state_signed",
+        "code_challenge": "dRl9_fTku4PZgEU78ZyIsNzVY2pCJHJds9aUGAajlz0",
+        "code_challenge_method": "S256",
+        "token": user_token,
+    })
+    assert res.status_code == 200
+    assert "Authorize Chatgpt Connector" in res.text
+    assert "Bridge User" in res.text
+    assert "auth_token" in res.headers.get("set-cookie", "")
+
+    # POST /oauth/authorize with token
+    post_res = await client.post("/oauth/authorize", data={
+        "client_id": "chatgpt",
+        "redirect_uri": "https://chatgpt.com/oauth/callback",
+        "scope": "profile:read profile:write resume:generate resume:edit",
+        "state": "state_signed",
+        "code_challenge": "dRl9_fTku4PZgEU78ZyIsNzVY2pCJHJds9aUGAajlz0",
+        "code_challenge_method": "S256",
+        "token": user_token,
+    }, follow_redirects=False)
+    assert post_res.status_code == 302
+    assert "https://chatgpt.com/oauth/callback" in post_res.headers["location"]
+    assert "code=" in post_res.headers["location"]
