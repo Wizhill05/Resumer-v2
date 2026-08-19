@@ -58,15 +58,19 @@ async def log_progress(
 
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
 
-from src.core.api_key_pool import cerebras_pool, google_pool
+from src.core.api_key_pool import openrouter_pool, google_pool
 
 
-def _cerebras_llm(api_key: str) -> ChatOpenAI:
+def _openrouter_llm(api_key: str) -> ChatOpenAI:
     return ChatOpenAI(
-        model="gemma-4-31b",
+        model="poolside/laguna-xs-2.1:free",
         temperature=0.2,
-        base_url="https://api.cerebras.ai/v1",
+        base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
+        default_headers={
+            "HTTP-Referer": settings.FRONTEND_URL,
+            "X-Title": "Resumer",
+        },
     )
 
 
@@ -79,11 +83,7 @@ def _google_llm(api_key: str) -> ChatGoogleGenerativeAI:
 
 
 def _structured(llm, schema, provider: str):
-    """Structured output with provider-appropriate method.
-
-    Cerebras doesn't support OpenAI's ``json_schema`` response_format.
-    Use ``function_calling`` (tool calls) which Cerebras does support.
-    """
+    """Structured output with provider-appropriate method."""
     if provider == "cerebras":
         return llm.with_structured_output(schema, method="function_calling")
     return llm.with_structured_output(schema)
@@ -230,7 +230,7 @@ async def invoke_with_fallback(
     naturally spread across different keys.
     """
     providers = [
-        ("cerebras", cerebras_pool, _cerebras_llm),
+        ("openrouter", openrouter_pool, _openrouter_llm),
         ("google", google_pool, _google_llm),
     ]
     last_exc: Exception | None = None

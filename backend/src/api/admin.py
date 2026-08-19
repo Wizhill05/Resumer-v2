@@ -166,17 +166,20 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
     # 6. Keys status (round robin count). Import lazily so admin route import
     # does not crash before app startup validation can produce a clear error.
     try:
-        from src.core.api_key_pool import cerebras_pool, google_pool
+        from src.core.api_key_pool import openrouter_pool, google_pool
 
-        cerebras_key_count = cerebras_pool.count
+        openrouter_key_count = openrouter_pool.count
         google_key_count = google_pool.count
     except RuntimeError:
-        cerebras_key_count = len(settings.cerebras_api_keys)
+        openrouter_key_count = len(settings.openrouter_api_keys)
         google_key_count = len(settings.google_api_keys)
 
     keys_status = {
+        "openrouter": {
+            "configured_keys_count": openrouter_key_count,
+        },
         "cerebras": {
-            "configured_keys_count": cerebras_key_count,
+            "configured_keys_count": openrouter_key_count,
         },
         "google": {
             "configured_keys_count": google_key_count,

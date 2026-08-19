@@ -38,7 +38,8 @@ type AnalyticsData = {
   average_generation_latency_seconds: number
   failure_rate_percent: number
   keys_status: {
-    cerebras: { configured_keys_count: number }
+    openrouter?: { configured_keys_count: number }
+    cerebras?: { configured_keys_count: number }
     google: { configured_keys_count: number }
   }
   llm_metrics: MetricSummary
@@ -696,8 +697,10 @@ export function AdminClient() {
                   <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">LLM Api Key Pools</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="border border-zinc-200 dark:border-zinc-700 p-4 text-center bg-zinc-50 dark:bg-zinc-800">
-                      <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase">Cerebras Keys</p>
-                      <p className="text-2xl font-black text-black dark:text-white mt-1">{analytics.keys_status.cerebras.configured_keys_count}</p>
+                      <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase">OpenRouter Keys</p>
+                      <p className="text-2xl font-black text-black dark:text-white mt-1">
+                        {analytics.keys_status.openrouter?.configured_keys_count ?? analytics.keys_status.cerebras?.configured_keys_count ?? 0}
+                      </p>
                       <span className="text-[10px] text-green-600 font-bold uppercase">Online (Primary)</span>
                     </div>
                     <div className="border border-zinc-200 dark:border-zinc-700 p-4 text-center bg-zinc-50 dark:bg-zinc-800">

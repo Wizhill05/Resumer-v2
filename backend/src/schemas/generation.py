@@ -18,7 +18,7 @@ class GenerationCreate(BaseModel):
     company: str | None = None
     keywords: list[str] | None = None
     instructions: str | None = None
-    model_used: str = "gemma-4-31b-it"
+    model_used: str = "poolside/laguna-xs-2.1:free"
     # Optional — backend falls back to template default when absent.
     content_split: ContentSplitRequest | None = None
     send_email: bool | None = None

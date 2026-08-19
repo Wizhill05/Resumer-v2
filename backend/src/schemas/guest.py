@@ -15,7 +15,7 @@ class GuestGenerationCreate(BaseModel):
     job_description: str
     keywords: list[str] | None = None
     instructions: str | None = None
-    model_used: str = "gemma-4-31b-it"
+    model_used: str = "poolside/laguna-xs-2.1:free"
     content_split: ContentSplitRequest | None = None
     profile: ProfileUpdate = ProfileUpdate()
     experiences: list[ExperienceCreate] = Field(default_factory=list)

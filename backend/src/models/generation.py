@@ -25,7 +25,7 @@ class Generation(Base):
     company: Mapped[str | None] = mapped_column(String)
     keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     instructions: Mapped[str | None] = mapped_column(Text)
-    model_used: Mapped[str] = mapped_column(String, default="gemma-4-31b-it")
+    model_used: Mapped[str] = mapped_column(String, default="poolside/laguna-xs-2.1:free")
     status: Mapped[str] = mapped_column(String, default="pending")
     error_message: Mapped[str | None] = mapped_column(Text)
     pdf_storage_key: Mapped[str | None] = mapped_column(String)

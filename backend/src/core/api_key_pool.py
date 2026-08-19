@@ -1,13 +1,13 @@
 """Round-robin API key pools.
 
-Two pools: cerebras_pool (primary) and google_pool (fallback).
+Two pools: openrouter_pool (primary) and google_pool (fallback).
 Each LLM call grabs its own key via pool.next() — no shared key per run.
 Thread-safe: atomic counter under lock so concurrent calls each get the
 next key in sequence without collision.
 
 Usage:
-    from src.core.api_key_pool import cerebras_pool, google_pool
-    key = cerebras_pool.next()
+    from src.core.api_key_pool import openrouter_pool, google_pool
+    key = openrouter_pool.next()
 """
 import itertools
 import threading
@@ -36,5 +36,6 @@ class ApiKeyPool:
 
 
 # Module-level singletons — initialised once at import time.
-cerebras_pool = ApiKeyPool(settings.cerebras_api_keys, "Cerebras")
+openrouter_pool = ApiKeyPool(settings.openrouter_api_keys, "OpenRouter")
+cerebras_pool = openrouter_pool  # Alias for backward compatibility
 google_pool = ApiKeyPool(settings.google_api_keys, "Google")

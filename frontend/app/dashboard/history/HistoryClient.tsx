@@ -258,8 +258,6 @@ function LiveProgressRow({
             <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
             {run.template_id}
             <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
-            {run.model_used}
-            <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
             <span className="text-amber-500 font-medium">{stepLabel} ({percent}%)</span>
           </p>
           <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
@@ -586,8 +584,6 @@ export function HistoryClient() {
                       {date}
                       <span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
                       {run.template_id}
-                      <span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
-                      {run.model_used}
                       {failed && (
                         <><span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
                       )}
