@@ -50,11 +50,13 @@ def create_oauth_access_token(
     email: str,
     scope: str,
     client_id: str,
+    issuer: str | None = None,
     expires_in_seconds: int = 3600,
 ) -> tuple[str, int]:
     """Create a signed JWT access token for OAuth 2.1 authorization."""
     now = datetime.now(timezone.utc)
     expire = now + timedelta(seconds=expires_in_seconds)
+    iss = issuer or getattr(settings, "BACKEND_URL", "").strip().rstrip("/") or settings.FRONTEND_URL or "https://resumer.io"
     payload = {
         "sub": str(user_id),
         "email": email,
@@ -62,7 +64,7 @@ def create_oauth_access_token(
         "client_id": client_id,
         "jti": str(uuid.uuid4()),
         "token_use": "access_token",
-        "iss": settings.FRONTEND_URL or "https://resumer.io",
+        "iss": iss,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
     }

@@ -24,6 +24,7 @@ async def get_optional_user(
     elif request:
         # Check cookies
         for cookie_name in [
+            "auth_token",
             "authjs.session-token",
             "__Secure-authjs.session-token",
             "next-auth.session-token",
