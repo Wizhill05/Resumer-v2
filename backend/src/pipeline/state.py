@@ -16,6 +16,7 @@ class ResumeGraphState(TypedDict):
     # Resolved content split: {"projects": N, "experience": M}
     # Enforced by backend before AI runs; drives exact limits in every pipeline node.
     content_split: dict
+    is_pro: Optional[bool]
 
     # Outputs
     job_analysis: Optional[dict]

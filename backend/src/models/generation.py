@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, DateTime, Float, ForeignKey, Integer, String, Text, Boolean, func
+from sqlalchemy import ARRAY, DateTime, Float, ForeignKey, Integer, String, Text, Boolean, JSON, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -220,3 +220,21 @@ class FeedbackRating(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+
+
+class LLMProviderConfig(Base):
+    __tablename__ = "llm_provider_configs"
+
+    tier: Mapped[str] = mapped_column(String, primary_key=True)  # "free" | "pro"
+    provider_name: Mapped[str] = mapped_column(String, default="openai_compatible")
+    base_url: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    api_keys: Mapped[list[str] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), default=list)
+    temperature: Mapped[float] = mapped_column(Float, default=0.2)
+    fallback_provider: Mapped[str | None] = mapped_column(String, default="google")
+    fallback_model: Mapped[str | None] = mapped_column(String, default="gemma-4-31b-it")
+    extra_headers: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

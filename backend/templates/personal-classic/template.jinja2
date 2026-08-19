@@ -39,11 +39,11 @@
   <div class="header-right">
     <div>
       {% if profile.email %}✉ <a href="mailto:{{ profile.email }}">{{ profile.email }}</a>{% endif %}
-      {% if profile.linkedin_url %} | <img class="social-icon" src="personal-classic/icons/linkedin.svg" /> <a href="{{ profile.linkedin_url }}">{{ profile.linkedin_url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a>{% endif %}
+      {% if profile.linkedin_url %} | <img class="social-icon" src="icons/linkedin.svg" /> <a href="{{ profile.linkedin_url }}">{{ profile.linkedin_url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a>{% endif %}
     </div>
     <div>
       {% if profile.phone %}✆ {{ profile.phone }}{% endif %}
-      {% if profile.github_url %} | <img class="social-icon" src="personal-classic/icons/github.svg" /> <a href="{{ profile.github_url }}">{{ profile.github_url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a>{% endif %}
+      {% if profile.github_url %} | <img class="social-icon" src="icons/github.svg" /> <a href="{{ profile.github_url }}">{{ profile.github_url | replace('https://', '') | replace('http://', '') | replace('www.', '') }}</a>{% endif %}
     </div>
   </div>
 </div>

@@ -1,12 +1,9 @@
 import ast
 
-from pydantic import BaseModel, Field, field_validator
-
-
+from typing import Any
+from pydantic import BaseModel, Field, field_validator, model_validator
 def _coerce_str_to_list(v):
-    """Cerebras function-calling sometimes returns list values as string
-    representations like ``"['Python', 'Go']"`` instead of actual arrays.
-    Parse them back into real lists."""
+    """Coerce string representations or comma-separated lists into actual lists."""
     if isinstance(v, str):
         v = v.strip()
         if v.startswith("["):
@@ -29,25 +26,56 @@ class JobAnalysis(BaseModel):
     key_requirements: list[str] = Field(default_factory=list, description="5-10 concise requirements/responsibilities ordered by hiring importance.")
     extracted_skills: list[str] = Field(default_factory=list, description="Normalized technical tools, domains, methods, and important soft skills from the role.")
 
+class SkillCategory(BaseModel):
+    category: str = Field(description="Category name, e.g. Languages, Frontend, Backend, Tools, Soft Skills.")
+    skills: list[str] = Field(default_factory=list, description="List of short skill names in this category.")
+
 
 class TailoredSummaryAndSkills(BaseModel):
     """Professional summary and categorized skills tailored to the target job."""
     summary: str = Field(description="Exactly 1-2 sentences, maximum 30 words, no first person, targeted to the job and supported by candidate evidence.")
+    categories: list[SkillCategory] = Field(
+        default_factory=list,
+        description="3-6 categorized skill groups, including Soft Skills.",
+    )
     skills: dict[str, list[str]] = Field(
         default_factory=dict,
-        description=(
-            "3-6 skill categories as a dictionary of short skill-name lists. Must include 'Soft Skills'. "
-            "Prioritize job-relevant skills and avoid keyword stuffing."
-        ),
+        description="Dictionary mapping category name to list of skills.",
     )
 
-    @field_validator("skills", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def coerce_skill_values(cls, v):
-        if isinstance(v, dict):
-            return {k: _coerce_str_to_list(val) for k, val in v.items()}
-        return v
+    def normalize_summary_and_skills(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
 
+        categories = data.get("categories")
+        skills_dict: dict[str, list[str]] = {}
+
+        if isinstance(categories, list):
+            for cat in categories:
+                if isinstance(cat, dict):
+                    cat_name = cat.get("category") or "General"
+                    cat_items = _coerce_str_to_list(cat.get("skills") or cat.get("items") or [])
+                    skills_dict[cat_name] = cat_items
+                elif hasattr(cat, "category") and hasattr(cat, "skills"):
+                    skills_dict[cat.category] = list(cat.skills)
+
+        raw_skills = data.get("skills")
+        if isinstance(raw_skills, dict):
+            for k, v in raw_skills.items():
+                skills_dict[k] = _coerce_str_to_list(v)
+        elif isinstance(raw_skills, list):
+            for item in raw_skills:
+                if isinstance(item, dict):
+                    cat_name = item.get("category") or "General"
+                    skills_dict[cat_name] = _coerce_str_to_list(item.get("skills") or item.get("items") or [])
+                elif isinstance(item, str) and ":" in item:
+                    parts = item.split(":", 1)
+                    skills_dict[parts[0].strip()] = _coerce_str_to_list(parts[1])
+
+        data["skills"] = skills_dict
+        return data
 
 class TailoredProject(BaseModel):
     """A personal project tailored to highlight relevance to the target job."""

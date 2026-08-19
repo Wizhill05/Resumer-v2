@@ -28,12 +28,61 @@ from src.models.generation import (
 )
 from src.models.user import User
 from src.pipeline.nodes import invoke_with_fallback
+from src.services.llm_config import llm_config_service, TierConfig
 from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
+
+
+class ModelSettingsOut(BaseModel):
+    tier: str
+    provider_name: str
+    base_url: str
+    model: str
+    keys_count: int
+    masked_keys: list[str]
+    temperature: float
+    fallback_provider: str | None = None
+    fallback_model: str | None = None
+    extra_headers: dict[str, str] = {}
+    is_active: bool = True
+    updated_at: datetime | None = None
+
+
+class ModelSettingsUpdate(BaseModel):
+    tier: str  # "free" | "pro"
+    base_url: str
+    model: str
+    api_keys: list[str] | None = None
+    temperature: float = 0.2
+    provider_name: str | None = None
+    fallback_provider: str | None = "google"
+    fallback_model: str | None = "gemma-4-31b-it"
+    extra_headers: dict[str, str] | None = None
+
+
+class ModelTestRequest(BaseModel):
+    tier: str = "pro"  # "pro" | "free"
+    base_url: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+    prompt: str | None = None
+
+
+class UserTierUpdate(BaseModel):
+    is_pro: bool
+
+
+def _mask_key(key: str) -> str:
+    if not key:
+        return ""
+    key = key.strip()
+    if len(key) <= 8:
+        return "****"
+    return f"{key[:4]}...{key[-4:]}"
 
 
 class PromptConfigSchema(BaseModel):
@@ -174,15 +223,24 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
         openrouter_key_count = len(settings.openrouter_api_keys)
         google_key_count = len(settings.google_api_keys)
 
+    await llm_config_service.load_from_db(db)
+    pro_cfg = llm_config_service.get_tier_config("pro")
+    free_cfg = llm_config_service.get_tier_config("free")
+
     keys_status = {
         "openrouter": {
             "configured_keys_count": openrouter_key_count,
+            "model": free_cfg.model,
+            "base_url": free_cfg.base_url,
         },
-        "cerebras": {
-            "configured_keys_count": openrouter_key_count,
+        "pro": {
+            "model": pro_cfg.model,
+            "base_url": pro_cfg.base_url,
+            "configured_keys_count": len(pro_cfg.api_keys) if pro_cfg.api_keys else (1 if settings.PRO_MODEL_API_KEY else 0),
         },
         "google": {
             "configured_keys_count": google_key_count,
+            "model": free_cfg.fallback_model or "gemma-4-31b-it",
         },
     }
 
@@ -684,6 +742,8 @@ async def list_users(
             )
         )
         monthly_count = monthly_result.scalar() or 0
+        is_admin = bool(u.email and (u.email in settings.admin_emails or "*" in settings.admin_emails))
+        is_pro = bool(getattr(u, "is_pro", False) or is_admin)
         output.append(
             {
                 "id": u.id,
@@ -691,6 +751,8 @@ async def list_users(
                 "name": u.name,
                 "created_at": u.created_at,
                 "provider": u.provider,
+                "is_pro": is_pro,
+                "is_admin": is_admin,
                 "request_count": req_count,
                 "reset_at": reset_at,
                 "daily_cap": override.daily_cap if override and override.daily_cap is not None else settings.DEFAULT_DAILY_CAP,
@@ -776,6 +838,138 @@ async def update_user_rate_limit(
 
     await db.commit()
     return {"status": "success", "message": f"User {id} rate limit updated to {data.request_count}"}
+
+
+@router.get("/model-settings", dependencies=[Depends(get_current_admin)])
+async def get_model_settings(db: AsyncSession = Depends(get_db)):
+    await llm_config_service.load_from_db(db)
+    configs = llm_config_service.get_all_configs()
+    response = {}
+    for tier_key, cfg in configs.items():
+        masked = [_mask_key(k) for k in cfg.api_keys if k]
+        response[tier_key] = {
+            "tier": cfg.tier,
+            "provider_name": cfg.provider_name,
+            "base_url": cfg.base_url,
+            "model": cfg.model,
+            "keys_count": len(cfg.api_keys),
+            "masked_keys": masked,
+            "temperature": cfg.temperature,
+            "fallback_provider": cfg.fallback_provider,
+            "fallback_model": cfg.fallback_model,
+            "extra_headers": cfg.extra_headers,
+            "is_active": cfg.is_active,
+            "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
+        }
+    return response
+
+
+@router.put("/model-settings", dependencies=[Depends(get_current_admin)])
+async def update_model_settings(data: ModelSettingsUpdate, db: AsyncSession = Depends(get_db)):
+    updated = await llm_config_service.update_tier_config(
+        db=db,
+        tier=data.tier,
+        base_url=data.base_url,
+        model=data.model,
+        api_keys=data.api_keys,
+        temperature=data.temperature,
+        provider_name=data.provider_name,
+        fallback_provider=data.fallback_provider,
+        fallback_model=data.fallback_model,
+        extra_headers=data.extra_headers,
+    )
+    masked = [_mask_key(k) for k in updated.api_keys if k]
+    return {
+        "tier": updated.tier,
+        "provider_name": updated.provider_name,
+        "base_url": updated.base_url,
+        "model": updated.model,
+        "keys_count": len(updated.api_keys),
+        "masked_keys": masked,
+        "temperature": updated.temperature,
+        "fallback_provider": updated.fallback_provider,
+        "fallback_model": updated.fallback_model,
+        "extra_headers": updated.extra_headers,
+        "is_active": updated.is_active,
+        "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
+    }
+
+
+@router.post("/model-settings/test", dependencies=[Depends(get_current_admin)])
+async def test_model_endpoint(data: ModelTestRequest, db: AsyncSession = Depends(get_db)):
+    started = time.perf_counter()
+    tier = data.tier.lower()
+    try:
+        if data.base_url or data.model or data.api_key:
+            base_url = (data.base_url or (settings.PRO_MODEL_BASE_URL if tier == "pro" else settings.FREE_MODEL_BASE_URL)).rstrip("/")
+            model = data.model or (settings.PRO_MODEL_NAME if tier == "pro" else settings.FREE_MODEL_NAME)
+            api_key = data.api_key
+            if not api_key:
+                if tier == "pro":
+                    api_key = settings.PRO_MODEL_API_KEY or "dummy-key"
+                else:
+                    api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
+
+            from langchain_openai import ChatOpenAI
+            headers = {"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"} if tier == "free" else None
+            llm = ChatOpenAI(
+                model=model,
+                base_url=base_url,
+                api_key=api_key or "dummy-key",
+                temperature=0.0,
+                default_headers=headers,
+            )
+        else:
+            await llm_config_service.load_from_db(db)
+            llm = llm_config_service.get_llm(tier=tier)
+
+        prompt_text = data.prompt or "Respond with a brief greeting containing the word 'pong'."
+        from langchain_core.messages import HumanMessage
+        response = await asyncio.wait_for(llm.ainvoke([HumanMessage(content=prompt_text)]), timeout=30.0)
+        latency_ms = (time.perf_counter() - started) * 1000
+        output_text = _message_content_to_text(response.content)
+
+        return {
+            "success": True,
+            "latency_ms": round(latency_ms, 2),
+            "output": output_text,
+            "model_used": getattr(llm, "model_name", None) or getattr(llm, "model", None),
+            "tier": tier,
+        }
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - started) * 1000
+        return {
+            "success": False,
+            "latency_ms": round(latency_ms, 2),
+            "error": str(exc),
+            "tier": tier,
+        }
+
+
+@router.patch("/users/{id}/tier", dependencies=[Depends(get_current_admin)])
+async def update_user_tier(id: uuid.UUID, data: UserTierUpdate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_pro = data.is_pro
+    await db.commit()
+    await db.refresh(user)
+
+    is_admin = bool(user.email and (user.email in settings.admin_emails or "*" in settings.admin_emails))
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "is_pro": user.is_pro,
+        "is_admin": is_admin,
+    }
+
+
+@router.put("/users/{id}/pro", dependencies=[Depends(get_current_admin)])
+async def set_user_pro_status(id: uuid.UUID, data: UserTierUpdate, db: AsyncSession = Depends(get_db)):
+    return await update_user_tier(id, data, db)
 
 
 @router.post("/prompts/playground", dependencies=[Depends(get_current_admin)])

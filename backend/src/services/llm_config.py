@@ -1,0 +1,301 @@
+"""Dynamic LLM Provider & Model Configuration Service.
+
+Manages dynamic runtime configurations for Free and Pro tiers:
+- Pro Tier: Dedicated endpoint hosting Google Gemini 3.7 Flash Tiered via OmniRoute gateway.
+- Free Tier: OpenRouter multi-key pool hosting Laguna model (poolside/laguna-xs-2.1:free).
+- Fallback: Google GenAI (Gemma 4 31B / Gemini 2.5 Flash).
+
+Thread-safe in-memory cache synchronized with PostgreSQL (llm_provider_configs table).
+"""
+from __future__ import annotations
+
+import logging
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.api_key_pool import google_pool, openrouter_pool
+from src.core.config import settings
+from src.models.generation import LLMProviderConfig
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TierConfig:
+    tier: str  # "free" | "pro"
+    provider_name: str
+    base_url: str
+    model: str
+    api_keys: list[str] = field(default_factory=list)
+    temperature: float = 0.2
+    fallback_provider: str | None = "google"
+    fallback_model: str | None = "gemma-4-31b-it"
+    extra_headers: dict[str, str] = field(default_factory=dict)
+    is_active: bool = True
+    updated_at: datetime | None = None
+
+
+class LLMConfigService:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._cache: dict[str, TierConfig] = {}
+        self._initialized = False
+        self._init_defaults()
+
+    def _init_defaults(self) -> None:
+        """Populate initial in-memory defaults from environment settings."""
+        free_keys = settings.openrouter_api_keys
+        pro_key = settings.PRO_MODEL_API_KEY.strip() if settings.PRO_MODEL_API_KEY else ""
+
+        self._cache["pro"] = TierConfig(
+            tier="pro",
+            provider_name="omniroute",
+            base_url=settings.PRO_MODEL_BASE_URL or "https://omniroute-latest-rmm0.onrender.com/",
+            model=settings.PRO_MODEL_NAME or "antigravity/gemini-3.7-flash-tiered",
+            api_keys=[pro_key] if pro_key else [],
+            temperature=0.2,
+            fallback_provider="google",
+            fallback_model="gemma-4-31b-it",
+            extra_headers={},
+            is_active=True,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+        self._cache["free"] = TierConfig(
+            tier="free",
+            provider_name="openrouter",
+            base_url=settings.FREE_MODEL_BASE_URL or "https://openrouter.ai/api/v1",
+            model=settings.FREE_MODEL_NAME or "poolside/laguna-xs-2.1:free",
+            api_keys=free_keys,
+            temperature=0.2,
+            fallback_provider="google",
+            fallback_model="gemma-4-31b-it",
+            extra_headers={
+                "HTTP-Referer": settings.FRONTEND_URL,
+                "X-Title": "Resumer",
+            },
+            is_active=True,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+    def get_tier_config(self, tier: str = "free") -> TierConfig:
+        tier_key = "pro" if str(tier).lower() in ("pro", "true", "1") else "free"
+        with self._lock:
+            if tier_key in self._cache:
+                return self._cache[tier_key]
+        self._init_defaults()
+        return self._cache[tier_key]
+
+    def get_all_configs(self) -> dict[str, TierConfig]:
+        with self._lock:
+            return dict(self._cache)
+
+    async def load_from_db(self, db: AsyncSession) -> None:
+        """Load tier configurations from PostgreSQL database into memory."""
+        try:
+            result = await db.execute(select(LLMProviderConfig))
+            records = result.scalars().all()
+            if not records:
+                # Seed defaults into database if table is empty
+                for tier_name, cfg in self._cache.items():
+                    db.add(
+                        LLMProviderConfig(
+                            tier=cfg.tier,
+                            provider_name=cfg.provider_name,
+                            base_url=cfg.base_url,
+                            model=cfg.model,
+                            api_keys=cfg.api_keys,
+                            temperature=cfg.temperature,
+                            fallback_provider=cfg.fallback_provider,
+                            fallback_model=cfg.fallback_model,
+                            extra_headers=cfg.extra_headers,
+                            is_active=cfg.is_active,
+                        )
+                    )
+                await db.commit()
+                return
+
+            with self._lock:
+                for row in records:
+                    self._cache[row.tier] = TierConfig(
+                        tier=row.tier,
+                        provider_name=row.provider_name,
+                        base_url=row.base_url,
+                        model=row.model,
+                        api_keys=row.api_keys or [],
+                        temperature=row.temperature,
+                        fallback_provider=row.fallback_provider,
+                        fallback_model=row.fallback_model,
+                        extra_headers=row.extra_headers or {},
+                        is_active=row.is_active,
+                        updated_at=row.updated_at,
+                    )
+                    # If free tier has database keys, update openrouter_pool
+                    if row.tier == "free" and row.api_keys:
+                        openrouter_pool.reload_keys(row.api_keys)
+
+            self._initialized = True
+        except Exception as exc:
+            logger.warning("Could not load LLMProviderConfig from DB; using environment defaults: %s", exc)
+
+    async def update_tier_config(
+        self,
+        db: AsyncSession,
+        tier: str,
+        base_url: str,
+        model: str,
+        api_keys: list[str] | None = None,
+        temperature: float = 0.2,
+        provider_name: str | None = None,
+        fallback_provider: str | None = "google",
+        fallback_model: str | None = "gemma-4-31b-it",
+        extra_headers: dict[str, str] | None = None,
+    ) -> TierConfig:
+        tier_key = "pro" if tier.lower() in ("pro", "true") else "free"
+        cleaned_url = base_url.strip()
+        cleaned_model = model.strip()
+        cleaned_keys = [k.strip() for k in (api_keys or []) if k and k.strip()]
+
+        result = await db.execute(select(LLMProviderConfig).where(LLMProviderConfig.tier == tier_key))
+        config_row = result.scalar_one_or_none()
+
+        if not config_row:
+            config_row = LLMProviderConfig(
+                tier=tier_key,
+                provider_name=provider_name or ("omniroute" if tier_key == "pro" else "openrouter"),
+                base_url=cleaned_url,
+                model=cleaned_model,
+                api_keys=cleaned_keys,
+                temperature=temperature,
+                fallback_provider=fallback_provider,
+                fallback_model=fallback_model,
+                extra_headers=extra_headers or {},
+                is_active=True,
+            )
+            db.add(config_row)
+        else:
+            config_row.base_url = cleaned_url
+            config_row.model = cleaned_model
+            if api_keys is not None:
+                config_row.api_keys = cleaned_keys
+            config_row.temperature = temperature
+            if provider_name:
+                config_row.provider_name = provider_name
+            config_row.fallback_provider = fallback_provider
+            config_row.fallback_model = fallback_model
+            if extra_headers is not None:
+                config_row.extra_headers = extra_headers
+
+        await db.commit()
+        await db.refresh(config_row)
+
+        updated = TierConfig(
+            tier=config_row.tier,
+            provider_name=config_row.provider_name,
+            base_url=config_row.base_url,
+            model=config_row.model,
+            api_keys=config_row.api_keys or [],
+            temperature=config_row.temperature,
+            fallback_provider=config_row.fallback_provider,
+            fallback_model=config_row.fallback_model,
+            extra_headers=config_row.extra_headers or {},
+            is_active=config_row.is_active,
+            updated_at=config_row.updated_at,
+        )
+
+        with self._lock:
+            self._cache[tier_key] = updated
+            if tier_key == "free" and cleaned_keys:
+                openrouter_pool.reload_keys(cleaned_keys)
+
+        return updated
+
+    def get_llm(
+        self,
+        tier: str = "free",
+        api_key_override: str | None = None,
+    ) -> ChatOpenAI:
+        """Create and return a configured ChatOpenAI client for the requested tier."""
+        cfg = self.get_tier_config(tier)
+        is_openrouter = "openrouter.ai" in cfg.base_url.lower()
+
+        api_key = api_key_override
+        if not api_key:
+            valid_keys = [k.strip() for k in (cfg.api_keys or []) if k and k.strip() and k.strip() != "dummy-key"]
+            if valid_keys:
+                api_key = valid_keys[0]
+            elif is_openrouter:
+                # Always pull a live key from OpenRouter pool when pointing to OpenRouter
+                api_key = openrouter_pool.next()
+            elif cfg.tier == "pro" and settings.PRO_MODEL_API_KEY:
+                api_key = settings.PRO_MODEL_API_KEY
+            else:
+                api_key = "dummy-key"
+
+        headers: dict[str, str] = {}
+        if is_openrouter:
+            headers["HTTP-Referer"] = settings.FRONTEND_URL
+            headers["X-Title"] = "Resumer"
+        if cfg.extra_headers:
+            headers.update(cfg.extra_headers)
+
+        return ChatOpenAI(
+            model=cfg.model,
+            temperature=cfg.temperature,
+            base_url=cfg.base_url.rstrip("/"),
+            api_key=api_key,
+            default_headers=headers if headers else None,
+        )
+    def get_fallback_llm(
+        self,
+        tier: str = "free",
+        api_key_override: str | None = None,
+    ) -> BaseChatModel:
+        """Create and return a configured fallback Chat model (Google GenAI)."""
+        cfg = self.get_tier_config(tier)
+        fallback_model = cfg.fallback_model or "gemma-4-31b-it"
+        api_key = api_key_override or google_pool.next()
+
+        return ChatGoogleGenerativeAI(
+            model=fallback_model,
+            temperature=cfg.temperature,
+            google_api_key=api_key,
+        )
+
+
+async def ensure_llm_provider_schema() -> None:
+    """Idempotently ensure is_pro column on users and llm_provider_configs table exist on startup."""
+    from src.core.database import engine
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_pro BOOLEAN NOT NULL DEFAULT false;"))
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS llm_provider_configs (
+                    tier VARCHAR PRIMARY KEY,
+                    provider_name VARCHAR NOT NULL DEFAULT 'openai_compatible',
+                    base_url VARCHAR NOT NULL,
+                    model VARCHAR NOT NULL,
+                    api_keys JSONB,
+                    temperature FLOAT NOT NULL DEFAULT 0.2,
+                    fallback_provider VARCHAR DEFAULT 'google',
+                    fallback_model VARCHAR DEFAULT 'gemma-4-31b-it',
+                    extra_headers JSONB,
+                    is_active BOOLEAN NOT NULL DEFAULT true,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                );
+            """))
+    except Exception as exc:
+        logger.warning("[llm_config/startup] ensure_llm_provider_schema warning: %s", exc)
+
+
+# Global singleton instance
+llm_config_service = LLMConfigService()

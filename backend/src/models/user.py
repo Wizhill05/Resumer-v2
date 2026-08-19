@@ -22,4 +22,5 @@ class User(Base):
     provider: Mapped[str | None] = mapped_column(String)
     first_generation_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     feedback_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    is_pro: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

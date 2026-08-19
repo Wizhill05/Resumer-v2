@@ -58,36 +58,12 @@ async def log_progress(
 
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
 
-from src.core.api_key_pool import openrouter_pool, google_pool
+from src.services.llm_config import llm_config_service
 
 
-def _openrouter_llm(api_key: str) -> ChatOpenAI:
-    return ChatOpenAI(
-        model="poolside/laguna-xs-2.1:free",
-        temperature=0.2,
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-        default_headers={
-            "HTTP-Referer": settings.FRONTEND_URL,
-            "X-Title": "Resumer",
-        },
-    )
-
-
-def _google_llm(api_key: str) -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model="gemma-4-31b-it",
-        temperature=0.2,
-        google_api_key=api_key,
-    )
-
-
-def _structured(llm, schema, provider: str):
+def _structured(llm, schema, provider: str | None = None):
     """Structured output with provider-appropriate method."""
-    if provider == "cerebras":
-        return llm.with_structured_output(schema, method="function_calling")
     return llm.with_structured_output(schema)
-
 
 def _extract_token_usage(result: Any) -> tuple[int | None, int | None, int | None]:
     metadata = getattr(result, "response_metadata", None) or {}
@@ -218,29 +194,36 @@ async def record_node_metric(
 async def invoke_with_fallback(
     chain_factory,
     invoke_args,
-    timeout: float = 120.0,
+    timeout: float = 40.0,
     node_name: str | None = None,
     gen_id: str | None = None,
-    max_attempts_per_provider: int = 3,
+    max_attempts_per_provider: int = 2,
+    is_pro: bool = False,
 ):
     """Retry each provider call before falling back to the next provider.
 
     chain_factory(llm, provider_name) -> a runnable chain.
-    Each call pulls its own key from the respective pool — parallel calls
-    naturally spread across different keys.
+    Dynamically uses Pro (OmniRoute Gemini 3.7) or Free (OpenRouter Laguna)
+    with fallback to Google GenAI.
     """
+    tier = "pro" if is_pro else "free"
+    primary_name = "omniroute" if is_pro else "openrouter"
+
     providers = [
-        ("openrouter", openrouter_pool, _openrouter_llm),
-        ("google", google_pool, _google_llm),
+        (primary_name, lambda: llm_config_service.get_llm(tier=tier)),
+        ("google", lambda: llm_config_service.get_fallback_llm(tier=tier)),
     ]
+    if is_pro:
+        providers.append(("openrouter", lambda: llm_config_service.get_llm(tier="free")))
+
     last_exc: Exception | None = None
-    for index, (name, pool, factory) in enumerate(providers):
+    for index, (name, factory) in enumerate(providers):
         llm = None
         try:
-            llm = factory(pool.next())
+            llm = factory()
         except Exception as exc:
             last_exc = exc
-            print(f"[llm_fallback] {name} unavailable ({exc!r}).")
+            print(f"[llm_fallback] {name} initialization failed ({exc!r}).")
             continue
 
         chain = chain_factory(llm, name)
@@ -280,10 +263,8 @@ async def invoke_with_fallback(
                     print(f"[llm_retry] {name} attempt {attempt} failed ({exc!r}). Retrying same call in {sleep_for:.2f}s...")
                     await asyncio.sleep(sleep_for)
 
-        if name != "google":
-            print(f"[llm_fallback] {name} exhausted {max_attempts_per_provider} attempts. Falling back to Google...")
+        print(f"[llm_fallback] {name} exhausted {max_attempts_per_provider} attempts. Falling back to next provider...")
     raise RuntimeError(f"All LLM providers failed. Last error: {last_exc!r}") from last_exc
-
 
 async def get_prompt_config(db: AsyncSession, name: str, default_system: str, default_user: str | None = None) -> tuple[str, str | None]:
     try:
@@ -349,6 +330,7 @@ async def job_analysis_node(
         },
         node_name="job_analysis",
         gen_id=gen_id,
+        is_pro=state.get("is_pro", False),
     )
 
     await log_progress(
@@ -442,6 +424,7 @@ async def selection_node(
         },
         node_name="selection",
         gen_id=gen_id,
+        is_pro=state.get("is_pro", False),
     )
 
     # ── Backend enforcement: clamp to exact split limits, dedup, fill gaps ────
@@ -512,14 +495,13 @@ async def summary_skills_node(
         default_system=(
             "ROLE: Senior resume writer optimizing top-of-resume positioning for ATS and human reviewers.\n"
             "TASK: Write a concise targeted summary and categorized skills from candidate material and job analysis.\n"
-            "OUTPUT CONTRACT: Return only the structured TailoredSummaryAndSkills object with summary and skills.\n"
+            "OUTPUT CONTRACT: Return only the structured TailoredSummaryAndSkills object with summary and categories.\n"
             "RULES:\n"
             "- summary: exactly 1-2 sentences, maximum 30 words, no first person, no fluff.\n"
             "- Anchor summary in candidate evidence and job priorities; do not claim unsupported years, degrees, employers, or certifications.\n"
-            "- skills: dictionary of 3-6 categories total. Each category value must be a list of short skill names.\n"
-            "- Must include a 'Soft Skills' category with relevant soft skills inferred from candidate evidence and role needs.\n"
+            "- categories: 3-6 skill categories total (e.g. Languages, Frontend, Backend, Tools, Soft Skills). Must include a 'Soft Skills' category.\n"
+            "- Each category must have a category name and a list of short skill names.\n"
             "- Prioritize job-matching skills first; include plausible demonstrated skills, not random keyword stuffing.\n"
-            "- Use clean category names such as Languages, Frontend, Backend, Data, Cloud, Tools, Soft Skills.\n"
             "- No prose outside the structured output."
         ),
         default_user=(
@@ -539,6 +521,7 @@ async def summary_skills_node(
         },
         node_name="summary_skills",
         gen_id=gen_id,
+        is_pro=state.get("is_pro", False),
     )
 
     await log_progress(
@@ -548,7 +531,14 @@ async def summary_skills_node(
         "Successfully tailored summary and grouped skills.",
     )
     summary_draft = result.model_dump()
-    summary_draft["skills"] = _normalize_skills(summary_draft.get("skills"))
+    skills_dict = summary_draft.get("skills") or {}
+    if not skills_dict and summary_draft.get("categories"):
+        skills_dict = {
+            c.get("category", "General"): c.get("skills", [])
+            for c in summary_draft["categories"]
+            if isinstance(c, dict) and c.get("category")
+        }
+    summary_draft["skills"] = _normalize_skills(skills_dict)
     return {"summary_draft": summary_draft}
 
 
@@ -613,6 +603,7 @@ async def experience_node(
         {"job_analysis": job_analysis, "entries": entries_text},
         node_name="experience_writer",
         gen_id=gen_id,
+        is_pro=state.get("is_pro", False),
     )
 
     tailored_exps = []
@@ -689,12 +680,12 @@ async def project_node(
         ]
     )
 
-    await log_progress(db, gen_id, "projects_writer", f"Tailoring {len(batch)} projects in one batch...")
     result = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, TailoredProjectBatch, p),
         {"job_analysis": job_analysis, "entries": entries_text},
         node_name="projects_writer",
         gen_id=gen_id,
+        is_pro=state.get("is_pro", False),
     )
 
     tailored_projs = []
@@ -785,15 +776,13 @@ async def extracurricular_node(
             ("user", usr_prompt),
         ]
     )
-
-    await log_progress(db, gen_id, "extracurricular_writer", f"Tailoring {len(batch)} extracurricular entries...")
     result = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, TailoredExtracurricularBatch, p),
         {"job_analysis": job_analysis, "entries": entries_text},
         node_name="extracurricular_writer",
         gen_id=gen_id,
+        is_pro=state.get("is_pro", False),
     )
-
     tailored = [
         {"description": entry.description}
         for entry in result.entries[:3]
@@ -1510,9 +1499,10 @@ async def orphan_repair_node(
         resp = await invoke_with_fallback(
             lambda llm, p: llm,
             messages,
-            timeout=120.0,
+            timeout=40.0,
             node_name="orphan_repair",
             gen_id=gen_id,
+            is_pro=state.get("is_pro", False),
         )
         content = resp.content
         if isinstance(content, list):

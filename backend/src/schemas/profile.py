@@ -7,11 +7,10 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-# ── Cerebras coercion helpers ─────────────────────────────────────────────────
-# Cerebras function-calling often returns list[str] as a plain comma-separated
-# string and date fields as human strings like "Jan 2025".  These helpers
-# normalise the values before Pydantic validation so both Cerebras and Google
-# outputs parse cleanly.
+# ── LLM output coercion helpers ─────────────────────────────────────────────
+# LLM function-calling sometimes returns list[str] as a plain comma-separated
+# string and date fields as human strings like "Jan 2025". These helpers
+# normalise the values before Pydantic validation so all model outputs parse cleanly.
 
 def _coerce_str_to_list(v):
     """'React, Node.js, Python' or "['React', 'Node']" → real list."""

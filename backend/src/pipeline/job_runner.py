@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.core.database import AsyncSessionLocal
 from src.core.notify import send_completion_email
 from src.models.generation import Generation
@@ -26,8 +27,8 @@ from src.models.user import User
 from src.pipeline.graph import compile_graph
 from src.pipeline.nodes import log_progress
 from src.pipeline.state import ResumeGraphState
+from src.services.llm_config import llm_config_service
 from src.template_registry.service import TemplateRegistryService
-
 
 def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState:
     snapshot = gen.guest_input_snapshot or {}
@@ -60,6 +61,7 @@ def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState
         instructions=gen.instructions or "",
         template_manifest=template_manifest.model_dump(),
         content_split=content_split,
+        is_pro=False,
         job_analysis=None,
         summary_draft=None,
         projects_draft=None,
@@ -82,7 +84,6 @@ def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState
         logs=[],
     )
 
-
 async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphState | None:
     template_manifest = TemplateRegistryService.get_template_manifest(gen.template_id)
     if not template_manifest:
@@ -94,6 +95,15 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
 
     if gen.is_guest and gen.guest_input_snapshot:
         return _state_from_snapshot(gen, template_manifest)
+    is_pro = False
+    if not gen.is_guest:
+        user_res = await db.execute(select(User).where(User.id == gen.user_id))
+        user = user_res.scalar_one_or_none()
+        if user:
+            is_pro = bool(
+                user.is_pro
+                or (user.email and (user.email in settings.admin_emails or "*" in settings.admin_emails))
+            )
 
     profile_res = await db.execute(select(Profile).where(Profile.user_id == gen.user_id))
     profile = profile_res.scalar_one_or_none()
@@ -185,9 +195,8 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         instructions=gen.instructions or "",
         template_manifest=template_manifest.model_dump(),
         content_split=content_split,
+        is_pro=is_pro,
         job_analysis=None,
-        summary_draft=None,
-        projects_draft=None,
         experience_draft=None,
         extracurriculars_draft=None,
         tailored_resume=None,
@@ -223,6 +232,7 @@ async def run_generation(gen_id: str) -> None:
     try:
         # 1. Fetch + claim the generation. Skip if already terminal.
         async with AsyncSessionLocal() as db:
+            await llm_config_service.load_from_db(db)
             gen_res = await db.execute(select(Generation).where(Generation.id == gen_uuid))
             gen = gen_res.scalar_one_or_none()
             if not gen:
@@ -231,9 +241,6 @@ async def run_generation(gen_id: str) -> None:
             if gen.status in ("completed", "failed"):
                 print(f"[job_runner] generation {gen_id} already {gen.status}; skipping")
                 return
-
-            gen.status = "in_progress"
-            await db.commit()
 
             initial_state = await _load_initial_state(db, gen)
             if initial_state is None:
@@ -246,6 +253,12 @@ async def run_generation(gen_id: str) -> None:
                         email = await _fetch_user_email(gen.user_id)
                         send_completion_email(email, g)
                 return
+
+            is_pro = bool(initial_state.get("is_pro"))
+            tier_cfg = llm_config_service.get_tier_config("pro" if is_pro else "free")
+            gen.status = "in_progress"
+            gen.model_used = tier_cfg.model
+            await db.commit()
 
             # The generations row has no email; fetch the user's email for notifications.
             user_email = await _fetch_user_email(gen.user_id)
@@ -265,9 +278,10 @@ async def run_generation(gen_id: str) -> None:
                 job_analysis = result.get("job_analysis") or {}
                 previous_metadata = dict(g.render_metadata or {})
                 g.status = "completed"
+                is_pro = bool(initial_state.get("is_pro"))
+                g.model_used = llm_config_service.get_tier_config("pro" if is_pro else "free").model
                 g.job_title = job_analysis.get("job_title") or g.job_title
                 g.company = job_analysis.get("company") or g.company
-                # Only persist keys for uploads that actually succeeded.
                 g.pdf_storage_key = result.get("pdf_storage_key")
                 g.md_storage_key = result.get("md_storage_key")
                 g.thumb_storage_key = result.get("thumb_storage_key")

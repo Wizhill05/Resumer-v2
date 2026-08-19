@@ -17,12 +17,17 @@ from src.core.config import settings
 
 class ApiKeyPool:
     def __init__(self, keys: list[str], name: str) -> None:
-        cleaned = [k.strip() for k in keys if k.strip()]
-        self._keys = cleaned
-        self._cycle = itertools.cycle(cleaned) if cleaned else None
-        self._lock = threading.Lock()
-        self.count = len(cleaned)
         self.name = name
+        self._lock = threading.Lock()
+        self.reload_keys(keys)
+
+    def reload_keys(self, keys: list[str]) -> None:
+        """Update the pool with a new set of keys safely under lock."""
+        cleaned = [k.strip() for k in keys if k and k.strip()]
+        with self._lock:
+            self._keys = cleaned
+            self._cycle = itertools.cycle(cleaned) if cleaned else None
+            self.count = len(cleaned)
 
     def next(self) -> str:
         """Return the next key in the round-robin sequence. Thread-safe."""
@@ -30,12 +35,11 @@ class ApiKeyPool:
             if self._cycle is None:
                 raise RuntimeError(
                     f"No {self.name} API keys configured. "
-                    f"Set {self.name.upper().replace(' ', '_')}_API_KEYS=key1,key2,... in your environment."
+                    f"Set {self.name.upper().replace(' ', '_')}_API_KEYS=key1,key2,... in your environment or admin settings."
                 )
             return next(self._cycle)
 
 
 # Module-level singletons — initialised once at import time.
 openrouter_pool = ApiKeyPool(settings.openrouter_api_keys, "OpenRouter")
-cerebras_pool = openrouter_pool  # Alias for backward compatibility
 google_pool = ApiKeyPool(settings.google_api_keys, "Google")

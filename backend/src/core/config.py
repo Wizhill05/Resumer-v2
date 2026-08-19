@@ -33,16 +33,19 @@ class Settings(BaseSettings):
     # Stored as raw string; parsed via property so pydantic-settings never
     # tries json.loads on a bare comma-separated value like "key1,key2".
     OPENROUTER_API_KEYS: str = Field(default="", alias="OPENROUTER_API_KEYS")
-    CEREBRAS_API_KEYS: str = Field(default="", alias="CEREBRAS_API_KEYS")
     GOOGLE_API_KEYS: str = Field(default="", alias="GOOGLE_API_KEYS")
+
+    FREE_MODEL_NAME: str = "poolside/laguna-xs-2.1:free"
+    FREE_MODEL_BASE_URL: str = "https://openrouter.ai/api/v1"
+
+    PRO_MODEL_NAME: str = "antigravity/gemini-3.7-flash-tiered"
+    PRO_MODEL_BASE_URL: str = "https://omniroute-latest-rmm0.onrender.com/"
+    PRO_MODEL_API_KEY: str = ""
 
     @property
     def openrouter_api_keys(self) -> list[str]:
-        return _parse_keys(self.OPENROUTER_API_KEYS) or _parse_keys(self.CEREBRAS_API_KEYS)
+        return _parse_keys(self.OPENROUTER_API_KEYS)
 
-    @property
-    def cerebras_api_keys(self) -> list[str]:
-        return _parse_keys(self.CEREBRAS_API_KEYS) or _parse_keys(self.OPENROUTER_API_KEYS)
     @property
     def google_api_keys(self) -> list[str]:
         return _parse_keys(self.GOOGLE_API_KEYS)

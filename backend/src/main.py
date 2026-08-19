@@ -19,10 +19,10 @@ from src.core.config import settings
 from src.core.storage import StorageService
 from src.api import profile, generation, system, imports, guest, admin, feedback, oauth
 from src.core.oauth import ensure_oauth_schema
+from src.services.llm_config import ensure_llm_provider_schema
 from src.template_registry import router as template_router
 from src.services.import_jobs import cleanup_old_jobs
 from src.mcp.server import mcp_server, get_mcp_app
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,7 +42,8 @@ async def lifespan(app: FastAPI):
     # Idempotently ensure OAuth tables and columns exist in PostgreSQL.
     await ensure_oauth_schema()
 
-    # Ephemeral import jobs cleanup loop
+    # Idempotently ensure LLM provider config schema and user pro tier exist.
+    await ensure_llm_provider_schema()
     cleanup_task = asyncio.create_task(cleanup_old_jobs())
     try:
         mcp_server.session_manager._has_started = False

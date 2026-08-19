@@ -87,7 +87,6 @@ def fetch_repo_context(owner: str, repo: str) -> dict:
 
     return {"metadata": metadata, "languages": languages, "readme": readme, "files": files, "manifests": manifests}
 
-
 async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHubProjectDraft:
     owner, repo, canonical_url = parse_github_url(url)
     context = fetch_repo_context(owner, repo)
@@ -104,6 +103,8 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             ),
         ]
     )
+    from src.core.config import settings
+    is_pro = bool(getattr(user, "is_pro", False) or (user.email and (user.email in settings.admin_emails or "*" in settings.admin_emails)))
     draft: GitHubProjectDraft = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, GitHubProjectDraft, p),
         {
@@ -114,8 +115,8 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             "manifests": context["manifests"],
             "readme": context["readme"],
         },
+        is_pro=is_pro,
     )
-    draft.github_url = canonical_url
     draft.technologies = unique_strings(draft.technologies)
     draft.bullet_points = unique_strings(draft.bullet_points)
     wrapper = add_duplicates(draft=ResumeImportDraft(projects=[draft]), existing=await load_existing_profile_data(db, user))
