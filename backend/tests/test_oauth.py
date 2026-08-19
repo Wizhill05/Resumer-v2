@@ -336,3 +336,56 @@ async def test_oauth_authorize_with_signed_token(client: AsyncClient, async_db: 
     assert post_res.status_code == 302
     assert "https://chatgpt.com/oauth/callback" in post_res.headers["location"]
     assert "code=" in post_res.headers["location"]
+
+@pytest.mark.asyncio
+async def test_railway_proxy_header_forces_https(client: AsyncClient):
+    # Even if Railway internal proxy sends proto=http, production domains MUST return https
+    headers = {
+        "x-forwarded-proto": "http",
+        "x-forwarded-host": "resumer-backend.aryansingh.space",
+    }
+    res = await client.get("/.well-known/oauth-authorization-server", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["issuer"] == "https://resumer-backend.aryansingh.space"
+    assert data["authorization_endpoint"] == "https://resumer-backend.aryansingh.space/oauth/authorize"
+    assert data["token_endpoint"] == "https://resumer-backend.aryansingh.space/oauth/token"
+
+    # Comma-separated proto headers
+    headers_chained = {
+        "x-forwarded-proto": "https, http",
+        "x-forwarded-host": "resumer-backend.aryansingh.space",
+    }
+    res_chained = await client.get("/.well-known/oauth-authorization-server", headers=headers_chained)
+    assert res_chained.status_code == 200
+    data_chained = res_chained.json()
+    assert data_chained["issuer"] == "https://resumer-backend.aryansingh.space"
+
+
+@pytest.mark.asyncio
+async def test_userinfo_get_and_post(client: AsyncClient, async_db: AsyncSession):
+    user = User(id=uuid.uuid4(), email="userinfo_test@example.com", name="Userinfo Test")
+    async_db.add(user)
+    await async_db.commit()
+
+    access_tok, _ = create_oauth_access_token(
+        user_id=user.id,
+        email=user.email,
+        scope="profile:read profile:write",
+        client_id="chatgpt",
+    )
+
+    # GET /oauth/userinfo with Bearer
+    res_get = await client.get("/oauth/userinfo", headers={"authorization": f"Bearer {access_tok}"})
+    assert res_get.status_code == 200
+    assert res_get.json()["email"] == "userinfo_test@example.com"
+
+    # POST /oauth/userinfo with Bearer
+    res_post = await client.post("/oauth/userinfo", headers={"authorization": f"Bearer {access_tok}"})
+    assert res_post.status_code == 200
+    assert res_post.json()["email"] == "userinfo_test@example.com"
+
+    # GET /userinfo alias
+    res_alias = await client.get("/userinfo", headers={"authorization": f"Bearer {access_tok}"})
+    assert res_alias.status_code == 200
+    assert res_alias.json()["email"] == "userinfo_test@example.com"

@@ -37,16 +37,29 @@ def is_expired(expires_at: datetime) -> bool:
 
 
 def get_base_url(request: Request) -> str:
-    """Resolve correct external base URL respecting reverse proxy headers."""
+    """Resolve correct external base URL respecting reverse proxy headers and production HTTPS."""
+    configured_backend_url = getattr(settings, "BACKEND_URL", "").strip().rstrip("/")
+
     proto = request.headers.get("x-forwarded-proto")
     host = request.headers.get("x-forwarded-host") or request.headers.get("host")
-    if proto and host:
-        return f"{proto}://{host}".rstrip("/")
-    elif host:
-        scheme = "http" if ("localhost" in host or "127.0.0.1" in host) else "https"
-        return f"{scheme}://{host}".rstrip("/")
-    return str(request.base_url).rstrip("/")
 
+    if proto:
+        proto = proto.split(",")[0].strip().lower()
+
+    if host:
+        host = host.split(",")[0].strip()
+        is_local = any(h in host.lower() for h in ["localhost", "127.0.0.1", "0.0.0.0", "testserver"])
+        scheme = "http" if (is_local and (proto == "http" or not proto)) else "https"
+        return f"{scheme}://{host}".rstrip("/")
+
+    if configured_backend_url:
+        return configured_backend_url
+
+    base = str(request.base_url).rstrip("/")
+    if not any(h in base for h in ["localhost", "127.0.0.1", "0.0.0.0", "testserver"]):
+        if base.startswith("http://"):
+            base = "https://" + base[7:]
+    return base
 
 # --- Schemas ---
 
@@ -399,6 +412,7 @@ async def oauth_token(
     code_verifier: str | None = Form(None),
     redirect_uri: str | None = Form(None),
     client_id: str | None = Form(None),
+    client_secret: str | None = Form(None),
     refresh_token: str | None = Form(None),
     scope: str | None = Form(None),
     authorization: str | None = Header(None),
@@ -409,28 +423,53 @@ async def oauth_token(
     if "application/json" in content_type:
         try:
             body = await request.json()
+            if isinstance(body, dict):
+                grant_type = body.get("grant_type") or grant_type
+                code = body.get("code") or code
+                code_verifier = body.get("code_verifier") or code_verifier
+                redirect_uri = body.get("redirect_uri") or redirect_uri
+                client_id = body.get("client_id") or client_id
+                client_secret = body.get("client_secret") or client_secret
+                refresh_token = body.get("refresh_token") or refresh_token
+                scope = body.get("scope") or scope
         except Exception:
-            body = {}
-        grant_type = body.get("grant_type") or grant_type
-        code = body.get("code") or code
-        code_verifier = body.get("code_verifier") or code_verifier
-        redirect_uri = body.get("redirect_uri") or redirect_uri
-        client_id = body.get("client_id") or client_id
-        refresh_token = body.get("refresh_token") or refresh_token
-        scope = body.get("scope") or scope
+            pass
+
+    # Fallback to query params if not provided in form/json
+    if not grant_type:
+        grant_type = request.query_params.get("grant_type") or grant_type
+    if not code:
+        code = request.query_params.get("code") or code
+    if not code_verifier:
+        code_verifier = request.query_params.get("code_verifier") or code_verifier
+    if not redirect_uri:
+        redirect_uri = request.query_params.get("redirect_uri") or redirect_uri
+    if not client_id:
+        client_id = request.query_params.get("client_id") or client_id
+    if not client_secret:
+        client_secret = request.query_params.get("client_secret") or client_secret
+    if not refresh_token:
+        refresh_token = request.query_params.get("refresh_token") or refresh_token
+    if not scope:
+        scope = request.query_params.get("scope") or scope
+
+    # Resolve client_id and client_secret from Basic Auth header if present
+    if authorization and authorization.startswith("Basic "):
+        import base64
+        try:
+            cred_bytes = base64.b64decode(authorization[6:].strip())
+            parts = cred_bytes.decode("utf-8").split(":", 1)
+            if parts and parts[0] and not client_id:
+                client_id = parts[0]
+            if len(parts) > 1 and parts[1] and not client_secret:
+                client_secret = parts[1]
+        except Exception:
+            pass
 
     if not grant_type:
         raise HTTPException(status_code=400, detail="Missing parameter: grant_type")
 
-    # Resolve client_id from form/body or Basic Auth header
-    resolved_client_id = client_id
-    if not resolved_client_id and authorization and authorization.startswith("Basic "):
-        import base64
-        try:
-            cred_bytes = base64.b64decode(authorization[6:])
-            resolved_client_id = cred_bytes.decode("utf-8").split(":")[0]
-        except Exception:
-            pass
+    base_url = get_base_url(request)
 
     # --- Authorization Code Exchange ---
     if grant_type == "authorization_code":
@@ -472,6 +511,7 @@ async def oauth_token(
             email=user.email,
             scope=auth_code_obj.scope,
             client_id=auth_code_obj.client_id,
+            issuer=base_url,
         )
 
         # Generate refresh token
@@ -543,6 +583,7 @@ async def oauth_token(
             email=user.email,
             scope=effective_scope,
             client_id=refresh_obj.client_id,
+            issuer=base_url,
         )
 
         # Issue new rotated refresh token in the same family
@@ -596,25 +637,57 @@ async def oauth_revoke(
 # --- Userinfo Endpoint (OIDC) ---
 
 @router.get("/oauth/userinfo")
+@router.post("/oauth/userinfo")
+@router.get("/userinfo")
+@router.post("/userinfo")
 async def oauth_userinfo(
+    request: Request,
     authorization: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """OpenID Connect Userinfo endpoint."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Bearer token")
+    """OpenID Connect Userinfo endpoint supporting GET and POST."""
+    token: str | None = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:].strip()
+    elif not authorization:
+        try:
+            form = await request.form()
+            token = form.get("access_token")
+        except Exception:
+            token = None
+        if not token:
+            token = request.query_params.get("access_token")
 
-    token = authorization[7:]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid Bearer token",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+
     payload = decode_oauth_token(token)
     if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
 
     user_id_str = payload.get("sub")
-    if not user_id_str:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token claims")
+    email = payload.get("email")
 
-    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id_str)))
-    user = result.scalar_one_or_none()
+    user: User | None = None
+    if user_id_str:
+        try:
+            result = await db.execute(select(User).where(User.id == uuid.UUID(user_id_str)))
+            user = result.scalar_one_or_none()
+        except ValueError:
+            pass
+
+    if not user and email:
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 

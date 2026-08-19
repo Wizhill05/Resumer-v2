@@ -44,6 +44,7 @@ class Settings(BaseSettings):
         return _parse_keys(self.GOOGLE_API_KEYS)
 
     FRONTEND_URL: str = "http://localhost:3000"
+    BACKEND_URL: str = ""
 
     ADMIN_EMAILS: str = "admin@example.com,user@example.com"
     DEFAULT_DAILY_CAP: int = 5

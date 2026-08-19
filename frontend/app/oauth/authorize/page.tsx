@@ -29,8 +29,14 @@ export default async function OAuthAuthorizePage({
   if (!backendUrl) {
     backendUrl = DEFAULT_BACKEND_URL
   }
-  const cleanBackendUrl = backendUrl.replace(/\/+$/, "")
-
+  let cleanBackendUrl = backendUrl.replace(/\/+$/, "")
+  if (
+    !cleanBackendUrl.includes("localhost") &&
+    !cleanBackendUrl.includes("127.0.0.1") &&
+    cleanBackendUrl.startsWith("http://")
+  ) {
+    cleanBackendUrl = "https://" + cleanBackendUrl.slice(7)
+  }
   const rawClientId = typeof params.client_id === "string" ? params.client_id : "Client"
   const clientName = rawClientId.charAt(0).toUpperCase() + rawClientId.slice(1)
   const relativeCallbackUrl = `/oauth/authorize?${queryParams.toString()}&backend_url=${encodeURIComponent(cleanBackendUrl)}`

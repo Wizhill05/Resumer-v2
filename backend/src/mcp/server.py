@@ -446,6 +446,19 @@ class MCPAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Always permit CORS OPTIONS preflight
+        if scope.get("method") == "OPTIONS":
+            response = Response(
+                status_code=204,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                },
+            )
+            await response(scope, receive, send)
+            return
+
         headers = Headers(scope=scope)
         auth_header = headers.get("authorization")
         query_string = scope.get("query_string", b"").decode("utf-8")
@@ -459,19 +472,30 @@ class MCPAuthMiddleware:
             token = parsed.get("token", [None])[0]
 
         if not token:
+            proto = headers.get("x-forwarded-proto")
+            host = headers.get("x-forwarded-host") or headers.get("host")
+            if proto:
+                proto = proto.split(",")[0].strip().lower()
+            if host:
+                host = host.split(",")[0].strip()
+                is_local = any(h in host.lower() for h in ["localhost", "127.0.0.1", "0.0.0.0", "testserver"])
+                scheme = "http" if (is_local and (proto == "http" or not proto)) else "https"
+                base_url = f"{scheme}://{host}".rstrip("/")
+            else:
+                base_url = getattr(settings, "BACKEND_URL", "").strip().rstrip("/") or "https://resumer-backend.aryansingh.space"
+
             response = Response(
                 content=json.dumps({"error": "Unauthorized: Missing Bearer token in Authorization header."}),
                 status_code=401,
                 media_type="application/json",
                 headers={
-                    "WWW-Authenticate": 'Bearer realm="Resumer", authorization_uri="/oauth/authorize"',
+                    "WWW-Authenticate": f'Bearer realm="Resumer", authorization_uri="{base_url}/oauth/authorize", resource_metadata="{base_url}/.well-known/oauth-protected-resource"',
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Headers": "*",
                 },
             )
             await response(scope, receive, send)
             return
-
         # Validate token
         payload = decode_oauth_token(token)
         if not payload:
