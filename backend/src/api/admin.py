@@ -413,15 +413,47 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
     )
     tokens_by_gen = {row[0]: int(row[1]) for row in tokens_res.all()}
 
+    # Query primary provider per generation from GenerationNodeMetric
+    providers_res = await db.execute(
+        select(
+            GenerationNodeMetric.generation_id,
+            GenerationNodeMetric.provider,
+            func.count(GenerationNodeMetric.id),
+        )
+        .where(GenerationNodeMetric.generation_id.isnot(None))
+        .group_by(GenerationNodeMetric.generation_id, GenerationNodeMetric.provider)
+        .order_by(GenerationNodeMetric.generation_id, desc(func.count(GenerationNodeMetric.id)))
+    )
+    primary_provider_by_gen: dict[uuid.UUID, str] = {}
+    for gen_id_val, prov, _ in providers_res.all():
+        if gen_id_val and gen_id_val not in primary_provider_by_gen:
+            primary_provider_by_gen[gen_id_val] = (prov or "").lower()
+
     model_groups: dict[str, list[dict]] = {}
     for row in all_gens:
-        model = row.model_used or "unknown"
+        raw_model = row.model_used or "unknown"
+        gen_provider = primary_provider_by_gen.get(row.id, "")
+
+        # Distinguish Gemma 4 from Cerebras vs Google Gemini
+        if "gemma" in raw_model.lower():
+            if gen_provider == "google":
+                model_key = "gemma-4-31b-it (Google Gemini)"
+            else:
+                # Historical default was Cerebras API
+                model_key = "gemma-4-31b-it (Cerebras)"
+        elif "gemini-3.7" in raw_model.lower() or "antigravity" in raw_model.lower():
+            model_key = "gemini-3.7-flash-tiered (OmniRoute)"
+        elif "laguna" in raw_model.lower() or "poolside" in raw_model.lower():
+            model_key = "laguna-xs-2.1:free (OpenRouter)"
+        else:
+            model_key = raw_model
+
         dur = None
         if row.completed_at and row.created_at:
             dur = max(0.0, (row.completed_at - row.created_at).total_seconds())
-        if model not in model_groups:
-            model_groups[model] = []
-        model_groups[model].append({
+        if model_key not in model_groups:
+            model_groups[model_key] = []
+        model_groups[model_key].append({
             "id": row.id,
             "status": row.status,
             "duration": dur,
@@ -435,7 +467,6 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
         failed_count = sum(1 for it in items if it["status"] == "failed")
         completed_count = len(completed_items)
         failure_rate = round((failed_count / total_runs * 100), 1) if total_runs > 0 else 0.0
-
         durations = sorted([it["duration"] for it in completed_items if it["duration"] is not None])
         avg_dur = round(sum(durations) / len(durations), 1) if durations else 0.0
         p50_dur = round(durations[int(len(durations) * 0.5)], 1) if durations else 0.0
@@ -498,7 +529,11 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
         {
             "node_name": row[0],
             "provider": row[1],
-            "model": row[2] or "default",
+            "model": (
+                f"{row[2]} (Cerebras)" if row[1] == "cerebras" and "gemma" in (row[2] or "").lower()
+                else f"{row[2]} (Google Gemini)" if row[1] == "google" and "gemma" in (row[2] or "").lower()
+                else (row[2] or "default")
+            ),
             "calls": row[3],
             "avg_latency_ms": round(float(row[4] or 0), 1),
             "total_tokens": int(row[5] or 0),
@@ -531,7 +566,11 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
             "id": str(row[0]),
             "job_title": row[1] or "Unknown Title",
             "company": row[2] or "Unknown Company",
-            "model_used": row[3],
+            "model_used": (
+                f"{row[3]} (Google Gemini)" if "gemma" in (row[3] or "").lower() and primary_provider_by_gen.get(row[0]) == "google"
+                else f"{row[3]} (Cerebras)" if "gemma" in (row[3] or "").lower()
+                else row[3]
+            ),
             "template_id": row[4],
             "created_at": row[5].isoformat() if row[5] else "",
             "completed_at": row[6].isoformat() if row[6] else "",
@@ -540,7 +579,6 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
         }
         for row in slow_res.all()
     ]
-
     return {
         "models_benchmark": models_benchmark,
         "templates_benchmark": templates_benchmark,
