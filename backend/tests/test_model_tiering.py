@@ -1,8 +1,7 @@
 import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.core.auth import get_current_admin
 from src.core.database import get_db
@@ -17,15 +16,18 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest.fixture
 async def async_db():
+    from src.services.llm_config import llm_config_service
+    llm_config_service._init_defaults()
     engine = create_async_engine(TEST_DB_URL, echo=False)
     tables = [User.__table__, LLMProviderConfig.__table__]
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
 
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
     async with async_session() as session:
         yield session
 
+    llm_config_service._init_defaults()
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(sync_conn, tables=tables))
     await engine.dispose()
@@ -107,6 +109,32 @@ async def test_llm_config_service_db_roundtrip_no_keys(async_db: AsyncSession):
     assert loaded_free.temperature == 0.4
     assert not hasattr(loaded_free, "api_keys")
 
+
+@pytest.mark.asyncio
+async def test_llm_config_service_error_fallback_and_rollback(async_db: AsyncSession):
+    service = LLMConfigService()
+
+    # Simulate a failing query by closing/invalidating or mocking execute
+    class FailingSession:
+        def __init__(self, real_session):
+            self._real = real_session
+            self.rolled_back = False
+
+        async def execute(self, *args, **kwargs):
+            raise RuntimeError("Simulated DB column missing error")
+
+        async def rollback(self):
+            self.rolled_back = True
+            await self._real.rollback()
+
+    failing_session = FailingSession(async_db)
+    # Should not raise; should catch and log warning, and trigger rollback
+    await service.load_from_db(failing_session)
+    assert failing_session.rolled_back is True
+    # In-memory defaults remain intact
+    free_cfg = service.get_tier_config("free")
+    assert free_cfg.model is not None
+    assert "openrouter.ai" in free_cfg.base_url
 
 @pytest.mark.asyncio
 async def test_admin_model_settings_api(client: AsyncClient, async_db: AsyncSession):

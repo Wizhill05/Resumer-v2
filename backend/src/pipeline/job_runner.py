@@ -232,7 +232,7 @@ async def run_generation(gen_id: str) -> None:
     try:
         # 1. Fetch + claim the generation. Skip if already terminal.
         async with AsyncSessionLocal() as db:
-            await llm_config_service.load_from_db(db)
+            await llm_config_service.load_from_db()
             gen_res = await db.execute(select(Generation).where(Generation.id == gen_uuid))
             gen = gen_res.scalar_one_or_none()
             if not gen:
