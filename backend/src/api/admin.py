@@ -389,6 +389,166 @@ async def generation_metrics(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     ]
 
 
+@router.get("/metrics/timing-by-model", dependencies=[Depends(get_current_admin)])
+async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
+    # 1. Models Benchmark: Group completed/failed runs by model_used
+    gens_res = await db.execute(
+        select(
+            Generation.id,
+            Generation.model_used,
+            Generation.status,
+            Generation.created_at,
+            Generation.completed_at,
+        ).where(Generation.created_at.isnot(None))
+    )
+    all_gens = gens_res.all()
+
+    tokens_res = await db.execute(
+        select(
+            GenerationNodeMetric.generation_id,
+            func.coalesce(func.sum(GenerationNodeMetric.total_tokens), 0),
+        )
+        .where(GenerationNodeMetric.generation_id.isnot(None))
+        .group_by(GenerationNodeMetric.generation_id)
+    )
+    tokens_by_gen = {row[0]: int(row[1]) for row in tokens_res.all()}
+
+    model_groups: dict[str, list[dict]] = {}
+    for row in all_gens:
+        model = row.model_used or "unknown"
+        dur = None
+        if row.completed_at and row.created_at:
+            dur = max(0.0, (row.completed_at - row.created_at).total_seconds())
+        if model not in model_groups:
+            model_groups[model] = []
+        model_groups[model].append({
+            "id": row.id,
+            "status": row.status,
+            "duration": dur,
+            "tokens": tokens_by_gen.get(row.id, 0),
+        })
+
+    models_benchmark = []
+    for model_name, items in model_groups.items():
+        total_runs = len(items)
+        completed_items = [it for it in items if it["status"] == "completed" and it["duration"] is not None]
+        failed_count = sum(1 for it in items if it["status"] == "failed")
+        completed_count = len(completed_items)
+        failure_rate = round((failed_count / total_runs * 100), 1) if total_runs > 0 else 0.0
+
+        durations = sorted([it["duration"] for it in completed_items if it["duration"] is not None])
+        avg_dur = round(sum(durations) / len(durations), 1) if durations else 0.0
+        p50_dur = round(durations[int(len(durations) * 0.5)], 1) if durations else 0.0
+        p90_dur = round(durations[min(len(durations) - 1, int(len(durations) * 0.9))], 1) if durations else 0.0
+        min_dur = round(durations[0], 1) if durations else 0.0
+        max_dur = round(durations[-1], 1) if durations else 0.0
+        total_toks = sum(it["tokens"] for it in items)
+
+        models_benchmark.append({
+            "model_name": model_name,
+            "total_runs": total_runs,
+            "completed_runs": completed_count,
+            "failed_runs": failed_count,
+            "failure_rate": failure_rate,
+            "avg_duration_seconds": avg_dur,
+            "p50_duration_seconds": p50_dur,
+            "p90_duration_seconds": p90_dur,
+            "min_duration_seconds": min_dur,
+            "max_duration_seconds": max_dur,
+            "total_tokens": total_toks,
+        })
+    models_benchmark.sort(key=lambda x: x["total_runs"], reverse=True)
+
+    # 2. Templates Benchmark
+    tpl_res = await db.execute(
+        select(
+            Generation.template_id,
+            func.count(Generation.id),
+            func.avg(func.extract("epoch", Generation.completed_at) - func.extract("epoch", Generation.created_at)),
+        )
+        .where(Generation.status == "completed", Generation.completed_at.isnot(None))
+        .group_by(Generation.template_id)
+        .order_by(desc(func.count(Generation.id)))
+    )
+    templates_benchmark = [
+        {
+            "template_id": row[0],
+            "total_runs": row[1],
+            "avg_duration_seconds": round(float(row[2] or 0), 1),
+        }
+        for row in tpl_res.all()
+    ]
+
+    # 3. Nodes by Model Benchmark
+    nodes_res = await db.execute(
+        select(
+            GenerationNodeMetric.node_name,
+            GenerationNodeMetric.provider,
+            GenerationNodeMetric.model,
+            func.count(GenerationNodeMetric.id),
+            func.avg(GenerationNodeMetric.latency_ms),
+            func.coalesce(func.sum(GenerationNodeMetric.total_tokens), 0),
+            func.count().filter(GenerationNodeMetric.status == "error"),
+            func.count().filter(GenerationNodeMetric.fallback_used == True),
+        )
+        .group_by(GenerationNodeMetric.node_name, GenerationNodeMetric.provider, GenerationNodeMetric.model)
+        .order_by(GenerationNodeMetric.node_name, desc(func.count(GenerationNodeMetric.id)))
+    )
+    nodes_by_model = [
+        {
+            "node_name": row[0],
+            "provider": row[1],
+            "model": row[2] or "default",
+            "calls": row[3],
+            "avg_latency_ms": round(float(row[4] or 0), 1),
+            "total_tokens": int(row[5] or 0),
+            "errors": row[6],
+            "fallbacks": row[7],
+        }
+        for row in nodes_res.all()
+    ]
+
+    # 4. Top 10 Slowest Completed Runs
+    slow_res = await db.execute(
+        select(
+            Generation.id,
+            Generation.job_title,
+            Generation.company,
+            Generation.model_used,
+            Generation.template_id,
+            Generation.created_at,
+            Generation.completed_at,
+            User.email,
+            (func.extract("epoch", Generation.completed_at) - func.extract("epoch", Generation.created_at)).label("dur_sec"),
+        )
+        .outerjoin(User, Generation.user_id == User.id)
+        .where(Generation.status == "completed", Generation.completed_at.isnot(None))
+        .order_by(desc("dur_sec"))
+        .limit(10)
+    )
+    slowest_runs = [
+        {
+            "id": str(row[0]),
+            "job_title": row[1] or "Unknown Title",
+            "company": row[2] or "Unknown Company",
+            "model_used": row[3],
+            "template_id": row[4],
+            "created_at": row[5].isoformat() if row[5] else "",
+            "completed_at": row[6].isoformat() if row[6] else "",
+            "email": row[7] or "Guest",
+            "duration_seconds": round(float(row[8] or 0), 1),
+        }
+        for row in slow_res.all()
+    ]
+
+    return {
+        "models_benchmark": models_benchmark,
+        "templates_benchmark": templates_benchmark,
+        "nodes_by_model": nodes_by_model,
+        "slowest_runs": slowest_runs,
+    }
+
+
 @router.get("/storage/objects", dependencies=[Depends(get_current_admin)])
 async def list_storage_objects(prefix: str = "", cursor: str | None = None, limit: int = 100):
     storage = StorageService()

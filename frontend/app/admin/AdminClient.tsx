@@ -116,6 +116,57 @@ type GenerationNodeDetail = {
   total_tokens: number | null
   created_at: string
 }
+
+type ModelBenchmarkItem = {
+  model_name: string
+  total_runs: number
+  completed_runs: number
+  failed_runs: number
+  failure_rate: number
+  avg_duration_seconds: number
+  p50_duration_seconds: number
+  p90_duration_seconds: number
+  min_duration_seconds: number
+  max_duration_seconds: number
+  total_tokens: number
+}
+
+type TemplateBenchmarkItem = {
+  template_id: string
+  total_runs: number
+  avg_duration_seconds: number
+}
+
+type NodeModelBenchmarkItem = {
+  node_name: string
+  provider: string
+  model: string
+  calls: number
+  avg_latency_ms: number
+  total_tokens: number
+  errors: number
+  fallbacks: number
+}
+
+type SlowestRunItem = {
+  id: string
+  job_title: string
+  company: string
+  model_used: string
+  template_id: string
+  created_at: string
+  completed_at: string
+  email: string
+  duration_seconds: number
+}
+
+type TimingByModelResponse = {
+  models_benchmark: ModelBenchmarkItem[]
+  templates_benchmark: TemplateBenchmarkItem[]
+  nodes_by_model: NodeModelBenchmarkItem[]
+  slowest_runs: SlowestRunItem[]
+}
+
 type UserItem = {
   id: string
   email: string
@@ -459,11 +510,14 @@ function TimingWaterfallModal({
 
 export function AdminClient() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"analytics" | "models" | "generations" | "prompts" | "users" | "metrics" | "storage" | "templates" | "feedback">("analytics")
+  const [activeTab, setActiveTab] = useState<"analytics" | "models" | "generations" | "timing" | "prompts" | "users" | "metrics" | "storage" | "templates" | "feedback">("analytics")
   const [generationSearch, setGenerationSearch] = useState("")
+  const [timingSearch, setTimingSearch] = useState("")
   const [generationStatus, setGenerationStatus] = useState("")
   const [generationUserType, setGenerationUserType] = useState("")
   const [selectedTimingGen, setSelectedTimingGen] = useState<GenerationItem | null>(null)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [newLimitVal, setNewLimitVal] = useState(5)
   const [userSearch, setUserSearch] = useState("")
   const [storagePrefix, setStoragePrefix] = useState("")
   const [playgroundVariables, setPlaygroundVariables] = useState("{}")
@@ -472,7 +526,6 @@ export function AdminClient() {
   const [templateId, setTemplateId] = useState("personal-classic")
   const [templateContext, setTemplateContext] = useState("{}")
   const [templateHtml, setTemplateHtml] = useState("")
-
   // Model Settings States
   const [proBaseUrl, setProBaseUrl] = useState("")
   const [proModel, setProModel] = useState("")
@@ -513,11 +566,13 @@ export function AdminClient() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [liveLogs, setLiveLogs] = useState<LogItem[]>([])
 
-  // States for rate limit edit
-  const [editingUserId, setEditingUserId] = useState<string | null>(null)
-  const [newLimitVal, setNewLimitVal] = useState(5)
+  // Timing by Model Query
+  const { data: timingData, isLoading: loadingTiming, refetch: refetchTiming } = useQuery<TimingByModelResponse>({
+    queryKey: ["admin", "timing-by-model"],
+    queryFn: () => fetchJson<TimingByModelResponse>("/api/backend/admin/metrics/timing-by-model"),
+  })
 
-  // 1. Fetch Analytics
+  // 2. Fetch Generations
   const { data: analytics, error: analyticsErr, isLoading: loadingAnalytics } = useQuery<AnalyticsData>({
     queryKey: ["admin", "analytics"],
     queryFn: () => fetchJson<AnalyticsData>("/api/backend/admin/analytics"),
@@ -978,6 +1033,13 @@ export function AdminClient() {
           size="sm"
         >
           <FileText className="mr-2" size={16} /> Generations
+        </Button>
+        <Button 
+          variant={activeTab === "timing" ? "default" : "outline"} 
+          onClick={() => setActiveTab("timing")}
+          size="sm"
+        >
+          <Timer className="mr-2" size={16} /> Pipeline Timing
         </Button>
         <Button 
           variant={activeTab === "prompts" ? "default" : "outline"} 
@@ -1663,6 +1725,308 @@ export function AdminClient() {
                   </table>
                 </div>
               )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* PIPELINE TIMING & MODEL BENCHMARK TAB */}
+      {activeTab === "timing" && (
+        <div className="space-y-6 pixel-enter">
+          {/* Header */}
+          <div className="flex flex-wrap justify-between items-center gap-3 border-b dark:border-zinc-700 pb-3">
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wide flex items-center gap-2">
+                <Timer size={16} className="text-[#ff4e26]" /> Pipeline Timing &amp; Model Benchmarks
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Cross-model latency analysis, template compilation speeds, and LangGraph pipeline node execution bottlenecks.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="xs" variant="outline" onClick={() => refetchTiming()} disabled={loadingTiming}>
+                <RefreshCw size={12} className={`mr-1 ${loadingTiming ? "animate-spin text-[#ff4e26]" : ""}`} /> Refresh
+              </Button>
+            </div>
+          </div>
+
+          {loadingTiming ? (
+            <div className="space-y-4">
+              <div className="soft-skeleton h-24" />
+              <div className="soft-skeleton h-64" />
+            </div>
+          ) : !timingData ? (
+            <p className="text-xs text-zinc-500 italic py-12 text-center">No timing telemetry recorded yet.</p>
+          ) : (
+            <>
+              {/* Top Summary Stat Grid */}
+              {(() => {
+                const models = timingData.models_benchmark || []
+                const completedModels = models.filter((m) => m.completed_runs > 0 && m.avg_duration_seconds > 0)
+                const fastestModel = completedModels.length > 0 ? [...completedModels].sort((a, b) => a.avg_duration_seconds - b.avg_duration_seconds)[0] : null
+                const slowestModel = completedModels.length > 0 ? [...completedModels].sort((a, b) => b.avg_duration_seconds - a.avg_duration_seconds)[0] : null
+                const totalRuns = models.reduce((acc, m) => acc + m.total_runs, 0)
+                const totalTokens = models.reduce((acc, m) => acc + m.total_tokens, 0)
+
+                return (
+                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+                    <div className="panel-strong p-4">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Fastest Model</p>
+                      <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-1 truncate" title={fastestModel?.model_name || "N/A"}>
+                        {fastestModel ? (fastestModel.model_name.includes("/") ? fastestModel.model_name.split("/").slice(1).join("/") : fastestModel.model_name) : "N/A"}
+                      </p>
+                      <p className="mt-1 text-[10px] font-mono font-bold text-zinc-500">
+                        {fastestModel ? `${fastestModel.avg_duration_seconds}s avg` : "--"}
+                      </p>
+                    </div>
+                    <div className="panel-strong p-4">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Slowest Model</p>
+                      <p className="text-lg font-black text-amber-600 dark:text-amber-400 mt-1 truncate" title={slowestModel?.model_name || "N/A"}>
+                        {slowestModel ? (slowestModel.model_name.includes("/") ? slowestModel.model_name.split("/").slice(1).join("/") : slowestModel.model_name) : "N/A"}
+                      </p>
+                      <p className="mt-1 text-[10px] font-mono font-bold text-zinc-500">
+                        {slowestModel ? `${slowestModel.avg_duration_seconds}s avg` : "--"}
+                      </p>
+                    </div>
+                    <div className="panel-strong p-4">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Benchmarked Builds</p>
+                      <p className="text-3xl font-black text-[#ff4e26] mt-1">{totalRuns}</p>
+                      <p className="mt-1 text-[10px] font-mono font-bold text-zinc-500">Across {models.length} models</p>
+                    </div>
+                    <div className="panel-strong p-4">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Total Tokens Tracked</p>
+                      <p className="text-2xl font-black text-black dark:text-white mt-1">{totalTokens.toLocaleString()}</p>
+                      <p className="mt-1 text-[10px] font-mono font-bold text-zinc-500">Pipeline telemetry</p>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Section 1: Model Benchmark Comparison Grid */}
+              <div className="panel-strong p-5 space-y-3">
+                <div className="flex flex-wrap justify-between items-center gap-2 border-b dark:border-zinc-700 pb-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                    <Cpu size={15} className="text-[#ff4e26]" /> LLM Model Execution Benchmarks
+                  </h3>
+                  <Input
+                    value={timingSearch}
+                    onChange={(e) => setTimingSearch(e.target.value)}
+                    placeholder="Filter by model name..."
+                    className="h-8 text-xs max-w-xs"
+                  />
+                </div>
+
+                <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-700 dark:text-zinc-300">
+                        <th className="p-3">Model Name</th>
+                        <th className="p-3 text-center">Volume</th>
+                        <th className="p-3">Avg Duration</th>
+                        <th className="p-3">P50 / P90</th>
+                        <th className="p-3">Min / Max Range</th>
+                        <th className="p-3 text-center">Fail Rate</th>
+                        <th className="p-3 text-right">Total Tokens</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700 font-medium">
+                      {timingData.models_benchmark
+                        .filter((m) => !timingSearch || m.model_name.toLowerCase().includes(timingSearch.toLowerCase()))
+                        .map((m) => {
+                          let speedBadge = "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800"
+                          if (m.avg_duration_seconds > 45) speedBadge = "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800"
+                          if (m.avg_duration_seconds > 90) speedBadge = "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800"
+
+                          return (
+                            <tr key={m.model_name} className="hover:bg-zinc-50 dark:hover:bg-zinc-800 font-mono">
+                              <td className="p-3">
+                                <p className="font-extrabold uppercase text-black dark:text-white font-sans text-xs">
+                                  {m.model_name.includes("/") ? m.model_name.split("/").slice(1).join("/") : m.model_name}
+                                </p>
+                                <p className="text-[10px] text-zinc-400 truncate max-w-sm" title={m.model_name}>
+                                  {m.model_name}
+                                </p>
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className="font-extrabold text-black dark:text-white">{m.total_runs}</span>
+                                <span className="text-[10px] text-zinc-400 block font-sans">
+                                  {m.completed_runs} ok &bull; {m.failed_runs} fail
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <span className={`px-2 py-0.5 text-xs font-bold border ${speedBadge}`}>
+                                  {m.avg_duration_seconds ? `${m.avg_duration_seconds}s` : "--"}
+                                </span>
+                              </td>
+                              <td className="p-3 text-zinc-700 dark:text-zinc-300 text-[11px]">
+                                <span className="font-bold">{m.p50_duration_seconds ? `${m.p50_duration_seconds}s` : "--"}</span>
+                                <span className="text-zinc-400 mx-1">/</span>
+                                <span className="text-zinc-500">{m.p90_duration_seconds ? `${m.p90_duration_seconds}s` : "--"}</span>
+                              </td>
+                              <td className="p-3 text-[10px] text-zinc-500">
+                                {m.min_duration_seconds}s &rarr; {m.max_duration_seconds}s
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className={`text-xs font-bold ${m.failure_rate > 5 ? "text-red-600" : "text-emerald-600"}`}>
+                                  {m.failure_rate}%
+                                </span>
+                              </td>
+                              <td className="p-3 text-right font-bold text-black dark:text-white">
+                                {m.total_tokens ? m.total_tokens.toLocaleString() : "--"}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Section 2: Templates and Node Breakdown Side-by-Side */}
+              <div className="grid gap-6 md:grid-cols-2">
+                {/* Left: Template Latency Rankings */}
+                <div className="panel-strong p-5 space-y-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                    <Play size={14} className="text-[#ff4e26]" /> Template Compilation Speeds
+                  </h3>
+                  <div className="space-y-2">
+                    {timingData.templates_benchmark.map((tpl) => (
+                      <div key={tpl.template_id} className="p-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-extrabold uppercase text-black dark:text-white">{tpl.template_id}</p>
+                          <p className="text-[10px] text-zinc-500 font-mono">{tpl.total_runs} completed generations</p>
+                        </div>
+                        <div className="text-right font-mono">
+                          <span className="text-sm font-extrabold text-black dark:text-white">{tpl.avg_duration_seconds}s</span>
+                          <span className="text-[10px] text-zinc-400 block">avg duration</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right: Pipeline Node Latency Matrix */}
+                <div className="panel-strong p-5 space-y-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                    <Layers size={14} className="text-[#ff4e26]" /> LangGraph Node Latencies
+                  </h3>
+                  <div className="overflow-x-auto max-h-[350px] border border-zinc-200 dark:border-zinc-700">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-[10px] text-zinc-500 uppercase">
+                          <th className="p-2">Node</th>
+                          <th className="p-2">Model</th>
+                          <th className="p-2 text-right">Avg Latency</th>
+                          <th className="p-2 text-right">Calls</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700 font-mono text-[11px]">
+                        {timingData.nodes_by_model.slice(0, 15).map((node, i) => (
+                          <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                            <td className="p-2 font-bold uppercase text-black dark:text-white font-sans text-xs">
+                              {node.node_name}
+                            </td>
+                            <td className="p-2 text-[10px] text-zinc-400 truncate max-w-[120px]" title={node.model}>
+                              {node.model}
+                            </td>
+                            <td className="p-2 text-right font-bold text-zinc-800 dark:text-zinc-200">
+                              {(node.avg_latency_ms / 1000).toFixed(2)}s
+                            </td>
+                            <td className="p-2 text-right text-zinc-500">
+                              {node.calls}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Slowest Generations Leaderboard */}
+              <div className="panel-strong p-5 space-y-3">
+                <div className="flex justify-between items-center border-b dark:border-zinc-700 pb-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                    <Activity size={15} className="text-red-500" /> Slowest Generations Leaderboard (Top Bottlenecks)
+                  </h3>
+                  <span className="text-[10px] font-mono text-zinc-500">Ranked by duration</span>
+                </div>
+
+                <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-700 dark:text-zinc-300">
+                        <th className="p-3">Job &amp; User</th>
+                        <th className="p-3">Model</th>
+                        <th className="p-3">Template</th>
+                        <th className="p-3">Duration</th>
+                        <th className="p-3">Date</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700 font-medium">
+                      {timingData.slowest_runs.map((run) => (
+                        <tr key={run.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                          <td className="p-3">
+                            <p className="font-extrabold uppercase text-black dark:text-white">
+                              {run.job_title}
+                            </p>
+                            <p className="text-[10px] text-zinc-500">
+                              {run.company} &bull; {run.email}
+                            </p>
+                          </td>
+                          <td className="p-3 font-mono text-[10px] text-zinc-600 dark:text-zinc-400 truncate max-w-[140px]" title={run.model_used}>
+                            {run.model_used}
+                          </td>
+                          <td className="p-3 text-zinc-600 dark:text-zinc-400 font-mono text-[10px]">
+                            {run.template_id}
+                          </td>
+                          <td className="p-3 font-mono font-bold text-red-600 dark:text-red-400">
+                            {run.duration_seconds}s
+                          </td>
+                          <td className="p-3 font-mono text-[10px] text-zinc-500">
+                            {new Date(run.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex justify-end gap-1.5">
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                onClick={() => setSelectedTimingGen({
+                                  id: run.id,
+                                  user_id: "",
+                                  template_id: run.template_id,
+                                  job_title: run.job_title,
+                                  company: run.company,
+                                  model_used: run.model_used,
+                                  status: "completed",
+                                  created_at: run.created_at,
+                                  completed_at: run.completed_at,
+                                  duration_seconds: run.duration_seconds,
+                                  is_guest: false,
+                                  intermediate_resume_count: 0,
+                                })}
+                              >
+                                <Timer size={12} className="mr-1 text-[#ff4e26]" /> Waterfall
+                              </Button>
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                onClick={() => {
+                                  setViewingLogsGenId(run.id)
+                                  setActiveTab("generations")
+                                }}
+                              >
+                                <Terminal size={12} />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </>
           )}
         </div>
