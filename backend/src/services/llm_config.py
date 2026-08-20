@@ -93,15 +93,17 @@ class LLMConfigService:
         with self._lock:
             return dict(self._cache)
 
-    async def load_from_db(self, db: AsyncSession) -> None:
+    async def load_from_db(self, db: AsyncSession | None = None) -> None:
         """Load tier configurations from PostgreSQL database into memory."""
-        try:
-            result = await db.execute(select(LLMProviderConfig))
+        from src.core.database import AsyncSessionLocal
+
+        async def _load_records(session: AsyncSession) -> None:
+            result = await session.execute(select(LLMProviderConfig))
             records = result.scalars().all()
             if not records:
                 # Seed defaults into database if table is empty
                 for tier_name, cfg in self._cache.items():
-                    db.add(
+                    session.add(
                         LLMProviderConfig(
                             tier=cfg.tier,
                             provider_name=cfg.provider_name,
@@ -114,7 +116,7 @@ class LLMConfigService:
                             is_active=cfg.is_active,
                         )
                     )
-                await db.commit()
+                await session.commit()
                 return
 
             with self._lock:
@@ -131,11 +133,21 @@ class LLMConfigService:
                         is_active=row.is_active,
                         updated_at=row.updated_at,
                     )
-
             self._initialized = True
+
+        try:
+            if db is not None:
+                await _load_records(db)
+            else:
+                async with AsyncSessionLocal() as session:
+                    await _load_records(session)
         except Exception as exc:
             logger.warning("Could not load LLMProviderConfig from DB; using environment defaults: %s", exc)
-
+            if db is not None:
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
     async def update_tier_config(
         self,
         db: AsyncSession,

@@ -219,7 +219,10 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
         openrouter_key_count = len(settings.openrouter_api_keys)
         google_key_count = len(settings.google_api_keys)
 
-    await llm_config_service.load_from_db(db)
+    try:
+        await llm_config_service.load_from_db(db)
+    except Exception:
+        pass
     pro_cfg = llm_config_service.get_tier_config("pro")
     free_cfg = llm_config_service.get_tier_config("free")
 
@@ -240,17 +243,26 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
         },
     }
 
-    metrics_result = await db.execute(
-        select(
-            func.coalesce(func.sum(GenerationNodeMetric.total_tokens), 0),
-            func.avg(GenerationNodeMetric.latency_ms),
-            func.count().filter(GenerationNodeMetric.fallback_used == True),
-            func.count().filter(GenerationNodeMetric.parse_error == True),
-            func.count(GenerationNodeMetric.id),
+    total_tokens, avg_node_latency, fallback_count, parse_error_count, metric_count = 0, 0.0, 0, 0, 0
+    try:
+        metrics_result = await db.execute(
+            select(
+                func.coalesce(func.sum(GenerationNodeMetric.total_tokens), 0),
+                func.avg(GenerationNodeMetric.latency_ms),
+                func.count().filter(GenerationNodeMetric.fallback_used == True),
+                func.count().filter(GenerationNodeMetric.parse_error == True),
+                func.count(GenerationNodeMetric.id),
+            )
         )
-    )
-    total_tokens, avg_node_latency, fallback_count, parse_error_count, metric_count = metrics_result.one()
-
+        row = metrics_result.one_or_none()
+        if row:
+            total_tokens, avg_node_latency, fallback_count, parse_error_count, metric_count = row
+    except Exception as exc:
+        logger.warning("[admin/analytics] Could not query generation node metrics: %s", exc)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
     return {
         "total_users": total_users,
         "total_generations": total_generations,
