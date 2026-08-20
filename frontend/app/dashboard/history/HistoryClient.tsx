@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef, useMemo } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy } from "lucide-react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft } from "lucide-react"
 import { createPortal } from "react-dom"
 import { FeedbackModal } from "@/components/FeedbackModal"
 
@@ -341,7 +341,126 @@ function LiveProgressGridCard({
   )
 }
 
-function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) => void }) {
+function FullscreenResumeOverlay({
+  run,
+  onClose,
+}: {
+  run: HistoryRun
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handler)
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.removeEventListener("keydown", handler)
+      document.body.style.overflow = ""
+    }
+  }, [onClose])
+
+  const date = new Date(run.created_at).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-zinc-950/95 backdrop-blur-md text-white animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Resume Preview"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      {/* Top Action Header Bar */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3 md:px-6">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded bg-zinc-900 transition-colors cursor-pointer"
+            title="Back to History (Esc)"
+          >
+            <ArrowLeft size={14} />
+            <span className="hidden sm:inline">Back</span>
+          </button>
+          <div className="min-w-0">
+            <h3 className="text-sm font-extrabold uppercase tracking-tight truncate text-white md:text-base">
+              {run.job_title || "Tailored Resume"}
+            </h3>
+            <p className="text-xs font-semibold text-zinc-400 truncate">
+              {run.company ? `${run.company} • ` : ""}{date} • {run.template_id}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={`/api/backend/generate/${run.id}/download`}
+            target="_blank"
+            rel="noreferrer"
+            download
+          >
+            <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-[#ff4e26] hover:bg-[#e03d16] text-white rounded transition-colors cursor-pointer shadow-sm">
+              <Download size={14} />
+              <span>Download PDF</span>
+            </button>
+          </a>
+          <button
+            onClick={() => {
+              window.location.href = `/dashboard/history/${run.id}/edit`
+            }}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider border border-zinc-700 hover:border-zinc-500 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded transition-colors cursor-pointer"
+          >
+            <Pencil size={13} />
+            <span>Edit</span>
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors cursor-pointer"
+            aria-label="Close fullscreen preview"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Fullscreen Preview Canvas */}
+      <div className="flex-1 overflow-auto p-4 md:p-8 flex items-center justify-center bg-zinc-900/60">
+        <div className="relative mx-auto my-auto max-w-3xl w-full flex flex-col items-center justify-center">
+          {run.thumb_storage_key ? (
+            <img
+              src={`/api/backend/generate/${run.id}/thumb`}
+              alt={`${run.job_title || "Resume"} fullscreen preview`}
+              className="max-h-[82vh] w-auto max-w-full rounded shadow-2xl bg-white object-contain border border-zinc-700 select-none"
+            />
+          ) : (
+            <div
+              className="w-full max-w-2xl bg-white text-zinc-900 p-8 shadow-2xl rounded flex flex-col items-center justify-center text-center space-y-4"
+              style={{ aspectRatio: "210/297" }}
+            >
+              <FileText size={48} className="text-zinc-400" />
+              <p className="text-sm font-semibold text-zinc-600">
+                Rendering preview...
+              </p>
+              <a href={`/api/backend/generate/${run.id}/download`} target="_blank" rel="noreferrer">
+                <button className="px-4 py-2 text-xs font-bold bg-[#ff4e26] text-white rounded">
+                  Download PDF directly
+                </button>
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id: string) => void; onPreview?: (run: HistoryRun) => void }) {
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   })
@@ -354,7 +473,7 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
       <div
         className={`relative border-b border-gray-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 ${completed ? "cursor-pointer" : ""}`}
         style={{ aspectRatio: "210/297" }}
-        onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
+        onClick={() => completed && onPreview ? onPreview(run) : (completed && (window.location.href = `/api/backend/generate/${run.id}/download`))}
       >
         {completed && run.thumb_storage_key ? (
           <img
@@ -372,7 +491,6 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
             )}
           </div>
         )}
-
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
@@ -428,8 +546,8 @@ export function HistoryClient() {
   })
   const [view, setView] = useState<ViewMode>("list")
   const [activeGenForFeedback, setActiveGenForFeedback] = useState<string | null>(null)
+  const [fullscreenRun, setFullscreenRun] = useState<HistoryRun | null>(null)
   const deleteRun = useDeleteRun()
-
   // Lazy loading infinite scroll observer
   useEffect(() => {
     const el = sentinelRef.current
@@ -553,7 +671,7 @@ export function HistoryClient() {
               run.status === "in_progress" || run.status === "pending" ? (
                 <LiveProgressGridCard key={run.id} run={run} onDelete={deleteRun} refetch={refetch} />
               ) : (
-                <GridCard key={run.id} run={run} onDelete={deleteRun} />
+                <GridCard key={run.id} run={run} onDelete={deleteRun} onPreview={setFullscreenRun} />
               )
             ))}
           </div>
@@ -629,17 +747,29 @@ export function HistoryClient() {
                     </div>
                   </div>
 
-                  {/* Right: edit + delete */}
+                  {/* Right: preview + edit + delete */}
                   <div className="flex items-center gap-1 shrink-0">
                     {completed && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 hover:!text-zinc-800 dark:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
-                        aria-label="Edit"
-                      >
-                        <Pencil size={13} />
-                        <span className="hidden sm:inline">Edit</span>
-                      </button>
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setFullscreenRun(run) }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors cursor-pointer"
+                          aria-label="Preview"
+                          title="Fullscreen Preview"
+                        >
+                          <Eye size={13} />
+                          <span className="hidden sm:inline">Preview</span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors cursor-pointer"
+                          aria-label="Edit"
+                          title="Edit Resume"
+                        >
+                          <Pencil size={13} />
+                          <span className="hidden sm:inline">Edit</span>
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
@@ -665,11 +795,17 @@ export function HistoryClient() {
           )}
         </>
       )}
-
       {activeGenForFeedback && (
         <FeedbackModal
           generationId={activeGenForFeedback}
           onClose={() => setActiveGenForFeedback(null)}
+        />
+      )}
+
+      {fullscreenRun && (
+        <FullscreenResumeOverlay
+          run={fullscreenRun}
+          onClose={() => setFullscreenRun(null)}
         />
       )}
     </div>
