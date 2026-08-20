@@ -2,9 +2,8 @@ import json
 import sqlite3
 import uuid
 import pytest
-from starlette.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 sqlite3.register_adapter(uuid.UUID, lambda u: str(u))
 sqlite3.register_converter("GUID", lambda b: uuid.UUID(b.decode()))
@@ -12,6 +11,11 @@ sqlite3.register_adapter(list, json.dumps)
 sqlite3.register_adapter(dict, json.dumps)
 
 from src.core.config import settings
+settings.JWT_SECRET = "test-jwt-secret-rotated-12345"
+if not settings.OPENROUTER_API_KEYS:
+    settings.OPENROUTER_API_KEYS = "sk-or-v1-testkey1,sk-or-v1-testkey2"
+if not settings.GOOGLE_API_KEYS:
+    settings.GOOGLE_API_KEYS = "test-google-key1,test-google-key2"
 from src.core.database import get_db
 from src.core.oauth import create_oauth_access_token
 from src.main import app
@@ -28,29 +32,34 @@ async def async_db():
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=tables))
 
-    session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    import src.mcp.server
+    orig_mcp_session = src.mcp.server.AsyncSessionLocal
+    src.mcp.server.AsyncSessionLocal = session_maker
 
     async with session_maker() as session:
         yield session
 
+    src.mcp.server.AsyncSessionLocal = orig_mcp_session
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(sync_conn, tables=tables))
     await engine.dispose()
 
-
 @pytest.fixture
-def client(async_db: AsyncSession):
+async def client(async_db: AsyncSession):
     async def override_get_db():
         yield async_db
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app, base_url="http://test") as tc:
-        yield tc
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
     app.dependency_overrides.clear()
 
 
-def test_mcp_unauthenticated_request_returns_401(client: TestClient):
-    res = client.post("/mcp", json={
+@pytest.mark.asyncio
+async def test_mcp_unauthenticated_request_returns_401(client: AsyncClient):
+    res = await client.post("/mcp", json={
         "jsonrpc": "2.0",
         "method": "tools/list",
         "id": 1,
@@ -60,8 +69,9 @@ def test_mcp_unauthenticated_request_returns_401(client: TestClient):
     assert 'Bearer realm="Resumer"' in res.headers["WWW-Authenticate"]
 
 
-def test_mcp_invalid_token_returns_401(client: TestClient):
-    res = client.post(
+@pytest.mark.asyncio
+async def test_mcp_invalid_token_returns_401(client: AsyncClient):
+    res = await client.post(
         "/mcp",
         headers={"Authorization": "Bearer invalid_garbage_token"},
         json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
@@ -71,7 +81,7 @@ def test_mcp_invalid_token_returns_401(client: TestClient):
 
 
 @pytest.mark.asyncio
-async def test_mcp_authenticated_token_resolves_user(client: TestClient, async_db: AsyncSession):
+async def test_mcp_authenticated_token_resolves_user(client: AsyncClient, async_db: AsyncSession):
     # Create user
     user = User(
         email="mcp_user@example.com",
@@ -91,44 +101,48 @@ async def test_mcp_authenticated_token_resolves_user(client: TestClient, async_d
     )
 
     # Initialize MCP protocol request
-    res = client.post(
-        "/mcp",
-        headers={
-            "Authorization": f"Bearer {access_tok}",
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-        },
-        json={
-            "jsonrpc": "2.0",
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "test-client", "version": "1.0.0"},
+    mcp_server.session_manager._has_started = False
+    async with mcp_server.session_manager.run():
+        res = await client.post(
+            "/mcp",
+            headers={
+                "Authorization": f"Bearer {access_tok}",
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
             },
-            "id": 1,
-        },
-    )
-    assert res.status_code == 200
-    data = res.json()
-    assert "result" in data
-    assert data["result"]["serverInfo"]["name"] == "Resumer MCP Server"
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                },
+                "id": 1,
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "result" in data
+        assert data["result"]["serverInfo"]["name"] == "Resumer MCP Server"
 
-
-def test_mcp_sse_unauthenticated_request_returns_401(client: TestClient):
-    res = client.get("/sse")
+@pytest.mark.asyncio
+async def test_mcp_sse_unauthenticated_request_returns_401(client: AsyncClient):
+    res = await client.get("/sse")
     assert res.status_code == 401
     assert "WWW-Authenticate" in res.headers
     assert 'Bearer realm="Resumer"' in res.headers["WWW-Authenticate"]
 
 
-def test_mcp_sse_invalid_token_returns_401(client: TestClient):
-    res = client.get("/sse", headers={"Authorization": "Bearer invalid_garbage_token"})
+@pytest.mark.asyncio
+async def test_mcp_sse_invalid_token_returns_401(client: AsyncClient):
+    res = await client.get("/sse", headers={"Authorization": "Bearer invalid_garbage_token"})
     assert res.status_code == 401
     assert 'error="invalid_token"' in res.headers["WWW-Authenticate"]
 
 
-def test_mcp_messages_unauthenticated_request_returns_401(client: TestClient):
-    res = client.post("/messages", json={"jsonrpc": "2.0", "method": "tools/list", "id": 1})
+@pytest.mark.asyncio
+async def test_mcp_messages_unauthenticated_request_returns_401(client: AsyncClient):
+    res = await client.post("/messages", json={"jsonrpc": "2.0", "method": "tools/list", "id": 1})
     assert res.status_code == 401
     assert "WWW-Authenticate" in res.headers

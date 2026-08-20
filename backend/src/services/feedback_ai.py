@@ -112,7 +112,7 @@ async def process_new_support_report(report_id: uuid.UUID) -> None:
 
 
 async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str) -> Optional[str]:
-    """Transcribe audio bytes using Google Gemini multimodal Flash model."""
+    """Transcribe audio bytes using Google Gemma / Gemini API."""
     try:
         import base64
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -122,7 +122,7 @@ async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str) -> Optional
 
         key = settings.google_api_keys[0]
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemma-4-31b-it",
             google_api_key=key,
             temperature=0.0,
         )

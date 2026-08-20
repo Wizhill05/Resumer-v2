@@ -3,7 +3,7 @@
 Manages dynamic runtime configurations for Free and Pro tiers:
 - Pro Tier: Dedicated endpoint hosting Google Gemini 3.7 Flash Tiered via OmniRoute gateway.
 - Free Tier: OpenRouter multi-key pool hosting Laguna model (poolside/laguna-xs-2.1:free).
-- Fallback: Google GenAI (Gemma 4 31B / Gemini 2.5 Flash).
+- Fallback: Google GenAI (gemma-4-31b-it via Gemini API).
 
 Thread-safe in-memory cache synchronized with PostgreSQL (llm_provider_configs table).
 """
