@@ -164,13 +164,23 @@ class LLMConfigService:
         cleaned_url = base_url.strip()
         cleaned_model = model.strip()
 
+        def _infer_provider_name(url: str) -> str:
+            u = url.lower()
+            if "openrouter.ai" in u:
+                return "openrouter"
+            if "omniroute" in u:
+                return "omniroute"
+            return "openai_compatible"
+
+        resolved_provider = provider_name or _infer_provider_name(cleaned_url)
+
         result = await db.execute(select(LLMProviderConfig).where(LLMProviderConfig.tier == tier_key))
         config_row = result.scalar_one_or_none()
 
         if not config_row:
             config_row = LLMProviderConfig(
                 tier=tier_key,
-                provider_name=provider_name or ("omniroute" if tier_key == "pro" else "openrouter"),
+                provider_name=resolved_provider,
                 base_url=cleaned_url,
                 model=cleaned_model,
                 temperature=temperature,
@@ -184,13 +194,11 @@ class LLMConfigService:
             config_row.base_url = cleaned_url
             config_row.model = cleaned_model
             config_row.temperature = temperature
-            if provider_name:
-                config_row.provider_name = provider_name
+            config_row.provider_name = resolved_provider
             config_row.fallback_provider = fallback_provider
             config_row.fallback_model = fallback_model
             if extra_headers is not None:
                 config_row.extra_headers = extra_headers
-
         await db.commit()
         await db.refresh(config_row)
 

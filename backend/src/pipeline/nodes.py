@@ -207,15 +207,27 @@ async def invoke_with_fallback(
     with fallback to Google GenAI.
     """
     tier = "pro" if is_pro else "free"
-    primary_name = "omniroute" if is_pro else "openrouter"
+    cfg = llm_config_service.get_tier_config(tier)
+
+    # Dynamically determine provider name from configured endpoint
+    url_lower = cfg.base_url.lower()
+    is_openrouter = "openrouter.ai" in url_lower
+    if is_openrouter:
+        primary_name = "openrouter"
+    elif "omniroute" in url_lower:
+        primary_name = "omniroute"
+    elif cfg.provider_name and cfg.provider_name not in ("openai_compatible", "default"):
+        primary_name = cfg.provider_name
+    else:
+        primary_name = "custom_endpoint"
 
     providers = [
         (primary_name, lambda: llm_config_service.get_llm(tier=tier)),
         ("google", lambda: llm_config_service.get_fallback_llm(tier=tier)),
     ]
-    if is_pro:
+    # Only append OpenRouter fallback if primary is not already OpenRouter
+    if is_pro and not is_openrouter:
         providers.append(("openrouter", lambda: llm_config_service.get_llm(tier="free")))
-
     last_exc: Exception | None = None
     for index, (name, factory) in enumerate(providers):
         llm = None

@@ -911,7 +911,9 @@ export function AdminClient() {
                   <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">LLM Provider Status</h3>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
-                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">OmniRoute (Pro)</p>
+                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">
+                        {analytics.keys_status.pro?.base_url?.includes("openrouter.ai") ? "OpenRouter (Pro)" : (analytics.keys_status.pro?.base_url?.includes("omniroute") ? "OmniRoute (Pro)" : "Pro Endpoint")}
+                      </p>
                       <p className="text-sm font-black text-[#ff4e26] mt-1 truncate" title={analytics.keys_status.pro?.model || "antigravity/gemini-3.7-flash-tiered"}>
                         {analytics.keys_status.pro?.model ? (analytics.keys_status.pro.model.includes("/") ? analytics.keys_status.pro.model.split("/").slice(1).join("/") : analytics.keys_status.pro.model) : "Gemini 3.7 Tiered"}
                       </p>
@@ -972,11 +974,11 @@ export function AdminClient() {
                     <h4 className="text-sm font-black uppercase text-black dark:text-white">Pro Accounts (Premium Tier)</h4>
                   </div>
                   <span className="px-2 py-0.5 font-bold uppercase text-[9px] bg-red-100 dark:bg-red-950 text-[#ff4e26] border border-[#ff4e26]">
-                    OmniRoute Gateway
+                    {proBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (proBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : "Custom Gateway")}
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Used exclusively for Pro users. High-capacity Gemini 3.7 Flash Tiered or custom endpoint. API authentication is sourced from environment variables.
+                  Used exclusively for Pro users. Configure high-capacity OpenRouter models, OmniRoute Gemini 3.7, or custom endpoints.
                 </p>
 
                   {/* Pro Model Presets */}
