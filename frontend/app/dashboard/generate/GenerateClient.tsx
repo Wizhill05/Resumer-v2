@@ -487,6 +487,27 @@ export function GenerateClient() {
               </div>
             </div>
 
+            {/* Safe to close & Notification note */}
+            {!isGenerationComplete && (
+              <p className="mt-4 text-center text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
+                It is safe to close this window as this might take some time.{" "}
+                {sendEmail === true || (sendEmail === null && (profileData?.notify_on_completion ?? true)) ? (
+                  profileData?.email ? (
+                    <>
+                      You&apos;ll get an email at{" "}
+                      <strong className="text-zinc-800 dark:text-zinc-200">
+                        {profileData.email}
+                      </strong>{" "}
+                      when done.
+                    </>
+                  ) : (
+                    <>You&apos;ll receive an email notification when done.</>
+                  )
+                ) : (
+                  <>You can check the progress in the history page.</>
+                )}
+              </p>
+            )}
             {/* Actions once complete */}
             {isGenerationComplete && createdRunId && (
               <div className="mt-6 flex flex-col gap-2.5 sm:flex-row pt-4 border-t border-zinc-200 dark:border-zinc-800">
