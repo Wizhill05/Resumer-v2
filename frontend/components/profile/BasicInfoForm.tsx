@@ -11,14 +11,22 @@ import { Textarea } from "@/components/ui/textarea"
 import { Mail } from "lucide-react"
 import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge"
 
+export function normalizeUrl(input?: string | null): string {
+  if (!input) return ""
+  const trimmed = input.trim()
+  if (!trimmed) return ""
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed}`
+}
+
 const schema = z.object({
   full_name: z.string().min(1, "Name is required"),
   email: z.string().email("Invalid email").or(z.literal("")),
   phone: z.string().optional(),
   location: z.string().optional(),
-  linkedin_url: z.string().url("Invalid URL").or(z.literal("")),
-  github_url: z.string().url("Invalid URL").or(z.literal("")),
-  portfolio_url: z.string().url("Invalid URL").or(z.literal("")),
+  linkedin_url: z.string().optional(),
+  github_url: z.string().optional(),
+  portfolio_url: z.string().optional(),
   subtitle: z.string().optional(),
   summary: z.string().optional(),
   skills: z.string().optional(),
@@ -81,6 +89,9 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...data,
+          linkedin_url: normalizeUrl(data.linkedin_url),
+          github_url: normalizeUrl(data.github_url),
+          portfolio_url: normalizeUrl(data.portfolio_url),
           skills: skillsArray,
         }),
       })

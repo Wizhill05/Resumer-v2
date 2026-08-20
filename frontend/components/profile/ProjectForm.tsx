@@ -13,12 +13,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+import { normalizeUrl } from "./BasicInfoForm";
+
 const schema = z.object({
   name: z.string().min(1, "Project Name is required"),
   description: z.string().optional(),
   technologies: z.string().optional(), // Raw comma-separated string for editing
-  github_url: z.string().url("Invalid URL").or(z.literal("")),
-  live_url: z.string().url("Invalid URL").or(z.literal("")),
+  github_url: z.string().optional(),
+  live_url: z.string().optional(),
   start_date: z.string().or(z.literal("")), // ISO date string (YYYY-MM-DD) or empty
   end_date: z.string().or(z.literal("")),
   bullet_points: z.string().optional(), // Raw newlines string for editing
@@ -182,6 +184,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     mutationFn: async (data: FormData) => {
       const payload = {
         ...data,
+        github_url: normalizeUrl(data.github_url),
+        live_url: normalizeUrl(data.live_url),
         sort_order: data.sort_order ?? 0,
         start_date: data.start_date || null,
         end_date: data.end_date || null,
@@ -198,7 +202,6 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               .filter(Boolean)
           : [],
       };
-
       const url = editingId
         ? `/api/backend/profile/projects/${editingId}`
         : "/api/backend/profile/projects";

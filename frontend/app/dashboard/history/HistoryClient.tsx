@@ -155,11 +155,10 @@ function JobDescriptionPeek({ text }: { text: string }) {
           e.stopPropagation()
           setIsOpen(true)
         }}
-        className="inline-flex min-h-11 cursor-pointer touch-manipulation items-center border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300 transition-colors active:border-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-700 active:text-zinc-900 dark:active:text-white sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-zinc-500 dark:sm:text-zinc-400 sm:hover:border-zinc-900 dark:sm:hover:border-zinc-400 sm:hover:text-zinc-900 dark:sm:hover:text-white"
+        className="inline-flex cursor-pointer items-center text-[11px] font-semibold text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white underline underline-offset-2 transition-colors"
       >
         See job description
       </button>
-
       {isOpen && typeof document !== "undefined" && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
@@ -414,7 +413,8 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
 }
 
 export function HistoryClient() {
-  const { data: runs = [], isLoading, error, refetch } = useQuery<HistoryRun[]>({
+  const queryClient = useQueryClient()
+  const { data: runs = [], isLoading, isFetching, error, refetch } = useQuery<HistoryRun[]>({
     queryKey: ["history"],
     queryFn: async () => {
       const res = await fetch("/api/backend/generate")
@@ -422,7 +422,6 @@ export function HistoryClient() {
       return res.json()
     },
   })
-
   const [view, setView] = useState<ViewMode>("list")
   const [activeGenForFeedback, setActiveGenForFeedback] = useState<string | null>(null)
   const deleteRun = useDeleteRun()
@@ -507,11 +506,15 @@ export function HistoryClient() {
             </button>
           </div>
           <button
-            onClick={() => refetch()}
-            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-black dark:hover:text-white transition-colors py-1 px-2 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ["history"] })
+              refetch()
+            }}
+            disabled={isFetching}
+            className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 hover:text-black dark:text-zinc-300 dark:hover:text-white transition-colors py-1 px-2.5 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 cursor-pointer"
           >
-            <RefreshCw size={11} />
-            Refresh
+            <RefreshCw size={12} className={isFetching ? "animate-spin text-[#ff4e26]" : ""} />
+            <span>{isFetching ? "Refreshing..." : "Refresh"}</span>
           </button>
         </div>
       </div>

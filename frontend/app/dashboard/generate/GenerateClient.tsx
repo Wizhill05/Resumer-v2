@@ -1,14 +1,13 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertCircle, CheckCircle2, FileText, FolderGit2, Briefcase, Loader2, Lock } from "lucide-react"
+import { AlertCircle, CheckCircle2, FileText, FolderGit2, Briefcase, Loader2, Lock, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw } from "lucide-react"
 import Link from "next/link"
-
 type Step = "input" | "submitted"
 
 type ContentSplit = {
@@ -27,6 +26,35 @@ type TemplateItem = {
 }
 
 type ProfileEntry = { id?: string }
+const nodeProgressMap: Record<string, number> = {
+  intent_parser: 15,
+  section_orchestrator: 25,
+  bullet_generator: 45,
+  experience_tailor: 55,
+  project_tailor: 65,
+  education_tailor: 72,
+  extracurricular_tailor: 78,
+  skills_tailor: 83,
+  renderer: 90,
+  orphan_repair: 94,
+  content_reduction: 97,
+  saver: 100,
+}
+
+const nodeLabels: Record<string, string> = {
+  intent_parser: "Analyzing job posting & extracting target keywords",
+  section_orchestrator: "Selecting relevant source experiences and projects",
+  bullet_generator: "Rewriting impact metric bullet points with AI",
+  experience_tailor: "Tailoring work history to target job signals",
+  project_tailor: "Optimizing technical projects & stack relevance",
+  education_tailor: "Aligning coursework and education",
+  extracurricular_tailor: "Formatting achievements and leadership",
+  skills_tailor: "Extracting ATS-matching skill categories",
+  renderer: "Rendering ATS-compliant 1-page PDF layout",
+  orphan_repair: "Polishing typography and eliminating visual orphans",
+  content_reduction: "Adjusting micro-spacing for strict 1-page fit",
+  saver: "Finalizing and uploading high-resolution PDF",
+}
 
 export function GenerateClient() {
   const queryClient = useQueryClient()
@@ -39,6 +67,11 @@ export function GenerateClient() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
   const [sliderIndex, setSliderIndex] = useState<number>(1)
+  const [advancedExpanded, setAdvancedExpanded] = useState(false)
+  const [createdRunId, setCreatedRunId] = useState<string | null>(null)
+  const [livePercent, setLivePercent] = useState(15)
+  const [liveStepLabel, setLiveStepLabel] = useState("Starting generation pipeline")
+  const [isGenerationComplete, setIsGenerationComplete] = useState(false)
 
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<TemplateItem[]>({
     queryKey: ["templates"],
@@ -170,8 +203,14 @@ export function GenerateClient() {
         const errorData = await response.json()
         throw new Error(errorData.detail || "Failed to start generation")
       }
+      const resData = await response.json()
+      const runId = resData.id || resData.run_id || resData.generation_id
+      if (runId) setCreatedRunId(runId)
 
       queryClient.invalidateQueries({ queryKey: ["history"] })
+      setLivePercent(15)
+      setLiveStepLabel("Starting generation pipeline")
+      setIsGenerationComplete(false)
       setStep("submitted")
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -179,6 +218,52 @@ export function GenerateClient() {
       setIsSubmitting(false)
     }
   }
+
+  // Live polling for started generation
+  useEffect(() => {
+    if (step !== "submitted" || !createdRunId || isGenerationComplete) return
+
+    let active = true
+    let since = 0
+    const poll = async () => {
+      if (!active) return
+      try {
+        const res = await fetch(`/api/backend/generate/${createdRunId}/logs?since=${since}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const logs = (data.logs ?? []) as Array<{ id: number; node: string | null; message: string; level: string }>
+        for (const log of logs) {
+          since = log.id
+          if (log.level === "status" && (log.message === "completed" || log.message === "failed")) {
+            setLivePercent(100)
+            setLiveStepLabel(log.message === "completed" ? "Resume generation complete" : "Generation failed")
+            setIsGenerationComplete(true)
+            queryClient.invalidateQueries({ queryKey: ["history"] })
+            return
+          }
+          if (log.node) {
+            const p = nodeProgressMap[log.node]
+            if (p) setLivePercent((prev) => Math.max(prev, p))
+            const label = nodeLabels[log.node]
+            if (label) setLiveStepLabel(label)
+          }
+        }
+        if (data.status === "completed" || data.status === "failed") {
+          setLivePercent(100)
+          setLiveStepLabel(data.status === "completed" ? "Resume generation complete" : "Generation failed")
+          setIsGenerationComplete(true)
+          queryClient.invalidateQueries({ queryKey: ["history"] })
+        }
+      } catch {}
+    }
+
+    poll()
+    const timer = setInterval(poll, 2500)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [step, createdRunId, isGenerationComplete, queryClient])
 
   if (isLoadingTemplates) {
     return (
@@ -202,21 +287,14 @@ export function GenerateClient() {
       )}
 
       {step === "input" && (
-        <form onSubmit={handleGenerate} className="space-y-4 md:space-y-5">
-          <div className="flex flex-col gap-1.5 bg-[#ff4e26] p-3 text-white md:panel-strong md:flex-row md:items-center md:justify-between md:p-4">
-            <p className="text-xs font-black uppercase tracking-wide md:text-sm">Free beta limit: 5 generations per person per day.</p>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-white/80 md:text-xs">Resets after 24 hours.</p>
-          </div>
-
-          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
-            <div className="mb-2.5 flex items-center justify-between gap-3">
-              <div>
-                <Label className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Template</Label>
-                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Controls resume structure and rendering.</p>
-              </div>
-              <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">1</span>
+        <form onSubmit={handleGenerate} className="space-y-4 pixel-enter">
+          {/* 1. Template Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">1. Select Template</Label>
+              <span className="text-[11px] font-mono text-zinc-400">ATS Optimized</span>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {templates.map((tpl) => {
                 const selected = selectedTemplate === tpl.id
                 return (
@@ -224,196 +302,233 @@ export function GenerateClient() {
                     key={tpl.id}
                     type="button"
                     onClick={() => setSelectedTemplate(tpl.id)}
-                    className={`flex items-start gap-3 border p-3 text-left transition-colors ${
-                      selected ? "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-700 text-white" : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-500 dark:hover:border-zinc-500"
+                    className={`flex items-center justify-between border p-3 text-left transition-all cursor-pointer ${
+                      selected
+                        ? "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-800 text-white shadow-xs"
+                        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 hover:border-zinc-400"
                     }`}
                   >
-                    <FileText className="mt-0.5 shrink-0" size={18} />
-                    <span>
-                      <span className="block text-sm font-extrabold uppercase tracking-wide">{tpl.name}</span>
-                      <span className={`mt-0.5 block text-xs font-medium leading-relaxed ${selected ? "text-white/75" : "text-zinc-500 dark:text-zinc-400"}`}>
-                        {tpl.description}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <FileText size={16} className={selected ? "text-[#ff4e26]" : "text-zinc-400"} />
+                      <span className="text-xs font-extrabold uppercase truncate">{tpl.name}</span>
+                    </div>
+                    {selected && (
+                      <span className="shrink-0 text-[10px] font-mono font-bold text-[#ff4e26]">
+                        [SELECTED]
                       </span>
-                    </span>
+                    )}
                   </button>
                 )
               })}
             </div>
-          </section>
+          </div>
 
-          {activeTemplate && splits.length > 1 && (
-            <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
-              <div className="mb-2.5 flex items-start justify-between gap-3">
-                <div>
-                  <Label className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Content Focus</Label>
-                  <p className="mt-0.5 text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
-                    Choose how many saved projects and experience entries the resume should prioritize.
-                  </p>
-                </div>
-                <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">2</span>
-              </div>
-
-              <div className="mb-2.5 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-400 sm:w-max">
-                <span className="inline-flex items-center gap-1 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1">
-                  <FolderGit2 size={13} /> Your projects: {profileProjects.length}
-                </span>
-                <span className="inline-flex items-center gap-1 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1">
-                  <Briefcase size={13} /> Your experience: {profileExperiences.length}
-                </span>
-              </div>
-
-              <div className="grid gap-2">
-                {sliderOptions.map((opt, idx) => {
-                  const selected = selectedFocusIndex === idx
-                  return (
-                    <button
-                      key={opt.name}
-                      type="button"
-                      disabled={!opt.enabled}
-                      onClick={() => opt.enabled && setSliderIndex(idx)}
-                      className={`flex items-start justify-between gap-3 border p-3 text-left transition-colors ${
-                        selected && opt.enabled
-                          ? "border-zinc-950 dark:border-zinc-400 bg-[#ff4e26]/10"
-                          : opt.enabled
-                            ? "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-500 dark:hover:border-zinc-500"
-                            : "border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500"
-                      }`}
-                    >
-                      <span className="min-w-0">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-extrabold uppercase tracking-wide text-zinc-950 dark:text-zinc-100">{opt.name}</span>
-                          <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">{opt.projects} projects + {opt.experience} experience</span>
-                        </span>
-                        <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">{opt.desc}</span>
-                        {!opt.enabled && (
-                          <span className="mt-1 flex items-center gap-1 text-xs font-bold text-red-600">
-                            <Lock size={12} /> {getLockReason(opt)}
-                          </span>
-                        )}
-                      </span>
-                      {selected && opt.enabled ? <CheckCircle2 className="shrink-0 text-[#ff4e26]" size={18} /> : null}
-                    </button>
-                  )
-                })}
-              </div>
-
-              <div className="mt-3 flex flex-col gap-2 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 text-xs font-bold text-zinc-600 dark:text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
-                <span>Selected: <span className="text-zinc-950 dark:text-zinc-100">{activeOption?.name}</span></span>
-                <span>Needs {projectsCount} projects and {experienceCount} experience entries.</span>
-              </div>
-            </section>
-          )}
-
-          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
-            <div className="mb-2.5 flex items-start justify-between gap-3">
-              <div>
-                <Label htmlFor="job" className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Job Description</Label>
-                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Paste the full posting for better keyword matching.</p>
-              </div>
-              <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">{activeTemplate && splits.length > 1 ? "3" : "2"}</span>
-            </div>
+          {/* 2. Job Description Textarea (Primary Action) */}
+          <div className="space-y-2">
+            <Label htmlFor="job" className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
+              2. Target Job Description *
+            </Label>
             <Textarea
               id="job"
               required
               rows={6}
-              placeholder="Paste job post details here..."
+              placeholder="Paste the full job posting here (responsibilities, requirements, tech stack)..."
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
-              className="min-h-40"
+              className="min-h-36 font-sans text-sm leading-relaxed"
             />
-          </section>
+          </div>
 
-          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
-            <div className="grid gap-3 md:grid-cols-2 md:gap-4">
-              <div className="space-y-1.5 md:space-y-2">
-                <Label htmlFor="keywords" className="font-bold">Focus Keywords</Label>
-                <Input
-                  id="keywords"
-                  value={keywords}
-                  onChange={(e) => setKeywords(e.target.value)}
-                />
+          {/* 3. Optional Collapsible Advanced Options Accordion */}
+          <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:p-4">
+            <button
+              type="button"
+              onClick={() => setAdvancedExpanded(!advancedExpanded)}
+              className="flex w-full items-center justify-between text-left font-black text-xs uppercase tracking-wider text-zinc-800 dark:text-zinc-200 cursor-pointer"
+            >
+              <span className="flex items-center gap-2">
+                <SlidersHorizontal size={14} className="text-[#ff4e26]" />
+                Customize Focus &amp; Keywords (Optional)
+              </span>
+              {advancedExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+
+            {advancedExpanded && (
+              <div className="mt-3.5 space-y-4 border-t border-zinc-200 pt-3.5 dark:border-zinc-800">
+                {/* Focus Split */}
+                {activeTemplate && splits.length > 1 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-bold uppercase text-zinc-700 dark:text-zinc-300">Content weighting</Label>
+                    <div className="grid gap-2">
+                      {sliderOptions.map((opt, idx) => {
+                        const selected = selectedFocusIndex === idx
+                        return (
+                          <button
+                            key={opt.name}
+                            type="button"
+                            disabled={!opt.enabled}
+                            onClick={() => opt.enabled && setSliderIndex(idx)}
+                            className={`flex items-center justify-between border p-2.5 text-left text-xs transition-colors cursor-pointer ${
+                              selected && opt.enabled
+                                ? "border-zinc-950 dark:border-zinc-400 bg-white dark:bg-zinc-800 font-extrabold"
+                                : opt.enabled
+                                ? "border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 hover:border-zinc-400"
+                                : "border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800/20 text-zinc-400"
+                            }`}
+                          >
+                            <span>
+                              <span className="uppercase">{opt.name}</span>
+                              <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">({opt.projects} projects, {opt.experience} experiences)</span>
+                            </span>
+                            {selected && opt.enabled && <CheckCircle2 size={14} className="text-[#ff4e26]" />}
+                            {!opt.enabled && <span className="text-[10px] text-red-500 font-bold flex items-center gap-1"><Lock size={10} /> Locked</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Keywords & Instructions */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="keywords" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Focus Keywords</Label>
+                    <Input
+                      id="keywords"
+                      placeholder="e.g. AWS, React, Python"
+                      value={keywords}
+                      onChange={(e) => setKeywords(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="instructions" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Custom Instructions</Label>
+                    <Input
+                      id="instructions"
+                      placeholder="e.g. Emphasize distributed systems"
+                      value={instructions}
+                      onChange={(e) => setInstructions(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Email toggle */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Email notification</Label>
+                  <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
+                    {[
+                      { val: null, label: "Default" },
+                      { val: true, label: "Send Email" },
+                      { val: false, label: "No Email" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        onClick={() => setSendEmail(opt.val)}
+                        className={`border py-1.5 text-center transition-colors cursor-pointer ${
+                          sendEmail === opt.val
+                            ? "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-700 text-white"
+                            : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="instructions" className="font-bold">Custom Instructions</Label>
-                <Input
-                  id="instructions"
-                  placeholder="Emphasize backend work"
-                  value={instructions}
-                  onChange={(e) => setInstructions(e.target.value)}
-                />
-              </div>
-            </div>
-          </section>
+            )}
+          </div>
 
-          {/* Email Notification Option Section */}
-          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
-            <div className="mb-2.5">
-              <Label className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Email Completion Notification</Label>
-              <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                Choose whether to receive an email with the PDF attached when this generation finishes.
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {[
-                {
-                  val: null,
-                  title: "Profile Default",
-                  sub: profileData?.notify_on_completion ?? true ? "Send Email (Default)" : "Skip Email (Default)",
-                },
-                { val: true, title: "Send Email", sub: "Always send for this build" },
-                { val: false, title: "Skip Email", sub: "Never send for this build" },
-              ].map((opt) => {
-                const active = sendEmail === opt.val
-                return (
-                  <button
-                    key={opt.title}
-                    type="button"
-                    onClick={() => setSendEmail(opt.val)}
-                    className={`flex flex-col border-2 p-3 text-left transition-all ${
-                      active
-                        ? "bg-[#ff4e26] text-white border-black shadow-[2px_2px_0px_#000]"
-                        : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 hover:border-zinc-400"
-                    }`}
-                  >
-                    <span className="text-xs font-extrabold uppercase tracking-wider">{opt.title}</span>
-                    <span className={`text-[11px] font-medium mt-0.5 ${active ? "text-white/80" : "text-zinc-500 dark:text-zinc-400"}`}>
-                      {opt.sub}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-
-          <Button type="submit" size="lg" className="w-full" disabled={isSubmitting || !jobDescription.trim()}>
-            {isSubmitting ? <><Loader2 className="animate-spin" size={18} /> Starting...</> : "Generate Resume"}
-          </Button>
+          {/* 4. Action & Discreet Beta Limit Note */}
+          <div className="space-y-2 pt-2">
+            <Button type="submit" size="lg" className="w-full" disabled={isSubmitting || !jobDescription.trim()}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="animate-spin" size={18} /> Generating...
+                </>
+              ) : (
+                "Generate Tailored Resume"
+              )}
+            </Button>
+            <p className="text-center font-mono text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+              Free beta limit: 5 builds / day &bull; Resets in 24 hours
+            </p>
+          </div>
         </form>
       )}
 
+      {/* Waiting Screen with Live Animated Progress Bar */}
       {step === "submitted" && (
-        <div className="mx-auto max-w-xl space-y-4 py-6 md:py-10">
-          <div className="panel-strong space-y-3 p-5 text-center md:p-7">
-            <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white">Generation Started</h3>
-            <p className="text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">
-              Your resume is being generated. It usually takes 5-10 minutes. Check History for progress and downloads.
-            </p>
+        <div className="mx-auto max-w-xl space-y-5 py-6 md:py-8 pixel-enter">
+          <div className="border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 md:p-7">
+            <div className="mb-4 text-center">
+              <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
+                {isGenerationComplete ? "Complete" : "Processing"}
+              </p>
+              <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white md:text-2xl">
+                {isGenerationComplete ? "Your Resume is Ready" : "Tailoring Your Resume"}
+              </h3>
+              <p className="mt-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400 md:text-sm">
+                {liveStepLabel}
+              </p>
+            </div>
+
+            {/* Live Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex justify-between font-mono text-xs font-bold text-zinc-600 dark:text-zinc-400">
+                <span>Progress</span>
+                <span>{livePercent}%</span>
+              </div>
+              <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                <div
+                  className="h-full bg-[#ff4e26] transition-all duration-500 ease-out"
+                  style={{ width: `${livePercent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Actions once complete */}
+            {isGenerationComplete && createdRunId && (
+              <div className="mt-6 flex flex-col gap-2.5 sm:flex-row pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                <a
+                  href={`/api/backend/generate/${createdRunId}/download`}
+                  className="flex-1"
+                >
+                  <Button className="w-full">
+                    <Download size={16} /> Download PDF
+                  </Button>
+                </a>
+                <Link
+                  href={`/dashboard/history/${createdRunId}/edit`}
+                  className="flex-1"
+                >
+                  <Button variant="outline" className="w-full">
+                    <Pencil size={16} /> Open Editor
+                  </Button>
+                </Link>
+              </div>
+            )}
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:justify-center">
             <Link href="/dashboard/history" className="w-full sm:w-auto">
-              <Button className="w-full">View History</Button>
+              <Button variant="outline" className="w-full">
+                View All History
+              </Button>
             </Link>
             <Button
-              variant="outline"
+              variant="ghost"
               onClick={() => {
                 setJobDescription("")
                 setKeywords("")
                 setInstructions("")
+                setCreatedRunId(null)
+                setIsGenerationComplete(false)
                 setStep("input")
               }}
               className="w-full sm:w-auto"
             >
-              Generate Another
+              <RotateCcw size={14} /> Generate Another
             </Button>
           </div>
         </div>

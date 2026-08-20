@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu, X, Sun, Moon } from "lucide-react"
+import { Menu, X, Sun, Moon, LogOut } from "lucide-react"
 import { useTheme } from "next-themes"
 
 const defaultLinks = [
@@ -92,17 +92,27 @@ export function Nav() {
                 </Link>
               )
             })}
-
             {/* Theme toggle */}
             <button
               onClick={toggleTheme}
-              className="ml-1 p-2 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-colors"
+              className="ml-1 p-2 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
               aria-label="Toggle dark mode"
             >
               {mounted && resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-          </div>
 
+            {/* Sign Out Button */}
+            <form action="/api/auth/signout" method="POST" className="ml-1">
+              <button
+                type="submit"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-zinc-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+                title="Sign Out"
+              >
+                <LogOut size={14} />
+                <span>Sign Out</span>
+              </button>
+            </form>
+          </div>
           {/* Mobile hamburger + theme toggle */}
           <div className="flex items-center gap-1 md:hidden">
             <button
@@ -174,6 +184,17 @@ export function Nav() {
             </Link>
           )
         })}
+        <div className="p-3 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+          <form action="/api/auth/signout" method="POST">
+            <button
+              type="submit"
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20 rounded cursor-pointer"
+            >
+              <LogOut size={14} />
+              Sign Out
+            </button>
+          </form>
+        </div>
       </div>
     </>
   )
