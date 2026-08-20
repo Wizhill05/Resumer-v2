@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useEffect } from "react"
+import { useRef, useState, useEffect, useMemo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,6 +35,7 @@ import {
   Clock,
   Activity,
   Timer,
+  ArrowUpDown,
   Layers,
 } from "lucide-react"
 type AnalyticsData = {
@@ -514,21 +515,21 @@ function TimingWaterfallModal({
 export function AdminClient() {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<AdminTabId>("analytics")
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
-  const [pollingInterval, setPollingInterval] = useState<number | false>(false)
+  const [genSortField, setGenSortField] = useState<"job_title" | "model_used" | "status" | "duration_seconds" | "created_at">("created_at")
+  const [genSortOrder, setGenSortOrder] = useState<"asc" | "desc">("desc")
+
+  const toggleGenSort = (field: "job_title" | "model_used" | "status" | "duration_seconds" | "created_at") => {
+    if (genSortField === field) {
+      setGenSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+    } else {
+      setGenSortField(field)
+      setGenSortOrder(field === "job_title" || field === "model_used" || field === "status" ? "asc" : "desc")
+    }
+  }
 
   const handleManualRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["admin"] })
   }
-
-  useEffect(() => {
-    if (!pollingInterval) return
-    const timer = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: ["admin"] })
-    }, pollingInterval)
-    return () => clearInterval(timer)
-  }, [pollingInterval, queryClient])
   const [generationSearch, setGenerationSearch] = useState("")
   const [timingSearch, setTimingSearch] = useState("")
   const [generationStatus, setGenerationStatus] = useState("")
@@ -638,6 +639,36 @@ export function AdminClient() {
     enabled: activeTab === "generations",
   })
 
+  const sortedGenerations = useMemo(() => {
+    return [...generations].sort((a, b) => {
+      if (genSortField === "created_at") {
+        const timeA = new Date(a.created_at).getTime()
+        const timeB = new Date(b.created_at).getTime()
+        return genSortOrder === "asc" ? timeA - timeB : timeB - timeA
+      }
+      if (genSortField === "duration_seconds") {
+        const durA = a.duration_seconds ?? (genSortOrder === "asc" ? 999999 : -1)
+        const durB = b.duration_seconds ?? (genSortOrder === "asc" ? 999999 : -1)
+        return genSortOrder === "asc" ? durA - durB : durB - durA
+      }
+      if (genSortField === "job_title") {
+        const strA = (a.job_title || a.email || "").toLowerCase()
+        const strB = (b.job_title || b.email || "").toLowerCase()
+        return genSortOrder === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA)
+      }
+      if (genSortField === "model_used") {
+        const strA = (a.model_used || "").toLowerCase()
+        const strB = (b.model_used || "").toLowerCase()
+        return genSortOrder === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA)
+      }
+      if (genSortField === "status") {
+        const strA = (a.status || "").toLowerCase()
+        const strB = (b.status || "").toLowerCase()
+        return genSortOrder === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA)
+      }
+      return 0
+    })
+  }, [generations, genSortField, genSortOrder])
   // 4. Fetch Users
   const { data: users = [], isLoading: loadingUsers } = useQuery<UserItem[]>({
     queryKey: ["admin", "users", userSearch],
@@ -1028,30 +1059,22 @@ export function AdminClient() {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-zinc-950 text-white">
-      {/* Minimal Sidebar */}
+    <div className="flex flex-col md:flex-row flex-1 w-full min-h-[calc(100vh-49px)]">
+      {/* Clean Left Sidebar */}
       <AdminSidebar
         activeTab={activeTab}
         onSelectTab={setActiveTab}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
-        isMobileOpen={isMobileSidebarOpen}
-        onCloseMobile={() => setIsMobileSidebarOpen(false)}
         unresolvedReportsCount={feedbackAnalytics?.open_count ?? 0}
       />
 
       {/* Main Workspace Stage */}
-      <div className="flex flex-1 flex-col overflow-y-auto bg-zinc-900">
-        <AdminHeader
-          activeTab={activeTab}
-          onToggleMobileSidebar={() => setIsMobileSidebarOpen(true)}
-          isFetching={loadingAnalytics || loadingTiming || loadingModelSettings || loadingGenerations || loadingUsers}
-          onManualRefresh={handleManualRefresh}
-          pollingInterval={pollingInterval}
-          onPollingChange={setPollingInterval}
-        />
-
-        <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6 md:py-6">
+      <div className="flex-1 p-4 md:p-6 min-w-0 bg-[#fbfbf3] dark:bg-zinc-900 overflow-y-auto">
+        <div className="mx-auto w-full max-w-6xl">
+          <AdminHeader
+            activeTab={activeTab}
+            isFetching={loadingAnalytics || loadingTiming || loadingModelSettings || loadingGenerations || loadingUsers}
+            onManualRefresh={handleManualRefresh}
+          />
 
       {/* ANALYTICS TAB */}
       {activeTab === "analytics" && (
@@ -1570,16 +1593,77 @@ export function AdminClient() {
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-700 dark:text-zinc-300">
-                        <th className="p-3">Job & User</th>
-                        <th className="p-3">Model</th>
-                        <th className="p-3">Status</th>
-                        <th className="p-3">Duration</th>
-                        <th className="p-3">Created</th>
+                        <th
+                          className="p-3 cursor-pointer select-none hover:text-black dark:hover:text-white transition-colors"
+                          onClick={() => toggleGenSort("job_title")}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Job & User</span>
+                            {genSortField === "job_title" ? (
+                              <span className="text-[#ff4e26] font-mono font-bold text-[10px]">{genSortOrder === "asc" ? "▲" : "▼"}</span>
+                            ) : (
+                              <ArrowUpDown size={11} className="text-zinc-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="p-3 cursor-pointer select-none hover:text-black dark:hover:text-white transition-colors"
+                          onClick={() => toggleGenSort("model_used")}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Model</span>
+                            {genSortField === "model_used" ? (
+                              <span className="text-[#ff4e26] font-mono font-bold text-[10px]">{genSortOrder === "asc" ? "▲" : "▼"}</span>
+                            ) : (
+                              <ArrowUpDown size={11} className="text-zinc-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="p-3 cursor-pointer select-none hover:text-black dark:hover:text-white transition-colors"
+                          onClick={() => toggleGenSort("status")}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Status</span>
+                            {genSortField === "status" ? (
+                              <span className="text-[#ff4e26] font-mono font-bold text-[10px]">{genSortOrder === "asc" ? "▲" : "▼"}</span>
+                            ) : (
+                              <ArrowUpDown size={11} className="text-zinc-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="p-3 cursor-pointer select-none hover:text-black dark:hover:text-white transition-colors"
+                          onClick={() => toggleGenSort("duration_seconds")}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Duration</span>
+                            {genSortField === "duration_seconds" ? (
+                              <span className="text-[#ff4e26] font-mono font-bold text-[10px]">{genSortOrder === "asc" ? "▲" : "▼"}</span>
+                            ) : (
+                              <ArrowUpDown size={11} className="text-zinc-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="p-3 cursor-pointer select-none hover:text-black dark:hover:text-white transition-colors"
+                          onClick={() => toggleGenSort("created_at")}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Created</span>
+                            {genSortField === "created_at" ? (
+                              <span className="text-[#ff4e26] font-mono font-bold text-[10px]">{genSortOrder === "asc" ? "▲" : "▼"}</span>
+                            ) : (
+                              <ArrowUpDown size={11} className="text-zinc-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
                         <th className="p-3 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700 font-medium">
-                      {generations.map((gen) => {
+                      {sortedGenerations.map((gen) => {
+
                         let statusColor = "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
                         if (gen.status === "completed") statusColor = "bg-green-100 dark:bg-green-950/60 text-green-700 dark:text-green-300"
                         if (gen.status === "failed") statusColor = "bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300"
