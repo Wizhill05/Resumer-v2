@@ -229,7 +229,6 @@ class LLMProviderConfig(Base):
     provider_name: Mapped[str] = mapped_column(String, default="openai_compatible")
     base_url: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
-    api_keys: Mapped[list[str] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), default=list)
     temperature: Mapped[float] = mapped_column(Float, default=0.2)
     fallback_provider: Mapped[str | None] = mapped_column(String, default="google")
     fallback_model: Mapped[str | None] = mapped_column(String, default="gemma-4-31b-it")

@@ -42,8 +42,6 @@ class ModelSettingsOut(BaseModel):
     provider_name: str
     base_url: str
     model: str
-    keys_count: int
-    masked_keys: list[str]
     temperature: float
     fallback_provider: str | None = None
     fallback_model: str | None = None
@@ -56,7 +54,6 @@ class ModelSettingsUpdate(BaseModel):
     tier: str  # "free" | "pro"
     base_url: str
     model: str
-    api_keys: list[str] | None = None
     temperature: float = 0.2
     provider_name: str | None = None
     fallback_provider: str | None = "google"
@@ -68,7 +65,6 @@ class ModelTestRequest(BaseModel):
     tier: str = "pro"  # "pro" | "free"
     base_url: str | None = None
     model: str | None = None
-    api_key: str | None = None
     prompt: str | None = None
 
 
@@ -236,7 +232,7 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
         "pro": {
             "model": pro_cfg.model,
             "base_url": pro_cfg.base_url,
-            "configured_keys_count": len(pro_cfg.api_keys) if pro_cfg.api_keys else (1 if settings.PRO_MODEL_API_KEY else 0),
+            "configured_keys_count": 1 if settings.PRO_MODEL_API_KEY else (openrouter_key_count if "openrouter.ai" in pro_cfg.base_url.lower() else 0),
         },
         "google": {
             "configured_keys_count": google_key_count,
@@ -846,14 +842,11 @@ async def get_model_settings(db: AsyncSession = Depends(get_db)):
     configs = llm_config_service.get_all_configs()
     response = {}
     for tier_key, cfg in configs.items():
-        masked = [_mask_key(k) for k in cfg.api_keys if k]
         response[tier_key] = {
             "tier": cfg.tier,
             "provider_name": cfg.provider_name,
             "base_url": cfg.base_url,
             "model": cfg.model,
-            "keys_count": len(cfg.api_keys),
-            "masked_keys": masked,
             "temperature": cfg.temperature,
             "fallback_provider": cfg.fallback_provider,
             "fallback_model": cfg.fallback_model,
@@ -871,21 +864,17 @@ async def update_model_settings(data: ModelSettingsUpdate, db: AsyncSession = De
         tier=data.tier,
         base_url=data.base_url,
         model=data.model,
-        api_keys=data.api_keys,
         temperature=data.temperature,
         provider_name=data.provider_name,
         fallback_provider=data.fallback_provider,
         fallback_model=data.fallback_model,
         extra_headers=data.extra_headers,
     )
-    masked = [_mask_key(k) for k in updated.api_keys if k]
     return {
         "tier": updated.tier,
         "provider_name": updated.provider_name,
         "base_url": updated.base_url,
         "model": updated.model,
-        "keys_count": len(updated.api_keys),
-        "masked_keys": masked,
         "temperature": updated.temperature,
         "fallback_provider": updated.fallback_provider,
         "fallback_model": updated.fallback_model,
@@ -900,18 +889,25 @@ async def test_model_endpoint(data: ModelTestRequest, db: AsyncSession = Depends
     started = time.perf_counter()
     tier = data.tier.lower()
     try:
-        if data.base_url or data.model or data.api_key:
+        if data.base_url or data.model:
             base_url = (data.base_url or (settings.PRO_MODEL_BASE_URL if tier == "pro" else settings.FREE_MODEL_BASE_URL)).rstrip("/")
             model = data.model or (settings.PRO_MODEL_NAME if tier == "pro" else settings.FREE_MODEL_NAME)
-            api_key = data.api_key
-            if not api_key:
-                if tier == "pro":
-                    api_key = settings.PRO_MODEL_API_KEY or "dummy-key"
+            is_openrouter = "openrouter.ai" in base_url.lower()
+
+            if is_openrouter:
+                from src.core.api_key_pool import openrouter_pool
+                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
+            elif tier == "pro":
+                if settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
+                    api_key = settings.PRO_MODEL_API_KEY.strip()
                 else:
-                    api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
+                    api_key = "dummy-key"
+            else:
+                from src.core.api_key_pool import openrouter_pool
+                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
 
             from langchain_openai import ChatOpenAI
-            headers = {"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"} if tier == "free" else None
+            headers = {"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"} if is_openrouter else None
             llm = ChatOpenAI(
                 model=model,
                 base_url=base_url,

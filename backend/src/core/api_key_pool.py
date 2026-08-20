@@ -35,7 +35,7 @@ class ApiKeyPool:
             if self._cycle is None:
                 raise RuntimeError(
                     f"No {self.name} API keys configured. "
-                    f"Set {self.name.upper().replace(' ', '_')}_API_KEYS=key1,key2,... in your environment or admin settings."
+                    f"Set {self.name.upper().replace(' ', '_')}_API_KEYS=key1,key2,... in your environment (.env file)."
                 )
             return next(self._cycle)
 

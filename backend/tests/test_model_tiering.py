@@ -69,6 +69,44 @@ async def test_llm_instantiation():
     assert free_llm.model_name == "poolside/laguna-xs-2.1:free"
     assert free_llm.openai_api_base == "https://openrouter.ai/api/v1"
 
+@pytest.mark.asyncio
+async def test_llm_pro_with_openrouter_url():
+    from src.core.api_key_pool import openrouter_pool
+    openrouter_pool.reload_keys(["sk-or-v1-pro-testkey"])
+
+    service = LLMConfigService()
+    # Simulate admin pointing pro tier to openrouter
+    service._cache["pro"].base_url = "https://openrouter.ai/api/v1"
+    service._cache["pro"].model = "anthropic/claude-3.5-sonnet"
+
+    llm = service.get_llm(tier="pro")
+    assert llm.model_name == "anthropic/claude-3.5-sonnet"
+    assert str(llm.openai_api_base).rstrip("/") == "https://openrouter.ai/api/v1"
+    # API key should be from openrouter_pool
+    assert llm.openai_api_key.get_secret_value() == "sk-or-v1-pro-testkey"
+
+@pytest.mark.asyncio
+async def test_llm_config_service_db_roundtrip_no_keys(async_db: AsyncSession):
+    service = LLMConfigService()
+    # Update free tier in DB
+    updated = await service.update_tier_config(
+        db=async_db,
+        tier="free",
+        base_url="https://openrouter.ai/api/v1",
+        model="meta-llama/llama-3.3-70b-instruct",
+        temperature=0.4,
+    )
+    assert updated.model == "meta-llama/llama-3.3-70b-instruct"
+    assert updated.temperature == 0.4
+
+    # Fresh service instance reading from DB
+    fresh_service = LLMConfigService()
+    await fresh_service.load_from_db(async_db)
+    loaded_free = fresh_service.get_tier_config("free")
+    assert loaded_free.model == "meta-llama/llama-3.3-70b-instruct"
+    assert loaded_free.temperature == 0.4
+    assert not hasattr(loaded_free, "api_keys")
+
 
 @pytest.mark.asyncio
 async def test_admin_model_settings_api(client: AsyncClient, async_db: AsyncSession):
@@ -92,13 +130,14 @@ async def test_admin_model_settings_api(client: AsyncClient, async_db: AsyncSess
         assert "free" in data
         assert data["pro"]["model"] == "antigravity/gemini-3.7-flash-tiered"
         assert data["free"]["model"] == "poolside/laguna-xs-2.1:free"
+        assert "api_keys" not in data["pro"]
+        assert "masked_keys" not in data["pro"]
 
         # 2. PUT model-settings to switch free model
         update_payload = {
             "tier": "free",
             "base_url": "https://openrouter.ai/api/v1",
-            "model": "poolside/laguna-xs-2.1:free",
-            "api_keys": ["sk-or-v1-testkey1", "sk-or-v1-testkey2"],
+            "model": "meta-llama/llama-3.3-70b-instruct",
             "temperature": 0.3,
             "fallback_provider": "google",
             "fallback_model": "gemma-4-31b-it",
@@ -107,9 +146,10 @@ async def test_admin_model_settings_api(client: AsyncClient, async_db: AsyncSess
         assert put_res.status_code == 200
         put_data = put_res.json()
         assert put_data["tier"] == "free"
+        assert put_data["model"] == "meta-llama/llama-3.3-70b-instruct"
         assert put_data["temperature"] == 0.3
-        assert put_data["keys_count"] == 2
-        assert len(put_data["masked_keys"]) == 2
+        assert "api_keys" not in put_data
+        assert "masked_keys" not in put_data
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
 

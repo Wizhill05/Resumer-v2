@@ -34,7 +34,6 @@ class TierConfig:
     provider_name: str
     base_url: str
     model: str
-    api_keys: list[str] = field(default_factory=list)
     temperature: float = 0.2
     fallback_provider: str | None = "google"
     fallback_model: str | None = "gemma-4-31b-it"
@@ -52,15 +51,11 @@ class LLMConfigService:
 
     def _init_defaults(self) -> None:
         """Populate initial in-memory defaults from environment settings."""
-        free_keys = settings.openrouter_api_keys
-        pro_key = settings.PRO_MODEL_API_KEY.strip() if settings.PRO_MODEL_API_KEY else ""
-
         self._cache["pro"] = TierConfig(
             tier="pro",
             provider_name="omniroute",
             base_url=settings.PRO_MODEL_BASE_URL or "https://omniroute-latest-rmm0.onrender.com/",
             model=settings.PRO_MODEL_NAME or "antigravity/gemini-3.7-flash-tiered",
-            api_keys=[pro_key] if pro_key else [],
             temperature=0.2,
             fallback_provider="google",
             fallback_model="gemma-4-31b-it",
@@ -74,7 +69,6 @@ class LLMConfigService:
             provider_name="openrouter",
             base_url=settings.FREE_MODEL_BASE_URL or "https://openrouter.ai/api/v1",
             model=settings.FREE_MODEL_NAME or "poolside/laguna-xs-2.1:free",
-            api_keys=free_keys,
             temperature=0.2,
             fallback_provider="google",
             fallback_model="gemma-4-31b-it",
@@ -85,6 +79,7 @@ class LLMConfigService:
             is_active=True,
             updated_at=datetime.now(timezone.utc),
         )
+
 
     def get_tier_config(self, tier: str = "free") -> TierConfig:
         tier_key = "pro" if str(tier).lower() in ("pro", "true", "1") else "free"
@@ -112,7 +107,6 @@ class LLMConfigService:
                             provider_name=cfg.provider_name,
                             base_url=cfg.base_url,
                             model=cfg.model,
-                            api_keys=cfg.api_keys,
                             temperature=cfg.temperature,
                             fallback_provider=cfg.fallback_provider,
                             fallback_model=cfg.fallback_model,
@@ -130,7 +124,6 @@ class LLMConfigService:
                         provider_name=row.provider_name,
                         base_url=row.base_url,
                         model=row.model,
-                        api_keys=row.api_keys or [],
                         temperature=row.temperature,
                         fallback_provider=row.fallback_provider,
                         fallback_model=row.fallback_model,
@@ -138,9 +131,6 @@ class LLMConfigService:
                         is_active=row.is_active,
                         updated_at=row.updated_at,
                     )
-                    # If free tier has database keys, update openrouter_pool
-                    if row.tier == "free" and row.api_keys:
-                        openrouter_pool.reload_keys(row.api_keys)
 
             self._initialized = True
         except Exception as exc:
@@ -152,7 +142,6 @@ class LLMConfigService:
         tier: str,
         base_url: str,
         model: str,
-        api_keys: list[str] | None = None,
         temperature: float = 0.2,
         provider_name: str | None = None,
         fallback_provider: str | None = "google",
@@ -162,7 +151,6 @@ class LLMConfigService:
         tier_key = "pro" if tier.lower() in ("pro", "true") else "free"
         cleaned_url = base_url.strip()
         cleaned_model = model.strip()
-        cleaned_keys = [k.strip() for k in (api_keys or []) if k and k.strip()]
 
         result = await db.execute(select(LLMProviderConfig).where(LLMProviderConfig.tier == tier_key))
         config_row = result.scalar_one_or_none()
@@ -173,7 +161,6 @@ class LLMConfigService:
                 provider_name=provider_name or ("omniroute" if tier_key == "pro" else "openrouter"),
                 base_url=cleaned_url,
                 model=cleaned_model,
-                api_keys=cleaned_keys,
                 temperature=temperature,
                 fallback_provider=fallback_provider,
                 fallback_model=fallback_model,
@@ -184,8 +171,6 @@ class LLMConfigService:
         else:
             config_row.base_url = cleaned_url
             config_row.model = cleaned_model
-            if api_keys is not None:
-                config_row.api_keys = cleaned_keys
             config_row.temperature = temperature
             if provider_name:
                 config_row.provider_name = provider_name
@@ -202,7 +187,6 @@ class LLMConfigService:
             provider_name=config_row.provider_name,
             base_url=config_row.base_url,
             model=config_row.model,
-            api_keys=config_row.api_keys or [],
             temperature=config_row.temperature,
             fallback_provider=config_row.fallback_provider,
             fallback_model=config_row.fallback_model,
@@ -213,8 +197,6 @@ class LLMConfigService:
 
         with self._lock:
             self._cache[tier_key] = updated
-            if tier_key == "free" and cleaned_keys:
-                openrouter_pool.reload_keys(cleaned_keys)
 
         return updated
 
@@ -229,16 +211,15 @@ class LLMConfigService:
 
         api_key = api_key_override
         if not api_key:
-            valid_keys = [k.strip() for k in (cfg.api_keys or []) if k and k.strip() and k.strip() != "dummy-key"]
-            if valid_keys:
-                api_key = valid_keys[0]
-            elif is_openrouter:
-                # Always pull a live key from OpenRouter pool when pointing to OpenRouter
-                api_key = openrouter_pool.next()
-            elif cfg.tier == "pro" and settings.PRO_MODEL_API_KEY:
-                api_key = settings.PRO_MODEL_API_KEY
+            if is_openrouter:
+                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
+            elif cfg.tier == "pro":
+                if settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
+                    api_key = settings.PRO_MODEL_API_KEY.strip()
+                else:
+                    api_key = "dummy-key"
             else:
-                api_key = "dummy-key"
+                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
 
         headers: dict[str, str] = {}
         if is_openrouter:
@@ -254,6 +235,7 @@ class LLMConfigService:
             api_key=api_key,
             default_headers=headers if headers else None,
         )
+
     def get_fallback_llm(
         self,
         tier: str = "free",
@@ -284,7 +266,6 @@ async def ensure_llm_provider_schema() -> None:
                     provider_name VARCHAR NOT NULL DEFAULT 'openai_compatible',
                     base_url VARCHAR NOT NULL,
                     model VARCHAR NOT NULL,
-                    api_keys JSONB,
                     temperature FLOAT NOT NULL DEFAULT 0.2,
                     fallback_provider VARCHAR DEFAULT 'google',
                     fallback_model VARCHAR DEFAULT 'gemma-4-31b-it',
@@ -293,6 +274,7 @@ async def ensure_llm_provider_schema() -> None:
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
                 );
             """))
+            await conn.execute(text("ALTER TABLE llm_provider_configs DROP COLUMN IF EXISTS api_keys;"))
     except Exception as exc:
         logger.warning("[llm_config/startup] ensure_llm_provider_schema warning: %s", exc)
 

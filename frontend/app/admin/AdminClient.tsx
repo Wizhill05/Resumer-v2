@@ -108,8 +108,6 @@ type ModelTierConfig = {
   provider_name: string
   base_url: string
   model: string
-  keys_count: number
-  masked_keys: string[]
   temperature: number
   fallback_provider?: string
   fallback_model?: string
@@ -305,13 +303,11 @@ export function AdminClient() {
   // Model Settings States
   const [proBaseUrl, setProBaseUrl] = useState("")
   const [proModel, setProModel] = useState("")
-  const [proApiKey, setProApiKey] = useState("")
   const [proTemperature, setProTemperature] = useState(0.2)
   const [proFallbackModel, setProFallbackModel] = useState("gemma-4-31b-it")
 
   const [freeBaseUrl, setFreeBaseUrl] = useState("")
   const [freeModel, setFreeModel] = useState("")
-  const [freeApiKeys, setFreeApiKeys] = useState("")
   const [freeTemperature, setFreeTemperature] = useState(0.2)
   const [freeFallbackModel, setFreeFallbackModel] = useState("gemma-4-31b-it")
 
@@ -650,7 +646,6 @@ export function AdminClient() {
         tier: "pro",
         base_url: proBaseUrl,
         model: proModel,
-        api_keys: proApiKey ? [proApiKey] : undefined,
         temperature: proTemperature,
         fallback_provider: "google",
         fallback_model: proFallbackModel,
@@ -658,7 +653,6 @@ export function AdminClient() {
         tier: "free",
         base_url: freeBaseUrl,
         model: freeModel,
-        api_keys: freeApiKeys ? freeApiKeys.split(/[\n,]+/).map(k => k.trim()).filter(Boolean) : undefined,
         temperature: freeTemperature,
         fallback_provider: "google",
         fallback_model: freeFallbackModel,
@@ -687,12 +681,10 @@ export function AdminClient() {
         tier: "pro",
         base_url: proBaseUrl || undefined,
         model: proModel || undefined,
-        api_key: proApiKey || undefined,
       } : {
         tier: "free",
         base_url: freeBaseUrl || undefined,
         model: freeModel || undefined,
-        api_key: freeApiKeys ? freeApiKeys.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)[0] : undefined,
       }
 
       const res = await fetch("/api/backend/admin/model-settings/test", {
@@ -710,6 +702,7 @@ export function AdminClient() {
       setTestOutput({ success: false, error: msg })
     },
   })
+
 
   const toggleUserTierMutation = useMutation({
     mutationFn: async ({ userId, is_pro }: { userId: string; is_pro: boolean }) => {
@@ -958,7 +951,7 @@ export function AdminClient() {
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wide">Dynamic LLM & Model Provider Settings</h3>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Configure endpoints, models, and API keys for Pro and Free accounts. Changes take effect instantly without restarting the server.
+                Configure endpoints, models, and fallback routing for Pro and Free accounts. All API keys are securely managed via server environment variables.
               </p>
             </div>
             {saveStatus && (
@@ -967,7 +960,6 @@ export function AdminClient() {
               </span>
             )}
           </div>
-
           {loadingModelSettings ? (
             <div className="soft-skeleton h-64" />
           ) : (
@@ -984,7 +976,7 @@ export function AdminClient() {
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Used exclusively for Pro users (Admins & promoted users). High-capacity Google Gemini 3.7 Flash Tiered.
+                  Used exclusively for Pro users. High-capacity Gemini 3.7 Flash Tiered or custom endpoint. API authentication is sourced from environment variables.
                 </p>
 
                   {/* Pro Model Presets */}
@@ -1049,16 +1041,6 @@ export function AdminClient() {
                     />
                   </div>
 
-                  <div>
-                    <Label className="text-xs font-bold">Bearer Token / API Key (Optional)</Label>
-                    <Input
-                      type="password"
-                      value={proApiKey}
-                      onChange={(e) => setProApiKey(e.target.value)}
-                      placeholder={modelSettings?.pro?.masked_keys?.[0] || "Leave blank if gateway requires no auth"}
-                      className="h-8 text-xs font-mono mt-1"
-                    />
-                  </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1117,8 +1099,9 @@ export function AdminClient() {
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Used for standard registered users and guests. Multi-key round-robin rotation via OpenRouter.
+                  Used for standard registered users and guests. Multi-key round-robin rotation via OpenRouter (sourced from server environment).
                 </p>
+
 
                   {/* Free Model Presets */}
                   <div>
@@ -1182,21 +1165,7 @@ export function AdminClient() {
                     <p className="text-[10px] text-zinc-400 mt-0.5">e.g. poolside/laguna-xs-2.1:free</p>
                   </div>
 
-                  <div>
-                    <div className="flex justify-between items-center">
-                      <Label className="text-xs font-bold">OpenRouter API Keys (comma or line separated)</Label>
-                      <span className="text-[10px] font-mono text-zinc-500">
-                        {modelSettings?.free?.keys_count ?? 0} active in pool
-                      </span>
-                    </div>
-                    <Textarea
-                      rows={3}
-                      value={freeApiKeys}
-                      onChange={(e) => setFreeApiKeys(e.target.value)}
-                      placeholder={modelSettings?.free?.masked_keys?.join("\n") || "Paste sk-or-v1-... keys here"}
-                      className="text-xs font-mono mt-1"
-                    />
-                  </div>
+
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
