@@ -1068,8 +1068,8 @@ export function AdminClient() {
       />
 
       {/* Main Workspace Stage */}
-      <div className="flex-1 p-4 md:p-6 min-w-0 bg-[#fbfbf3] dark:bg-zinc-900 overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl">
+      <div className="flex-1 md:pl-56 min-w-0 bg-[#fbfbf3] dark:bg-zinc-900">
+        <div className="p-4 md:p-6 mx-auto w-full max-w-6xl">
           <AdminHeader
             activeTab={activeTab}
             isFetching={loadingAnalytics || loadingTiming || loadingModelSettings || loadingGenerations || loadingUsers}

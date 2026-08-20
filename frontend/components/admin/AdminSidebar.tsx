@@ -50,7 +50,7 @@ export function AdminSidebar({
   unresolvedReportsCount = 0,
 }: AdminSidebarProps) {
   return (
-    <aside className="w-full md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-900 p-3 select-none flex flex-col md:justify-center md:sticky md:top-[49px] md:h-[calc(100vh-49px)] z-20">
+    <aside className="w-full md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-900 p-3 select-none flex flex-col md:justify-center md:fixed md:left-0 md:top-[49px] md:bottom-0 z-20">
       {/* Grouped Navigation */}
       <nav className="flex flex-row md:flex-col gap-6 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 my-auto md:my-0">
         {NAV_GROUPS.map((group) => (
