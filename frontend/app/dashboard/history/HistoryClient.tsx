@@ -558,58 +558,58 @@ export function HistoryClient() {
                 key={run.id}
                 onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
                 className={[
-                  "flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group",
+                  "flex items-center justify-between gap-3 px-3.5 py-3 md:px-5 md:py-3.5 transition-all duration-150 group",
                   completed
-                    ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.at-span]:text-zinc-200 hover:[&_.date-p]:text-zinc-200 hover:[&_.dot-span]:text-zinc-200 hover:[&_.delete-btn]:text-zinc-200 hover:scale-[1.012] hover:shadow-sm hover:z-10 hover:relative"
+                    ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.at-span]:text-zinc-200 hover:[&_.date-p]:text-zinc-200 hover:[&_.dot-span]:text-zinc-200 hover:[&_.delete-btn]:text-zinc-200 md:hover:scale-[1.012] md:hover:shadow-sm md:hover:z-10 md:hover:relative"
                     : failed
                     ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                     : "",
                 ].join(" ")}
               >
                 {/* Left: dot + info */}
-                <div className="flex items-start gap-3 min-w-0">
+                <div className="flex items-start gap-2.5 min-w-0 md:gap-3">
                   <StatusDot status={run.status} />
                   <div className="min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className={`title-span text-sm font-semibold leading-snug transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
+                    <div className="flex items-baseline gap-1.5 flex-wrap md:gap-2">
+                      <span className={`title-span text-xs font-extrabold uppercase tracking-tight md:text-sm transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
                         {run.job_title || "Tailored Resume"}
                       </span>
                       {run.company && (
-                        <span className="at-span text-sm text-zinc-400 dark:text-zinc-500 font-normal truncate transition-colors duration-150">
+                        <span className="at-span text-xs text-zinc-400 dark:text-zinc-500 font-semibold truncate transition-colors duration-150">
                           at {run.company}
                         </span>
                       )}
                     </div>
-                    <p className="date-p text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 transition-colors duration-150">
+                    <p className="date-p text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 transition-colors duration-150">
                       {date}
-                      <span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
+                      <span className="dot-span mx-1 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
                       {run.template_id}
                       {failed && (
-                        <><span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
+                        <><span className="dot-span mx-1 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
                       )}
                     </p>
-                    <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
+                    <div className="mt-1.5"><JobDescriptionPeek text={run.job_description} /></div>
                   </div>
                 </div>
 
                 {/* Right: edit + delete */}
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   {completed && (
                     <button
                       onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 hover:!text-zinc-800 dark:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 hover:!text-zinc-800 dark:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
                       aria-label="Edit"
                     >
-                      <Pencil size={12} />
-                      Edit
+                      <Pencil size={13} />
+                      <span className="hidden sm:inline">Edit</span>
                     </button>
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
-                    className="delete-btn shrink-0 p-1.5 text-zinc-500 hover:text-red-600 md:text-zinc-300 md:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
+                    className="delete-btn shrink-0 p-2 text-zinc-400 hover:text-red-600 md:text-zinc-300 md:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
                     aria-label="Delete"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </div>

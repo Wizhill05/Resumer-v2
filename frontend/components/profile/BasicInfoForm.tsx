@@ -181,7 +181,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   return (
     <form
       onSubmit={handleSubmit(() => performSave())}
-      className="space-y-5 pixel-enter"
+      className="space-y-4 md:space-y-5 pixel-enter"
     >
       <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-700">
         <h2 className="text-sm font-extrabold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
@@ -193,8 +193,8 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+        <div className="space-y-1.5">
           <Label htmlFor="full_name">Full Name</Label>
           <Input id="full_name" {...register("full_name")} />
           {errors.full_name && (
@@ -202,7 +202,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="subtitle">Subtitle / Headline</Label>
           <Input
             id="subtitle"
@@ -211,7 +211,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" {...register("email")} />
           {errors.email && (
@@ -219,17 +219,17 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="phone">Phone</Label>
           <Input id="phone" {...register("phone")} />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="location">Location</Label>
           <Input id="location" placeholder="e.g. San Francisco, CA" {...register("location")} />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="linkedin_url">LinkedIn URL</Label>
           <Input id="linkedin_url" {...register("linkedin_url")} />
           {errors.linkedin_url && (
@@ -237,7 +237,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="github_url">GitHub URL</Label>
           <Input id="github_url" {...register("github_url")} />
           {errors.github_url && (
@@ -245,7 +245,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <Label htmlFor="portfolio_url">Portfolio URL</Label>
           <Input id="portfolio_url" {...register("portfolio_url")} />
           {errors.portfolio_url && (
@@ -253,7 +253,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           )}
         </div>
 
-        <div className="space-y-2 md:col-span-2">
+        <div className="space-y-1.5 md:col-span-2">
           <Label htmlFor="skills">Skills (comma separated)</Label>
           <Input id="skills" placeholder="React, Node.js, Python" {...register("skills")} />
         </div>
@@ -265,7 +265,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
       </div>
 
       {/* Email Notification Default Toggle */}
-      <div className="panel flex items-start justify-between gap-4 p-4 border-2 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-[2px_2px_0px_#000] dark:shadow-[2px_2px_0px_#3f3f46]">
+      <div className="flex items-start justify-between gap-4 border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:border-2 md:border-black md:bg-white md:p-4 md:shadow-[2px_2px_0px_#000] md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:shadow-[2px_2px_0px_#3f3f46]">
         <div className="space-y-1">
           <Label className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 text-zinc-900 dark:text-zinc-100">
             <Mail size={14} className="text-[#ff4e26]" /> Receive Completion Emails

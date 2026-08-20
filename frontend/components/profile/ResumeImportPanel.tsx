@@ -3,8 +3,7 @@
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
-import { AlertCircle, CheckCircle2, Loader2, Upload, X } from "lucide-react"
-
+import { AlertCircle, CheckCircle2, Loader2, Upload, X, ChevronDown, ChevronUp, FileUp } from "lucide-react"
 type ImportWarning = { scope: string; message: string }
 type DuplicateCandidate = { imported_type: string; confidence: number; reason: string; suggested_action: string }
 type ResumeImportDraft = {
@@ -26,6 +25,7 @@ export function ResumeImportPanel() {
   const [error, setError] = useState<string | null>(null)
   const [stage, setStage] = useState<Stage>("idle")
   const [fileCount, setFileCount] = useState(0)
+  const [mobileExpanded, setMobileExpanded] = useState(false)
 
   const importMutation = useMutation({
     mutationFn: async (files: File[]) => {
@@ -133,39 +133,67 @@ export function ResumeImportPanel() {
       : ""
 
   const isPending = importMutation.isPending
+  const showExpanded = mobileExpanded || isPending || draft !== null || error !== null
 
   return (
-    <div className="panel space-y-3 p-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
-          <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Fast import</p>
-          <h2 className="text-lg font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">Upload old resumes</h2>
-          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">PDF only. Max 5 files, 5MB each. We stage results before saving.</p>
-        </div>
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="application/pdf,.pdf"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              const files = Array.from(event.target.files ?? [])
-              if (files.length) {
-                setError(null)
-                setDraft(null)
-                setStage("idle")
-                importMutation.mutate(files)
-              }
-              event.target.value = ""
-            }}
-          />
-          <Button type="button" onClick={() => inputRef.current?.click()} disabled={isPending}>
-            {isPending ? <><Loader2 className="animate-spin" size={16} /> {stageLabel}</> : <><Upload size={16} /> Import PDFs</>}
-          </Button>
-        </div>
+    <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:p-4">
+      {/* Hidden file input */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? [])
+          if (files.length) {
+            setError(null)
+            setDraft(null)
+            setStage("idle")
+            setMobileExpanded(true)
+            importMutation.mutate(files)
+          }
+          event.target.value = ""
+        }}
+      />
+
+      {/* Mobile Collapsed Trigger Bar */}
+      <div className="flex items-center justify-between gap-2 md:hidden">
+        <button
+          type="button"
+          onClick={() => setMobileExpanded(!mobileExpanded)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left font-black uppercase tracking-tight text-zinc-800 dark:text-zinc-200"
+        >
+          <FileUp size={16} className="shrink-0 text-[#ff4e26]" />
+          <span className="truncate text-xs">Import from PDF Resumes</span>
+          {showExpanded ? <ChevronUp size={14} className="shrink-0 text-zinc-400" /> : <ChevronDown size={14} className="shrink-0 text-zinc-400" />}
+        </button>
+        <Button
+          type="button"
+          size="xs"
+          onClick={() => inputRef.current?.click()}
+          disabled={isPending}
+          className="shrink-0"
+        >
+          {isPending ? <Loader2 className="animate-spin" size={12} /> : <><Upload size={12} /> Upload</>}
+        </Button>
       </div>
 
+      {/* Desktop Header & Mobile Expanded Body */}
+      <div className={`${showExpanded ? "mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800 md:mt-0 md:pt-0 md:border-0" : "hidden"} md:block`}>
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Fast import</p>
+            <h2 className="text-base font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100 md:text-lg">Upload old resumes</h2>
+            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 md:text-sm">PDF only. Max 5 files, 5MB each. We stage results before saving.</p>
+          </div>
+          <div className="hidden md:flex md:gap-2">
+            <Button type="button" onClick={() => inputRef.current?.click()} disabled={isPending}>
+              {isPending ? <><Loader2 className="animate-spin" size={16} /> {stageLabel}</> : <><Upload size={16} /> Import PDFs</>}
+            </Button>
+          </div>
+        </div>
+      </div>
       {/* Stage progress indicator */}
       {isPending && (
         <div className="space-y-1.5 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">

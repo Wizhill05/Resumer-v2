@@ -203,16 +203,16 @@ export function GenerateClient() {
 
       {step === "input" && (
         <form onSubmit={handleGenerate} className="space-y-4 md:space-y-5">
-          <div className="panel-strong flex flex-col gap-2 bg-[#ff4e26] p-4 text-white md:flex-row md:items-center md:justify-between">
-            <p className="text-sm font-black uppercase tracking-wide">Free beta limit: 5 generations per person per day.</p>
-            <p className="text-xs font-bold uppercase tracking-widest text-white/80">Resets after 24 hours.</p>
+          <div className="flex flex-col gap-1.5 bg-[#ff4e26] p-3 text-white md:panel-strong md:flex-row md:items-center md:justify-between md:p-4">
+            <p className="text-xs font-black uppercase tracking-wide md:text-sm">Free beta limit: 5 generations per person per day.</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-white/80 md:text-xs">Resets after 24 hours.</p>
           </div>
 
-          <section className="panel p-4 md:p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
+          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
+            <div className="mb-2.5 flex items-center justify-between gap-3">
               <div>
-                <Label className="text-sm font-extrabold uppercase tracking-wider">Template</Label>
-                <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Controls resume structure and rendering.</p>
+                <Label className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Template</Label>
+                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Controls resume structure and rendering.</p>
               </div>
               <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">1</span>
             </div>
@@ -242,18 +242,18 @@ export function GenerateClient() {
           </section>
 
           {activeTemplate && splits.length > 1 && (
-            <section className="panel p-4 md:p-5">
-              <div className="mb-3 flex items-start justify-between gap-3">
+            <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
+              <div className="mb-2.5 flex items-start justify-between gap-3">
                 <div>
-                  <Label className="text-sm font-extrabold uppercase tracking-wider">Content Focus</Label>
-                  <p className="mt-1 text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  <Label className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Content Focus</Label>
+                  <p className="mt-0.5 text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
                     Choose how many saved projects and experience entries the resume should prioritize.
                   </p>
                 </div>
                 <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">2</span>
               </div>
 
-              <div className="mb-3 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-400 sm:w-max">
+              <div className="mb-2.5 grid grid-cols-2 gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-400 sm:w-max">
                 <span className="inline-flex items-center gap-1 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1">
                   <FolderGit2 size={13} /> Your projects: {profileProjects.length}
                 </span>
@@ -304,11 +304,11 @@ export function GenerateClient() {
             </section>
           )}
 
-          <section className="panel p-4 md:p-5">
-            <div className="mb-3 flex items-start justify-between gap-3">
+          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
+            <div className="mb-2.5 flex items-start justify-between gap-3">
               <div>
-                <Label htmlFor="job" className="text-sm font-extrabold uppercase tracking-wider">Job Description</Label>
-                <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">Paste the full posting for better keyword matching.</p>
+                <Label htmlFor="job" className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Job Description</Label>
+                <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Paste the full posting for better keyword matching.</p>
               </div>
               <span className="text-xs font-extrabold uppercase tracking-widest text-zinc-400">{activeTemplate && splits.length > 1 ? "3" : "2"}</span>
             </div>
@@ -323,13 +323,12 @@ export function GenerateClient() {
             />
           </section>
 
-          <section className="panel p-4 md:p-5">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
+          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
+            <div className="grid gap-3 md:grid-cols-2 md:gap-4">
+              <div className="space-y-1.5 md:space-y-2">
                 <Label htmlFor="keywords" className="font-bold">Focus Keywords</Label>
                 <Input
                   id="keywords"
-                  placeholder="Python, AWS, Next.js"
                   value={keywords}
                   onChange={(e) => setKeywords(e.target.value)}
                 />
@@ -347,10 +346,10 @@ export function GenerateClient() {
           </section>
 
           {/* Email Notification Option Section */}
-          <section className="panel p-4 md:p-5">
-            <div className="mb-3">
-              <Label className="text-sm font-extrabold uppercase tracking-wider">Email Completion Notification</Label>
-              <p className="mt-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+          <section className="border-b border-zinc-200 pb-4 dark:border-zinc-800 md:panel md:border md:p-5">
+            <div className="mb-2.5">
+              <Label className="text-xs font-extrabold uppercase tracking-wider md:text-sm">Email Completion Notification</Label>
+              <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
                 Choose whether to receive an email with the PDF attached when this generation finishes.
               </p>
             </div>
