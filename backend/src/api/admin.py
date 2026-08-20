@@ -413,23 +413,9 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
     )
     tokens_by_gen = {row[0]: int(row[1]) for row in tokens_res.all()}
 
-    def _clean_model_name(raw_name: str, provider_name: str | None = None) -> str:
-        if not raw_name:
-            return "unknown"
-        lower = raw_name.lower()
-        prov = (provider_name or "").lower()
-        if "gemma-4" in lower or "gemma_4" in lower or "gemma4" in lower:
-            if "cerebras" in lower or prov == "cerebras":
-                return "gemma-4-31b-it (Cerebras API)"
-            if "google" in lower or "gemini" in lower or prov == "google":
-                return "gemma-4-31b-it (Gemini API)"
-            return "gemma-4-31b-it (Google Gemini)"
-        return raw_name
-
     model_groups: dict[str, list[dict]] = {}
     for row in all_gens:
-        raw_model = row.model_used or "unknown"
-        model = _clean_model_name(raw_model)
+        model = row.model_used or "unknown"
         dur = None
         if row.completed_at and row.created_at:
             dur = max(0.0, (row.completed_at - row.created_at).total_seconds())
@@ -441,6 +427,7 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
             "duration": dur,
             "tokens": tokens_by_gen.get(row.id, 0),
         })
+
     models_benchmark = []
     for model_name, items in model_groups.items():
         total_runs = len(items)
@@ -511,7 +498,7 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
         {
             "node_name": row[0],
             "provider": row[1],
-            "model": _clean_model_name(row[2] or "default", row[1]),
+            "model": row[2] or "default",
             "calls": row[3],
             "avg_latency_ms": round(float(row[4] or 0), 1),
             "total_tokens": int(row[5] or 0),
