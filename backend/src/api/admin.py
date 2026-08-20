@@ -413,34 +413,58 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
     )
     tokens_by_gen = {row[0]: int(row[1]) for row in tokens_res.all()}
 
-    # Query primary provider per generation from GenerationNodeMetric
-    providers_res = await db.execute(
+    # Query node telemetry (providers and fallback occurrences) per generation
+    metrics_per_gen_res = await db.execute(
         select(
             GenerationNodeMetric.generation_id,
             GenerationNodeMetric.provider,
+            GenerationNodeMetric.fallback_used,
             func.count(GenerationNodeMetric.id),
         )
         .where(GenerationNodeMetric.generation_id.isnot(None))
-        .group_by(GenerationNodeMetric.generation_id, GenerationNodeMetric.provider)
-        .order_by(GenerationNodeMetric.generation_id, desc(func.count(GenerationNodeMetric.id)))
+        .group_by(
+            GenerationNodeMetric.generation_id,
+            GenerationNodeMetric.provider,
+            GenerationNodeMetric.fallback_used,
+        )
     )
-    primary_provider_by_gen: dict[uuid.UUID, str] = {}
-    for gen_id_val, prov, _ in providers_res.all():
-        if gen_id_val and gen_id_val not in primary_provider_by_gen:
-            primary_provider_by_gen[gen_id_val] = (prov or "").lower()
+    gen_telemetry: dict[uuid.UUID, dict] = {}
+    for gen_id_val, prov, fb_used, count in metrics_per_gen_res.all():
+        if not gen_id_val:
+            continue
+        if gen_id_val not in gen_telemetry:
+            gen_telemetry[gen_id_val] = {
+                "has_cerebras": False,
+                "has_google": False,
+                "has_fallback": False,
+            }
+        p = (prov or "").lower()
+        if p == "cerebras":
+            gen_telemetry[gen_id_val]["has_cerebras"] = True
+        elif p == "google":
+            gen_telemetry[gen_id_val]["has_google"] = True
+        if fb_used:
+            gen_telemetry[gen_id_val]["has_fallback"] = True
 
     model_groups: dict[str, list[dict]] = {}
     for row in all_gens:
         raw_model = row.model_used or "unknown"
-        gen_provider = primary_provider_by_gen.get(row.id, "")
+        telem = gen_telemetry.get(row.id)
 
-        # Distinguish Gemma 4 from Cerebras vs Google Gemini
+        # Option A: Split Gemma 4 by Execution Purity
         if "gemma" in raw_model.lower():
-            if gen_provider == "google":
-                model_key = "gemma-4-31b-it (Google Gemini)"
+            if telem:
+                if telem["has_cerebras"] and telem["has_fallback"]:
+                    model_key = "gemma-4-31b-it (Cerebras + Google Fallback)"
+                elif telem["has_cerebras"] and not telem["has_fallback"]:
+                    model_key = "gemma-4-31b-it (Cerebras - Pure)"
+                elif telem["has_google"] and not telem["has_cerebras"]:
+                    model_key = "gemma-4-31b-it (Google Direct)"
+                else:
+                    model_key = "gemma-4-31b-it (Cerebras - Pure)"
             else:
-                # Historical default was Cerebras API
-                model_key = "gemma-4-31b-it (Cerebras)"
+                # Historical runs without recorded node metrics ran on Cerebras
+                model_key = "gemma-4-31b-it (Cerebras - Pure)"
         elif "gemini-3.7" in raw_model.lower() or "antigravity" in raw_model.lower():
             model_key = "gemini-3.7-flash-tiered (OmniRoute)"
         elif "laguna" in raw_model.lower() or "poolside" in raw_model.lower():
@@ -459,7 +483,6 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
             "duration": dur,
             "tokens": tokens_by_gen.get(row.id, 0),
         })
-
     models_benchmark = []
     for model_name, items in model_groups.items():
         total_runs = len(items)
@@ -561,24 +584,31 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
         .order_by(desc("dur_sec"))
         .limit(10)
     )
-    slowest_runs = [
-        {
+    slowest_runs = []
+    for row in slow_res.all():
+        raw_model = row[3] or "unknown"
+        telem = gen_telemetry.get(row[0])
+        if "gemma" in raw_model.lower():
+            if telem and telem["has_cerebras"] and telem["has_fallback"]:
+                label = "gemma-4-31b-it (Cerebras + Fallback)"
+            elif telem and telem["has_google"] and not telem["has_cerebras"]:
+                label = "gemma-4-31b-it (Google Direct)"
+            else:
+                label = "gemma-4-31b-it (Cerebras)"
+        else:
+            label = raw_model
+
+        slowest_runs.append({
             "id": str(row[0]),
             "job_title": row[1] or "Unknown Title",
             "company": row[2] or "Unknown Company",
-            "model_used": (
-                f"{row[3]} (Google Gemini)" if "gemma" in (row[3] or "").lower() and primary_provider_by_gen.get(row[0]) == "google"
-                else f"{row[3]} (Cerebras)" if "gemma" in (row[3] or "").lower()
-                else row[3]
-            ),
+            "model_used": label,
             "template_id": row[4],
             "created_at": row[5].isoformat() if row[5] else "",
             "completed_at": row[6].isoformat() if row[6] else "",
             "email": row[7] or "Guest",
             "duration_seconds": round(float(row[8] or 0), 1),
-        }
-        for row in slow_res.all()
-    ]
+        })
     return {
         "models_benchmark": models_benchmark,
         "templates_benchmark": templates_benchmark,
