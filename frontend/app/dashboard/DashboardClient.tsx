@@ -159,13 +159,13 @@ export function DashboardClient() {
         </div>
       )}
       {!profileComplete && (
-        <section className="sticky top-3 z-10 panel-strong overflow-hidden">
+        <section className="sticky top-2 z-10 panel-strong overflow-hidden">
           <div className="h-1.5 bg-[#ff4e26]" />
-          <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
+          <div className="grid gap-3 p-3.5 md:gap-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile needed</p>
-              <h2 className="text-xl font-extrabold uppercase tracking-tight dark:text-white">Import source material first</h2>
-              <p className="mt-1 text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
+              <h2 className="text-lg font-extrabold uppercase tracking-tight md:text-xl dark:text-white">Import source material first</h2>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
                 Missing: {missing.join(", ")}. Upload old resumes or paste GitHub project links to fill this faster.
               </p>
             </div>
@@ -179,11 +179,11 @@ export function DashboardClient() {
       {profileComplete && (
         <section className="panel-strong overflow-hidden">
           <div className="h-1.5 bg-[#ff4e26]" />
-          <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center md:p-6">
+          <div className="grid gap-3 p-3.5 md:gap-4 md:grid-cols-[1fr_auto] md:items-center md:p-6">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile ready</p>
-              <h2 className="text-2xl font-extrabold uppercase tracking-tight md:text-4xl dark:text-white">Generate resume now</h2>
-              <p className="mt-1 max-w-2xl text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
+              <h2 className="text-xl font-extrabold uppercase tracking-tight md:text-4xl dark:text-white">Generate resume now</h2>
+              <p className="mt-1 max-w-2xl text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
                 You have source material in every profile section. Paste job post and choose focus next.
               </p>
             </div>

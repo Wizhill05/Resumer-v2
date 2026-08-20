@@ -781,18 +781,18 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-md overflow-hidden shadow-sm">
+    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-md overflow-hidden shadow-xs">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-50/80 dark:bg-zinc-800/80 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left font-black uppercase text-xs tracking-wider text-zinc-800 dark:text-zinc-200 outline-none border-b border-zinc-200 dark:border-zinc-700 cursor-pointer transition-colors"
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 bg-zinc-50/90 dark:bg-zinc-800/90 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left font-black uppercase text-xs tracking-wider text-zinc-800 dark:text-zinc-200 outline-none border-b border-zinc-200 dark:border-zinc-700 cursor-pointer transition-colors"
       >
         <span className="text-zinc-500 shrink-0">{icon}</span>
         <span>{title}</span>
         <span className="ml-auto text-zinc-500">
-          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </span>
       </button>
-      {isExpanded && <div className="p-3 bg-white dark:bg-zinc-900">{children}</div>}
+      {isExpanded && <div className="p-3.5 bg-white dark:bg-zinc-900">{children}</div>}
     </div>
   )
 }
@@ -813,23 +813,23 @@ function ItemCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded overflow-hidden shadow-sm">
+    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded overflow-hidden shadow-xs">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 px-3 py-1.5 bg-zinc-100/70 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700">
-        <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300 truncate">{title}</span>
+      <div className="flex items-center justify-between gap-3 px-3 py-2 bg-zinc-100/70 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700">
+        <span className="text-xs font-extrabold uppercase text-zinc-800 dark:text-zinc-200 truncate">{title}</span>
         <div className="flex items-center gap-1 shrink-0">
           {index > 0 && (
-            <button onClick={() => onMove("up")} className="p-1 hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 rounded cursor-pointer transition-colors" title="Move Up">
-              <ArrowUp size={11} />
+            <button onClick={() => onMove("up")} className="h-7 w-7 flex items-center justify-center hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 rounded cursor-pointer transition-colors" title="Move Up">
+              <ArrowUp size={13} />
             </button>
           )}
           {index < totalItems - 1 && (
-            <button onClick={() => onMove("down")} className="p-1 hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 rounded cursor-pointer transition-colors" title="Move Down">
-              <ArrowDown size={11} />
+            <button onClick={() => onMove("down")} className="h-7 w-7 flex items-center justify-center hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 rounded cursor-pointer transition-colors" title="Move Down">
+              <ArrowDown size={13} />
             </button>
           )}
-          <button onClick={onDelete} className="p-1 text-zinc-400 hover:text-red-500 rounded ml-0.5 cursor-pointer transition-colors" title="Delete">
-            <Trash2 size={12} />
+          <button onClick={onDelete} className="h-7 w-7 flex items-center justify-center text-zinc-400 hover:text-red-500 rounded ml-0.5 cursor-pointer transition-colors" title="Delete">
+            <Trash2 size={13} />
           </button>
         </div>
       </div>

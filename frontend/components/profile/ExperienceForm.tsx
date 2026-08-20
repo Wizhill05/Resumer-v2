@@ -190,97 +190,99 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
   else if (isDirty) status = "unsaved"
 
   const renderForm = () => (
-    <form
-      onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
-      className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
-    >
-      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
-        <div className="flex items-center gap-3">
-          <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight">
-            {editingId ? "Edit Experience" : "Add Experience"}
-          </h3>
-          <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleCancel}
-          className="border-transparent"
-        >
-          <X size={16} />
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="role">Role / Job Title</Label>
-          <Input id="role" {...register("role")} />
-          {errors.role && (
-            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
-              {errors.role.message}
-            </p>
-          )}
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 p-0 backdrop-blur-xs md:static md:z-auto md:block md:bg-transparent md:p-0 md:backdrop-blur-none">
+      <form
+        onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+        className="max-h-[90dvh] overflow-y-auto rounded-t-xl border-t border-zinc-300 bg-white p-4 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 md:max-h-none md:rounded-none md:border md:border-zinc-200 md:bg-zinc-50 md:shadow-none md:dark:border-zinc-700 md:dark:bg-zinc-900/50 md:p-4 pixel-enter space-y-4"
+      >
+        <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
+          <div className="flex items-center gap-3">
+            <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
+              {editingId ? "Edit Experience" : "Add Experience"}
+            </h3>
+            <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            className="h-9 w-9 p-0 border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
+          >
+            <X size={18} />
+          </Button>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="organization">Company / Organization</Label>
-          <Input id="organization" {...register("organization")} />
-          {errors.organization && (
-            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
-              {errors.organization.message}
-            </p>
-          )}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="role">Role / Job Title</Label>
+            <Input id="role" {...register("role")} />
+            {errors.role && (
+              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+                {errors.role.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="organization">Company / Organization</Label>
+            <Input id="organization" {...register("organization")} />
+            {errors.organization && (
+              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+                {errors.organization.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="location">Location</Label>
+            <Input id="location" placeholder="e.g. Remote, or New York, NY" {...register("location")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="start_date">Start Date</Label>
+            <Input id="start_date" type="date" {...register("start_date")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
+            <Input id="end_date" type="date" {...register("end_date")} />
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="location">Location</Label>
-          <Input id="location" placeholder="e.g. Remote, or New York, NY" {...register("location")} />
+        <div className="space-y-1.5">
+          <Label htmlFor="bullet_points">Numerical data and impact (one per line)</Label>
+          <Textarea
+            id="bullet_points"
+            rows={4}
+            placeholder="- Increased efficiency by 40% through automated reporting&#10;- Reduced API latency by 180ms across 12 services"
+            {...register("bullet_points")}
+          />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="start_date">Start Date</Label>
-          <Input id="start_date" type="date" {...register("start_date")} />
+        <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
+          <Button type="submit" disabled={saveMutation.isPending} className="flex-1 md:flex-none">
+            {saveMutation.isPending ? (
+              <>
+                <Loader2 className="animate-spin" size={16} /> Saving...
+              </>
+            ) : (
+              "Save"
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCancel}
+            disabled={saveMutation.isPending}
+            className="flex-1 md:flex-none"
+          >
+            Cancel
+          </Button>
         </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
-          <Input id="end_date" type="date" {...register("end_date")} />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="bullet_points">Numerical data and impact (one per line)</Label>
-        <Textarea
-          id="bullet_points"
-          rows={5}
-          placeholder="- Increased efficiency by 40% through automated reporting&#10;- Reduced API latency by 180ms across 12 services"
-          {...register("bullet_points")}
-        />
-      </div>
-
-      <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
-        <Button type="submit" disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? (
-            <>
-              <Loader2 className="animate-spin" size={16} /> Saving...
-            </>
-          ) : (
-            "Save"
-          )}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleCancel}
-          disabled={saveMutation.isPending}
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
+      </form>
+    </div>
   )
-
   if (isLoading) {
     return (
       <div className="flex justify-center p-8">
@@ -294,9 +296,9 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
   }
 
   return (
-    <div className="space-y-4 pixel-enter">
+    <div className="space-y-3 pixel-enter md:space-y-4">
       {!isAdding && (
-        <div className="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-2.5 dark:border-zinc-800 md:border md:border-zinc-200 md:bg-zinc-50 md:p-3 md:dark:border-zinc-700 md:dark:bg-zinc-900/50">
           <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 sm:text-sm">
             {experiences.length} experience entries
           </h3>
@@ -323,39 +325,40 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
 
       {isAdding && !editingId && renderForm()}
 
-      <div className="space-y-3">
+      <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:divide-y-0 md:space-y-3">
         {experiences.map((exp) => (
-          <div key={exp.id} className="space-y-3">
-            <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
-              <div className="min-w-0 space-y-1.5">
-                <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">
+          <div key={exp.id} className="py-2.5 md:py-0">
+            <div className="flex items-start justify-between gap-3 rounded-none border-0 bg-transparent p-1 transition-colors md:border md:border-zinc-200 md:bg-white md:p-4 md:hover:border-zinc-400 md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:hover:border-zinc-500">
+              <div className="min-w-0 space-y-1">
+                <h4 className="text-sm font-extrabold uppercase tracking-tight text-black dark:text-zinc-100 md:text-base">
                   {exp.role}
                 </h4>
-                <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
-                  {exp.organization} —{" "}
-                  <span className="text-zinc-600 dark:text-zinc-400">
-                    {exp.location || "Location N/A"}
+                <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+                  {exp.organization} &bull;{" "}
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    {exp.location || "Remote"}
                   </span>
                 </p>
-                <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
-                  {exp.start_date || "Start N/A"} to {exp.end_date || "Present"}
+                <p className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase">
+                  {exp.start_date || "Start N/A"} &rarr; {exp.end_date || "Present"}
                 </p>
                 {exp.bullet_points && exp.bullet_points.length > 0 && (
-                  <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  <ul className="mt-1.5 list-inside list-disc space-y-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     {exp.bullet_points.map((b: string, i: number) => (
                       <li key={i}>{b}</li>
                     ))}
                   </ul>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 items-center gap-1">
                 <Button
                   size="icon-sm"
                   variant="ghost"
                   onClick={() => startEdit(exp)}
-                  className="border-transparent hover:border-black dark:hover:border-zinc-400"
+                  className="h-9 w-9 p-0 border-transparent hover:border-black dark:hover:border-zinc-400"
+                  title="Edit entry"
                 >
-                  <Edit2 size={14} className="text-black dark:text-zinc-200" />
+                  <Edit2 size={15} className="text-zinc-700 dark:text-zinc-200" />
                 </Button>
                 <Button
                   size="icon-sm"
@@ -363,9 +366,10 @@ export function ExperienceForm({ onDirtyChange }: ExperienceFormProps) {
                   onClick={() => {
                     if (confirm("Are you sure?")) deleteMutation.mutate(exp.id)
                   }}
-                  className="border-transparent hover:border-red-500 hover:text-red-500"
+                  className="h-9 w-9 p-0 border-transparent hover:border-red-500 hover:text-red-500"
+                  title="Delete entry"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={15} />
                 </Button>
               </div>
             </div>

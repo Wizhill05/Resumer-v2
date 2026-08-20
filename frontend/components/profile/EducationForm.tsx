@@ -190,103 +190,106 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
   else if (isDirty) status = "unsaved"
 
   const renderForm = () => (
-    <form
-      onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
-      className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
-    >
-      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
-        <div className="flex items-center gap-3">
-          <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
-            {editingId ? "Edit Education" : "Add Education"}
-          </h3>
-          <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleCancel}
-          className="border-transparent"
-        >
-          <X size={16} />
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="degree">Degree / Field of Study</Label>
-          <Input id="degree" placeholder="e.g. B.S. in Computer Science" {...register("degree")} />
-          {errors.degree && (
-            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
-              {errors.degree.message}
-            </p>
-          )}
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 p-0 backdrop-blur-xs md:static md:z-auto md:block md:bg-transparent md:p-0 md:backdrop-blur-none">
+      <form
+        onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+        className="max-h-[90dvh] overflow-y-auto rounded-t-xl border-t border-zinc-300 bg-white p-4 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 md:max-h-none md:rounded-none md:border md:border-zinc-200 md:bg-zinc-50 md:shadow-none md:dark:border-zinc-700 md:dark:bg-zinc-900/50 md:p-4 pixel-enter space-y-4"
+      >
+        <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
+          <div className="flex items-center gap-3">
+            <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
+              {editingId ? "Edit Education" : "Add Education"}
+            </h3>
+            <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            className="h-9 w-9 p-0 border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
+          >
+            <X size={18} />
+          </Button>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="institution">School / Institution</Label>
-          <Input
-            id="institution"
-            placeholder="e.g. Stanford University"
-            {...register("institution")}
-          />
-          {errors.institution && (
-            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
-              {errors.institution.message}
-            </p>
-          )}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="degree">Degree / Field of Study</Label>
+            <Input id="degree" placeholder="e.g. B.S. in Computer Science" {...register("degree")} />
+            {errors.degree && (
+              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+                {errors.degree.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="institution">School / Institution</Label>
+            <Input
+              id="institution"
+              placeholder="e.g. Stanford University"
+              {...register("institution")}
+            />
+            {errors.institution && (
+              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+                {errors.institution.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="location">Location</Label>
+            <Input id="location" placeholder="e.g. Stanford, CA" {...register("location")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="gpa">GPA</Label>
+            <Input id="gpa" placeholder="e.g. 3.8/4.0" {...register("gpa")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="start_date">Start Date</Label>
+            <Input id="start_date" type="date" {...register("start_date")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
+            <Input id="end_date" type="date" {...register("end_date")} />
+          </div>
+
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="coursework">Relevant Coursework (comma separated)</Label>
+            <Input
+              id="coursework"
+              placeholder="Data Structures, Algorithms, Web Development"
+              {...register("coursework")}
+            />
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="location">Location</Label>
-          <Input id="location" placeholder="e.g. Stanford, CA" {...register("location")} />
+        <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
+          <Button type="submit" disabled={saveMutation.isPending} className="flex-1 md:flex-none">
+            {saveMutation.isPending ? (
+              <>
+                <Loader2 className="animate-spin" size={16} /> Saving...
+              </>
+            ) : (
+              "Save"
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCancel}
+            disabled={saveMutation.isPending}
+            className="flex-1 md:flex-none"
+          >
+            Cancel
+          </Button>
         </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="gpa">GPA</Label>
-          <Input id="gpa" placeholder="e.g. 3.8/4.0" {...register("gpa")} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="start_date">Start Date</Label>
-          <Input id="start_date" type="date" {...register("start_date")} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="end_date">End Date (leave blank for Present)</Label>
-          <Input id="end_date" type="date" {...register("end_date")} />
-        </div>
-
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="coursework">Relevant Coursework (comma separated)</Label>
-          <Input
-            id="coursework"
-            placeholder="Data Structures, Algorithms, Web Development"
-            {...register("coursework")}
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
-        <Button type="submit" disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? (
-            <>
-              <Loader2 className="animate-spin" size={16} /> Saving...
-            </>
-          ) : (
-            "Save"
-          )}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleCancel}
-          disabled={saveMutation.isPending}
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
+      </form>
+    </div>
   )
 
   if (isLoading) {
@@ -302,9 +305,9 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
   }
 
   return (
-    <div className="space-y-4 pixel-enter">
+    <div className="space-y-3 pixel-enter md:space-y-4">
       {!isAdding && (
-        <div className="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-2.5 dark:border-zinc-800 md:border md:border-zinc-200 md:bg-zinc-50 md:p-3 md:dark:border-zinc-700 md:dark:bg-zinc-900/50">
           <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 sm:text-sm">
             {educationList.length} education entries
           </h3>
@@ -332,22 +335,22 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
 
       {isAdding && !editingId && renderForm()}
 
-      <div className="space-y-3">
+      <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:divide-y-0 md:space-y-3">
         {educationList.map((edu) => (
-          <div key={edu.id} className="space-y-3">
-            <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
-              <div className="min-w-0 space-y-1.5">
-                <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">
+          <div key={edu.id} className="py-2.5 md:py-0">
+            <div className="flex items-start justify-between gap-3 rounded-none border-0 bg-transparent p-1 transition-colors md:border md:border-zinc-200 md:bg-white md:p-4 md:hover:border-zinc-400 md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:hover:border-zinc-500">
+              <div className="min-w-0 space-y-1">
+                <h4 className="text-sm font-extrabold uppercase tracking-tight text-black dark:text-zinc-100 md:text-base">
                   {edu.degree}
                 </h4>
-                <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300 sm:text-sm">
-                  {edu.institution} —{" "}
-                  <span className="text-zinc-600 dark:text-zinc-400">
+                <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+                  {edu.institution} &bull;{" "}
+                  <span className="text-zinc-500 dark:text-zinc-400">
                     {edu.location || "Location N/A"}
                   </span>
                 </p>
-                <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase">
-                  {edu.start_date || "Start N/A"} to {edu.end_date || "Present"}
+                <p className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase">
+                  {edu.start_date || "Start N/A"} &rarr; {edu.end_date || "Present"}
                 </p>
                 {edu.gpa && (
                   <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 mt-1 uppercase">
@@ -355,11 +358,11 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
                   </p>
                 )}
                 {edu.coursework && edu.coursework.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
+                  <div className="flex flex-wrap gap-1 mt-1.5">
                     {edu.coursework.map((c: string) => (
                       <span
                         key={c}
-                        className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600 dark:text-zinc-300"
+                        className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-1.5 py-0.5 text-[9px] font-bold uppercase text-zinc-600 dark:text-zinc-300"
                       >
                         {c}
                       </span>
@@ -367,14 +370,15 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
                   </div>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 items-center gap-1">
                 <Button
                   size="icon-sm"
                   variant="ghost"
                   onClick={() => startEdit(edu)}
-                  className="border-transparent hover:border-black dark:hover:border-zinc-400"
+                  className="h-9 w-9 p-0 border-transparent hover:border-black dark:hover:border-zinc-400"
+                  title="Edit entry"
                 >
-                  <Edit2 size={14} className="text-black dark:text-zinc-200" />
+                  <Edit2 size={15} className="text-zinc-700 dark:text-zinc-200" />
                 </Button>
                 <Button
                   size="icon-sm"
@@ -382,9 +386,10 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
                   onClick={() => {
                     if (confirm("Are you sure?")) deleteMutation.mutate(edu.id)
                   }}
-                  className="border-transparent hover:border-red-500 hover:text-red-500"
+                  className="h-9 w-9 p-0 border-transparent hover:border-red-500 hover:text-red-500"
+                  title="Delete entry"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={15} />
                 </Button>
               </div>
             </div>

@@ -1,8 +1,8 @@
 "use client"
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState, useEffect, useRef } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy } from "lucide-react"
+import { useState, useEffect, useRef, useMemo } from "react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft } from "lucide-react"
 import { createPortal } from "react-dom"
 import { FeedbackModal } from "@/components/FeedbackModal"
 
@@ -155,11 +155,10 @@ function JobDescriptionPeek({ text }: { text: string }) {
           e.stopPropagation()
           setIsOpen(true)
         }}
-        className="inline-flex min-h-11 cursor-pointer touch-manipulation items-center border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300 transition-colors active:border-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-700 active:text-zinc-900 dark:active:text-white sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-zinc-500 dark:sm:text-zinc-400 sm:hover:border-zinc-900 dark:sm:hover:border-zinc-400 sm:hover:text-zinc-900 dark:sm:hover:text-white"
+        className="inline-flex cursor-pointer items-center text-[11px] font-semibold text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white underline underline-offset-2 transition-colors"
       >
         See job description
       </button>
-
       {isOpen && typeof document !== "undefined" && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
@@ -342,7 +341,126 @@ function LiveProgressGridCard({
   )
 }
 
-function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) => void }) {
+function FullscreenResumeOverlay({
+  run,
+  onClose,
+}: {
+  run: HistoryRun
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", handler)
+    document.body.style.overflow = "hidden"
+    return () => {
+      window.removeEventListener("keydown", handler)
+      document.body.style.overflow = ""
+    }
+  }, [onClose])
+
+  const date = new Date(run.created_at).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-zinc-950/95 backdrop-blur-md text-white animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Resume Preview"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      {/* Top Action Header Bar */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3 md:px-6">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded bg-zinc-900 transition-colors cursor-pointer"
+            title="Back to History (Esc)"
+          >
+            <ArrowLeft size={14} />
+            <span className="hidden sm:inline">Back</span>
+          </button>
+          <div className="min-w-0">
+            <h3 className="text-sm font-extrabold uppercase tracking-tight truncate text-white md:text-base">
+              {run.job_title || "Tailored Resume"}
+            </h3>
+            <p className="text-xs font-semibold text-zinc-400 truncate">
+              {run.company ? `${run.company} • ` : ""}{date} • {run.template_id}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={`/api/backend/generate/${run.id}/download`}
+            target="_blank"
+            rel="noreferrer"
+            download
+          >
+            <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-[#ff4e26] hover:bg-[#e03d16] text-white rounded transition-colors cursor-pointer shadow-sm">
+              <Download size={14} />
+              <span>Download PDF</span>
+            </button>
+          </a>
+          <button
+            onClick={() => {
+              window.location.href = `/dashboard/history/${run.id}/edit`
+            }}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider border border-zinc-700 hover:border-zinc-500 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded transition-colors cursor-pointer"
+          >
+            <Pencil size={13} />
+            <span>Edit</span>
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors cursor-pointer"
+            aria-label="Close fullscreen preview"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Fullscreen Preview Canvas */}
+      <div className="flex-1 overflow-auto p-4 md:p-8 flex items-center justify-center bg-zinc-900/60">
+        <div className="relative mx-auto my-auto max-w-3xl w-full flex flex-col items-center justify-center">
+          {run.thumb_storage_key ? (
+            <img
+              src={`/api/backend/generate/${run.id}/thumb`}
+              alt={`${run.job_title || "Resume"} fullscreen preview`}
+              className="max-h-[82vh] w-auto max-w-full rounded shadow-2xl bg-white object-contain border border-zinc-700 select-none"
+            />
+          ) : (
+            <div
+              className="w-full max-w-2xl bg-white text-zinc-900 p-8 shadow-2xl rounded flex flex-col items-center justify-center text-center space-y-4"
+              style={{ aspectRatio: "210/297" }}
+            >
+              <FileText size={48} className="text-zinc-400" />
+              <p className="text-sm font-semibold text-zinc-600">
+                Rendering preview...
+              </p>
+              <a href={`/api/backend/generate/${run.id}/download`} target="_blank" rel="noreferrer">
+                <button className="px-4 py-2 text-xs font-bold bg-[#ff4e26] text-white rounded">
+                  Download PDF directly
+                </button>
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id: string) => void; onPreview?: (run: HistoryRun) => void }) {
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   })
@@ -355,7 +473,7 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
       <div
         className={`relative border-b border-gray-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 ${completed ? "cursor-pointer" : ""}`}
         style={{ aspectRatio: "210/297" }}
-        onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
+        onClick={() => completed && onPreview ? onPreview(run) : (completed && (window.location.href = `/api/backend/generate/${run.id}/download`))}
       >
         {completed && run.thumb_storage_key ? (
           <img
@@ -373,7 +491,6 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
             )}
           </div>
         )}
-
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
@@ -412,9 +529,14 @@ function GridCard({ run, onDelete }: { run: HistoryRun; onDelete: (id: string) =
     </div>
   )
 }
+const PAGE_SIZE = 12
 
 export function HistoryClient() {
-  const { data: runs = [], isLoading, error, refetch } = useQuery<HistoryRun[]>({
+  const queryClient = useQueryClient()
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  const { data: runs = [], isLoading, isFetching, error, refetch } = useQuery<HistoryRun[]>({
     queryKey: ["history"],
     queryFn: async () => {
       const res = await fetch("/api/backend/generate")
@@ -422,10 +544,27 @@ export function HistoryClient() {
       return res.json()
     },
   })
-
   const [view, setView] = useState<ViewMode>("list")
   const [activeGenForFeedback, setActiveGenForFeedback] = useState<string | null>(null)
+  const [fullscreenRun, setFullscreenRun] = useState<HistoryRun | null>(null)
   const deleteRun = useDeleteRun()
+  // Lazy loading infinite scroll observer
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || visibleCount >= runs.length) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => Math.min(runs.length, prev + PAGE_SIZE))
+        }
+      },
+      { rootMargin: "350px" }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [runs.length, visibleCount])
+  const visibleRuns = useMemo(() => runs.slice(0, visibleCount), [runs, visibleCount])
 
   const hasActive = runs.some((r) => r.status === "pending" || r.status === "in_progress")
   useEffect(() => {
@@ -435,7 +574,6 @@ export function HistoryClient() {
     }, 5_000)
     return () => clearInterval(timer)
   }, [hasActive, refetch])
-
   // Check if post-generation rating modal should pop up
   useEffect(() => {
     try {
@@ -507,11 +645,15 @@ export function HistoryClient() {
             </button>
           </div>
           <button
-            onClick={() => refetch()}
-            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-black dark:hover:text-white transition-colors py-1 px-2 rounded hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ["history"] })
+              refetch()
+            }}
+            disabled={isFetching}
+            className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 hover:text-black dark:text-zinc-300 dark:hover:text-white transition-colors py-1 px-2.5 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 cursor-pointer"
           >
-            <RefreshCw size={11} />
-            Refresh
+            <RefreshCw size={12} className={isFetching ? "animate-spin text-[#ff4e26]" : ""} />
+            <span>{isFetching ? "Refreshing..." : "Refresh"}</span>
           </button>
         </div>
       </div>
@@ -523,105 +665,147 @@ export function HistoryClient() {
         </div>
       ) : view === "grid" ? (
         /* ── Grid view ── */
-        <div className="p-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
-          {runs.map((run) => (
-            run.status === "in_progress" || run.status === "pending" ? (
-              <LiveProgressGridCard key={run.id} run={run} onDelete={deleteRun} refetch={refetch} />
-            ) : (
-              <GridCard key={run.id} run={run} onDelete={deleteRun} />
-            )
-          ))}
-        </div>
+        <>
+          <div className="p-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
+            {visibleRuns.map((run) => (
+              run.status === "in_progress" || run.status === "pending" ? (
+                <LiveProgressGridCard key={run.id} run={run} onDelete={deleteRun} refetch={refetch} />
+              ) : (
+                <GridCard key={run.id} run={run} onDelete={deleteRun} onPreview={setFullscreenRun} />
+              )
+            ))}
+          </div>
+          {visibleCount < runs.length && (
+            <div ref={sentinelRef} className="p-4 text-center border-t border-gray-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+              <button
+                onClick={() => setVisibleCount((prev) => Math.min(runs.length, prev + PAGE_SIZE))}
+                className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2 rounded cursor-pointer transition-colors"
+              >
+                Load more ({runs.length - visibleCount} remaining)
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         /* ── List view ── */
-        <div className="divide-y divide-gray-100 dark:divide-zinc-800">
-          {runs.map((run) => {
-            if (run.status === "in_progress" || run.status === "pending") {
+        <>
+          <div className="divide-y divide-gray-100 dark:divide-zinc-800">
+            {visibleRuns.map((run) => {
+              if (run.status === "in_progress" || run.status === "pending") {
+                return (
+                  <LiveProgressRow
+                    key={run.id}
+                    run={run}
+                    onDelete={deleteRun}
+                    refetch={refetch}
+                  />
+                )
+              }
+
+              const date = new Date(run.created_at).toLocaleDateString("en-US", {
+                month: "short", day: "numeric", year: "numeric",
+              })
+              const completed = run.status === "completed"
+              const failed = run.status === "failed"
+
               return (
-                <LiveProgressRow
+                <div
                   key={run.id}
-                  run={run}
-                  onDelete={deleteRun}
-                  refetch={refetch}
-                />
-              )
-            }
-
-            const date = new Date(run.created_at).toLocaleDateString("en-US", {
-              month: "short", day: "numeric", year: "numeric",
-            })
-            const completed = run.status === "completed"
-            const failed = run.status === "failed"
-
-            return (
-              <div
-                key={run.id}
-                onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
-                className={[
-                  "flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group",
-                  completed
-                    ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.at-span]:text-zinc-200 hover:[&_.date-p]:text-zinc-200 hover:[&_.dot-span]:text-zinc-200 hover:[&_.delete-btn]:text-zinc-200 hover:scale-[1.012] hover:shadow-sm hover:z-10 hover:relative"
-                    : failed
-                    ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                    : "",
-                ].join(" ")}
-              >
-                {/* Left: dot + info */}
-                <div className="flex items-start gap-3 min-w-0">
-                  <StatusDot status={run.status} />
-                  <div className="min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className={`title-span text-sm font-semibold leading-snug transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
-                        {run.job_title || "Tailored Resume"}
-                      </span>
-                      {run.company && (
-                        <span className="at-span text-sm text-zinc-400 dark:text-zinc-500 font-normal truncate transition-colors duration-150">
-                          at {run.company}
+                  onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
+                  className={[
+                    "flex items-center justify-between gap-3 px-3.5 py-3 md:px-5 md:py-3.5 transition-all duration-150 group",
+                    completed
+                      ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.at-span]:text-zinc-200 hover:[&_.date-p]:text-zinc-200 hover:[&_.dot-span]:text-zinc-200 hover:[&_.delete-btn]:text-zinc-200 md:hover:scale-[1.012] md:hover:shadow-sm md:hover:z-10 md:hover:relative"
+                      : failed
+                      ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                      : "",
+                  ].join(" ")}
+                >
+                  {/* Left: dot + info */}
+                  <div className="flex items-start gap-2.5 min-w-0 md:gap-3">
+                    <StatusDot status={run.status} />
+                    <div className="min-w-0">
+                      <div className="flex items-baseline gap-1.5 flex-wrap md:gap-2">
+                        <span className={`title-span text-xs font-extrabold uppercase tracking-tight md:text-sm transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
+                          {run.job_title || "Tailored Resume"}
                         </span>
-                      )}
+                        {run.company && (
+                          <span className="at-span text-xs text-zinc-400 dark:text-zinc-500 font-semibold truncate transition-colors duration-150">
+                            at {run.company}
+                          </span>
+                        )}
+                      </div>
+                      <p className="date-p text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 transition-colors duration-150">
+                        {date}
+                        <span className="dot-span mx-1 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
+                        {run.template_id}
+                        {failed && (
+                          <><span className="dot-span mx-1 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
+                        )}
+                      </p>
+                      <div className="mt-1.5"><JobDescriptionPeek text={run.job_description} /></div>
                     </div>
-                    <p className="date-p text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 transition-colors duration-150">
-                      {date}
-                      <span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
-                      {run.template_id}
-                      {failed && (
-                        <><span className="dot-span mx-1.5 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
-                      )}
-                    </p>
-                    <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
+                  </div>
+
+                  {/* Right: preview + edit + delete */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {completed && (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setFullscreenRun(run) }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors cursor-pointer"
+                          aria-label="Preview"
+                          title="Fullscreen Preview"
+                        >
+                          <Eye size={13} />
+                          <span className="hidden sm:inline">Preview</span>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors cursor-pointer"
+                          aria-label="Edit"
+                          title="Edit Resume"
+                        >
+                          <Pencil size={13} />
+                          <span className="hidden sm:inline">Edit</span>
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
+                      className="delete-btn shrink-0 p-2 text-zinc-400 hover:text-red-600 md:text-zinc-300 md:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
+                      aria-label="Delete"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 </div>
-
-                {/* Right: edit + delete */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {completed && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 hover:!text-zinc-800 dark:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
-                      aria-label="Edit"
-                    >
-                      <Pencil size={12} />
-                      Edit
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
-                    className="delete-btn shrink-0 p-1.5 text-zinc-500 hover:text-red-600 md:text-zinc-300 md:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
-                    aria-label="Delete"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+          {visibleCount < runs.length && (
+            <div ref={sentinelRef} className="p-4 text-center border-t border-gray-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+              <button
+                onClick={() => setVisibleCount((prev) => Math.min(runs.length, prev + PAGE_SIZE))}
+                className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2 rounded cursor-pointer transition-colors"
+              >
+                Load more ({runs.length - visibleCount} remaining)
+              </button>
+            </div>
+          )}
+        </>
       )}
-
       {activeGenForFeedback && (
         <FeedbackModal
           generationId={activeGenForFeedback}
           onClose={() => setActiveGenForFeedback(null)}
+        />
+      )}
+
+      {fullscreenRun && (
+        <FullscreenResumeOverlay
+          run={fullscreenRun}
+          onClose={() => setFullscreenRun(null)}
         />
       )}
     </div>

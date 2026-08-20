@@ -105,31 +105,36 @@ export function ProfileClient() {
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-[13rem_1fr] md:gap-5">
-      <div className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-x-visible md:pb-0">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          const shortLabel =
-            tab.id === "basic" ? "Info" : tab.id === "extracurricular" ? "More" : tab.label
-          return (
-            <button
-              key={tab.id}
-              onClick={() => handleTabClick(tab.id)}
-              className={`flex shrink-0 select-none items-center gap-2 border px-3 py-2 text-left text-xs font-extrabold uppercase tracking-wide transition-colors md:text-sm ${
-                activeSection === tab.id
-                  ? "border-zinc-950 dark:border-zinc-500 bg-zinc-950 dark:bg-zinc-700 text-white"
-                  : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-black dark:text-zinc-200 hover:border-zinc-500 dark:hover:border-zinc-500"
-              }`}
-            >
-              <Icon size={16} />
-              <span className="md:hidden">{shortLabel}</span>
-              <span className="hidden md:inline">{tab.label}</span>
-            </button>
-          )
-        })}
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-[13rem_1fr] md:gap-5">
+      {/* Mobile Sticky Tab Bar & Desktop Sidebar */}
+      <div className="sticky top-0 z-20 -mx-3 bg-[#fbfbf3]/95 px-3 py-2 backdrop-blur-md dark:bg-zinc-900/95 md:static md:mx-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar md:flex-col md:gap-2 md:overflow-x-visible">
+          {tabs.map((tab) => {
+            const Icon = tab.icon
+            const shortLabel =
+              tab.id === "basic" ? "Info" : tab.id === "extracurricular" ? "Extra" : tab.label
+            const isActive = activeSection === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id)}
+                className={`flex shrink-0 select-none items-center gap-1.5 px-3 py-2 text-left text-xs font-extrabold uppercase tracking-wide transition-all cursor-pointer md:gap-2 md:border md:text-sm ${
+                  isActive
+                    ? "border-b-2 border-b-[#ff4e26] text-[#ff4e26] md:border-b md:border-zinc-950 md:bg-zinc-950 md:text-white md:dark:border-zinc-500 md:dark:bg-zinc-700"
+                    : "border-b-2 border-b-transparent text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white md:border-b md:border-zinc-200 md:bg-white md:text-black md:hover:border-zinc-500 md:dark:border-zinc-700 md:dark:bg-zinc-800 md:dark:text-zinc-200 md:dark:hover:border-zinc-500"
+                }`}
+              >
+                <Icon size={16} className={isActive ? "text-[#ff4e26] md:text-white" : "text-zinc-400 dark:text-zinc-500"} />
+                <span className="md:hidden">{shortLabel}</span>
+                <span className="hidden md:inline">{tab.label}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
-      <div className="panel p-4 md:p-5">
+      {/* Main Content Pane */}
+      <div className="mobile-flat-panel">
         {activeSection !== "projects" && (
           <div className="mb-4">
             <ResumeImportPanel />
@@ -151,7 +156,6 @@ export function ProfileClient() {
           <ExtracurricularForm onDirtyChange={handleDirtyChange} />
         )}
       </div>
-
       {pendingTargetSection && (
         <UnsavedModal
           sectionName={SECTION_NAMES[activeSection]}

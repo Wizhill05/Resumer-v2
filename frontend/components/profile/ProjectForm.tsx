@@ -6,19 +6,21 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, AlertCircle, RefreshCw } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+import { normalizeUrl } from "./BasicInfoForm";
+
 const schema = z.object({
   name: z.string().min(1, "Project Name is required"),
   description: z.string().optional(),
   technologies: z.string().optional(), // Raw comma-separated string for editing
-  github_url: z.string().url("Invalid URL").or(z.literal("")),
-  live_url: z.string().url("Invalid URL").or(z.literal("")),
+  github_url: z.string().optional(),
+  live_url: z.string().optional(),
   start_date: z.string().or(z.literal("")), // ISO date string (YYYY-MM-DD) or empty
   end_date: z.string().or(z.literal("")),
   bullet_points: z.string().optional(), // Raw newlines string for editing
@@ -79,6 +81,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   const [mounted, setMounted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [mobileGithubExpanded, setMobileGithubExpanded] = useState(false);
   // GitHub import state
   const [githubInputMode, setGithubInputMode] = useState<"fields" | "url">("fields");
   const [githubOwner, setGithubOwner] = useState("");
@@ -181,6 +184,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     mutationFn: async (data: FormData) => {
       const payload = {
         ...data,
+        github_url: normalizeUrl(data.github_url),
+        live_url: normalizeUrl(data.live_url),
         sort_order: data.sort_order ?? 0,
         start_date: data.start_date || null,
         end_date: data.end_date || null,
@@ -197,7 +202,6 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               .filter(Boolean)
           : [],
       };
-
       const url = editingId
         ? `/api/backend/profile/projects/${editingId}`
         : "/api/backend/profile/projects";
@@ -398,116 +402,119 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   else if (isDirty) status = "unsaved";
 
   const renderForm = () => (
-    <form
-      onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
-      className="space-y-4 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4 pixel-enter"
-    >
-      <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
-        <div className="flex items-center gap-3">
-          <h3 className="font-semibold text-black dark:text-zinc-100 uppercase tracking-tight">
-            {editingId ? "Edit Project" : "Add Project"}
-          </h3>
-          <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleCancel}
-          className="border-transparent"
-        >
-          <X size={16} />
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="name">Project Name</Label>
-          <Input id="name" {...register("name")} />
-          {errors.name && (
-            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
-              {errors.name.message}
-            </p>
-          )}
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 p-0 backdrop-blur-xs md:static md:z-auto md:block md:bg-transparent md:p-0 md:backdrop-blur-none">
+      <form
+        onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+        className="max-h-[90dvh] overflow-y-auto rounded-t-xl border-t border-zinc-300 bg-white p-4 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 md:max-h-none md:rounded-none md:border md:border-zinc-200 md:bg-zinc-50 md:shadow-none md:dark:border-zinc-700 md:dark:bg-zinc-900/50 md:p-4 pixel-enter space-y-4"
+      >
+        <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
+          <div className="flex items-center gap-3">
+            <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
+              {editingId ? "Edit Project" : "Add Project"}
+            </h3>
+            <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            className="h-9 w-9 p-0 border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
+          >
+            <X size={18} />
+          </Button>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="technologies">Technologies (comma separated)</Label>
-          <Input
-            id="technologies"
-            placeholder="React, TS, TailWind"
-            {...register("technologies")}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="name">Project Name</Label>
+            <Input id="name" {...register("name")} />
+            {errors.name && (
+              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+                {errors.name.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="technologies">Technologies (comma separated)</Label>
+            <Input
+              id="technologies"
+              placeholder="React, TS, TailWind"
+              {...register("technologies")}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="github_url">GitHub URL</Label>
+            <Input id="github_url" {...register("github_url")} />
+            {errors.github_url && (
+              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+                {errors.github_url.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="live_url">Live URL</Label>
+            <Input id="live_url" {...register("live_url")} />
+            {errors.live_url && (
+              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+                {errors.live_url.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="start_date">Start Date</Label>
+            <Input id="start_date" type="date" {...register("start_date")} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="end_date">End Date</Label>
+            <Input id="end_date" type="date" {...register("end_date")} />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="description">Short Description</Label>
+          <Textarea id="description" rows={3} {...register("description")} />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="bullet_points">
+            Numerical data and impact (one per line)
+          </Label>
+          <Textarea
+            id="bullet_points"
+            rows={4}
+            placeholder="- Increased conversion by 18% after checkout redesign&#10;- Cut manual review time by 40% with automation"
+            {...register("bullet_points")}
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="github_url">GitHub URL</Label>
-          <Input id="github_url" {...register("github_url")} />
-          {errors.github_url && (
-            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
-              {errors.github_url.message}
-            </p>
-          )}
+        <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
+          <Button type="submit" disabled={saveMutation.isPending} className="flex-1 md:flex-none">
+            {saveMutation.isPending ? (
+              <>
+                <Loader2 className="animate-spin" size={16} /> Saving...
+              </>
+            ) : (
+              "Save"
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCancel}
+            disabled={saveMutation.isPending}
+            className="flex-1 md:flex-none"
+          >
+            Cancel
+          </Button>
         </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="live_url">Live URL</Label>
-          <Input id="live_url" {...register("live_url")} />
-          {errors.live_url && (
-            <p className="text-red-600 dark:text-red-400 text-xs font-bold">
-              {errors.live_url.message}
-            </p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="start_date">Start Date</Label>
-          <Input id="start_date" type="date" {...register("start_date")} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="end_date">End Date</Label>
-          <Input id="end_date" type="date" {...register("end_date")} />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="description">Short Description</Label>
-        <Textarea id="description" rows={3} {...register("description")} />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="bullet_points">
-          Numerical data and impact (one per line)
-        </Label>
-        <Textarea
-          id="bullet_points"
-          rows={4}
-          placeholder="- Increased conversion by 18% after checkout redesign&#10;- Cut manual review time by 40% with automation"
-          {...register("bullet_points")}
-        />
-      </div>
-
-      <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
-        <Button type="submit" disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? (
-            <>
-              <Loader2 className="animate-spin" size={16} /> Saving...
-            </>
-          ) : (
-            "Save"
-          )}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleCancel}
-          disabled={saveMutation.isPending}
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
+      </form>
+    </div>
   );
 
   if (isLoading) {
@@ -524,11 +531,51 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
   const userRepos = githubReposData?.repos || [];
 
+  const isGithubPending = githubImportMutation.isPending;
+  const showGithubExpanded = mobileGithubExpanded || isGithubPending || Boolean(githubMessage);
+
   return (
-    <div className="space-y-4 pixel-enter">
+    <div className="space-y-3 pixel-enter md:space-y-4">
       {!isAdding && (
-        <div className="space-y-4 border border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-[4px_4px_0px_#18181b] dark:shadow-[4px_4px_0px_#3f3f46]">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:border-zinc-950 md:bg-white md:p-4 md:shadow-[4px_4px_0px_#18181b] md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:shadow-[4px_4px_0px_#3f3f46] space-y-3">
+          {/* Mobile Collapsible Header */}
+          <div className="flex items-center justify-between gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileGithubExpanded(!mobileGithubExpanded)}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left font-black uppercase tracking-tight text-zinc-800 dark:text-zinc-200"
+            >
+              <FolderGit2 size={16} className="shrink-0 text-[#ff4e26]" />
+              <span className="truncate text-xs">Import from GitHub</span>
+              {showGithubExpanded ? <ChevronUp size={14} className="shrink-0 text-zinc-400" /> : <ChevronDown size={14} className="shrink-0 text-zinc-400" />}
+            </button>
+            <Button
+              onClick={() => {
+                setIsAdding(true);
+                setEditingId(null);
+                setGithubMessage(null);
+                setImportPreview(null);
+                reset({
+                  name: "",
+                  description: "",
+                  technologies: "",
+                  github_url: "",
+                  live_url: "",
+                  start_date: "",
+                  end_date: "",
+                  bullet_points: "",
+                  sort_order: projects.length,
+                });
+              }}
+              size="xs"
+              variant="outline"
+            >
+              <Plus size={12} /> Add
+            </Button>
+          </div>
+
+          {/* Desktop Title Header */}
+          <div className="hidden md:flex md:flex-row md:items-start md:justify-between md:gap-3">
             <div className="space-y-1">
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
                 Project import
@@ -564,6 +611,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               <Plus size={16} /> Add Project Manually
             </Button>
           </div>
+
+          <div className={`${showGithubExpanded ? "block" : "hidden"} md:block space-y-3 pt-2 md:pt-0 border-t border-zinc-200 dark:border-zinc-800 md:border-t-0`}>
 
           {/* GitHub Linked Username Header */}
           <div className="flex flex-wrap items-center justify-between gap-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
@@ -784,6 +833,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               {githubMessage}
             </p>
           )}
+          </div>
         </div>
       )}
 
@@ -909,37 +959,37 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
       {isAdding && !editingId && renderForm()}
 
-      <div className="space-y-3">
+      <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:divide-y-0 md:space-y-3">
         {projects.map((proj) => (
-          <div key={proj.id} className="space-y-3">
-            <div className="flex items-start justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 transition-colors hover:border-zinc-400 dark:hover:border-zinc-500 md:p-4">
-              <div className="min-w-0 space-y-1.5">
-                <h4 className="text-base font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">
+          <div key={proj.id} className="py-2.5 md:py-0">
+            <div className="flex items-start justify-between gap-3 rounded-none border-0 bg-transparent p-1 transition-colors md:border md:border-zinc-200 md:bg-white md:p-4 md:hover:border-zinc-400 md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:hover:border-zinc-500">
+              <div className="min-w-0 space-y-1">
+                <h4 className="text-sm font-extrabold uppercase tracking-tight text-black dark:text-zinc-100 md:text-base">
                   {proj.name}
                 </h4>
                 {proj.technologies && proj.technologies.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-1">
+                  <div className="flex flex-wrap gap-1 mt-0.5">
                     {proj.technologies.map((t: string) => (
                       <span
                         key={t}
-                        className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-bold uppercase text-zinc-600 dark:text-zinc-300"
+                        className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-1.5 py-0.5 text-[9px] font-bold uppercase text-zinc-600 dark:text-zinc-300"
                       >
                         {t}
                       </span>
                     ))}
                   </div>
                 )}
-                <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mt-2">
+                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1 line-clamp-2 md:line-clamp-none">
                   {proj.description}
                 </p>
                 {proj.bullet_points && proj.bullet_points.length > 0 && (
-                  <ul className="mt-2 list-inside list-disc space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">
                     {proj.bullet_points.map((b: string, i: number) => (
                       <li key={i}>{b}</li>
                     ))}
                   </ul>
                 )}
-                <div className="flex gap-4 mt-3 text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
+                <div className="flex gap-3 mt-2 text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
                   {proj.github_url && (
                     <a
                       href={proj.github_url}
@@ -962,14 +1012,15 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 items-center gap-1">
                 <Button
                   size="icon-sm"
                   variant="ghost"
                   onClick={() => startEdit(proj)}
-                  className="border-transparent hover:border-black dark:hover:border-zinc-400"
+                  className="h-9 w-9 p-0 border-transparent hover:border-black dark:hover:border-zinc-400"
+                  title="Edit project"
                 >
-                  <Edit2 size={14} className="text-black dark:text-zinc-200" />
+                  <Edit2 size={15} className="text-zinc-700 dark:text-zinc-200" />
                 </Button>
                 <Button
                   size="icon-sm"
@@ -978,9 +1029,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     if (confirm("Are you sure?"))
                       deleteMutation.mutate(proj.id);
                   }}
-                  className="border-transparent hover:border-red-500 hover:text-red-500"
+                  className="h-9 w-9 p-0 border-transparent hover:border-red-500 hover:text-red-500"
+                  title="Delete project"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={15} />
                 </Button>
               </div>
             </div>

@@ -1,7 +1,5 @@
 import Link from "next/link"
-import { FooterThemeToggle } from "@/components/FooterThemeToggle"
 import { ArrowUpRight } from "lucide-react"
-
 interface FooterProps {
   variant?: "landing" | "simple"
 }
@@ -23,7 +21,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
             </span>
           </div>
 
-          {/* Right: Links & Theme Toggle */}
+          {/* Right: Links */}
           <div className="flex items-center gap-5 text-xs font-mono font-bold text-zinc-600 dark:text-zinc-400">
             <Link
               href="/support"
@@ -46,7 +44,6 @@ export function Footer({ variant = "simple" }: FooterProps) {
               <span>GitHub</span>
               <ArrowUpRight size={12} />
             </a>
-            <FooterThemeToggle />
           </div>
         </div>
       </footer>
@@ -107,9 +104,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
         {/* Bottom Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-zinc-300 dark:border-zinc-800 text-xs font-mono text-zinc-500 dark:text-zinc-400">
           <span>© {new Date().getFullYear()} RESUMER. ALL RIGHTS RESERVED.</span>
-          <div>
-            <FooterThemeToggle />
-          </div>
+          <span>BUILT FOR PRECISION</span>
         </div>
       </div>
     </footer>
