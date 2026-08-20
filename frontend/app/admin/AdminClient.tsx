@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useRef, useState, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,14 +29,27 @@ import {
   MessageCircle,
   X,
   Cpu,
+  Clock,
+  Activity,
+  Timer,
+  Layers,
 } from "lucide-react"
-
 type AnalyticsData = {
   total_users: number
   total_generations: number
   generations_by_status: Record<string, number>
   total_guest_generations: number
   average_generation_latency_seconds: number
+  p50_latency_seconds?: number
+  p90_latency_seconds?: number
+  p99_latency_seconds?: number
+  duration_buckets?: {
+    under_30s: number
+    "30s_to_60s": number
+    "1m_to_2m": number
+    "2m_to_5m": number
+    over_5m: number
+  }
   failure_rate_percent: number
   keys_status: {
     openrouter?: { configured_keys_count: number; model?: string; base_url?: string }
@@ -45,7 +58,6 @@ type AnalyticsData = {
   }
   llm_metrics: MetricSummary
 }
-
 type MetricSummary = {
   total_tokens: number
   average_node_latency_ms: number
@@ -83,9 +95,26 @@ type GenerationItem = {
   status: string
   created_at: string
   completed_at?: string
+  duration_seconds?: number | null
   is_guest: boolean
   error_message?: string
   intermediate_resume_count: number
+}
+
+type GenerationNodeDetail = {
+  id: number
+  node_name: string
+  provider: string
+  model: string | null
+  status: string
+  latency_ms: number | null
+  fallback_used: boolean
+  parse_error: boolean
+  error_message: string | null
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  total_tokens: number | null
+  created_at: string
 }
 type UserItem = {
   id: string
@@ -285,12 +314,156 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json()
 }
 
+function formatDuration(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined) return "--"
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const mins = Math.floor(seconds / 60)
+  const remSecs = Math.round(seconds % 60)
+  return `${mins}m ${remSecs < 10 ? "0" : ""}${remSecs}s`
+}
+
+function LiveElapsedTimer({ startTime }: { startTime: string }) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const start = new Date(startTime).getTime()
+    const update = () => {
+      const now = Date.now()
+      setElapsed(Math.max(0, Math.round((now - start) / 1000)))
+    }
+    update()
+    const timer = setInterval(update, 1000)
+    return () => clearInterval(timer)
+  }, [startTime])
+
+  return (
+    <span className="inline-flex items-center gap-1 font-mono font-bold text-amber-600 dark:text-amber-400">
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+      {formatDuration(elapsed)}
+    </span>
+  )
+}
+
+function TimingWaterfallModal({
+  generation,
+  onClose,
+}: {
+  generation: GenerationItem
+  onClose: () => void
+}) {
+  const { data: metrics = [], isLoading } = useQuery<GenerationNodeDetail[]>({
+    queryKey: ["admin", "generation-metrics", generation.id],
+    queryFn: () => fetchJson<GenerationNodeDetail[]>(`/api/backend/admin/generations/${generation.id}/metrics`),
+  })
+
+  const totalNodeLatencyMs = metrics.reduce((acc, m) => acc + (m.latency_ms || 0), 0)
+  const totalTokens = metrics.reduce((acc, m) => acc + (m.total_tokens || 0), 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-2xl space-y-4">
+        <div className="flex justify-between items-start border-b border-zinc-200 dark:border-zinc-800 pb-3">
+          <div>
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#ff4e26]">Latency Telemetry</p>
+            <h3 className="text-base font-extrabold uppercase text-black dark:text-white truncate">
+              {generation.job_title || "Generation"} Timing Breakdown
+            </h3>
+            <p className="text-xs font-mono text-zinc-500 mt-0.5">
+              ID: {generation.id} &bull; Pipeline: {generation.duration_seconds ? formatDuration(generation.duration_seconds) : `${(totalNodeLatencyMs / 1000).toFixed(1)}s`} &bull; {totalTokens.toLocaleString()} tokens
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-black dark:hover:text-white cursor-pointer">
+            <X size={18} />
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="soft-skeleton h-40" />
+        ) : metrics.length === 0 ? (
+          <p className="text-xs text-zinc-500 italic text-center py-8">No node metrics recorded for this run.</p>
+        ) : (
+          <div className="space-y-4">
+            {/* Visual Timeline Bar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[11px] font-mono text-zinc-500 font-bold uppercase">
+                <span>Execution Waterfall</span>
+                <span>{metrics.length} nodes executed</span>
+              </div>
+              <div className="h-3.5 w-full bg-zinc-100 dark:bg-zinc-800 flex overflow-hidden border border-zinc-200 dark:border-zinc-700 rounded-none">
+                {metrics.map((m, idx) => {
+                  const pct = totalNodeLatencyMs > 0 ? ((m.latency_ms || 0) / totalNodeLatencyMs) * 100 : 0
+                  const colors = [
+                    "bg-[#ff4e26]",
+                    "bg-amber-500",
+                    "bg-emerald-500",
+                    "bg-cyan-500",
+                    "bg-indigo-500",
+                    "bg-purple-500",
+                    "bg-pink-500",
+                  ]
+                  const color = colors[idx % colors.length]
+                  return (
+                    <div
+                      key={m.id}
+                      className={`h-full ${color}`}
+                      style={{ width: `${Math.max(2, pct)}%` }}
+                      title={`${m.node_name}: ${((m.latency_ms || 0) / 1000).toFixed(2)}s (${Math.round(pct)}%)`}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Per-Node List */}
+            <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border border-zinc-200 dark:border-zinc-800 text-xs">
+              {metrics.map((m) => {
+                const sec = ((m.latency_ms || 0) / 1000).toFixed(2)
+                const pct = totalNodeLatencyMs > 0 ? Math.round(((m.latency_ms || 0) / totalNodeLatencyMs) * 100) : 0
+                return (
+                  <div key={m.id} className="p-2.5 flex items-center justify-between gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                    <div className="min-w-0">
+                      <p className="font-extrabold uppercase text-black dark:text-white flex items-center gap-2">
+                        <span>{m.node_name}</span>
+                        {m.fallback_used && (
+                          <span className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-1 py-0.5 font-mono">
+                            Fallback
+                          </span>
+                        )}
+                        {m.status === "error" && (
+                          <span className="text-[9px] bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 px-1 py-0.5 font-mono">
+                            Error
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">
+                        {m.provider} &bull; {m.model || "default"} &bull; {m.total_tokens ? `${m.total_tokens} tokens` : "0 tokens"}
+                      </p>
+                      {m.error_message && (
+                        <p className="text-[10px] text-red-600 font-semibold mt-0.5 truncate">{m.error_message}</p>
+                      )}
+                    </div>
+                    <div className="text-right font-mono shrink-0">
+                      <p className="font-extrabold text-black dark:text-white">{sec}s</p>
+                      <p className="text-[10px] text-zinc-400">{pct}%</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function AdminClient() {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<"analytics" | "models" | "generations" | "prompts" | "users" | "metrics" | "storage" | "templates" | "feedback">("analytics")
   const [generationSearch, setGenerationSearch] = useState("")
   const [generationStatus, setGenerationStatus] = useState("")
   const [generationUserType, setGenerationUserType] = useState("")
+  const [selectedTimingGen, setSelectedTimingGen] = useState<GenerationItem | null>(null)
   const [userSearch, setUserSearch] = useState("")
   const [storagePrefix, setStoragePrefix] = useState("")
   const [playgroundVariables, setPlaygroundVariables] = useState("{}")
@@ -869,8 +1042,11 @@ export function AdminClient() {
                   <p className="mt-1 text-[10px] font-bold uppercase text-zinc-500">{analytics.total_guest_generations} guest</p>
                 </div>
                 <div className="panel-strong p-4">
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Avg Latency</p>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Avg Latency (P50/P90)</p>
                   <p className="text-3xl font-black text-black dark:text-white mt-1">{analytics.average_generation_latency_seconds}s</p>
+                  <p className="mt-1 text-[10px] font-mono font-bold uppercase text-zinc-500">
+                    P50: {analytics.p50_latency_seconds ?? "--"}s &bull; P90: {analytics.p90_latency_seconds ?? "--"}s
+                  </p>
                 </div>
                 <div className="panel-strong p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">LLM Failure Rate</p>
@@ -939,6 +1115,31 @@ export function AdminClient() {
                   </div>
                 </div>
               </div>
+              {/* Duration Distribution Histogram Breakdown */}
+              {analytics.duration_buckets && (
+                <div className="panel-strong p-5 space-y-3">
+                  <div className="flex justify-between items-center border-b dark:border-zinc-700 pb-2">
+                    <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                      <Timer size={15} className="text-[#ff4e26]" /> Generation Latency Distribution
+                    </h3>
+                    <span className="text-[10px] font-mono text-zinc-500">P99: {analytics.p99_latency_seconds ?? "--"}s</span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-5 text-center text-xs">
+                    {[
+                      { label: "< 30s", count: analytics.duration_buckets.under_30s, color: "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60" },
+                      { label: "30s - 60s", count: analytics.duration_buckets["30s_to_60s"], color: "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-900/60" },
+                      { label: "1m - 2m", count: analytics.duration_buckets["1m_to_2m"], color: "text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60" },
+                      { label: "2m - 5m", count: analytics.duration_buckets["2m_to_5m"], color: "text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-900/60" },
+                      { label: "> 5m", count: analytics.duration_buckets.over_5m, color: "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60" },
+                    ].map((b) => (
+                      <div key={b.label} className={`p-3 border ${b.color}`}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider">{b.label}</p>
+                        <p className="text-xl font-black mt-1">{b.count}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <p>No data loaded.</p>
@@ -1342,6 +1543,7 @@ export function AdminClient() {
                         <th className="p-3">Job & User</th>
                         <th className="p-3">Model</th>
                         <th className="p-3">Status</th>
+                        <th className="p-3">Duration</th>
                         <th className="p-3">Created</th>
                         <th className="p-3 text-right">Actions</th>
                       </tr>
@@ -1374,6 +1576,21 @@ export function AdminClient() {
                                 </p>
                               )}
                             </td>
+                            <td className="p-3 font-mono text-[11px]">
+                              {gen.status === "in_progress" || gen.status === "pending" ? (
+                                <LiveElapsedTimer startTime={gen.created_at} />
+                              ) : gen.status === "completed" ? (
+                                <span className="font-extrabold text-green-700 dark:text-green-400">
+                                  {formatDuration(gen.duration_seconds)}
+                                </span>
+                              ) : gen.status === "failed" ? (
+                                <span className="font-bold text-red-600 dark:text-red-400">
+                                  {formatDuration(gen.duration_seconds)}
+                                </span>
+                              ) : (
+                                <span className="text-zinc-400">{formatDuration(gen.duration_seconds)}</span>
+                              )}
+                            </td>
                             <td className="p-3 text-zinc-500 dark:text-zinc-400 font-mono text-[10px]">
                               {new Date(gen.created_at).toLocaleString()}
                             </td>
@@ -1383,6 +1600,13 @@ export function AdminClient() {
                                   <MoreHorizontal size={13} /> Options
                                 </summary>
                                 <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-1 text-left shadow-lg">
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                                    onClick={() => setSelectedTimingGen(gen)}
+                                  >
+                                    <Timer size={12} className="text-[#ff4e26]" /> Timing Waterfall
+                                  </button>
                                   <button
                                     type="button"
                                     className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800"
@@ -2173,6 +2397,12 @@ export function AdminClient() {
             </div>
           )}
         </div>
+      )}
+      {selectedTimingGen && (
+        <TimingWaterfallModal
+          generation={selectedTimingGen}
+          onClose={() => setSelectedTimingGen(null)}
+        />
       )}
     </div>
   )

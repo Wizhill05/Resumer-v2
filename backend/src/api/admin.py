@@ -139,10 +139,10 @@ class AdminGenerationOut(BaseModel):
     status: str
     created_at: datetime
     completed_at: datetime | None = None
+    duration_seconds: float | None = None
     is_guest: bool
     error_message: str | None = None
     intermediate_resume_count: int = 0
-
 
 def _message_content_to_text(content: Any) -> str:
     if isinstance(content, list):
@@ -195,16 +195,41 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
     )
     total_guest_generations = guest_gen_result.scalar() or 0
 
-    # 4. Latency Analysis (Average run time in seconds for completed generations)
-    latency_query = select(
-        func.avg(
-            func.extract("epoch", Generation.completed_at) - func.extract("epoch", Generation.created_at)
-        )
+    # 4. Latency Analysis (Average, Percentiles, and Distribution for completed generations)
+    durations_query = select(
+        func.extract("epoch", Generation.completed_at) - func.extract("epoch", Generation.created_at)
     ).where(Generation.status == "completed", Generation.completed_at.isnot(None))
-    avg_latency_res = await db.execute(latency_query)
-    avg_latency = avg_latency_res.scalar() or 0.0
+    durations_res = await db.execute(durations_query)
+    all_durations = sorted([float(d) for d in durations_res.scalars().all() if d is not None])
 
-    # 5. Fallback/Error rates
+    avg_latency = (sum(all_durations) / len(all_durations)) if all_durations else 0.0
+    p50_latency = 0.0
+    p90_latency = 0.0
+    p99_latency = 0.0
+    duration_buckets = {
+        "under_30s": 0,
+        "30s_to_60s": 0,
+        "1m_to_2m": 0,
+        "2m_to_5m": 0,
+        "over_5m": 0,
+    }
+
+    if all_durations:
+        n = len(all_durations)
+        p50_latency = round(all_durations[int(n * 0.50)], 1)
+        p90_latency = round(all_durations[min(n - 1, int(n * 0.90))], 1)
+        p99_latency = round(all_durations[min(n - 1, int(n * 0.99))], 1)
+        for dur in all_durations:
+            if dur < 30:
+                duration_buckets["under_30s"] += 1
+            elif dur < 60:
+                duration_buckets["30s_to_60s"] += 1
+            elif dur < 120:
+                duration_buckets["1m_to_2m"] += 1
+            elif dur < 300:
+                duration_buckets["2m_to_5m"] += 1
+            else:
+                duration_buckets["over_5m"] += 1
     failed_count = generations_by_status.get("failed", 0)
     failure_rate = (failed_count / total_generations * 100) if total_generations > 0 else 0.0
 
@@ -269,6 +294,10 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
         "generations_by_status": generations_by_status,
         "total_guest_generations": total_guest_generations,
         "average_generation_latency_seconds": round(avg_latency, 2),
+        "p50_latency_seconds": p50_latency,
+        "p90_latency_seconds": p90_latency,
+        "p99_latency_seconds": p99_latency,
+        "duration_buckets": duration_buckets,
         "failure_rate_percent": round(failure_rate, 2),
         "keys_status": keys_status,
         "llm_metrics": {
@@ -553,6 +582,9 @@ async def list_all_generations(
     for row in result.all():
         gen = row[0]
         email = row[1]
+        duration_sec = None
+        if gen.completed_at and gen.created_at:
+            duration_sec = round((gen.completed_at - gen.created_at).total_seconds(), 1)
         output.append(
             AdminGenerationOut(
                 id=gen.id,
@@ -565,6 +597,7 @@ async def list_all_generations(
                 status=gen.status,
                 created_at=gen.created_at,
                 completed_at=gen.completed_at,
+                duration_seconds=duration_sec,
                 is_guest=gen.is_guest,
                 error_message=gen.error_message,
                 intermediate_resume_count=len((gen.render_metadata or {}).get("intermediate_resumes") or []),

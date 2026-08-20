@@ -326,6 +326,7 @@ async def run_generation(gen_id: str) -> None:
                 if g:
                     g.status = "failed"
                     g.error_message = str(e)
+                    g.completed_at = datetime.now(timezone.utc)
                     await fail_db.commit()
                     send_completion_email(user_email, g)
         except Exception as inner:
