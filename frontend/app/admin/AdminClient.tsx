@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { AdminSidebar } from "@/components/admin/AdminSidebar"
+import { AdminHeader } from "@/components/admin/AdminHeader"
+import { AdminTabId } from "@/components/admin/types"
 import { 
   BarChart2, 
   Settings, 
@@ -510,7 +513,22 @@ function TimingWaterfallModal({
 
 export function AdminClient() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"analytics" | "models" | "generations" | "timing" | "prompts" | "users" | "metrics" | "storage" | "templates" | "feedback">("analytics")
+  const [activeTab, setActiveTab] = useState<AdminTabId>("analytics")
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  const [pollingInterval, setPollingInterval] = useState<number | false>(false)
+
+  const handleManualRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin"] })
+  }
+
+  useEffect(() => {
+    if (!pollingInterval) return
+    const timer = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["admin"] })
+    }, pollingInterval)
+    return () => clearInterval(timer)
+  }, [pollingInterval, queryClient])
   const [generationSearch, setGenerationSearch] = useState("")
   const [timingSearch, setTimingSearch] = useState("")
   const [generationStatus, setGenerationStatus] = useState("")
@@ -666,7 +684,7 @@ export function AdminClient() {
   const { data: feedbackAnalytics } = useQuery<FeedbackAnalytics>({
     queryKey: ["admin", "feedback", "analytics"],
     queryFn: () => fetchJson<FeedbackAnalytics>("/api/backend/admin/feedback/analytics"),
-    enabled: activeTab === "feedback",
+    staleTime: 30000,
   })
 
   const { data: supportReports = [], isLoading: loadingReports } = useQuery<SupportReportItem[]>({
@@ -1010,80 +1028,30 @@ export function AdminClient() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
-      {/* Tab select bar */}
-      <div className="flex flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-700 pb-3 mb-6">
-        <Button 
-          variant={activeTab === "analytics" ? "default" : "outline"} 
-          onClick={() => setActiveTab("analytics")}
-          size="sm"
-        >
-          <BarChart2 className="mr-2" size={16} /> Analytics
-        </Button>
-        <Button 
-          variant={activeTab === "models" ? "default" : "outline"} 
-          onClick={() => setActiveTab("models")}
-          size="sm"
-        >
-          <Cpu className="mr-2" size={16} /> Model Providers
-        </Button>
-        <Button 
-          variant={activeTab === "generations" ? "default" : "outline"} 
-          onClick={() => setActiveTab("generations")}
-          size="sm"
-        >
-          <FileText className="mr-2" size={16} /> Generations
-        </Button>
-        <Button 
-          variant={activeTab === "timing" ? "default" : "outline"} 
-          onClick={() => setActiveTab("timing")}
-          size="sm"
-        >
-          <Timer className="mr-2" size={16} /> Pipeline Timing
-        </Button>
-        <Button 
-          variant={activeTab === "prompts" ? "default" : "outline"} 
-          onClick={() => setActiveTab("prompts")}
-          size="sm"
-        >
-          <Settings className="mr-2" size={16} /> Prompt Manager
-        </Button>
-        <Button 
-          variant={activeTab === "users" ? "default" : "outline"} 
-          onClick={() => setActiveTab("users")}
-          size="sm"
-        >
-          <Users className="mr-2" size={16} /> User Rate Limits
-        </Button>
-        <Button 
-          variant={activeTab === "metrics" ? "default" : "outline"} 
-          onClick={() => setActiveTab("metrics")}
-          size="sm"
-        >
-          <Database className="mr-2" size={16} /> LLM Metrics
-        </Button>
-        <Button 
-          variant={activeTab === "storage" ? "default" : "outline"} 
-          onClick={() => setActiveTab("storage")}
-          size="sm"
-        >
-          <Boxes className="mr-2" size={16} /> Storage
-        </Button>
-        <Button
-          variant={activeTab === "templates" ? "default" : "outline"}
-          onClick={() => setActiveTab("templates")}
-          size="sm"
-        >
-          <Play className="mr-2" size={16} /> Templates
-        </Button>
-        <Button
-          variant={activeTab === "feedback" ? "default" : "outline"}
-          onClick={() => setActiveTab("feedback")}
-          size="sm"
-        >
-          <MessageSquare className="mr-2" size={16} /> Feedback & Support
-        </Button>
-      </div>
+    <div className="flex h-screen w-full overflow-hidden bg-zinc-950 text-white">
+      {/* Minimal Sidebar */}
+      <AdminSidebar
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+        isMobileOpen={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        unresolvedReportsCount={feedbackAnalytics?.open_count ?? 0}
+      />
+
+      {/* Main Workspace Stage */}
+      <div className="flex flex-1 flex-col overflow-y-auto bg-zinc-900">
+        <AdminHeader
+          activeTab={activeTab}
+          onToggleMobileSidebar={() => setIsMobileSidebarOpen(true)}
+          isFetching={loadingAnalytics || loadingTiming || loadingModelSettings || loadingGenerations || loadingUsers}
+          onManualRefresh={handleManualRefresh}
+          pollingInterval={pollingInterval}
+          onPollingChange={setPollingInterval}
+        />
+
+        <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-6 md:py-6">
 
       {/* ANALYTICS TAB */}
       {activeTab === "analytics" && (
@@ -2768,6 +2736,8 @@ export function AdminClient() {
           onClose={() => setSelectedTimingGen(null)}
         />
       )}
+        </div>
+      </div>
     </div>
   )
 }
