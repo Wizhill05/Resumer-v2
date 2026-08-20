@@ -209,6 +209,18 @@ const PRO_MODEL_PRESETS = [
     fallbackModel: "gemma-4-31b-it",
   },
   {
+    name: "Cerebras API — Gemma 4 31B IT (Ultra-Fast Inference)",
+    baseUrl: "https://api.cerebras.ai/v1",
+    model: "cerebras/gemma-4-31b-it",
+    fallbackModel: "gemma-4-31b-it",
+  },
+  {
+    name: "Google Gemini API — Gemma 4 31B IT",
+    baseUrl: "https://generativelanguage.googleapis.com",
+    model: "google/gemma-4-31b-it",
+    fallbackModel: "gemma-4-31b-it",
+  },
+  {
     name: "OpenRouter — Anthropic Claude 3.5 Sonnet",
     baseUrl: "https://openrouter.ai/api/v1",
     model: "anthropic/claude-3.5-sonnet",
@@ -239,6 +251,18 @@ const FREE_MODEL_PRESETS = [
     name: "OpenRouter — Poolside Laguna XS 2.1 (Free)",
     baseUrl: "https://openrouter.ai/api/v1",
     model: "poolside/laguna-xs-2.1:free",
+    fallbackModel: "gemma-4-31b-it",
+  },
+  {
+    name: "Cerebras API — Gemma 4 31B IT",
+    baseUrl: "https://api.cerebras.ai/v1",
+    model: "cerebras/gemma-4-31b-it",
+    fallbackModel: "gemma-4-31b-it",
+  },
+  {
+    name: "Google Gemini API — Gemma 4 31B IT",
+    baseUrl: "https://generativelanguage.googleapis.com",
+    model: "google/gemma-4-31b-it",
     fallbackModel: "gemma-4-31b-it",
   },
   {
