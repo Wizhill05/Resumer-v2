@@ -26,6 +26,7 @@ from src.mcp.tools.editor import (
     edit_resume_section_handler,
     get_resume_json_handler,
     preview_resume_handler,
+    render_resume_handler,
     save_resume_edits_handler,
 )
 from src.mcp.tools.generation import (
@@ -257,13 +258,9 @@ async def test_readiness_gap_detection_and_steering(setup_test_env: User):
 async def test_surgical_resume_editing(setup_test_env: User, monkeypatch):
     user = setup_test_env
 
-    # Mock storage and PDF renderer for editor tests
     class MockStorage:
         def upload_bytes(self, data, key, content_type):
             return True
-        def generate_presigned_download_url(self, key, filename, expires_in):
-            return f"https://mock-r2.resumer.io/{key}"
-
     class MockFitResult:
         font_size = 10.5
         page_count = 1
@@ -359,13 +356,22 @@ async def test_surgical_resume_editing(setup_test_env: User, monkeypatch):
     save_res = await save_resume_edits_handler(generation_id=gen_id, expected_revision=0)
     assert save_res["success"] is True
     assert save_res["editor_revision"] == 1
-    assert "https://mock-r2.resumer.io" in save_res["download_url"]
+    assert f"/files/gen/{gen_id}/resume.pdf?t=" in save_res["download_url"]
+    assert save_res["resume_json"] is not None
 
     # 7. Saving with stale revision (0) must fail with REVISION_CONFLICT
     conflict_res = await save_resume_edits_handler(generation_id=gen_id, expected_revision=0)
     assert conflict_res["success"] is False
     assert conflict_res["error_code"] == "REVISION_CONFLICT"
 
+    # 8. Test direct single-step render_resume_handler with custom modified JSON
+    custom_json = dict(updated_json["tailored_resume"])
+    custom_json["summary"] = "Direct single-step modified executive summary."
+    direct_render = await render_resume_handler(generation_id=gen_id, resume_json=custom_json)
+    assert direct_render["success"] is True
+    assert direct_render["editor_revision"] == 2
+    assert direct_render["resume_json"]["summary"] == "Direct single-step modified executive summary."
+    assert f"/files/gen/{gen_id}/resume.pdf?t=" in direct_render["download_url"]
 # ── Resume Generation & Lifecycle Tool Tests ─────────────────────────────────
 
 @pytest.mark.asyncio
@@ -376,11 +382,8 @@ async def test_mcp_resume_generation_lifecycle(setup_test_env: User, monkeypatch
     class MockStorage:
         def upload_bytes(self, data, key, content_type):
             return True
-        def generate_presigned_download_url(self, key, filename, expires_in):
-            return f"https://mock-r2.resumer.io/{key}?download={filename}"
 
     monkeypatch.setattr("src.mcp.tools.generation.StorageService", lambda: MockStorage())
-
     # 1. First test: Gated if profile has insufficient data
     blocked_res = await generate_resume_handler(
         job_description="Backend Engineer requiring Python and FastAPI",
@@ -429,7 +432,11 @@ async def test_mcp_resume_generation_lifecycle(setup_test_env: User, monkeypatch
                     g.job_title = "Backend Engineer"
                     g.company = "TechCorp"
                     g.pdf_storage_key = f"runs/{gen_id}/resume.pdf"
-                    g.render_metadata = {"page_count": 1, "fit_warning": False}
+                    g.render_metadata = {
+                        "page_count": 1,
+                        "fit_warning": False,
+                        "tailored_resume": {"summary": "Generated resume summary"},
+                    }
                     db.add(GenerationLog(generation_id=g.id, node_name="save_artifacts", message="Done"))
                     await db.commit()
         import asyncio
@@ -447,7 +454,8 @@ async def test_mcp_resume_generation_lifecycle(setup_test_env: User, monkeypatch
     assert gen_res["success"] is True
     assert gen_res["status"] == "completed"
     assert gen_res["job_title"] == "Backend Engineer"
-    assert "https://mock-r2.resumer.io" in gen_res["download_url"]
+    assert f"/files/gen/{gen_res['generation_id']}/resume.pdf?t=" in gen_res["download_url"]
+    assert gen_res["resume_json"]["summary"] == "Generated resume summary"
     gen_id = gen_res["generation_id"]
 
     # 5. Test get_generation_status_handler on completed generation
@@ -455,13 +463,14 @@ async def test_mcp_resume_generation_lifecycle(setup_test_env: User, monkeypatch
     assert status_res["success"] is True
     assert status_res["status"] == "completed"
     assert status_res["progress_percent"] == 100
-    assert status_res["download_url"] is not None
+    assert f"/files/gen/{gen_id}/resume.pdf?t=" in status_res["download_url"]
+    assert status_res["resume_json"]["summary"] == "Generated resume summary"
 
     # 6. Test download_resume_handler
     dl_res = await download_resume_handler(generation_id=gen_id)
     assert dl_res["success"] is True
-    assert "https://mock-r2.resumer.io" in dl_res["download_url"]
-
+    assert f"/files/gen/{gen_id}/resume.pdf?t=" in dl_res["download_url"]
+    assert dl_res["resume_json"]["summary"] == "Generated resume summary"
     # 7. Test generate_resume_handler with wait_for_completion=False
     async def mock_trigger_no_op(gen_id: str):
         import asyncio

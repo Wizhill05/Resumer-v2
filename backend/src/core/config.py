@@ -52,6 +52,7 @@ class Settings(BaseSettings):
 
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = ""
+    FILE_LINK_TTL_HOURS: int = 168  # 7 days default
 
     ADMIN_EMAILS: str = "admin@example.com,user@example.com"
     DEFAULT_DAILY_CAP: int = 5

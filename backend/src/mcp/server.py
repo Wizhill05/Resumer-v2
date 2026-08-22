@@ -19,6 +19,7 @@ from src.mcp.tools.editor import (
     edit_resume_section_handler,
     get_resume_json_handler,
     preview_resume_handler,
+    render_resume_handler,
     save_resume_edits_handler,
 )
 from src.mcp.tools.generation import (
@@ -53,9 +54,10 @@ mcp_server = MCPServer(
         "Resumer is an AI-powered resume engine that tailors single-page, ATS-optimized resumes "
         "from candidate profiles. When the user asks to create or generate a resume, use generate_resume. "
         "By default, generate_resume waits for pipeline execution (~15-25 seconds) and returns the completed "
-        "resume details including the presigned PDF download URL. You MUST present the final PDF download URL "
-        "and a concise summary of the tailored resume directly to the user in your response. "
-        "Do not end your response without providing the download link once generation finishes."
+        "resume details, including the PDF download URL and the full structured resume_json. "
+        "You MUST present the final PDF download link formatted in clean Markdown (e.g. [Download Company Role Resume (PDF)](url)) "
+        "along with a concise summary of the tailored resume to the user. "
+        "If the user asks for revisions or tweaks, you can directly modify the resume_json and call render_resume to compile an updated PDF in a single step."
     ),
 )
 
@@ -346,8 +348,8 @@ async def generate_resume(
     """Generate a complete, ATS-optimized, tailored single-page resume for a job description.
 
     By default, this tool waits for the generation pipeline to complete (~15-25 seconds) and directly returns
-    the completed status with the presigned PDF download URL and tailored metadata in the same turn.
-    You MUST provide the final PDF download URL and a brief summary of the tailored resume to the user.
+    the completed status, the public PDF download URL, and the complete structured resume_json.
+    You MUST present the PDF download URL in Markdown format (e.g. [Download Role Resume (PDF)](url)) and a brief summary to the user.
     """
     return await generate_resume_handler(
         job_description=job_description,
@@ -369,7 +371,7 @@ async def get_generation_status(
     """Check progress, logs, and results of a resume generation run.
 
     When wait_for_completion is True (default), it waits for the generation to finish and returns
-    the presigned PDF download URL as soon as the resume is ready.
+    the PDF download URL and complete structured resume_json as soon as the resume is ready.
     """
     return await get_generation_status_handler(
         generation_id=generation_id,
@@ -379,7 +381,7 @@ async def get_generation_status(
 
 @mcp_server.tool()
 async def download_resume(generation_id: str) -> dict[str, Any]:
-    """Get presigned PDF download URL for a completed resume generation."""
+    """Get public PDF download URL and resume JSON for a completed resume generation."""
     return await download_resume_handler(generation_id=generation_id)
 
 
@@ -422,16 +424,35 @@ async def preview_resume(generation_id: str) -> dict[str, Any]:
 
 
 @mcp_server.tool()
+async def render_resume(
+    generation_id: str,
+    resume_json: dict[str, Any] | None = None,
+    font_size: float | None = None,
+    expected_revision: int | None = None,
+) -> dict[str, Any]:
+    """Compile and save resume edits into WeasyPrint PDF, update Cloudflare R2 storage, and return a fresh download link.
+
+    Pass modified resume_json directly to re-render in a single step with automatic font-fitting, or omit resume_json
+    to save edits previously staged via edit_resume_section.
+    """
+    return await render_resume_handler(
+        generation_id=generation_id,
+        resume_json=resume_json,
+        font_size=font_size,
+        expected_revision=expected_revision,
+    )
+
+
+@mcp_server.tool()
 async def save_resume_edits(
     generation_id: str,
     expected_revision: int,
 ) -> dict[str, Any]:
-    """Persist edits, re-render WeasyPrint PDF, and update R2 storage."""
+    """Persist staged edits, re-render WeasyPrint PDF, and update R2 storage."""
     return await save_resume_edits_handler(
         generation_id=generation_id,
         expected_revision=expected_revision,
     )
-
 
 # ── ASGI Auth Wrapper Middleware ──────────────────────────────────────────────
 

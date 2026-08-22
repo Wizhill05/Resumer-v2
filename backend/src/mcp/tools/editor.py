@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.file_links import build_resume_file_link
 from src.core.storage import StorageService
 from src.mcp.context import get_current_mcp_user, get_mcp_db
 from src.models.generation import Generation
@@ -235,11 +236,18 @@ async def preview_resume_handler(generation_id: str) -> dict[str, Any]:
     }
 
 
-async def save_resume_edits_handler(
+async def render_resume_handler(
     generation_id: str,
-    expected_revision: int,
+    resume_json: dict[str, Any] | None = None,
+    font_size: float | None = None,
+    expected_revision: int | None = None,
 ) -> dict[str, Any]:
-    """Persist staged resume edits, re-render WeasyPrint PDF, and update Cloudflare R2 objects."""
+    """Single-step resume JSON editing, typography font-fitting, and PDF re-compilation.
+
+    Accepts complete or partial modified resume JSON (or renders staged edits if omitted),
+    executes WeasyPrint discrete binary-search font fitting, uploads the revised PDF and
+    assets to storage, and returns the fresh capability download URL and updated metadata.
+    """
     user = get_current_mcp_user()
     gen_uuid = uuid.UUID(generation_id)
 
@@ -253,12 +261,17 @@ async def save_resume_edits_handler(
 
         metadata = dict(gen.render_metadata or {})
         current_revision = metadata.get("editor_revision", 0)
-        if expected_revision != current_revision:
+        if expected_revision is not None and expected_revision != current_revision:
             return {
                 "success": False,
                 "error_code": "REVISION_CONFLICT",
                 "message": f"Revision conflict: expected {expected_revision}, current {current_revision}.",
+                "current_revision": current_revision,
             }
+
+        # If resume_json provided, replace tailored_resume in metadata
+        if resume_json is not None:
+            metadata["tailored_resume"] = resume_json
 
         tailored = metadata.get("tailored_resume", {})
         profile_data = metadata.get("profile")
@@ -282,12 +295,28 @@ async def save_resume_edits_handler(
 
     # 1. WeasyPrint compile
     try:
-        pdf_bytes, fit_result = fit_and_render_pdf(
-            template_id=gen.template_id,
-            profile=profile_data,
-            resume=tailored,
-            manifest=manifest_obj.model_dump(),
-        )
+        if font_size is not None:
+            from src.services.resume_render import render_resume_pdf
+
+            pdf_bytes, page_count = render_resume_pdf(
+                template_id=gen.template_id,
+                profile=profile_data,
+                resume=tailored,
+                font_size=font_size,
+                page_margin_mm=manifest_obj.page_margin_mm,
+            )
+            fits_target = page_count <= manifest_obj.target_pages
+            effective_font_size = font_size
+        else:
+            pdf_bytes, fit_result = fit_and_render_pdf(
+                template_id=gen.template_id,
+                profile=profile_data,
+                resume=tailored,
+                manifest=manifest_obj.model_dump(),
+            )
+            page_count = fit_result.page_count
+            fits_target = fit_result.fits_target
+            effective_font_size = fit_result.font_size
     except Exception as e:
         return {"success": False, "error": f"PDF render failed: {e}"}
 
@@ -308,7 +337,7 @@ async def save_resume_edits_handler(
         buf = io.BytesIO()
         pil_image.save(buf, format="WEBP", quality=80)
         thumb_bytes = buf.getvalue()
-    except Exception as thumb_err:
+    except Exception:
         pass
 
     # 4. Upload to Cloudflare R2
@@ -323,9 +352,9 @@ async def save_resume_edits_handler(
 
     # 5. Snapshot & update revision
     new_revision = current_revision + 1
-    metadata["font_size"] = fit_result.font_size
-    metadata["page_count"] = fit_result.page_count
-    metadata["fit_warning"] = not fit_result.fits_target
+    metadata["font_size"] = effective_font_size
+    metadata["page_count"] = page_count
+    metadata["fit_warning"] = not fits_target
     metadata["editor_revision"] = new_revision
     metadata["edited_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -342,18 +371,30 @@ async def save_resume_edits_handler(
                 db_gen.thumb_storage_key = thumb_key
             await db.commit()
 
-    download_url = storage.generate_presigned_download_url(
-        key=pdf_key,
-        filename=f"Resume_{gen.company or 'Tailored'}.pdf",
-        expires_in=3600,
-    )
+    download_url = build_resume_file_link(gen.id)
+    role_title = gen.job_title or "Target Role"
+    company_name = gen.company or ""
+    label = f"{company_name} {role_title}".strip() + " Resume (PDF)"
 
     return {
         "success": True,
         "generation_id": str(gen.id),
         "editor_revision": new_revision,
-        "font_size": fit_result.font_size,
-        "page_count": fit_result.page_count,
-        "fits_target": fit_result.fits_target,
+        "font_size": effective_font_size,
+        "page_count": page_count,
+        "fits_target": fits_target,
         "download_url": download_url,
+        "resume_json": tailored,
+        "message": f"Resume re-rendered successfully! Updated PDF: [{label}]({download_url})",
     }
+
+
+async def save_resume_edits_handler(
+    generation_id: str,
+    expected_revision: int,
+) -> dict[str, Any]:
+    """Persist staged resume edits, re-render WeasyPrint PDF, and update Cloudflare R2 objects."""
+    return await render_resume_handler(
+        generation_id=generation_id,
+        expected_revision=expected_revision,
+    )

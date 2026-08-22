@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.generation import check_rate_limit, reap_stuck_generations
 from src.core.config import settings
 from src.core.executor import trigger_pipeline
+from src.core.file_links import build_resume_file_link
 from src.core.storage import StorageService
 from src.mcp.context import get_current_mcp_user, get_mcp_db
 from src.mcp.tools.readiness import check_readiness_handler
@@ -31,7 +32,7 @@ async def generate_resume_handler(
     """Start resume generation pipeline tailored to a job description.
 
     By default, waits for the generation pipeline to complete (~15-25s) and directly returns
-    the completed resume status, presigned PDF download URL, and metadata.
+    the completed resume status, download URL, and complete structured resume_json.
     """
     user = get_current_mcp_user()
 
@@ -146,18 +147,12 @@ async def generate_resume_handler(
         }
 
     if latest_gen.status == "completed":
-        download_url = None
-        if latest_gen.pdf_storage_key:
-            try:
-                download_url = StorageService().generate_presigned_download_url(
-                    key=latest_gen.pdf_storage_key,
-                    filename=f"Resume_{latest_gen.company or 'Tailored'}.pdf",
-                    expires_in=3600,
-                )
-            except Exception:
-                download_url = None
-        if not download_url:
-            download_url = f"{settings.FRONTEND_URL}/history?gen={latest_gen.id}"
+        render_meta = latest_gen.render_metadata or {}
+        tailored_resume = render_meta.get("tailored_resume")
+        download_url = build_resume_file_link(latest_gen.id)
+        role_title = latest_gen.job_title or "Target Role"
+        company_name = latest_gen.company or ""
+        label = f"{company_name} {role_title}".strip() + " Resume (PDF)"
         return {
             "success": True,
             "generation_id": str(gen_id),
@@ -166,12 +161,15 @@ async def generate_resume_handler(
             "job_title": latest_gen.job_title,
             "company": latest_gen.company,
             "download_url": download_url,
-            "page_count": (latest_gen.render_metadata or {}).get("page_count", 1),
-            "fit_warning": (latest_gen.render_metadata or {}).get("fit_warning", False),
+            "page_count": render_meta.get("page_count", 1),
+            "fit_warning": render_meta.get("fit_warning", False),
+            "font_size": render_meta.get("font_size"),
+            "editor_revision": render_meta.get("editor_revision", 0),
+            "resume_json": tailored_resume,
             "content_split": effective_split,
             "message": (
-                f"Resume successfully generated for '{latest_gen.job_title or 'Target Role'}'! "
-                f"Presigned PDF download URL: {download_url}"
+                f"Resume successfully generated for '{role_title}'! "
+                f"Download link: [{label}]({download_url})"
             ),
         }
 
@@ -251,25 +249,25 @@ async def get_generation_status_handler(
         progress_percent = max(15, min(95, node_calc))
     else:  # pending
         progress_percent = 5
-    download_url = None
-    if gen.status == "completed" and gen.pdf_storage_key:
-        try:
-            download_url = StorageService().generate_presigned_download_url(
-                key=gen.pdf_storage_key,
-                filename=f"Resume_{gen.company or 'Tailored'}.pdf",
-                expires_in=3600,
-            )
-        except Exception:
-            download_url = None
-    if gen.status == "completed" and not download_url:
-        download_url = f"{settings.FRONTEND_URL}/history?gen={gen.id}"
-    return {
+    render_meta = gen.render_metadata or {}
+    tailored_resume = render_meta.get("tailored_resume") if gen.status == "completed" else None
+    download_url = build_resume_file_link(gen.id) if gen.status == "completed" else None
+    role_title = gen.job_title or "Target Role"
+    company_name = gen.company or ""
+    label = f"{company_name} {role_title}".strip() + " Resume (PDF)"
+
+    response_data: dict[str, Any] = {
         "success": True,
         "generation_id": str(gen.id),
         "status": gen.status,
         "progress_percent": progress_percent,
         "error_message": gen.error_message,
         "download_url": download_url,
+        "page_count": render_meta.get("page_count", 1) if gen.status == "completed" else None,
+        "fit_warning": render_meta.get("fit_warning", False) if gen.status == "completed" else None,
+        "font_size": render_meta.get("font_size") if gen.status == "completed" else None,
+        "editor_revision": render_meta.get("editor_revision", 0) if gen.status == "completed" else None,
+        "resume_json": tailored_resume,
         "render_metadata": gen.render_metadata,
         "recent_logs": [
             {
@@ -280,10 +278,12 @@ async def get_generation_status_handler(
             for l in logs[-10:]
         ],
     }
-
+    if gen.status == "completed" and download_url:
+        response_data["message"] = f"Resume generation completed for '{role_title}'! Download link: [{label}]({download_url})"
+    return response_data
 
 async def download_resume_handler(generation_id: str) -> dict[str, Any]:
-    """Retrieve presigned PDF download URL for a completed resume generation."""
+    """Retrieve PDF download URL and resume JSON for a completed resume generation."""
     user = get_current_mcp_user()
     gen_uuid = uuid.UUID(generation_id)
 
@@ -295,31 +295,27 @@ async def download_resume_handler(generation_id: str) -> dict[str, Any]:
         if not gen:
             return {"success": False, "error": f"Generation '{generation_id}' not found."}
 
-        if gen.status != "completed" or not gen.pdf_storage_key:
+        if gen.status != "completed":
             return {
                 "success": False,
                 "status": gen.status,
                 "error": "Resume is not ready for download. Check status using get_generation_status.",
             }
 
-        download_url = None
-        if gen.pdf_storage_key:
-            try:
-                download_url = StorageService().generate_presigned_download_url(
-                    key=gen.pdf_storage_key,
-                    filename=f"Resume_{gen.company or 'Tailored'}.pdf",
-                    expires_in=3600,
-                )
-            except Exception:
-                download_url = None
-
-        if not download_url:
-            download_url = f"{settings.FRONTEND_URL}/history?gen={gen.id}"
+        render_meta = gen.render_metadata or {}
+        download_url = build_resume_file_link(gen.id)
+        role_title = gen.job_title or "Target Role"
+        company_name = gen.company or ""
+        label = f"{company_name} {role_title}".strip() + " Resume (PDF)"
 
         return {
             "success": True,
             "generation_id": str(gen.id),
             "download_url": download_url,
-            "storage_key": gen.pdf_storage_key,
-            "message": f"Resume PDF download link: {download_url}",
+            "editor_revision": render_meta.get("editor_revision", 0),
+            "page_count": render_meta.get("page_count", 1),
+            "font_size": render_meta.get("font_size"),
+            "fit_warning": render_meta.get("fit_warning", False),
+            "resume_json": render_meta.get("tailored_resume"),
+            "message": f"Resume PDF download link: [{label}]({download_url})",
         }

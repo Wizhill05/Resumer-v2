@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.storage import StorageService
-from src.api import profile, generation, system, imports, guest, admin, feedback, oauth
+from src.api import profile, generation, system, imports, guest, admin, feedback, oauth, files
 from src.core.oauth import ensure_oauth_schema
 from src.services.llm_config import ensure_llm_provider_schema, llm_config_service
 from src.template_registry import router as template_router
@@ -85,6 +85,7 @@ app.include_router(template_router)
 app.include_router(admin.router)
 app.include_router(feedback.router)
 app.include_router(oauth.router)
+app.include_router(files.router)
 
 # Remote MCP Sub-application (Streamable HTTP + SSE)
 app.mount("", get_mcp_app())
