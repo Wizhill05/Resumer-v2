@@ -190,6 +190,32 @@ async def record_node_metric(
         )
         await metric_session.commit()
 
+def _extract_llm_key(llm: Any) -> str | None:
+    if not llm:
+        return None
+    key = getattr(llm, "openai_api_key", None)
+    if key:
+        return key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
+    key = getattr(llm, "google_api_key", None) or getattr(llm, "api_key", None)
+    if key:
+        return key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
+    return None
+
+
+def _quarantine_failed_key(provider_name: str, key: str | None) -> None:
+    if not key or key == "dummy-key":
+        return
+    from src.core.api_key_pool import cerebras_pool, google_pool, openrouter_pool, pro_pool
+    p = provider_name.lower()
+    if "openrouter" in p:
+        openrouter_pool.mark_failure(key, 60.0)
+    elif "cerebras" in p:
+        cerebras_pool.mark_failure(key, 60.0)
+    elif "google" in p:
+        google_pool.mark_failure(key, 60.0)
+    elif "omniroute" in p or "pro" in p:
+        pro_pool.mark_failure(key, 60.0)
+
 
 async def invoke_with_fallback(
     chain_factory,
@@ -200,11 +226,10 @@ async def invoke_with_fallback(
     max_attempts_per_provider: int = 2,
     is_pro: bool = False,
 ):
-    """Retry each provider call before falling back to the next provider.
+    """Retry each provider call with fresh per-attempt key rotation before falling back.
 
     chain_factory(llm, provider_name) -> a runnable chain.
-    Dynamically uses Pro (OmniRoute Gemini 3.7) or Free (OpenRouter Laguna)
-    with fallback to Google GenAI.
+    Dynamically uses Pro or Free tier model configuration with configured fallback.
     """
     tier = "pro" if is_pro else "free"
     cfg = llm_config_service.get_tier_config(tier)
@@ -212,34 +237,41 @@ async def invoke_with_fallback(
     # Dynamically determine provider name from configured endpoint
     url_lower = cfg.base_url.lower()
     is_openrouter = "openrouter.ai" in url_lower
+    is_cerebras = "cerebras.ai" in url_lower or cfg.provider_name == "cerebras"
     if is_openrouter:
         primary_name = "openrouter"
-    elif "omniroute" in url_lower:
+    elif "omniroute" in url_lower or cfg.provider_name == "omniroute":
         primary_name = "omniroute"
+    elif is_cerebras:
+        primary_name = "cerebras"
     elif cfg.provider_name and cfg.provider_name not in ("openai_compatible", "default"):
         primary_name = cfg.provider_name
     else:
         primary_name = "custom_endpoint"
 
+    fallback_provider_name = cfg.fallback_provider or "google"
+
     providers = [
         (primary_name, lambda: llm_config_service.get_llm(tier=tier)),
-        ("google", lambda: llm_config_service.get_fallback_llm(tier=tier)),
+        (fallback_provider_name, lambda: llm_config_service.get_fallback_llm(tier=tier)),
     ]
-    # Only append OpenRouter fallback if primary is not already OpenRouter
-    if is_pro and not is_openrouter:
+    # Only append OpenRouter fallback if primary and fallback are not already OpenRouter
+    if is_pro and not is_openrouter and fallback_provider_name.lower() != "openrouter":
         providers.append(("openrouter", lambda: llm_config_service.get_llm(tier="free")))
+
     last_exc: Exception | None = None
     for index, (name, factory) in enumerate(providers):
-        llm = None
-        try:
-            llm = factory()
-        except Exception as exc:
-            last_exc = exc
-            print(f"[llm_fallback] {name} initialization failed ({exc!r}).")
-            continue
-
-        chain = chain_factory(llm, name)
         for attempt in range(1, max_attempts_per_provider + 1):
+            llm = None
+            try:
+                llm = factory()
+            except Exception as exc:
+                last_exc = exc
+                print(f"[llm_fallback] {name} key acquisition/initialization failed ({exc!r}).")
+                break
+
+            active_key = _extract_llm_key(llm)
+            chain = chain_factory(llm, name)
             started = time.perf_counter()
             try:
                 result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
@@ -259,6 +291,7 @@ async def invoke_with_fallback(
                 return result
             except Exception as exc:
                 last_exc = exc
+                _quarantine_failed_key(name, active_key)
                 await record_node_metric(
                     gen_id,
                     node_name,
@@ -271,11 +304,11 @@ async def invoke_with_fallback(
                     error_message=f"attempt {attempt}/{max_attempts_per_provider}: {str(exc)[:1900]}",
                 )
                 if attempt < max_attempts_per_provider:
-                    sleep_for = min(0.75 * (2 ** (attempt - 1)), 3.0)
-                    print(f"[llm_retry] {name} attempt {attempt} failed ({exc!r}). Retrying same call in {sleep_for:.2f}s...")
+                    sleep_for = min(0.5 * (2 ** (attempt - 1)), 2.0)
+                    print(f"[llm_retry] {name} attempt {attempt} failed ({exc!r}). Rotating key and retrying in {sleep_for:.2f}s...")
                     await asyncio.sleep(sleep_for)
 
-        print(f"[llm_fallback] {name} exhausted {max_attempts_per_provider} attempts. Falling back to next provider...")
+        print(f"[llm_fallback] {name} exhausted {max_attempts_per_provider} attempts. Falling back to next provider in chain...")
     raise RuntimeError(f"All LLM providers failed. Last error: {last_exc!r}") from last_exc
 
 async def get_prompt_config(db: AsyncSession, name: str, default_system: str, default_user: str | None = None) -> tuple[str, str | None]:

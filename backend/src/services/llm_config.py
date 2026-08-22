@@ -21,7 +21,7 @@ from langchain_openai import ChatOpenAI
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.api_key_pool import google_pool, openrouter_pool
+from src.core.api_key_pool import cerebras_pool, google_pool, openrouter_pool, pro_pool
 from src.core.config import settings
 from src.models.generation import LLMProviderConfig
 
@@ -170,6 +170,10 @@ class LLMConfigService:
                 return "openrouter"
             if "omniroute" in u:
                 return "omniroute"
+            if "cerebras.ai" in u:
+                return "cerebras"
+            if "groq.com" in u:
+                return "groq"
             return "openai_compatible"
 
         resolved_provider = provider_name or _infer_provider_name(cleaned_url)
@@ -227,20 +231,44 @@ class LLMConfigService:
     ) -> ChatOpenAI:
         """Create and return a configured ChatOpenAI client for the requested tier."""
         cfg = self.get_tier_config(tier)
-        is_openrouter = "openrouter.ai" in cfg.base_url.lower()
+        url_lower = cfg.base_url.lower()
+        if "openrouter.ai" in url_lower:
+            resolved_provider = "openrouter"
+        elif "cerebras.ai" in url_lower:
+            resolved_provider = "cerebras"
+        elif "omniroute" in url_lower:
+            resolved_provider = "omniroute"
+        elif cfg.provider_name and cfg.provider_name not in ("openai_compatible", "default"):
+            resolved_provider = cfg.provider_name
+        else:
+            resolved_provider = "openai_compatible"
+
+        is_openrouter = resolved_provider == "openrouter"
 
         api_key = api_key_override
         if not api_key:
-            if is_openrouter:
+            if resolved_provider == "cerebras":
+                api_key = cerebras_pool.next() if cerebras_pool.count > 0 else "dummy-key"
+            elif resolved_provider == "omniroute":
+                if pro_pool.count > 0:
+                    api_key = pro_pool.next()
+                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
+                    api_key = settings.PRO_MODEL_API_KEY.strip()
+                else:
+                    api_key = "dummy-key"
+            elif resolved_provider == "openrouter":
                 api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
             elif cfg.tier == "pro":
-                if settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
+                if pro_pool.count > 0:
+                    api_key = pro_pool.next()
+                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
                     api_key = settings.PRO_MODEL_API_KEY.strip()
+                elif openrouter_pool.count > 0:
+                    api_key = openrouter_pool.next()
                 else:
                     api_key = "dummy-key"
             else:
                 api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
-
         headers: dict[str, str] = {}
         if is_openrouter:
             headers["HTTP-Referer"] = settings.FRONTEND_URL
@@ -261,17 +289,35 @@ class LLMConfigService:
         tier: str = "free",
         api_key_override: str | None = None,
     ) -> BaseChatModel:
-        """Create and return a configured fallback Chat model (Google GenAI)."""
+        """Create and return a configured fallback Chat model."""
         cfg = self.get_tier_config(tier)
+        fallback_provider = (cfg.fallback_provider or "google").lower()
         fallback_model = cfg.fallback_model or "gemma-4-31b-it"
-        api_key = api_key_override or google_pool.next()
 
-        return ChatGoogleGenerativeAI(
-            model=fallback_model,
-            temperature=cfg.temperature,
-            google_api_key=api_key,
-        )
-
+        if fallback_provider == "openrouter":
+            key = api_key_override or (openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key")
+            return ChatOpenAI(
+                model=fallback_model,
+                temperature=cfg.temperature,
+                base_url="https://openrouter.ai/api/v1",
+                api_key=key,
+                default_headers={"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"},
+            )
+        elif fallback_provider == "cerebras":
+            key = api_key_override or (cerebras_pool.next() if cerebras_pool.count > 0 else "dummy-key")
+            return ChatOpenAI(
+                model=fallback_model,
+                temperature=cfg.temperature,
+                base_url="https://api.cerebras.ai/v1",
+                api_key=key,
+            )
+        else:
+            api_key = api_key_override or (google_pool.next() if google_pool.count > 0 else "dummy-key")
+            return ChatGoogleGenerativeAI(
+                model=fallback_model,
+                temperature=cfg.temperature,
+                google_api_key=api_key,
+            )
 
 async def ensure_llm_provider_schema() -> None:
     """Idempotently ensure is_pro column on users and llm_provider_configs table exist on startup."""

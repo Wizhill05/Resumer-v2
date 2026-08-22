@@ -236,13 +236,17 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
     # 6. Keys status (round robin count). Import lazily so admin route import
     # does not crash before app startup validation can produce a clear error.
     try:
-        from src.core.api_key_pool import openrouter_pool, google_pool
+        from src.core.api_key_pool import cerebras_pool, google_pool, openrouter_pool, pro_pool
 
         openrouter_key_count = openrouter_pool.count
         google_key_count = google_pool.count
+        cerebras_key_count = cerebras_pool.count
+        pro_key_count = pro_pool.count if pro_pool.count > 0 else (1 if settings.PRO_MODEL_API_KEY else 0)
     except RuntimeError:
         openrouter_key_count = len(settings.openrouter_api_keys)
         google_key_count = len(settings.google_api_keys)
+        cerebras_key_count = len(settings.cerebras_api_keys)
+        pro_key_count = len(settings.pro_model_api_keys) or (1 if settings.PRO_MODEL_API_KEY else 0)
 
     try:
         await llm_config_service.load_from_db(db)
@@ -260,14 +264,16 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
         "pro": {
             "model": pro_cfg.model,
             "base_url": pro_cfg.base_url,
-            "configured_keys_count": 1 if settings.PRO_MODEL_API_KEY else (openrouter_key_count if "openrouter.ai" in pro_cfg.base_url.lower() else 0),
+            "configured_keys_count": pro_key_count,
+        },
+        "cerebras": {
+            "configured_keys_count": cerebras_key_count,
         },
         "google": {
             "configured_keys_count": google_key_count,
             "model": free_cfg.fallback_model or "gemma-4-31b-it",
         },
     }
-
     total_tokens, avg_node_latency, fallback_count, parse_error_count, metric_count = 0, 0.0, 0, 0, 0
     try:
         metrics_result = await db.execute(
@@ -428,50 +434,17 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
             GenerationNodeMetric.fallback_used,
         )
     )
-    gen_telemetry: dict[uuid.UUID, dict] = {}
-    for gen_id_val, prov, fb_used, count in metrics_per_gen_res.all():
-        if not gen_id_val:
-            continue
-        if gen_id_val not in gen_telemetry:
-            gen_telemetry[gen_id_val] = {
-                "has_cerebras": False,
-                "has_google": False,
-                "has_fallback": False,
-            }
-        p = (prov or "").lower()
-        if p == "cerebras":
-            gen_telemetry[gen_id_val]["has_cerebras"] = True
-        elif p == "google":
-            gen_telemetry[gen_id_val]["has_google"] = True
-        if fb_used:
-            gen_telemetry[gen_id_val]["has_fallback"] = True
-
     model_groups: dict[str, list[dict]] = {}
     for row in all_gens:
         raw_model = row.model_used or "unknown"
-        telem = gen_telemetry.get(row.id)
-
-        # Option A: Split Gemma 4 by Execution Purity
-        if "gemma" in raw_model.lower():
-            if telem:
-                if telem["has_cerebras"] and telem["has_fallback"]:
-                    model_key = "gemma-4-31b-it (Cerebras + Google Fallback)"
-                elif telem["has_cerebras"] and not telem["has_fallback"]:
-                    model_key = "gemma-4-31b-it (Cerebras - Pure)"
-                elif telem["has_google"] and not telem["has_cerebras"]:
-                    model_key = "gemma-4-31b-it (Google Direct)"
-                else:
-                    model_key = "gemma-4-31b-it (Cerebras - Pure)"
-            else:
-                # Historical runs without recorded node metrics ran on Cerebras
-                model_key = "gemma-4-31b-it (Cerebras - Pure)"
-        elif "gemini-3.7" in raw_model.lower() or "antigravity" in raw_model.lower():
+        if "gemini-3.7" in raw_model.lower() or "antigravity" in raw_model.lower():
             model_key = "gemini-3.7-flash-tiered (OmniRoute)"
         elif "laguna" in raw_model.lower() or "poolside" in raw_model.lower():
             model_key = "laguna-xs-2.1:free (OpenRouter)"
+        elif "qwen" in raw_model.lower():
+            model_key = f"{raw_model} (Cerebras)"
         else:
             model_key = raw_model
-
         dur = None
         if row.completed_at and row.created_at:
             dur = max(0.0, (row.completed_at - row.created_at).total_seconds())
@@ -552,11 +525,7 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
         {
             "node_name": row[0],
             "provider": row[1],
-            "model": (
-                f"{row[2]} (Cerebras)" if row[1] == "cerebras" and "gemma" in (row[2] or "").lower()
-                else f"{row[2]} (Google Gemini)" if row[1] == "google" and "gemma" in (row[2] or "").lower()
-                else (row[2] or "default")
-            ),
+            "model": row[2] or "default",
             "calls": row[3],
             "avg_latency_ms": round(float(row[4] or 0), 1),
             "total_tokens": int(row[5] or 0),
@@ -586,23 +555,11 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
     )
     slowest_runs = []
     for row in slow_res.all():
-        raw_model = row[3] or "unknown"
-        telem = gen_telemetry.get(row[0])
-        if "gemma" in raw_model.lower():
-            if telem and telem["has_cerebras"] and telem["has_fallback"]:
-                label = "gemma-4-31b-it (Cerebras + Fallback)"
-            elif telem and telem["has_google"] and not telem["has_cerebras"]:
-                label = "gemma-4-31b-it (Google Direct)"
-            else:
-                label = "gemma-4-31b-it (Cerebras)"
-        else:
-            label = raw_model
-
         slowest_runs.append({
             "id": str(row[0]),
             "job_title": row[1] or "Unknown Title",
             "company": row[2] or "Unknown Company",
-            "model_used": label,
+            "model_used": row[3] or "unknown",
             "template_id": row[4],
             "created_at": row[5].isoformat() if row[5] else "",
             "completed_at": row[6].isoformat() if row[6] else "",
@@ -1165,18 +1122,34 @@ async def test_model_endpoint(data: ModelTestRequest, db: AsyncSession = Depends
         if data.base_url or data.model:
             base_url = (data.base_url or (settings.PRO_MODEL_BASE_URL if tier == "pro" else settings.FREE_MODEL_BASE_URL)).rstrip("/")
             model = data.model or (settings.PRO_MODEL_NAME if tier == "pro" else settings.FREE_MODEL_NAME)
-            is_openrouter = "openrouter.ai" in base_url.lower()
+            url_lower = base_url.lower()
+            is_openrouter = "openrouter.ai" in url_lower
+            is_cerebras = "cerebras.ai" in url_lower
+            is_omniroute = "omniroute" in url_lower
 
-            if is_openrouter:
-                from src.core.api_key_pool import openrouter_pool
-                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
-            elif tier == "pro":
-                if settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
+            from src.core.api_key_pool import cerebras_pool, openrouter_pool, pro_pool
+
+            if is_cerebras:
+                api_key = cerebras_pool.next() if cerebras_pool.count > 0 else "dummy-key"
+            elif is_omniroute:
+                if pro_pool.count > 0:
+                    api_key = pro_pool.next()
+                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
                     api_key = settings.PRO_MODEL_API_KEY.strip()
                 else:
                     api_key = "dummy-key"
+            elif is_openrouter:
+                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
+            elif tier == "pro":
+                if pro_pool.count > 0:
+                    api_key = pro_pool.next()
+                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
+                    api_key = settings.PRO_MODEL_API_KEY.strip()
+                elif openrouter_pool.count > 0:
+                    api_key = openrouter_pool.next()
+                else:
+                    api_key = "dummy-key"
             else:
-                from src.core.api_key_pool import openrouter_pool
                 api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
 
             from langchain_openai import ChatOpenAI

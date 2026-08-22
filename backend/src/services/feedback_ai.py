@@ -117,10 +117,11 @@ async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str) -> Optional
         import base64
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        if not settings.google_api_keys:
+        from src.core.api_key_pool import google_pool
+        if google_pool.count == 0:
             return None
 
-        key = settings.google_api_keys[0]
+        key = google_pool.next()
         llm = ChatGoogleGenerativeAI(
             model="gemma-4-31b-it",
             google_api_key=key,
