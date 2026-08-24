@@ -596,33 +596,11 @@
   animation: page-enter 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Mobile Fullscreen Navigation Overlay Animations */
-@keyframes mobile-nav-enter {
+/* Neo-Brutalist Mobile Fullscreen Menu Animations */
+@keyframes neo-menu-enter {
   0% {
     opacity: 0;
-    transform: translateY(-16px) scale(0.98);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes mobile-nav-exit {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(-16px) scale(0.98);
-  }
-}
-
-@keyframes mobile-nav-item-enter {
-  0% {
-    opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(-100%);
   }
   100% {
     opacity: 1;
@@ -630,29 +608,36 @@
   }
 }
 
-@keyframes mobile-nav-item-exit {
+@keyframes neo-menu-exit {
   0% {
     opacity: 1;
     transform: translateY(0);
   }
   100% {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(-100%);
   }
 }
 
-.mobile-nav-enter {
-  animation: mobile-nav-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+@keyframes neo-item-enter {
+  0% {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-.mobile-nav-exit {
-  animation: mobile-nav-exit 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.neo-menu-enter {
+  animation: neo-menu-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.mobile-nav-item {
-  animation: mobile-nav-item-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+.neo-menu-exit {
+  animation: neo-menu-exit 0.2s cubic-bezier(0.7, 0, 0.84, 0) forwards;
 }
 
-.mobile-nav-item-exit {
-  animation: mobile-nav-item-exit 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.neo-item-enter {
+  animation: neo-item-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
