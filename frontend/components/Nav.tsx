@@ -18,8 +18,8 @@ const defaultLinks = [
 const ADMIN_CACHE_KEY = "resumer_is_admin"
 
 export function Nav() {
-  const pathname = usePathname()
   const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 
@@ -52,12 +52,29 @@ export function Nav() {
     ? [...defaultLinks, { href: "/admin", label: "Admin", icon: Shield }]
     : defaultLinks
 
+  const closeMenu = () => {
+    if (!open || closing) return
+    setClosing(true)
+    setTimeout(() => {
+      setOpen(false)
+      setClosing(false)
+    }, 180)
+  }
+
+  const openMenu = () => {
+    setClosing(false)
+    setOpen(true)
+  }
+
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setOpen(false) }, [pathname])
+  useEffect(() => {
+    setOpen(false)
+    setClosing(false)
+  }, [pathname])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false)
+      if (e.key === "Escape") closeMenu()
     }
     if (open) {
       window.addEventListener("keydown", handleKeyDown)
@@ -70,7 +87,6 @@ export function Nav() {
       document.body.style.overflow = ""
     }
   }, [open])
-
   const toggleTheme = () => {
     setTheme(resolvedTheme === "dark" ? "light" : "dark")
   }
@@ -135,8 +151,8 @@ export function Nav() {
               {mounted && resolvedTheme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <button
-              onClick={() => setOpen(true)}
-              className="p-2 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+              onClick={openMenu}
+              className="p-2 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-all active:scale-90 cursor-pointer"
               aria-label="Open menu"
               aria-expanded={open}
             >
@@ -149,7 +165,7 @@ export function Nav() {
       {/* Fullscreen Mobile Hamburger Menu Overlay */}
       {open && mounted && createPortal(
         <div
-          className="fixed inset-0 z-[100] flex flex-col bg-[#fbfbf3] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 md:hidden animate-fade-in"
+          className={`fixed inset-0 z-[100] flex flex-col bg-[#fbfbf3] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 md:hidden ${closing ? "mobile-nav-exit" : "mobile-nav-enter"}`}
           role="dialog"
           aria-modal="true"
           aria-label="Navigation Menu"
@@ -158,8 +174,8 @@ export function Nav() {
           <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 bg-white/80 dark:bg-zinc-900/80 backdrop-blur">
             <Link
               href="/dashboard"
-              onClick={() => setOpen(false)}
-              className="resumer-mark px-2.5 py-1 text-base font-black"
+              onClick={closeMenu}
+              className="resumer-mark px-2.5 py-1 text-base font-black transition-transform active:scale-95"
             >
               Resumer
             </Link>
@@ -167,14 +183,14 @@ export function Nav() {
             <div className="flex items-center gap-1">
               <button
                 onClick={toggleTheme}
-                className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+                className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 rounded transition-all active:scale-90 cursor-pointer"
                 aria-label="Toggle dark mode"
               >
                 {resolvedTheme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
               </button>
               <button
-                onClick={() => setOpen(false)}
-                className="p-2 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
+                onClick={closeMenu}
+                className="p-2 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 rounded transition-all active:scale-90 cursor-pointer"
                 aria-label="Close menu"
               >
                 <X size={22} strokeWidth={2.5} />
@@ -188,42 +204,50 @@ export function Nav() {
               <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-2 px-2">
                 Navigation
               </p>
-              {links.map((link) => {
+              {links.map((link, idx) => {
                 const active = pathname === link.href
                 const Icon = link.icon
                 return (
-                  <Link
+                  <div
                     key={link.href}
-                    href={link.href}
-                    onClick={() => setOpen(false)}
-                    className={`flex items-center justify-between p-3.5 rounded border transition-all ${
-                      active
-                        ? "border-[#ff4e26] bg-[#ff4e26]/10 text-[#ff4e26] font-black shadow-2xs"
-                        : "border-zinc-200/60 dark:border-zinc-800/60 bg-white/70 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-700 font-bold"
-                    }`}
+                    className="mobile-nav-item"
+                    style={{ animationDelay: `${(idx + 1) * 35}ms` }}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Icon size={18} className={active ? "text-[#ff4e26]" : "text-zinc-400 dark:text-zinc-500"} />
-                      <span className="text-base uppercase tracking-tight truncate">{link.label}</span>
-                    </div>
-                    {active ? (
-                      <span className="text-[10px] font-mono font-bold uppercase text-[#ff4e26] bg-[#ff4e26]/15 px-2 py-0.5 rounded">
-                        Active
-                      </span>
-                    ) : (
-                      <ChevronRight size={15} className="text-zinc-400 dark:text-zinc-600 shrink-0" />
-                    )}
-                  </Link>
+                    <Link
+                      href={link.href}
+                      onClick={closeMenu}
+                      className={`flex items-center justify-between p-3.5 rounded border transition-all duration-150 active:scale-[0.98] ${
+                        active
+                          ? "border-[#ff4e26] bg-[#ff4e26]/10 text-[#ff4e26] font-black shadow-2xs"
+                          : "border-zinc-200/60 dark:border-zinc-800/60 bg-white/70 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-700 font-bold"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Icon size={18} className={active ? "text-[#ff4e26]" : "text-zinc-400 dark:text-zinc-500"} />
+                        <span className="text-base uppercase tracking-tight truncate">{link.label}</span>
+                      </div>
+                      {active ? (
+                        <span className="text-[10px] font-mono font-bold uppercase text-[#ff4e26] bg-[#ff4e26]/15 px-2 py-0.5 rounded">
+                          Active
+                        </span>
+                      ) : (
+                        <ChevronRight size={15} className="text-zinc-400 dark:text-zinc-600 shrink-0" />
+                      )}
+                    </Link>
+                  </div>
                 )
               })}
             </div>
 
             {/* Bottom Actions */}
-            <div className="pt-5 border-t border-zinc-200 dark:border-zinc-800 mt-6 space-y-3">
+            <div
+              className="mobile-nav-item pt-5 border-t border-zinc-200 dark:border-zinc-800 mt-6 space-y-3"
+              style={{ animationDelay: `${(links.length + 1) * 35}ms` }}
+            >
               <form action="/api/auth/signout" method="POST">
                 <button
                   type="submit"
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 rounded transition-all active:scale-[0.98] cursor-pointer"
                 >
                   <LogOut size={14} />
                   Sign Out

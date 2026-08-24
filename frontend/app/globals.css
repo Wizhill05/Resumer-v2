@@ -579,3 +579,49 @@
   from { background-position: 0 0; }
   to { background-position: 28px 0; }
 }
+
+/* Mobile Fullscreen Navigation Overlay Animations */
+@keyframes mobile-nav-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mobile-nav-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+
+@keyframes mobile-nav-item-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mobile-nav-enter {
+  animation: mobile-nav-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.mobile-nav-exit {
+  animation: mobile-nav-exit 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.mobile-nav-item {
+  animation: mobile-nav-item-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
