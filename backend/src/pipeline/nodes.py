@@ -21,7 +21,7 @@ from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
 from src.models.generation import Generation, GenerationLog, GenerationNodeMetric, PromptConfig
 from src.services.font_fit import find_best_font_size
-from src.services.resume_render import build_resume_markdown
+from src.services.resume_render import build_resume_markdown, detect_orphans_in_weasyprint
 from src.pipeline.state import ResumeGraphState
 from src.schemas.pipeline import (
     JobAnalysis,
@@ -885,122 +885,6 @@ async def assembly_node(
     await log_progress(db, gen_id, "assembly", "Resume assembly complete.")
     return {"tailored_resume": tailored_resume}
 
-
-def detect_orphans_in_weasyprint(doc) -> list[dict[str, Any]]:
-    """Walks the WeasyPrint document layout tree and finds orphan/oversize bullets."""
-    orphan_data = []
-
-    def get_text(box):
-        if hasattr(box, "text") and box.text:
-            return box.text
-        texts = []
-        for child in getattr(box, "children", []):
-            texts.append(get_text(child))
-        return "".join(texts)
-
-    try:
-        if not doc or not doc.pages:
-            return []
-
-        for page in doc.pages:
-            li_lines = {}
-            current_section = ["unknown"]
-
-            def walk_tree(box, current_li_element=None, current_li_box=None):
-                if type(box).__name__ == "MarkerBox" or getattr(box, "pseudo_type", None) == "marker":
-                    return
-
-                tag = getattr(box, "element_tag", None)
-                dom_element = getattr(box, "element", None)
-
-                if dom_element is not None and tag == "h2":
-                    h2_text = "".join(dom_element.itertext()).strip().lower()
-                    if "project" in h2_text:
-                        current_section[0] = "projects"
-                    elif "experience" in h2_text:
-                        current_section[0] = "experience"
-                    elif "activit" in h2_text or "achievement" in h2_text:
-                        current_section[0] = "activities"
-
-                next_li_element = current_li_element
-                next_li_box = current_li_box
-
-                if dom_element is not None and tag == "li":
-                    next_li_element = dom_element
-                    next_li_box = box
-
-                if type(box).__name__ == "LineBox":
-                    if current_li_element is not None and tag != "li::marker":
-                        if current_li_element not in li_lines:
-                            li_lines[current_li_element] = {"lines": [], "section": current_section[0]}
-                        li_lines[current_li_element]["lines"].append((box, current_li_box))
-
-                for child in getattr(box, "children", []):
-                    walk_tree(child, next_li_element, next_li_box)
-
-            walk_tree(page._page_box)
-
-            for el, data in li_lines.items():
-                lines = data["lines"]
-                section = data["section"]
-                text = "".join(el.itertext()).strip()
-                if not text:
-                    continue
-
-                line_count = len(lines)
-                if line_count <= 1:
-                    continue
-
-                widths = [line.width for line, _ in lines]
-                first_line_width = widths[0]
-                full_width = max(widths[:-1]) if len(widths) > 1 else first_line_width
-
-                if full_width <= 0:
-                    continue
-
-                last_line_width = widths[-1]
-                last_line_fill = last_line_width / full_width
-
-                # Derive chars-per-line from the first (full) line — accurate per font/size,
-                # unlike a hardcoded avg-char-width constant that drifts with the loaded font.
-                first_line_text = get_text(lines[0][0]).strip()
-                if first_line_text and full_width > 0:
-                    chars_per_line = len(first_line_text)
-                else:
-                    chars_per_line = 90
-
-                if line_count == 2 and last_line_fill < 0.75:
-                    target_min = int(chars_per_line * 1.80)
-                    target_max = int(chars_per_line * 1.95)
-                    orphan_data.append({
-                        "fix_type": "expand",
-                        "section": section,
-                        "text": text,
-                        "currentChars": len(text),
-                        "renderedLines": line_count,
-                        "charsPerLine": chars_per_line,
-                        "targetCharsMin": target_min,
-                        "targetCharsMax": target_max,
-                        "charsToAddMin": max(0, target_min - len(text)),
-                        "charsToAddMax": max(0, target_max - len(text)),
-                    })
-                elif line_count > 2:
-                    target_max = int(chars_per_line * 1.95)
-                    orphan_data.append({
-                        "fix_type": "shorten",
-                        "section": section,
-                        "text": text,
-                        "currentChars": len(text),
-                        "renderedLines": line_count,
-                        "charsPerLine": chars_per_line,
-                        "targetCharsMin": int(chars_per_line * 1.80),
-                        "targetCharsMax": target_max,
-                    })
-    except Exception as e:
-        print(f"Error in WeasyPrint orphan detection: {e}")
-        return []
-
-    return orphan_data
 
 
 async def render_node(

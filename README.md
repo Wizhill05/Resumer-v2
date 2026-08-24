@@ -10,7 +10,7 @@
     <a href="#features"><strong>Features</strong></a>
     <span> / </span>
     <a href="#tech-stack"><strong>Stack</strong></a>
-    <span> / </span>
+    <span> / </span>  
     <a href="#local-development"><strong>Run Locally</strong></a>
   </p>
   <p>

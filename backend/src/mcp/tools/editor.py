@@ -14,7 +14,12 @@ from src.core.storage import StorageService
 from src.mcp.context import get_current_mcp_user, get_mcp_db
 from src.models.generation import Generation
 from src.models.profile import Profile
-from src.services.resume_render import build_resume_markdown, fit_and_render_pdf, render_resume_html
+from src.services.resume_render import (
+    build_resume_markdown,
+    detect_resume_orphans,
+    fit_and_render_pdf,
+    render_resume_html,
+)
 from src.template_registry.service import TemplateRegistryService
 
 
@@ -398,3 +403,64 @@ async def save_resume_edits_handler(
         generation_id=generation_id,
         expected_revision=expected_revision,
     )
+
+
+async def detect_orphans_handler(
+    generation_id: str,
+    resume_json: dict[str, Any] | None = None,
+    font_size: float | None = None,
+) -> dict[str, Any]:
+    """Inspect WeasyPrint layout tree for orphan lines and page overflow in a tailored resume.
+
+    CRITICAL WORKFLOW INSTRUCTION:
+    Whenever you add, modify, or remove projects, work experience, or bullet points in a resume,
+    you MUST call this tool immediately BEFORE finalizing the resume.
+    It inspects WeasyPrint line boxes to detect bullets where the last line has only 1-3 words (<75% line fill)
+    or bullets that overflow to 3+ lines.
+    """
+    user = get_current_mcp_user()
+    try:
+        gen_uuid = uuid.UUID(generation_id)
+    except ValueError:
+        return {"success": False, "error": f"Invalid generation ID format: '{generation_id}'"}
+
+    async with get_mcp_db() as db:
+        res = await db.execute(
+            select(Generation).where(Generation.id == gen_uuid, Generation.user_id == user.id)
+        )
+        gen = res.scalar_one_or_none()
+        if not gen:
+            return {"success": False, "error": f"Generation '{generation_id}' not found."}
+
+        if gen.status != "completed":
+            return {"success": False, "error": f"Generation is in status '{gen.status}', not completed."}
+
+        metadata = gen.render_metadata or {}
+        target_resume = resume_json if resume_json is not None else metadata.get("tailored_resume", {})
+        if not target_resume:
+            return {"success": False, "error": "No resume data found to analyze."}
+
+        profile_data = metadata.get("profile")
+        if not profile_data:
+            prof_res = await db.execute(select(Profile).where(Profile.user_id == user.id))
+            prof = prof_res.scalar_one_or_none()
+            profile_data = {
+                "full_name": prof.full_name if prof else user.name,
+                "email": prof.email if prof else user.email,
+                "phone": prof.phone if prof else None,
+                "location": prof.location if prof else None,
+                "linkedin_url": prof.linkedin_url if prof else None,
+                "github_url": prof.github_url if prof else None,
+                "portfolio_url": prof.portfolio_url if prof else None,
+                "subtitle": prof.subtitle if prof else None,
+            }
+
+    result = detect_resume_orphans(
+        template_id=gen.template_id,
+        profile=profile_data,
+        resume=target_resume,
+        font_size=font_size,
+    )
+    if result.get("success"):
+        result["generation_id"] = str(gen.id)
+    return result

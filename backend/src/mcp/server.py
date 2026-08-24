@@ -16,6 +16,7 @@ from src.core.database import AsyncSessionLocal
 from src.core.oauth import decode_oauth_token
 from src.mcp.context import reset_current_mcp_user, set_current_mcp_user
 from src.mcp.tools.editor import (
+    detect_orphans_handler,
     edit_resume_section_handler,
     get_resume_json_handler,
     preview_resume_handler,
@@ -51,13 +52,77 @@ from src.models.user import User
 mcp_server = MCPServer(
     name="Resumer MCP Server",
     instructions=(
-        "Resumer is an AI-powered resume engine that tailors single-page, ATS-optimized resumes "
-        "from candidate profiles. When the user asks to create or generate a resume, use generate_resume. "
-        "By default, generate_resume waits for pipeline execution (~15-25 seconds) and returns the completed "
-        "resume details, including the PDF download URL and the full structured resume_json. "
-        "You MUST present the final PDF download link formatted in clean Markdown (e.g. [Download Company Role Resume (PDF)](url)) "
-        "along with a concise summary of the tailored resume to the user. "
-        "If the user asks for revisions or tweaks, you can directly modify the resume_json and call render_resume to compile an updated PDF in a single step."
+        "Resumer is an AI-powered resume engineering platform that generates single-page, ATS-optimized resumes "
+        "from user profile facts and job descriptions.\n\n"
+        "## ARCHITECTURAL CONCEPTS\n"
+        "1. Master Profile vs Tailored Generation:\n"
+        "   - The user's Profile (`get_profile`, `add_project`, `add_experience`, etc.) is their global database of historical career facts.\n"
+        "   - A Generation (`generate_resume`, `get_resume_json`, `render_resume`) is an isolated, job-tailored resume artifact for a specific role and company.\n"
+        "   - DO NOT confuse them: If a user asks to add/edit a project in their portfolio/profile, use `add_project` / `update_project`. If they ask to add, remove, or change a project in an existing resume, fetch and edit `resume_json` on that `generation_id`.\n\n"
+        "2. Structured `resume_json` Data Model:\n"
+        "   {\n"
+        "     \"summary\": \"Concise 2-3 sentence professional summary (~30-40 words).\",\n"
+        "     \"skills\": {\n"
+        "       \"Languages\": [\"Python\", \"TypeScript\", \"SQL\"],\n"
+        "       \"Frameworks & Tools\": [\"FastAPI\", \"Next.js\", \"Docker\", \"PostgreSQL\"]\n"
+        "     },\n"
+        "     \"experiences\": [\n"
+        "       {\n"
+        "         \"role\": \"Senior Software Engineer\",\n"
+        "         \"organization\": \"Company Name\",\n"
+        "         \"location\": \"City, ST or Remote\",\n"
+        "         \"start_date\": \"Jan 2022\",\n"
+        "         \"end_date\": \"Present\",\n"
+        "         \"bullet_points\": [\n"
+        "           \"Action verb + quantifiable impact + tech stack with **bold** metrics (e.g. reduced latency by **35%** using **Redis**).\"\n"
+        "         ]\n"
+        "       }\n"
+        "     ],\n"
+        "     \"projects\": [\n"
+        "       {\n"
+        "         \"name\": \"Project Name\",\n"
+        "         \"technologies\": [\"Python\", \"React\", \"PostgreSQL\"],\n"
+        "         \"description\": \"Brief 1-line architecture overview.\",\n"
+        "         \"bullet_points\": [\n"
+        "           \"Engineered high-throughput event consumer with **Kafka** and **FastAPI**, handling **10k req/s**.\"\n"
+        "         ]\n"
+        "       }\n"
+        "     ],\n"
+        "     \"education\": [\n"
+        "       {\n"
+        "         \"degree\": \"B.S. in Computer Science\",\n"
+        "         \"institution\": \"University Name\",\n"
+        "         \"location\": \"City, ST\",\n"
+        "         \"start_date\": \"2018\",\n"
+        "         \"end_date\": \"2022\",\n"
+        "         \"gpa\": \"3.85\",\n"
+        "         \"coursework\": [\"Distributed Systems\", \"Algorithms\"]\n"
+        "       }\n"
+        "     ],\n"
+        "     \"extracurriculars\": [\n"
+        "       {\n"
+        "         \"title\": \"Open Source Contributor\",\n"
+        "         \"organization\": \"Apache Software Foundation\",\n"
+        "         \"description\": \"Maintained core data connector libraries with **500+** GitHub stars.\"\n"
+        "       }\n"
+        "     ]\n"
+        "   }\n\n"
+        "## WORKFLOW PROTOCOLS\n\n"
+        "### 1. Generating a New Resume:\n"
+        "- Call `check_readiness(template_id=\"personal-classic\", job_description=...)` to identify profile gaps.\n"
+        "- If readiness returns missing sections, prompt the user or add missing data via profile tools.\n"
+        "- Call `generate_resume(job_description=..., template_id=\"personal-classic\", company=..., job_title=...)`.\n"
+        "- By default `generate_resume` waits for pipeline completion (~15-25s) and returns the completed resume JSON and PDF download link.\n"
+        "- Output the download link formatted in clean Markdown: `[Download <Company> <Role> Resume (PDF)](download_url)` along with a concise 3-4 bullet summary of how the resume was tailored.\n\n"
+        "### 2. Modifying an Existing Resume (MANDATORY 4-STEP PROTOCOL):\n"
+        "When the user asks to add, remove, or tweak projects, experience, or bullet points on a tailored resume:\n"
+        "- Step 1: Call `get_resume_json(generation_id=...)` to retrieve the current tailored resume structure.\n"
+        "- Step 2: Modify the target section or projects/experiences in the dictionary.\n"
+        "- Step 3 (CRITICAL): Call `detect_orphans(generation_id=..., resume_json=...)` immediately after making changes.\n"
+        "  * WeasyPrint layout analysis inspects line boxes to catch orphan lines (<75% line fill on the last line) and page overflow (>1 page).\n"
+        "  * If orphans or overflows are reported, refine the bullet text to match the returned character targets (e.g. expand short 2nd lines or trim 3+ line overflows).\n"
+        "- Step 4: Call `render_resume(generation_id=..., resume_json=...)` to compile the final PDF, update storage, and get the new download link.\n"
+        "- Present the updated Markdown PDF download link to the user.\n"
     ),
 )
 
@@ -115,7 +180,12 @@ async def add_project(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Add a new software project to the user's profile."""
+    """Add a new software project to the user's permanent master profile.
+
+    NOTE: Use this tool ONLY when adding a project to the user's global profile database.
+    If you need to add a project to an already-generated resume, fetch the resume via get_resume_json,
+    update its 'projects' list, verify with detect_orphans, and compile with render_resume.
+    """
     return await add_project_handler(
         name=name,
         description=description,
@@ -140,7 +210,7 @@ async def update_project(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Update an existing project in the user's profile."""
+    """Update an existing software project in the user's permanent master profile by project_id."""
     return await update_project_handler(
         project_id=project_id,
         name=name,
@@ -156,8 +226,7 @@ async def update_project(
 
 @mcp_server.tool()
 async def delete_project(project_id: str) -> dict[str, Any]:
-    """Remove a project from the user's profile."""
-    return await delete_project_handler(project_id=project_id)
+    """Remove a project from the user's permanent master profile by project_id."""
 
 
 @mcp_server.tool()
@@ -169,7 +238,11 @@ async def add_experience(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Add a work experience entry to the user's profile."""
+    """Add a work experience entry to the user's permanent master profile.
+
+    NOTE: Use this tool ONLY when adding career history to the user's global profile database.
+    If modifying an already-generated resume, edit resume_json, check detect_orphans, and call render_resume.
+    """
     return await add_experience_handler(
         role=role,
         organization=organization,
@@ -190,7 +263,7 @@ async def update_experience(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Update an existing work experience entry."""
+    """Update an existing work experience entry in the user's permanent master profile."""
     return await update_experience_handler(
         experience_id=experience_id,
         role=role,
@@ -204,8 +277,7 @@ async def update_experience(
 
 @mcp_server.tool()
 async def delete_experience(experience_id: str) -> dict[str, Any]:
-    """Remove a work experience entry from the user's profile."""
-    return await delete_experience_handler(experience_id=experience_id)
+    """Remove a work experience entry from the user's permanent master profile."""
 
 
 @mcp_server.tool()
@@ -331,9 +403,6 @@ async def check_readiness(
         job_description=job_description,
     )
 
-
-# ── Resume Generation & Lifecycle Tools ───────────────────────────────────────
-
 @mcp_server.tool()
 async def generate_resume(
     job_description: str,
@@ -424,6 +493,28 @@ async def preview_resume(generation_id: str) -> dict[str, Any]:
 
 
 @mcp_server.tool()
+async def detect_orphans(
+    generation_id: str,
+    resume_json: dict[str, Any] | None = None,
+    font_size: float | None = None,
+) -> dict[str, Any]:
+    """Inspect WeasyPrint layout tree for orphan lines and page overflow in a tailored resume.
+
+    CRITICAL WORKFLOW INSTRUCTION:
+    Whenever you add, modify, or remove projects, work experience, or bullet points in a resume,
+    you MUST call this tool immediately BEFORE finalizing the resume.
+    It inspects WeasyPrint line boxes to detect bullets where the last line has only 1-3 words (<75% line fill)
+    or bullets that overflow to 3+ lines.
+    If orphans are detected, follow the actionable guidance to adjust bullet phrasing, then call render_resume.
+    """
+    return await detect_orphans_handler(
+        generation_id=generation_id,
+        resume_json=resume_json,
+        font_size=font_size,
+    )
+
+
+@mcp_server.tool()
 async def render_resume(
     generation_id: str,
     resume_json: dict[str, Any] | None = None,
@@ -453,7 +544,6 @@ async def save_resume_edits(
         generation_id=generation_id,
         expected_revision=expected_revision,
     )
-
 # ── ASGI Auth Wrapper Middleware ──────────────────────────────────────────────
 
 class MCPAuthMiddleware:

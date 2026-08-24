@@ -117,3 +117,44 @@ class EditorSaveResponse(BaseModel):
     pdf_storage_key: str | None = None
     thumb_storage_key: str | None = None
 
+
+
+# ── Orphan Detection Schemas ──────────────────────────────────────────────────
+
+
+class OrphanItemOut(BaseModel):
+    """Individual orphan or oversize bullet point analysis."""
+    fix_type: str
+    section: str
+    text: str
+    currentChars: int
+    renderedLines: int
+    charsPerLine: int
+    targetCharsMin: int
+    targetCharsMax: int
+    charsToAddMin: int | None = None
+    charsToAddMax: int | None = None
+    suggestion: str
+
+
+class OrphanDetectionRequest(BaseModel):
+    """Optional body for POST /generate/{id}/detect-orphans (tests candidate JSON)."""
+    resume: dict[str, Any] | None = None
+    profile: dict[str, Any] | None = None
+    font_size: float | None = None
+
+
+class OrphanDetectionResponse(BaseModel):
+    """Response for POST /generate/{id}/detect-orphans."""
+    success: bool
+    generation_id: str | None = None
+    template_id: str
+    font_size: float
+    page_count: int
+    target_pages: int
+    fits_target: bool
+    has_orphans: bool
+    orphan_count: int
+    orphans: list[OrphanItemOut] = []
+    actionable_instructions_for_ai: str
+    error: str | None = None

@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef, useMemo } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft } from "lucide-react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2 } from "lucide-react"
 import { createPortal } from "react-dom"
 import { FeedbackModal } from "@/components/FeedbackModal"
 
@@ -341,6 +341,8 @@ function LiveProgressGridCard({
   )
 }
 
+const A4_WIDTH_PX = (210 / 25.4) * 96 // ~794px
+
 function FullscreenResumeOverlay({
   run,
   onClose,
@@ -348,6 +350,11 @@ function FullscreenResumeOverlay({
   run: HistoryRun
   onClose: () => void
 }) {
+  const [zoom, setZoom] = useState(0.8)
+  const [pageImages, setPageImages] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
@@ -359,6 +366,42 @@ function FullscreenResumeOverlay({
       document.body.style.overflow = ""
     }
   }, [onClose])
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      const mobileZoom = Math.min(0.48, (window.innerWidth - 32) / A4_WIDTH_PX)
+      setZoom(mobileZoom)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError(null)
+
+    fetch(`/api/backend/generate/${run.id}/pdf-pages`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((data) => {
+        if (active && data.page_images && data.page_images.length > 0) {
+          setPageImages(data.page_images)
+        } else if (active) {
+          setError("No pages available")
+        }
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Failed to load preview")
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [run.id])
 
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short",
@@ -377,8 +420,8 @@ function FullscreenResumeOverlay({
       }}
     >
       {/* Top Action Header Bar */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3 md:px-6">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-2 sm:px-4 sm:py-3 md:px-6">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={onClose}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded bg-zinc-900 transition-colors cursor-pointer"
@@ -388,36 +431,62 @@ function FullscreenResumeOverlay({
             <span className="hidden sm:inline">Back</span>
           </button>
           <div className="min-w-0">
-            <h3 className="text-sm font-extrabold uppercase tracking-tight truncate text-white md:text-base">
+            <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-tight truncate text-white">
               {run.job_title || "Tailored Resume"}
             </h3>
-            <p className="text-xs font-semibold text-zinc-400 truncate">
+            <p className="text-[11px] font-semibold text-zinc-400 truncate">
               {run.company ? `${run.company} • ` : ""}{date} • {run.template_id}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Zoom controls (desktop only) */}
+          <div className="hidden sm:flex items-center gap-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5">
+            <button
+              onClick={() => setZoom((value) => Math.max(0.3, Number((value - 0.1).toFixed(2))))}
+              className="cursor-pointer rounded p-1 text-zinc-400 hover:text-white transition-colors"
+              title="Zoom out"
+              aria-label="Zoom out"
+            >
+              <ZoomOut size={13} />
+            </button>
+            <span className="w-8 text-center font-mono text-[10px] font-bold text-zinc-300">
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(2))))}
+              className="cursor-pointer rounded p-1 text-zinc-400 hover:text-white transition-colors"
+              title="Zoom in"
+              aria-label="Zoom in"
+            >
+              <ZoomIn size={13} />
+            </button>
+          </div>
+
+          {/* Edit button (visible on mobile and desktop) */}
+          <button
+            onClick={() => {
+              window.location.href = `/dashboard/history/${run.id}/edit`
+            }}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold uppercase tracking-wider border border-zinc-700 hover:border-zinc-500 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded transition-colors cursor-pointer"
+          >
+            <Pencil size={13} />
+            <span>Edit</span>
+          </button>
+
+          {/* Download button */}
           <a
             href={`/api/backend/generate/${run.id}/download`}
             target="_blank"
             rel="noreferrer"
             download
           >
-            <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-[#ff4e26] hover:bg-[#e03d16] text-white rounded transition-colors cursor-pointer shadow-sm">
-              <Download size={14} />
-              <span>Download PDF</span>
+            <button className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-[#ff4e26] hover:bg-[#e03d16] text-white rounded transition-colors cursor-pointer shadow-sm">
+              <Download size={13} />
+              <span className="hidden sm:inline">Download PDF</span>
             </button>
           </a>
-          <button
-            onClick={() => {
-              window.location.href = `/dashboard/history/${run.id}/edit`
-            }}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider border border-zinc-700 hover:border-zinc-500 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded transition-colors cursor-pointer"
-          >
-            <Pencil size={13} />
-            <span>Edit</span>
-          </button>
           <button
             onClick={onClose}
             className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors cursor-pointer"
@@ -428,32 +497,49 @@ function FullscreenResumeOverlay({
         </div>
       </div>
 
-      {/* Fullscreen Preview Canvas */}
-      <div className="flex-1 overflow-auto p-4 md:p-8 flex items-center justify-center bg-zinc-900/60">
-        <div className="relative mx-auto my-auto max-w-3xl w-full flex flex-col items-center justify-center">
-          {run.thumb_storage_key ? (
-            <img
-              src={`/api/backend/generate/${run.id}/thumb`}
-              alt={`${run.job_title || "Resume"} fullscreen preview`}
-              className="max-h-[82vh] w-auto max-w-full rounded shadow-2xl bg-white object-contain border border-zinc-700 select-none"
-            />
-          ) : (
-            <div
-              className="w-full max-w-2xl bg-white text-zinc-900 p-8 shadow-2xl rounded flex flex-col items-center justify-center text-center space-y-4"
-              style={{ aspectRatio: "210/297" }}
-            >
-              <FileText size={48} className="text-zinc-400" />
-              <p className="text-sm font-semibold text-zinc-600">
-                Rendering preview...
-              </p>
-              <a href={`/api/backend/generate/${run.id}/download`} target="_blank" rel="noreferrer">
-                <button className="px-4 py-2 text-xs font-bold bg-[#ff4e26] text-white rounded">
-                  Download PDF directly
-                </button>
-              </a>
-            </div>
-          )}
-        </div>
+      {/* Fullscreen A4 Preview Canvas */}
+      <div className="flex-1 overflow-auto bg-zinc-900/90 p-3 sm:p-6 md:p-8 flex items-start justify-center">
+        {loading ? (
+          <div className="my-auto flex flex-col items-center justify-center gap-3 text-zinc-400">
+            <Loader2 className="animate-spin text-[#ff4e26]" size={32} />
+            <span className="text-xs font-mono">Loading PDF pages...</span>
+          </div>
+        ) : pageImages.length > 0 ? (
+          <div className="mx-auto flex w-max flex-col items-center gap-6 sm:gap-8 my-auto">
+            {pageImages.map((img, idx) => (
+              <section key={idx} className="flex flex-col items-center gap-2">
+                <div
+                  className="overflow-hidden bg-white shadow-2xl ring-1 ring-zinc-700"
+                  style={{ width: A4_WIDTH_PX * zoom }}
+                >
+                  <img
+                    src={img}
+                    alt={`${run.job_title || "Resume"} Page ${idx + 1}`}
+                    className="block h-auto w-full select-none"
+                    draggable={false}
+                  />
+                </div>
+                {pageImages.length > 1 && (
+                  <span className="text-[10px] font-mono text-zinc-400">
+                    Page {idx + 1} of {pageImages.length}
+                  </span>
+                )}
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div className="my-auto flex flex-col items-center justify-center gap-4 text-center max-w-sm bg-zinc-950 p-6 border border-zinc-800 rounded">
+            <FileText size={48} className="text-zinc-500" />
+            <p className="text-sm font-semibold text-zinc-300">
+              {error || "Could not load preview pages"}
+            </p>
+            <a href={`/api/backend/generate/${run.id}/download`} target="_blank" rel="noreferrer">
+              <button className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase bg-[#ff4e26] hover:bg-[#e03d16] text-white rounded transition-colors cursor-pointer">
+                <Download size={14} /> Download PDF File
+              </button>
+            </a>
+          </div>
+        )}
       </div>
     </div>,
     document.body
