@@ -18,6 +18,7 @@ const defaultLinks = [
 const ADMIN_CACHE_KEY = "resumer_is_admin"
 
 export function Nav() {
+  const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const { theme, setTheme, resolvedTheme } = useTheme()
