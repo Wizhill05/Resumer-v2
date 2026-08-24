@@ -9,13 +9,16 @@
   "has_links": true,
   "has_education": true,
   "has_extracurricular": true,
-  "content_slots": 5,
+  "content_slots": 6,
   "allowed_content_splits": [
-    { "projects": 2, "experience": 2, "label": "Balanced" },
-    { "projects": 2, "experience": 3, "label": "Experience Focused" },
-    { "projects": 3, "experience": 2, "label": "Project Focused" }
+    { "projects": 1, "experience": 3, "label": "Experience Focused (1 Project, 3 Experiences)" },
+    { "projects": 2, "experience": 2, "label": "Balanced (2 Projects, 2 Experiences)" },
+    { "projects": 2, "experience": 3, "label": "Experience Leaning (2 Projects, 3 Experiences)" },
+    { "projects": 3, "experience": 1, "label": "Project Focused (3 Projects, 1 Experience)" },
+    { "projects": 3, "experience": 2, "label": "Project Leaning (3 Projects, 2 Experiences)" },
+    { "projects": 3, "experience": 3, "label": "Extended Density (3 Projects, 3 Experiences)" }
   ],
-  "default_content_split": { "projects": 2, "experience": 2, "label": "Balanced" },
+  "default_content_split": { "projects": 2, "experience": 2, "label": "Balanced (2 Projects, 2 Experiences)" },
   "max_skills_categories": 6,
   "max_bullets_per_project": 3,
   "max_bullets_per_experience": 4,

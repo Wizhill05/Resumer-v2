@@ -57,6 +57,15 @@ class StorageService:
         except Exception as e:
             logger.error("StorageService: Unexpected error uploading %s: %s", key, e)
             return False
+    def download_bytes(self, key: str) -> bytes | None:
+        if not self.enabled or not self.s3_client:
+            return None
+        try:
+            res = self.s3_client.get_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
+            return res["Body"].read()
+        except Exception as e:
+            logger.error("StorageService: Error downloading %s: %s", key, e)
+            return None
 
     def file_exists(self, key: str) -> bool:
         if not self.enabled or not self.s3_client:

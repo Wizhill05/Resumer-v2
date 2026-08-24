@@ -251,6 +251,40 @@ async def test_readiness_gap_detection_and_steering(setup_test_env: User):
     assert r_full["status"] == "READY"
     assert r_full["ai_steering"]["recommended_action"] in ("PROCEED_TO_GENERATE", "PROMPT_OPTIONAL_IMPROVEMENTS_OR_GENERATE")
 
+    # Test 3 projects + 3 experiences requirement: user has 2 projects, 2 experiences -> blocked
+    r_split_33 = await check_readiness_handler(
+        template_id="personal-classic",
+        content_split={"projects": 3, "experience": 3},
+    )
+    assert r_split_33["is_ready"] is False
+    assert any("at least 3 project(s)" in reason for reason in r_split_33["blocking_reasons"])
+    assert any("at least 3 experience(s)" in reason for reason in r_split_33["blocking_reasons"])
+
+    # Add 3rd project and 3rd experience -> 3+3 becomes READY
+    await add_project_handler(name="CLI Tool", technologies=["Python", "Typer"], bullet_points=["Automation tool"])
+    await add_experience_handler(role="Consultant", organization="Gamma LLC", bullet_points=["Technical advisor"])
+    r_split_33_ready = await check_readiness_handler(
+        template_id="personal-classic",
+        content_split={"projects": 3, "experience": 3},
+    )
+    assert r_split_33_ready["is_ready"] is True
+    assert r_split_33_ready["status"] == "READY"
+
+    # Test 1 project + 3 experiences split: user has 3 projects, 3 experiences -> READY
+    r_split_13_ready = await check_readiness_handler(
+        template_id="personal-classic",
+        content_split={"projects": 1, "experience": 3},
+    )
+    assert r_split_13_ready["is_ready"] is True
+    assert r_split_13_ready["status"] == "READY"
+
+    # Test 3 projects + 1 experience split: user has 3 projects, 3 experiences -> READY
+    r_split_31_ready = await check_readiness_handler(
+        template_id="personal-classic",
+        content_split={"projects": 3, "experience": 1},
+    )
+    assert r_split_31_ready["is_ready"] is True
+    assert r_split_31_ready["status"] == "READY"
 
 # ── Surgical Resume Editing Tool Tests ───────────────────────────────────────
 

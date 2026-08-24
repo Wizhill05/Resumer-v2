@@ -7,7 +7,7 @@ import time
 import uuid
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, status, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select, case, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,8 @@ from src.schemas.generation import (
     EditorProfileOut,
     EditorSaveRequest,
     EditorSaveResponse,
+    OrphanDetectionRequest,
+    OrphanDetectionResponse,
     RenderHtmlRequest,
     RenderHtmlResponse,
     RenderPdfPreviewResponse,
@@ -364,6 +366,196 @@ async def preview_generation(
 
     pdf_bytes = HTML(string=html_rendered, base_url=font_base_url).write_pdf()
     return Response(content=pdf_bytes, media_type="application/pdf")
+
+
+@router.get("/{gen_id}/html", response_class=HTMLResponse)
+async def get_generation_html(
+    gen_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Render the full HTML resume with fonts and icons for iframe preview."""
+    result = await db.execute(
+        select(Generation).where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
+    )
+    gen = result.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+
+    if gen.status != "completed":
+        raise HTTPException(status_code=400, detail="Generation is not completed yet.")
+
+    metadata = gen.render_metadata or {}
+    tailored_resume = metadata.get("tailored_resume")
+    font_size = metadata.get("font_size")
+
+    if not tailored_resume:
+        intermediates = metadata.get("intermediate_resumes") or []
+        if intermediates and isinstance(intermediates, list):
+            tailored_resume = intermediates[-1].get("tailored_resume")
+
+    if not tailored_resume:
+        # Fall back to storage PDF redirect if raw resume JSON is not stored
+        storage = StorageService()
+        if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
+            presigned_url = storage.get_presigned_url(gen.pdf_storage_key)
+            if presigned_url:
+                return RedirectResponse(presigned_url)
+        raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
+    from src.models.profile import Profile
+    if gen.is_guest and gen.guest_input_snapshot:
+        profile_data = gen.guest_input_snapshot.get("profile") or {}
+    else:
+        profile_data = metadata.get("profile")
+        if not profile_data:
+            profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+            profile = profile_res.scalar_one_or_none()
+            if profile:
+                profile_data = {
+                    "full_name": profile.full_name,
+                    "email": profile.email,
+                    "phone": profile.phone,
+                    "location": profile.location,
+                    "linkedin_url": profile.linkedin_url,
+                    "github_url": profile.github_url,
+                    "portfolio_url": profile.portfolio_url,
+                    "subtitle": profile.subtitle,
+                }
+            else:
+                profile_data = {}
+
+    manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
+    if not manifest_obj:
+        raise HTTPException(status_code=500, detail="Template manifest missing.")
+
+    from src.services.resume_render import render_resume_html
+
+    html = render_resume_html(
+        template_id=gen.template_id,
+        profile=profile_data,
+        resume=tailored_resume,
+        font_size=font_size or manifest_obj.max_font_size,
+        page_margin_mm=manifest_obj.page_margin_mm,
+    )
+    if html is None:
+        raise HTTPException(status_code=500, detail="Template rendering failed.")
+
+    # Rewrite relative asset URLs so fonts/icons load in the browser iframe.
+    asset_base = f"/api/backend/templates/{gen.template_id}/assets"
+    html = re.sub(
+        r"""url\(['"]?(fonts/[^'")\s]+)['"]?\)""",
+        lambda m: f"url('{asset_base}/{m.group(1)}')",
+        html,
+    )
+    html = re.sub(
+        r"""src=["'](?:personal-classic/)?(icons/[^"']+)["']""",
+        lambda m: f'src="{asset_base}/{m.group(1)}"',
+        html,
+    )
+
+    return HTMLResponse(content=html)
+
+
+@router.get("/{gen_id}/pdf-pages")
+async def get_generation_pdf_pages(
+    gen_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return high-resolution A4 page images for the generation's PDF."""
+    result = await db.execute(
+        select(Generation).where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
+    )
+    gen = result.scalar_one_or_none()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Generation not found")
+
+    if gen.status != "completed":
+        raise HTTPException(status_code=400, detail="Generation is not completed yet.")
+
+    pdf_bytes = None
+
+    # 1. Try reading PDF from storage if exists
+    storage = StorageService()
+    if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
+        try:
+            pdf_bytes = storage.download_bytes(gen.pdf_storage_key)
+        except Exception:
+            pdf_bytes = None
+
+    # 2. If not in storage or storage disabled, render PDF on the fly
+    if not pdf_bytes:
+        metadata = gen.render_metadata or {}
+        tailored_resume = metadata.get("tailored_resume")
+        font_size = metadata.get("font_size")
+
+        if not tailored_resume:
+            intermediates = metadata.get("intermediate_resumes") or []
+            if intermediates and isinstance(intermediates, list):
+                tailored_resume = intermediates[-1].get("tailored_resume")
+
+        if not tailored_resume:
+            raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
+
+        from src.models.profile import Profile
+        if gen.is_guest and gen.guest_input_snapshot:
+            profile_data = gen.guest_input_snapshot.get("profile") or {}
+        else:
+            profile_data = metadata.get("profile")
+            if not profile_data:
+                profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+                profile = profile_res.scalar_one_or_none()
+                if profile:
+                    profile_data = {
+                        "full_name": profile.full_name,
+                        "email": profile.email,
+                        "phone": profile.phone,
+                        "location": profile.location,
+                        "linkedin_url": profile.linkedin_url,
+                        "github_url": profile.github_url,
+                        "portfolio_url": profile.portfolio_url,
+                        "subtitle": profile.subtitle,
+                    }
+                else:
+                    profile_data = {}
+
+        manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
+        if not manifest_obj:
+            raise HTTPException(status_code=500, detail="Template manifest missing.")
+
+        from src.services.resume_render import fit_and_render_pdf
+        try:
+            pdf_bytes, _ = fit_and_render_pdf(
+                template_id=gen.template_id,
+                profile=profile_data,
+                resume=tailored_resume,
+                manifest=manifest_obj.model_dump(),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"PDF rendering failed: {e}")
+
+    # Convert PDF bytes to page WebP images
+    import base64
+    import pypdfium2 as pdfium  # type: ignore[import-untyped]
+
+    try:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        page_images: list[str] = []
+        for page_index in range(len(pdf)):
+            page = pdf[page_index]
+            bitmap = page.render(scale=1.5, rotation=0)
+            image = bitmap.to_pil()
+            buffer = io.BytesIO()
+            image.save(buffer, format="WEBP", quality=85, method=4)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            page_images.append(f"data:image/webp;base64,{encoded}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF page rasterization failed: {e}")
+
+    return {
+        "page_images": page_images,
+        "page_count": len(page_images),
+    }
 
 
 @router.get("/{gen_id}/thumb")
@@ -736,6 +928,59 @@ async def render_pdf_preview_for_editor(
         fit_warning=not fit_result.fits_target,
     )
 
+
+
+@router.post("/{gen_id}/detect-orphans", response_model=OrphanDetectionResponse)
+async def detect_orphans_for_editor(
+    gen_id: str,
+    data: OrphanDetectionRequest | None = None,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inspect WeasyPrint layout tree for orphan lines and page overflow in a tailored resume.
+
+    Accepts optional candidate resume JSON in body to evaluate before saving, or evaluates
+    the currently saved generation state if omitted.
+    """
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
+    metadata = gen.render_metadata or {}
+
+    candidate_resume = data.resume if (data and data.resume is not None) else metadata.get("tailored_resume", {})
+    if not candidate_resume:
+        raise HTTPException(status_code=400, detail="Generation has no editable resume data.")
+
+    profile_data = (data.profile if data else None) or metadata.get("profile")
+    if not profile_data:
+        from src.models.profile import Profile
+
+        profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+        profile = profile_res.scalar_one_or_none()
+        profile_data = {
+            "full_name": profile.full_name if profile else "",
+            "email": profile.email if profile else None,
+            "phone": profile.phone if profile else None,
+            "location": profile.location if profile else None,
+            "linkedin_url": profile.linkedin_url if profile else None,
+            "github_url": profile.github_url if profile else None,
+            "portfolio_url": profile.portfolio_url if profile else None,
+            "subtitle": profile.subtitle if profile else None,
+        }
+
+    font_size = data.font_size if (data and data.font_size is not None) else metadata.get("font_size")
+
+    from src.services.resume_render import detect_resume_orphans
+
+    result = detect_resume_orphans(
+        template_id=gen.template_id,
+        profile=profile_data,
+        resume=candidate_resume,
+        font_size=font_size,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Orphan detection failed."))
+
+    result["generation_id"] = str(gen.id)
+    return OrphanDetectionResponse(**result)
 
 @router.post("/{gen_id}/save", response_model=EditorSaveResponse)
 async def save_editor(

@@ -23,16 +23,19 @@ class TemplateManifest(BaseModel):
 
     # ── Content slot system ────────────────────────────────────────────────────
     # Total number of project + experience slots available in this template.
-    content_slots: int = 4
+    content_slots: int = 6
     # Each element is one allowed distribution that the user may choose.
     # Backend enforces exactly the chosen split; AI is not trusted to self-limit.
     allowed_content_splits: list[ContentSplit] = [
-        ContentSplit(projects=1, experience=3, label="Experience focused"),
-        ContentSplit(projects=2, experience=2, label="Balanced"),
-        ContentSplit(projects=3, experience=1, label="Project focused"),
+        ContentSplit(projects=1, experience=3, label="Experience Focused (1 Project, 3 Experiences)"),
+        ContentSplit(projects=2, experience=2, label="Balanced (2 Projects, 2 Experiences)"),
+        ContentSplit(projects=2, experience=3, label="Experience Leaning (2 Projects, 3 Experiences)"),
+        ContentSplit(projects=3, experience=1, label="Project Focused (3 Projects, 1 Experience)"),
+        ContentSplit(projects=3, experience=2, label="Project Leaning (3 Projects, 2 Experiences)"),
+        ContentSplit(projects=3, experience=3, label="Extended Density (3 Projects, 3 Experiences)"),
     ]
     # Which split is pre-selected for the user (must exist in allowed_content_splits).
-    default_content_split: ContentSplit = ContentSplit(projects=2, experience=2, label="Balanced")
+    default_content_split: ContentSplit = ContentSplit(projects=2, experience=2, label="Balanced (2 Projects, 2 Experiences)")
 
     # Kept for bullet-level limits (independent of slot count).
     max_skills_categories: int = 5

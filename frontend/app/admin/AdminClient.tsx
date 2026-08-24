@@ -58,6 +58,7 @@ type AnalyticsData = {
   keys_status: {
     openrouter?: { configured_keys_count: number; model?: string; base_url?: string }
     pro?: { configured_keys_count: number; model?: string; base_url?: string }
+    cerebras?: { configured_keys_count: number; model?: string; base_url?: string }
     google: { configured_keys_count: number; model?: string }
   }
   llm_metrics: MetricSummary
@@ -205,68 +206,23 @@ type ModelSettingsResponse = {
   pro?: ModelTierConfig
 }
 
-const PRO_MODEL_PRESETS = [
+const UNIFIED_MODEL_PRESETS = [
   {
-    name: "OmniRoute — Gemini 3.7 Flash Tiered (Recommended)",
+    name: "OmniRoute — Gemini 3.7 Flash Tiered",
     baseUrl: "https://omniroute-latest-rmm0.onrender.com/",
     model: "antigravity/gemini-3.7-flash-tiered",
     fallbackModel: "gemma-4-31b-it",
   },
   {
-    name: "OpenRouter — Anthropic Claude 3.5 Sonnet",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "anthropic/claude-3.5-sonnet",
-    fallbackModel: "gemma-4-31b-it",
-  },
-  {
-    name: "OpenRouter — OpenAI GPT-4o",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "openai/gpt-4o",
-    fallbackModel: "gemma-4-31b-it",
-  },
-  {
-    name: "OpenRouter — DeepSeek V3 (Chat)",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "deepseek/deepseek-chat",
-    fallbackModel: "gemma-4-31b-it",
-  },
-  {
-    name: "OpenRouter — Google Gemini 2.0 Flash",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "google/gemini-2.0-flash-001",
-    fallbackModel: "gemma-4-31b-it",
-  },
-]
-
-const FREE_MODEL_PRESETS = [
-  {
-    name: "OpenRouter — Poolside Laguna XS 2.1 (Free)",
+    name: "OpenRouter — Poolside Laguna XS 2.1",
     baseUrl: "https://openrouter.ai/api/v1",
     model: "poolside/laguna-xs-2.1:free",
     fallbackModel: "gemma-4-31b-it",
   },
   {
-    name: "OpenRouter — Meta Llama 3.3 70B Instruct",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "meta-llama/llama-3.3-70b-instruct",
-    fallbackModel: "gemma-4-31b-it",
-  },
-  {
-    name: "OpenRouter — DeepSeek R1 Distill Llama 70B (Free)",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "deepseek/deepseek-r1-distill-llama-70b:free",
-    fallbackModel: "gemma-4-31b-it",
-  },
-  {
-    name: "OpenRouter — Google Gemini 2.0 Flash Exp (Free)",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "google/gemini-2.0-flash-exp:free",
-    fallbackModel: "gemma-4-31b-it",
-  },
-  {
-    name: "OpenRouter — Qwen 2.5 72B Instruct",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "qwen/qwen-2.5-72b-instruct",
+    name: "Cerebras — Qwen 3.8 27B / Qwen 2.5",
+    baseUrl: "https://api.cerebras.ai/v1",
+    model: "qwen-3.8-27b",
     fallbackModel: "gemma-4-31b-it",
   },
 ]
@@ -1138,26 +1094,32 @@ export function AdminClient() {
                 {/* API Key pool Status */}
                 <div className="panel-strong p-5 space-y-4">
                   <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">LLM Provider Status</h3>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
                       <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">
-                        {analytics.keys_status.pro?.base_url?.includes("openrouter.ai") ? "OpenRouter (Pro)" : (analytics.keys_status.pro?.base_url?.includes("omniroute") ? "OmniRoute (Pro)" : "Pro Endpoint")}
+                        {analytics.keys_status.pro?.base_url?.includes("openrouter.ai") ? "OpenRouter (Pro)" : (analytics.keys_status.pro?.base_url?.includes("omniroute") ? "OmniRoute" : "Pro Endpoint")}
                       </p>
                       <p className="text-sm font-black text-[#ff4e26] mt-1 truncate" title={analytics.keys_status.pro?.model || "antigravity/gemini-3.7-flash-tiered"}>
                         {analytics.keys_status.pro?.model ? (analytics.keys_status.pro.model.includes("/") ? analytics.keys_status.pro.model.split("/").slice(1).join("/") : analytics.keys_status.pro.model) : "Gemini 3.7 Tiered"}
                       </p>
-                      <span className="text-[9px] text-green-600 font-bold uppercase">Pro Tier</span>
+                      <span className="text-[9px] text-green-600 font-bold uppercase">{analytics.keys_status.pro?.configured_keys_count ?? 0} Keys</span>
                     </div>
                     <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
-                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">OpenRouter Keys</p>
+                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">OpenRouter Pool</p>
                       <p className="text-sm font-black text-black dark:text-white mt-1 truncate" title={analytics.keys_status.openrouter?.model || "poolside/laguna-xs-2.1:free"}>
-                        {analytics.keys_status.openrouter?.model ? (analytics.keys_status.openrouter.model.includes("/") ? analytics.keys_status.openrouter.model.split("/").slice(1).join("/") : analytics.keys_status.openrouter.model) : "Laguna XS"} ({analytics.keys_status.openrouter?.configured_keys_count ?? 0} keys)
+                        {analytics.keys_status.openrouter?.model ? (analytics.keys_status.openrouter.model.includes("/") ? analytics.keys_status.openrouter.model.split("/").slice(1).join("/") : analytics.keys_status.openrouter.model) : "Laguna XS"}
                       </p>
+                      <span className="text-[9px] text-zinc-500 font-bold uppercase">{analytics.keys_status.openrouter?.configured_keys_count ?? 0} Keys</span>
+                    </div>
+                    <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
+                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">Cerebras Fast AI</p>
+                      <p className="text-sm font-black text-black dark:text-white mt-1">Qwen Engine</p>
+                      <span className="text-[9px] text-indigo-600 dark:text-indigo-400 font-bold uppercase">{analytics.keys_status.cerebras?.configured_keys_count ?? 0} Keys</span>
                     </div>
                     <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
                       <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">Google Fallback</p>
-                      <p className="text-lg font-black text-black dark:text-white mt-1">{analytics.keys_status.google.configured_keys_count} keys</p>
-                      <span className="text-[9px] text-amber-600 font-bold uppercase">Fallback</span>
+                      <p className="text-sm font-black text-black dark:text-white mt-1">Gemma / GenAI</p>
+                      <span className="text-[9px] text-amber-600 font-bold uppercase">{analytics.keys_status.google.configured_keys_count} Keys</span>
                     </div>
                   </div>
                   <div className="flex justify-between items-center text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold">
@@ -1228,11 +1190,11 @@ export function AdminClient() {
                     <h4 className="text-sm font-black uppercase text-black dark:text-white">Pro Accounts (Premium Tier)</h4>
                   </div>
                   <span className="px-2 py-0.5 font-bold uppercase text-[9px] bg-red-100 dark:bg-red-950 text-[#ff4e26] border border-[#ff4e26]">
-                    {proBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (proBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : "Custom Gateway")}
+                    {proBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (proBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : (proBaseUrl.includes("cerebras.ai") ? "Cerebras Cloud" : "Custom Gateway"))}
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Used exclusively for Pro users. Configure high-capacity OpenRouter models, OmniRoute Gemini 3.7, or custom endpoints.
+                  Used exclusively for Pro users. Select any curated preset or configure a custom endpoint.
                 </p>
 
                   {/* Pro Model Presets */}
@@ -1241,24 +1203,24 @@ export function AdminClient() {
                     <select
                       className="w-full h-8 text-xs border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 mt-1 font-sans"
                       onChange={(e) => {
-                        const preset = PRO_MODEL_PRESETS.find(p => p.model === e.target.value)
+                        const preset = UNIFIED_MODEL_PRESETS.find(p => p.model === e.target.value)
                         if (preset) {
                           setProBaseUrl(preset.baseUrl)
                           setProModel(preset.model)
                           setProFallbackModel(preset.fallbackModel)
                         }
                       }}
-                      value={PRO_MODEL_PRESETS.some(p => p.model === proModel) ? proModel : ""}
+                      value={UNIFIED_MODEL_PRESETS.some(p => p.model === proModel) ? proModel : ""}
                     >
                       <option value="">Choose a pre-registered Pro model...</option>
-                      {PRO_MODEL_PRESETS.map((p) => (
+                      {UNIFIED_MODEL_PRESETS.map((p) => (
                         <option key={p.model} value={p.model}>
                           {p.name}
                         </option>
                       ))}
                     </select>
                     <div className="flex flex-wrap gap-1.5 pt-1.5">
-                      {PRO_MODEL_PRESETS.map((p) => (
+                      {UNIFIED_MODEL_PRESETS.map((p) => (
                         <button
                           key={p.model}
                           type="button"
@@ -1269,7 +1231,7 @@ export function AdminClient() {
                           }}
                           className={`text-[10px] px-2 py-0.5 font-bold border transition-colors ${proModel === p.model ? "bg-[#ff4e26] text-white border-[#ff4e26]" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700 hover:border-zinc-500"}`}
                         >
-                          {p.model.split("/").pop()}
+                          {p.name.split("—")[0].trim()}
                         </button>
                       ))}
                     </div>
@@ -1351,13 +1313,12 @@ export function AdminClient() {
                     <h4 className="text-sm font-black uppercase text-black dark:text-white">Free Accounts (Standard Tier)</h4>
                   </div>
                   <span className="px-2 py-0.5 font-bold uppercase text-[9px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-300 dark:border-zinc-700">
-                    OpenRouter Pool
+                    {freeBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (freeBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : (freeBaseUrl.includes("cerebras.ai") ? "Cerebras Cloud" : "Custom Gateway"))}
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Used for standard registered users and guests. Multi-key round-robin rotation via OpenRouter (sourced from server environment).
+                  Used for standard registered users and guests. Select any curated preset or configure a custom endpoint.
                 </p>
-
 
                   {/* Free Model Presets */}
                   <div>
@@ -1365,24 +1326,24 @@ export function AdminClient() {
                     <select
                       className="w-full h-8 text-xs border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 mt-1 font-sans"
                       onChange={(e) => {
-                        const preset = FREE_MODEL_PRESETS.find(p => p.model === e.target.value)
+                        const preset = UNIFIED_MODEL_PRESETS.find(p => p.model === e.target.value)
                         if (preset) {
                           setFreeBaseUrl(preset.baseUrl)
                           setFreeModel(preset.model)
                           setFreeFallbackModel(preset.fallbackModel)
                         }
                       }}
-                      value={FREE_MODEL_PRESETS.some(p => p.model === freeModel) ? freeModel : ""}
+                      value={UNIFIED_MODEL_PRESETS.some(p => p.model === freeModel) ? freeModel : ""}
                     >
                       <option value="">Choose a pre-registered Free model...</option>
-                      {FREE_MODEL_PRESETS.map((p) => (
+                      {UNIFIED_MODEL_PRESETS.map((p) => (
                         <option key={p.model} value={p.model}>
                           {p.name}
                         </option>
                       ))}
                     </select>
                     <div className="flex flex-wrap gap-1.5 pt-1.5">
-                      {FREE_MODEL_PRESETS.map((p) => (
+                      {UNIFIED_MODEL_PRESETS.map((p) => (
                         <button
                           key={p.model}
                           type="button"
@@ -1393,7 +1354,7 @@ export function AdminClient() {
                           }}
                           className={`text-[10px] px-2 py-0.5 font-bold border transition-colors ${freeModel === p.model ? "bg-black dark:bg-white text-white dark:text-black border-black dark:border-white" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700 hover:border-zinc-500"}`}
                         >
-                          {p.model.split("/").pop()}
+                          {p.name.split("—")[0].trim()}
                         </button>
                       ))}
                     </div>

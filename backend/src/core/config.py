@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # tries json.loads on a bare comma-separated value like "key1,key2".
     OPENROUTER_API_KEYS: str = Field(default="", alias="OPENROUTER_API_KEYS")
     GOOGLE_API_KEYS: str = Field(default="", alias="GOOGLE_API_KEYS")
+    CEREBRAS_API_KEYS: str = Field(default="", alias="CEREBRAS_API_KEYS")
+    PRO_MODEL_API_KEYS: str = Field(default="", alias="PRO_MODEL_API_KEYS")
 
     FREE_MODEL_NAME: str = "poolside/laguna-xs-2.1:free"
     FREE_MODEL_BASE_URL: str = "https://openrouter.ai/api/v1"
@@ -50,10 +52,19 @@ class Settings(BaseSettings):
     def google_api_keys(self) -> list[str]:
         return _parse_keys(self.GOOGLE_API_KEYS)
 
+    @property
+    def cerebras_api_keys(self) -> list[str]:
+        return _parse_keys(self.CEREBRAS_API_KEYS)
+
+    @property
+    def pro_model_api_keys(self) -> list[str]:
+        keys = _parse_keys(self.PRO_MODEL_API_KEYS)
+        if not keys and self.PRO_MODEL_API_KEY and self.PRO_MODEL_API_KEY.strip():
+            return [self.PRO_MODEL_API_KEY.strip()]
+        return keys
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = ""
     FILE_LINK_TTL_HOURS: int = 168  # 7 days default
-
     ADMIN_EMAILS: str = "admin@example.com,user@example.com"
     DEFAULT_DAILY_CAP: int = 5
     DEFAULT_MONTHLY_CAP: int = 150

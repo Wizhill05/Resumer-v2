@@ -216,3 +216,48 @@ async def test_admin_user_tier_update(client: AsyncClient, async_db: AsyncSessio
         assert res2.json()["is_pro"] is False
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
+
+@pytest.mark.asyncio
+async def test_llm_cerebras_instantiation():
+    from src.core.api_key_pool import cerebras_pool
+    cerebras_pool.reload_keys(["csk-testkey-12345"])
+
+    service = LLMConfigService()
+    service._cache["free"].base_url = "https://api.cerebras.ai/v1"
+    service._cache["free"].model = "qwen-3.8-27b"
+    service._cache["free"].provider_name = "cerebras"
+
+    llm = service.get_llm(tier="free")
+    assert llm.model_name == "qwen-3.8-27b"
+    assert str(llm.openai_api_base).rstrip("/") == "https://api.cerebras.ai/v1"
+    assert llm.openai_api_key.get_secret_value() == "csk-testkey-12345"
+
+
+@pytest.mark.asyncio
+async def test_api_key_pool_quarantine():
+    from src.core.api_key_pool import ApiKeyPool
+    pool = ApiKeyPool(["key-A", "key-B", "key-C"], "TestPool")
+
+    k1 = pool.next()
+    assert k1 == "key-A"
+    # Quarantine key-A
+    pool.mark_failure("key-A", cooldown_seconds=10.0)
+
+    # Next calls should skip key-A
+    k2 = pool.next()
+    assert k2 == "key-B"
+    k3 = pool.next()
+    assert k3 == "key-C"
+    k4 = pool.next()
+    assert k4 == "key-B"  # key-A still in quarantine
+
+
+@pytest.mark.asyncio
+async def test_dynamic_fallback_llm():
+    service = LLMConfigService()
+    service._cache["pro"].fallback_provider = "openrouter"
+    service._cache["pro"].fallback_model = "poolside/laguna-xs-2.1:free"
+
+    fallback_llm = service.get_fallback_llm(tier="pro", api_key_override="test-openrouter-key")
+    assert fallback_llm.model_name == "poolside/laguna-xs-2.1:free"
+    assert str(fallback_llm.openai_api_base).rstrip("/") == "https://openrouter.ai/api/v1"

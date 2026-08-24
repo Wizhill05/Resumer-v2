@@ -27,11 +27,14 @@ const hasConsent = () =>
 
 type Section = "profile" | "experience" | "projects" | "education" | "extracurriculars" | "generate"
 
-type FocusMode = "balanced" | "project" | "experience"
+type FocusMode = "balanced" | "exp_focus" | "exp_leaning" | "proj_focus" | "proj_leaning" | "extended"
 const FOCUS_OPTIONS: { id: FocusMode; label: string; desc: string; projects: number; experience: number }[] = [
-  { id: "balanced",   label: "Balanced",        desc: "2 projects + 2 experience", projects: 2, experience: 2 },
-  { id: "project",    label: "Project Focus",    desc: "3 projects + 2 experience", projects: 3, experience: 2 },
-  { id: "experience", label: "Experience Focus", desc: "2 projects + 3 experience", projects: 2, experience: 3 },
+  { id: "balanced",    label: "Balanced",             desc: "2 projects + 2 experiences (Classic format)", projects: 2, experience: 2 },
+  { id: "exp_focus",   label: "Experience Focused",   desc: "1 project + 3 experiences (Deep work history)", projects: 1, experience: 3 },
+  { id: "exp_leaning", label: "Experience Leaning",   desc: "2 projects + 3 experiences (Experienced roles)", projects: 2, experience: 3 },
+  { id: "proj_focus",  label: "Project Focused",      desc: "3 projects + 1 experience (Portfolio showcase)", projects: 3, experience: 1 },
+  { id: "proj_leaning",label: "Project Leaning",      desc: "3 projects + 2 experiences (Technical depth)", projects: 3, experience: 2 },
+  { id: "extended",    label: "Extended Density",     desc: "3 projects + 3 experiences (Full density)", projects: 3, experience: 3 },
 ]
 
 // ── Consent Banner ────────────────────────────────────────────────────────────
@@ -343,7 +346,7 @@ function ExperiencePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraf
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Experience</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add work experience entries. At least 2 needed for most focus modes.</p>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add work experience entries. At least 1-3 needed depending on selected focus.</p>
       </div>
 
       {draft.experiences.length === 0 && (
@@ -424,7 +427,7 @@ function ProjectsPanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft:
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Projects</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add projects. At least 2 needed for most focus modes.</p>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add projects. At least 1-3 needed depending on selected focus.</p>
       </div>
 
       {draft.projects.length === 0 && (

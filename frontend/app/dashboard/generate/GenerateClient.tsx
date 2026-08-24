@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertCircle, CheckCircle2, FileText, FolderGit2, Briefcase, Loader2, Lock, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw } from "lucide-react"
+import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info } from "lucide-react"
 import Link from "next/link"
 type Step = "input" | "submitted"
 
@@ -15,7 +15,6 @@ type ContentSplit = {
   experience: number
   label: string
 }
-
 type TemplateItem = {
   id: string
   name: string
@@ -27,33 +26,41 @@ type TemplateItem = {
 
 type ProfileEntry = { id?: string }
 const nodeProgressMap: Record<string, number> = {
-  intent_parser: 15,
-  section_orchestrator: 25,
-  bullet_generator: 45,
-  experience_tailor: 55,
-  project_tailor: 65,
-  education_tailor: 72,
-  extracurricular_tailor: 78,
-  skills_tailor: 83,
-  renderer: 90,
-  orphan_repair: 94,
-  content_reduction: 97,
-  saver: 100,
+  job_analysis: 10,
+  selection: 18,
+  summary_skills: 26,
+  experience_writer: 34,
+  experience: 34,
+  projects_writer: 42,
+  project: 42,
+  extracurricular_writer: 50,
+  extracurricular: 50,
+  assembly: 58,
+  renderer: 68,
+  render: 68,
+  orphan_repair: 76,
+  content_reduction: 84,
+  saver: 95,
+  save_artifacts: 95,
 }
 
 const nodeLabels: Record<string, string> = {
-  intent_parser: "Analyzing job posting & extracting target keywords",
-  section_orchestrator: "Selecting relevant source experiences and projects",
-  bullet_generator: "Rewriting impact metric bullet points with AI",
-  experience_tailor: "Tailoring work history to target job signals",
-  project_tailor: "Optimizing technical projects & stack relevance",
-  education_tailor: "Aligning coursework and education",
-  extracurricular_tailor: "Formatting achievements and leadership",
-  skills_tailor: "Extracting ATS-matching skill categories",
-  renderer: "Rendering ATS-compliant 1-page PDF layout",
-  orphan_repair: "Polishing typography and eliminating visual orphans",
-  content_reduction: "Adjusting micro-spacing for strict 1-page fit",
-  saver: "Finalizing and uploading high-resolution PDF",
+  job_analysis: "Analyzing job post",
+  selection: "Selecting content",
+  summary_skills: "Writing summary & skills",
+  experience_writer: "Writing experience",
+  experience: "Writing experience",
+  projects_writer: "Writing projects",
+  project: "Writing projects",
+  extracurricular_writer: "Writing extracurriculars",
+  extracurricular: "Writing extracurriculars",
+  assembly: "Assembling resume",
+  renderer: "Rendering PDF",
+  render: "Rendering PDF",
+  orphan_repair: "Fixing layout issues",
+  content_reduction: "Optimizing fit",
+  saver: "Saving files",
+  save_artifacts: "Saving files",
 }
 
 export function GenerateClient() {
@@ -66,11 +73,13 @@ export function GenerateClient() {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
-  const [sliderIndex, setSliderIndex] = useState<number>(1)
+  const [projectsCount, setProjectsCount] = useState<number>(2)
+  const [experienceCount, setExperienceCount] = useState<number>(2)
+  const [adjustmentNotice, setAdjustmentNotice] = useState<string | null>(null)
   const [advancedExpanded, setAdvancedExpanded] = useState(false)
   const [createdRunId, setCreatedRunId] = useState<string | null>(null)
-  const [livePercent, setLivePercent] = useState(15)
-  const [liveStepLabel, setLiveStepLabel] = useState("Starting generation pipeline")
+  const [livePercent, setLivePercent] = useState(10)
+  const [liveStepLabel, setLiveStepLabel] = useState("Starting")
   const [isGenerationComplete, setIsGenerationComplete] = useState(false)
 
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<TemplateItem[]>({
@@ -116,61 +125,52 @@ export function GenerateClient() {
     [templates, selectedTemplate]
   )
 
-  const splits = activeTemplate?.allowed_content_splits ?? []
+  const numProfileProjects = profileProjects.length
+  const numProfileExperiences = profileExperiences.length
+  const hasEnoughProjects = numProfileProjects >= projectsCount
+  const hasEnoughExperiences = numProfileExperiences >= experienceCount
+  const isMissingMaterial = !hasEnoughProjects || !hasEnoughExperiences
 
-  const sliderOptions = useMemo(() => {
-    return [
-      {
-        name: "Project Focus",
-        projects: 3,
-        experience: 2,
-        enabled: profileProjects.length >= 3 && profileExperiences.length >= 2,
-        desc: "Best when projects prove the role fit.",
-      },
-      {
-        name: "Balanced",
-        projects: 2,
-        experience: 2,
-        enabled: profileProjects.length >= 2 && profileExperiences.length >= 2,
-        desc: "Good default for most applications.",
-      },
-      {
-        name: "Experience Focus",
-        projects: 2,
-        experience: 3,
-        enabled: profileProjects.length >= 2 && profileExperiences.length >= 3,
-        desc: "Best when work history is strongest.",
-      },
-    ]
-  }, [profileProjects.length, profileExperiences.length])
+  const handleProjectsChange = (delta: number) => {
+    const target = projectsCount + delta
+    if (target < 1 || target > 3) return
 
-  const selectedFocusIndex = useMemo(() => {
-    if (sliderOptions[sliderIndex]?.enabled) return sliderIndex
+    if (target === 1) {
+      setExperienceCount(3)
+      setProjectsCount(1)
+      setAdjustmentNotice("1 project requires min. 3 experiences for 1-page ATS layout")
+      return
+    } else if (target === 2) {
+      if (experienceCount === 1) {
+        setExperienceCount(2)
+        setProjectsCount(2)
+        setAdjustmentNotice("Shifted experience to 2 (1 experience requires 3 projects)")
+        return
+      }
+    }
+    setProjectsCount(target)
+    setAdjustmentNotice(null)
+  }
 
-    const defaultSplit = activeTemplate?.default_content_split
-    const defaultIdx = defaultSplit
-      ? sliderOptions.findIndex(
-          (opt) => opt.projects === defaultSplit.projects && opt.experience === defaultSplit.experience
-        )
-      : -1
+  const handleExperienceChange = (delta: number) => {
+    const target = experienceCount + delta
+    if (target < 1 || target > 3) return
 
-    if (defaultIdx !== -1 && sliderOptions[defaultIdx]?.enabled) return defaultIdx
-
-    const firstEnabled = sliderOptions.findIndex((opt) => opt.enabled)
-    return firstEnabled !== -1 ? firstEnabled : sliderIndex
-  }, [activeTemplate?.default_content_split, sliderIndex, sliderOptions])
-
-  const activeOption = sliderOptions[selectedFocusIndex]
-  const projectsCount = activeOption?.projects ?? 2
-  const experienceCount = activeOption?.experience ?? 2
-
-  const getLockReason = (opt: { projects: number; experience: number }) => {
-    const missingProjects = Math.max(0, opt.projects - profileProjects.length)
-    const missingExperience = Math.max(0, opt.experience - profileExperiences.length)
-    const missing = []
-    if (missingProjects) missing.push(`${missingProjects} more project${missingProjects === 1 ? "" : "s"}`)
-    if (missingExperience) missing.push(`${missingExperience} more experience entr${missingExperience === 1 ? "y" : "ies"}`)
-    return missing.length ? `Locked: add ${missing.join(" and ")} to your profile.` : "Available"
+    if (target === 1) {
+      setProjectsCount(3)
+      setExperienceCount(1)
+      setAdjustmentNotice("1 experience requires min. 3 projects for 1-page ATS layout")
+      return
+    } else if (target === 2) {
+      if (projectsCount === 1) {
+        setProjectsCount(2)
+        setExperienceCount(2)
+        setAdjustmentNotice("Shifted projects to 2 (1 project requires 3 experiences)")
+        return
+      }
+    }
+    setExperienceCount(target)
+    setAdjustmentNotice(null)
   }
 
   const handleGenerate = async (e: React.FormEvent) => {
@@ -208,8 +208,8 @@ export function GenerateClient() {
       if (runId) setCreatedRunId(runId)
 
       queryClient.invalidateQueries({ queryKey: ["history"] })
-      setLivePercent(15)
-      setLiveStepLabel("Starting generation pipeline")
+      setLivePercent(10)
+      setLiveStepLabel("Starting")
       setIsGenerationComplete(false)
       setStep("submitted")
     } catch (err) {
@@ -236,7 +236,7 @@ export function GenerateClient() {
           since = log.id
           if (log.level === "status" && (log.message === "completed" || log.message === "failed")) {
             setLivePercent(100)
-            setLiveStepLabel(log.message === "completed" ? "Resume generation complete" : "Generation failed")
+            setLiveStepLabel(log.message === "completed" ? "Resume complete" : "Generation failed")
             setIsGenerationComplete(true)
             queryClient.invalidateQueries({ queryKey: ["history"] })
             return
@@ -250,7 +250,7 @@ export function GenerateClient() {
         }
         if (data.status === "completed" || data.status === "failed") {
           setLivePercent(100)
-          setLiveStepLabel(data.status === "completed" ? "Resume generation complete" : "Generation failed")
+          setLiveStepLabel(data.status === "completed" ? "Resume complete" : "Generation failed")
           setIsGenerationComplete(true)
           queryClient.invalidateQueries({ queryKey: ["history"] })
         }
@@ -339,7 +339,124 @@ export function GenerateClient() {
             />
           </div>
 
-          {/* 3. Optional Collapsible Advanced Options Accordion */}
+          {/* 3. Content Split (Projects & Experience Counters) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
+                3. Content Split
+              </Label>
+              <span className="text-[11px] font-mono text-zinc-400">
+                {projectsCount} Proj &bull; {experienceCount} Exp
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {/* Projects Counter */}
+              <div className="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FolderGit2 size={16} className="text-[#ff4e26] shrink-0" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-extrabold uppercase truncate text-zinc-900 dark:text-zinc-100">
+                      Projects
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      {numProfileProjects} in profile
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={projectsCount <= 1}
+                    onClick={() => handleProjectsChange(-1)}
+                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
+                    aria-label="Decrease projects"
+                  >
+                    <Minus size={13} />
+                  </button>
+                  <span className="w-5 text-center font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
+                    {projectsCount}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={projectsCount >= 3}
+                    onClick={() => handleProjectsChange(1)}
+                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
+                    aria-label="Increase projects"
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Experience Counter */}
+              <div className="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Briefcase size={16} className="text-[#ff4e26] shrink-0" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-extrabold uppercase truncate text-zinc-900 dark:text-zinc-100">
+                      Experience
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      {numProfileExperiences} in profile
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={experienceCount <= 1}
+                    onClick={() => handleExperienceChange(-1)}
+                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
+                    aria-label="Decrease experience"
+                  >
+                    <Minus size={13} />
+                  </button>
+                  <span className="w-5 text-center font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
+                    {experienceCount}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={experienceCount >= 3}
+                    onClick={() => handleExperienceChange(1)}
+                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
+                    aria-label="Increase experience"
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Auto-shift notice if triggered */}
+            {adjustmentNotice && (
+              <p className="text-[11px] font-mono text-[#ff4e26] flex items-center gap-1.5 pt-0.5">
+                <Info size={12} className="shrink-0" />
+                <span>{adjustmentNotice}</span>
+              </p>
+            )}
+
+            {/* Missing profile material warning */}
+            {isMissingMaterial && (
+              <p className="text-[11px] font-mono text-amber-600 dark:text-amber-400 flex items-center justify-between gap-1 pt-0.5">
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle size={12} className="shrink-0" />
+                  <span>
+                    Need {!hasEnoughProjects ? `${projectsCount - numProfileProjects} more project(s)` : ""}
+                    {!hasEnoughProjects && !hasEnoughExperiences ? " & " : ""}
+                    {!hasEnoughExperiences ? `${experienceCount - numProfileExperiences} more experience(s)` : ""} in profile
+                  </span>
+                </span>
+                <Link href="/profile" className="underline font-bold hover:text-amber-500">
+                  Add &rarr;
+                </Link>
+              </p>
+            )}
+          </div>
+
+          {/* 4. Optional Collapsible Advanced Options Accordion (Keywords, Instructions, Email) */}
           <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:p-4">
             <button
               type="button"
@@ -348,47 +465,13 @@ export function GenerateClient() {
             >
               <span className="flex items-center gap-2">
                 <SlidersHorizontal size={14} className="text-[#ff4e26]" />
-                Customize Focus &amp; Keywords (Optional)
+                4. Additional Customization &amp; Keywords (Optional)
               </span>
               {advancedExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
 
             {advancedExpanded && (
               <div className="mt-3.5 space-y-4 border-t border-zinc-200 pt-3.5 dark:border-zinc-800">
-                {/* Focus Split */}
-                {activeTemplate && splits.length > 1 && (
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase text-zinc-700 dark:text-zinc-300">Content weighting</Label>
-                    <div className="grid gap-2">
-                      {sliderOptions.map((opt, idx) => {
-                        const selected = selectedFocusIndex === idx
-                        return (
-                          <button
-                            key={opt.name}
-                            type="button"
-                            disabled={!opt.enabled}
-                            onClick={() => opt.enabled && setSliderIndex(idx)}
-                            className={`flex items-center justify-between border p-2.5 text-left text-xs transition-colors cursor-pointer ${
-                              selected && opt.enabled
-                                ? "border-zinc-950 dark:border-zinc-400 bg-white dark:bg-zinc-800 font-extrabold"
-                                : opt.enabled
-                                ? "border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 hover:border-zinc-400"
-                                : "border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800/20 text-zinc-400"
-                            }`}
-                          >
-                            <span>
-                              <span className="uppercase">{opt.name}</span>
-                              <span className="ml-2 font-normal text-zinc-500 dark:text-zinc-400">({opt.projects} projects, {opt.experience} experiences)</span>
-                            </span>
-                            {selected && opt.enabled && <CheckCircle2 size={14} className="text-[#ff4e26]" />}
-                            {!opt.enabled && <span className="text-[10px] text-red-500 font-bold flex items-center gap-1"><Lock size={10} /> Locked</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 {/* Keywords & Instructions */}
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-1.5">
@@ -468,8 +551,8 @@ export function GenerateClient() {
               <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white md:text-2xl">
                 {isGenerationComplete ? "Your Resume is Ready" : "Tailoring Your Resume"}
               </h3>
-              <p className="mt-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400 md:text-sm">
-                {liveStepLabel}
+              <p className="mt-1 text-xs font-medium text-amber-500 dark:text-amber-400 md:text-sm">
+                {liveStepLabel} ({livePercent}%)
               </p>
             </div>
 
