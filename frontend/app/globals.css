@@ -600,29 +600,29 @@
 @keyframes mobile-nav-enter {
   0% {
     opacity: 0;
-    transform: translateY(-16px) scale(0.98);
+    transform: translateY(-8px);
   }
   100% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 @keyframes mobile-nav-exit {
   0% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
   100% {
     opacity: 0;
-    transform: translateY(-16px) scale(0.98);
+    transform: translateY(-8px);
   }
 }
 
 @keyframes mobile-nav-item-enter {
   0% {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(8px);
   }
   100% {
     opacity: 1;
@@ -642,15 +642,15 @@
 }
 
 .mobile-nav-enter {
-  animation: mobile-nav-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: mobile-nav-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .mobile-nav-exit {
-  animation: mobile-nav-exit 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: mobile-nav-exit 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .mobile-nav-item {
-  animation: mobile-nav-item-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: mobile-nav-item-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .mobile-nav-item-exit {
