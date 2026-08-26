@@ -316,7 +316,19 @@ async def get_prompt_config(db: AsyncSession, name: str, default_system: str, de
         result = await db.execute(select(PromptConfig).where(PromptConfig.name == name))
         cfg = result.scalar_one_or_none()
         if cfg:
-            if "OUTPUT CONTRACT:" not in cfg.system_prompt:
+            # Refresh stale saved contracts. The orphan repair node currently
+            # expects one `replacement` per bullet; older saved prompts may
+            # still request the abandoned multi-variant schema.
+            prompt_text = f"{cfg.system_prompt or ''}\n{cfg.user_prompt or ''}"
+            orphan_contract_ready = (
+                name != "orphan_repair"
+                or (
+                    '"replacement"' in prompt_text
+                    and "one replacement" in prompt_text.lower()
+                    and "small" not in prompt_text.lower()
+                )
+            )
+            if "OUTPUT CONTRACT:" not in (cfg.system_prompt or "") or not orphan_contract_ready:
                 cfg.system_prompt = default_system
                 cfg.user_prompt = default_user
                 await db.commit()
@@ -1278,6 +1290,11 @@ async def orphan_repair_node(
         section_key, item_idx, bullet_idx, original_md = match
         hkey = history_key(section_key, item_idx, bullet_idx)
 
+        # Oversize bullets are only actionable when they correspond to a
+        # previous repair; otherwise leave them to page-fit/content reduction.
+        if orphan.get("fix_type") == "oversize" and hkey not in repair_history:
+            continue
+
         # ── Rollback check: if this bullet was repaired before and is now >2 lines,
         #    revert to the pre-repair original instead of trying again.
         if hkey in repair_history and orphan.get("renderedLines", 0) > 2:
@@ -1307,40 +1324,22 @@ async def orphan_repair_node(
         else:
             context = "Extracurricular activity"
 
-        fix_type = orphan["fix_type"]
-        chars_per_line = orphan["charsPerLine"]
-        target_min = orphan["targetCharsMin"]
-        target_max = orphan["targetCharsMax"]
+        if orphan.get("fix_type") != "expand":
+            continue
 
-        PROMPT_BUDGET = 0.92
-        prompt_tgt_min = int(target_min * PROMPT_BUDGET)
-        prompt_tgt_max = int(target_max * PROMPT_BUDGET)
-
-        if fix_type == "expand":
-            chars_to_add_min = max(0, prompt_tgt_min - orphan["currentChars"])
-            chars_to_add_max = max(0, prompt_tgt_max - orphan["currentChars"])
-            instruction = (
-                f"  FIX: EXPAND this bullet so it fills between 1.75 and 1.95 lines in the final PDF.\n"
-                f"  One rendered line = {chars_per_line} visible characters.\n"
-                f"  Currently renders as {orphan['renderedLines']} lines (orphan line - second line is mostly empty).\n"
-                f"  You need to ADD approximately {chars_to_add_min}-{chars_to_add_max} more visible characters.\n"
-                f"  Target total: {prompt_tgt_min}-{prompt_tgt_max} visible characters (excluding ** markers).\n"
-                f"  HARD MAX: {prompt_tgt_max} visible chars."
-            )
-        else:
-            instruction = (
-                f"  FIX: SHORTEN this bullet to fit exactly 2 lines maximum (ideally filling 1.75 to 1.95 lines).\n"
-                f"  One rendered line = {chars_per_line} visible characters.\n"
-                f"  Currently renders as {orphan['renderedLines']} lines (too long).\n"
-                f"  Target total: {prompt_tgt_min}-{prompt_tgt_max} visible characters (excluding ** markers).\n"
-                f"  HARD MAX: {prompt_tgt_max} visible chars."
-            )
+        min_fill = int(orphan.get("minimumLastLineFill", 75))
+        current_fill = int(orphan.get("lastLineFillPercent", 0))
+        instruction = (
+            "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
+            f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
+            f"  Add truthful, job-relevant detail until the final rendered line is at least {min_fill}% full.\n"
+            "  The renderer will measure the result, so do not estimate character counts or line length."
+        )
 
         block = (
             f"Bullet {idx}:\n"
             f"  {context}\n"
             f"  Original: \"{original_md}\"\n"
-            f"  Current visible chars: {orphan['currentChars']}\n"
             f"{instruction}"
         )
         bullet_blocks.append(block)
@@ -1351,7 +1350,6 @@ async def orphan_repair_node(
             "bullet_idx": bullet_idx,
             "original_md": original_md,
             "history_key": hkey,
-            "target_max": target_max,
         })
 
     if reverted:
@@ -1382,7 +1380,7 @@ async def orphan_repair_node(
             "ROLE: Precise resume line-wrap repair editor.\n"
             "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
             "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
-            "QUALITY BAR: Preserve meaning and truth while meeting character limits exactly."
+            "QUALITY BAR: Preserve meaning and truth while meeting layout constraints."
         ),
         default_user=(
             "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
@@ -1399,9 +1397,9 @@ async def orphan_repair_node(
             "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
             "- Start every bullet with a strong action verb.\n"
             "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
-            "- Expand by adding job-relevant supported technical detail; shorten by removing lower-value wording first.\n"
+            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet.\n"
             "- Keep the core meaning and factual claims of the original.\n"
-            "- Each replacement must stay within its target range and respect HARD MAX.\n"
+            "- The renderer, not character count, determines whether the replacement fits.\n"
             "- No emojis, no trailing explanations, no omitted bullets.\n\n"
             "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
             "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
@@ -1473,26 +1471,25 @@ async def orphan_repair_node(
         json_text = extract_json(raw_response)
         result = json.loads(json_text)
         replacements = result.get("bullets", [])
+        if replacements and not any(
+            isinstance(item, dict) and item.get("replacement")
+            for item in replacements
+        ):
+            await log_progress(
+                db,
+                gen_id,
+                "orphan_repair",
+                "Repair response used an incompatible schema; expected a non-empty 'replacement' for each bullet.",
+                "warning",
+            )
 
         for repl in replacements:
             idx = repl.get("index")
             new_text = repl.get("replacement", "").strip()
             if not idx or not new_text:
                 continue
-
             entry = next((m for m in mapping if m["prompt_index"] == idx), None)
             if entry is None:
-                continue
-
-            visible_len = len(re.sub(r"\*\*", "", new_text))
-            if visible_len > entry["target_max"] * 1.05:
-                await log_progress(
-                    db,
-                    gen_id,
-                    "orphan_repair",
-                    f"Warning: Repaired bullet {idx} too long ({visible_len} > {entry['target_max']}), skipping.",
-                    "warning",
-                )
                 continue
 
             section_key = entry["section_key"]
@@ -1536,4 +1533,3 @@ async def orphan_repair_node(
         "repair_attempts": state.get("repair_attempts", 0) + 1,
         "repair_history": repair_history,
     }
-

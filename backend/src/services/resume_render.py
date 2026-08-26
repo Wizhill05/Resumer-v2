@@ -249,27 +249,30 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                         "targetCharsMax": target_max,
                         "charsToAddMin": chars_to_add_min,
                         "charsToAddMax": chars_to_add_max,
+                        "lineWidths": [round(float(w), 2) for w in widths],
+                        "lastLineFillPercent": round(last_line_fill * 100, 1),
+                        "minimumLastLineFill": 75,
+                        "measuredAtFontSize": getattr(getattr(lines[0][0], "style", None), "font_size", None),
                         "suggestion": suggestion,
                     })
                 elif line_count > 2:
+                    # Keep oversize findings visible so a repair that regresses
+                    # from two lines to three can be rolled back. The repair
+                    # node only acts on these when they have repair history.
                     target_max = int(chars_per_line * 1.95)
-                    target_min = int(chars_per_line * 1.80)
-                    chars_to_cut = max(0, len(text) - target_max)
-                    suggestion = (
-                        f"Bullet spans {line_count} lines (>2 lines). "
-                        f"Trim by ~{chars_to_cut} chars to fit on 2 lines (target <= {target_max} chars), "
-                        f"or shorten to 1 line."
-                    )
                     orphan_data.append({
-                        "fix_type": "shorten",
+                        "fix_type": "oversize",
                         "section": section,
                         "text": text,
                         "currentChars": len(text),
                         "renderedLines": line_count,
                         "charsPerLine": chars_per_line,
-                        "targetCharsMin": target_min,
+                        "targetCharsMin": int(chars_per_line * 1.80),
                         "targetCharsMax": target_max,
-                        "suggestion": suggestion,
+                        "suggestion": (
+                            f"Bullet spans {line_count} lines. Preserve the original if this was introduced by repair; "
+                            "otherwise handle through page-fit/content reduction."
+                        ),
                     })
     except Exception as e:
         import logging
