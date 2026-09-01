@@ -2,9 +2,10 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef, useMemo } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2 } from "lucide-react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2, Bug } from "lucide-react"
 import { createPortal } from "react-dom"
 import { FeedbackModal } from "@/components/FeedbackModal"
+import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 
 type HistoryRun = {
   id: string
@@ -589,7 +590,7 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
 
       {/* Footer */}
       <div
-        className={`px-3 py-3 cursor-pointer transition-all duration-150 ${completed ? "hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.date-p]:text-zinc-200" : ""}`}
+        className={`px-3 py-3 ${completed ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.date-p]:text-zinc-200" : ""} transition-all duration-150`}
         onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
       >
         <div className="flex items-start gap-1.5">
@@ -607,10 +608,31 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
               Edit
             </button>
           )}
+          {failed && (
+            <span onClick={(e) => e.stopPropagation()} className="ml-auto shrink-0" >
+              <ReportIssueButton
+                defaultCategory="generation"
+                defaultMessage={`[Generation failed]\nRun ID: ${run.id}\nTemplate: ${run.template_id}\nCreated: ${run.created_at}\nTitle: ${run.job_title || "Untailored"}\n\nDescribe what job description you used and what you expected:\n`}
+                generationId={run.id}
+                title="Report failed generation"
+                description="Run ID is prefilled. Add what you pasted as job description."
+                variant="outline"
+                size="xs"
+                className="h-6 px-2 text-[10px] font-black uppercase tracking-wider border-red-300 text-red-600 hover:bg-red-50"
+              >
+                Report
+              </ReportIssueButton>
+            </span>
+          )}
         </div>
         <p className="date-p text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 truncate pl-3.5 transition-colors duration-150">
           {run.company ? `${run.company} · ` : ""}{date}
         </p>
+        {failed && (
+          <div className="mt-2 pl-3.5">
+            <p className="text-[11px] font-medium text-red-500 dark:text-red-400">Generation failed — tap Report to send logs-backed feedback.</p>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -833,8 +855,35 @@ export function HistoryClient() {
                     </div>
                   </div>
 
-                  {/* Right: preview + edit + delete */}
+                  {/* Right: preview + edit + delete + report */}
                   <div className="flex items-center gap-1 shrink-0">
+                    {failed && (
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <ReportIssueButton
+                          defaultCategory="generation"
+                          defaultMessage={`[Generation failed]\nRun ID: ${run.id}\nTemplate: ${run.template_id}\nCreated: ${run.created_at}\nTitle: ${run.job_title || "Untailored"}\nCompany: ${run.company || "-"}\n\nDescribe your job description and expected output:\n`}
+                          generationId={run.id}
+                          title="Report failed generation"
+                          description="Run ID is prefilled. Just describe the job description you used."
+                          variant="outline"
+                          size="sm"
+                          className="hidden sm:inline-flex font-black uppercase tracking-wider border-red-200 text-red-600 hover:bg-red-50 h-8"
+                        >
+                          <Bug size={13} /> Report
+                        </ReportIssueButton>
+                        <ReportIssueButton
+                          defaultCategory="generation"
+                          defaultMessage={`[Generation failed]\nRun ID: ${run.id}\nTemplate: ${run.template_id}\n`}
+                          generationId={run.id}
+                          title="Report failed generation"
+                          variant="outline"
+                          size="icon-sm"
+                          className="sm:hidden border-red-200 text-red-600"
+                        >
+                          <Bug size={14} />
+                        </ReportIssueButton>
+                      </span>
+                    )}
                     {completed && (
                       <>
                         <button

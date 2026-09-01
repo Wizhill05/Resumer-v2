@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Save, Download, RotateCcw, X, Loader2, Eye } from "lucide-react"
+import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 import { ResumeJsonEditor } from "@/components/editor/ResumeJsonEditor"
 import { ResumeFormEditor } from "@/components/editor/ResumeFormEditor"
 import { ResumePreviewPane } from "@/components/editor/ResumePreviewPane"
@@ -213,11 +214,25 @@ export function EditorClient({ payload }: Props) {
 
       {/* Error bar */}
       {saveError && (
-        <div className="px-4 py-2 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400 flex items-center justify-between">
-          <span>{saveError}</span>
-          <button onClick={() => setSaveError(null)} className="ml-2 text-red-400 hover:text-red-600">
-            <X size={13} />
-          </button>
+        <div className="px-4 py-2.5 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+          <span className="text-sm font-semibold text-red-700 dark:text-red-400 break-words">{saveError}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <ReportIssueButton
+              defaultCategory="template"
+              defaultMessage={`[Editor save failed]\nRun ID: ${payload.id}\nError: ${saveError}\nRevision: ${revision}\nJSON error: ${jsonError || "none"}\n\nDescribe what you edited before saving:\n`}
+              generationId={payload.id}
+              title="Report editor issue"
+              description="Run ID and error are prefilled. Describe your edit."
+              variant="outline"
+              size="xs"
+              className="border-red-300 text-red-700 hover:bg-red-100 bg-white font-black uppercase tracking-wider text-[11px] h-7"
+            >
+              Report
+            </ReportIssueButton>
+            <button onClick={() => setSaveError(null)} className="ml-1 text-red-400 hover:text-red-600 p-1">
+              <X size={13} />
+            </button>
+          </div>
         </div>
       )}
 

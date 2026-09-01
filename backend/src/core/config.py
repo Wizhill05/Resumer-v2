@@ -18,8 +18,14 @@ def _parse_keys(raw: str | None) -> list[str]:
     return [k.strip() for k in raw.split(",") if k.strip()]
 
 
+BACKEND_DIR: Path = Path(__file__).resolve().parent.parent.parent
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(BACKEND_DIR / ".env", ".env"),
+        extra="ignore"
+    )
 
     DATABASE_URL: str = "postgresql+psycopg://user:pass@localhost/resumer"
     JWT_SECRET: str = "changeme"

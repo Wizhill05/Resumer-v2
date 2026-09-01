@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, CheckCircle2, Loader2, Upload, X, ChevronDown, ChevronUp, FileUp } from "lucide-react"
+import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 type ImportWarning = { scope: string; message: string }
 type DuplicateCandidate = { imported_type: string; confidence: number; reason: string; suggested_action: string }
 type ResumeImportDraft = {
@@ -210,9 +211,25 @@ export function ResumeImportPanel() {
       )}
 
       {error && (
-        <div className="flex items-start gap-2 border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 p-2">
-          <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
-          <p className="text-xs font-bold text-red-700 dark:text-red-300">{error}</p>
+        <div className="flex flex-col gap-2 border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 p-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
+            <p className="text-xs font-bold text-red-700 dark:text-red-300 flex-1 min-w-0 break-words">{error}</p>
+          </div>
+          <div className="flex gap-2">
+            <ReportIssueButton
+              defaultCategory="import"
+              defaultMessage={`[Import failed - Resume PDF]\nError: ${error}\nStage: ${stage}\nFiles: ${fileCount}\n\nWhat file did you upload and what did you expect to extract?\n`}
+              title="Report import problem"
+              description="Import error is prefilled. Add file details and what went wrong."
+              variant="outline"
+              size="xs"
+              className="border-red-300 text-red-700 hover:bg-red-100 bg-white font-black uppercase tracking-wider text-[11px]"
+            >
+              Report this issue
+            </ReportIssueButton>
+            <Button variant="ghost" size="xs" onClick={() => setError(null)} className="font-bold uppercase tracking-wider text-[11px]">Dismiss</Button>
+          </div>
         </div>
       )}
 

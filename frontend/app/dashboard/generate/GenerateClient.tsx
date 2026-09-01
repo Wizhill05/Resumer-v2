@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info } from "lucide-react"
 import Link from "next/link"
+import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 type Step = "input" | "submitted"
 
 type ContentSplit = {
@@ -280,9 +281,21 @@ export function GenerateClient() {
   return (
     <div className="space-y-4 md:space-y-5 pixel-enter">
       {error && (
-        <div className="panel flex items-center gap-3 border-red-200 bg-red-50 p-3 text-red-700">
-          <AlertCircle className="shrink-0" size={18} />
-          <p className="text-sm font-bold">{error}</p>
+        <div className="panel flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-red-200 bg-red-50 p-3 text-red-700">
+          <div className="flex items-center gap-3 min-w-0">
+            <AlertCircle className="shrink-0" size={18} />
+            <p className="text-sm font-bold min-w-0 break-words">{error}</p>
+          </div>
+          <ReportIssueButton
+            defaultCategory="generation"
+            defaultMessage={`[Generation] Failed to start\nError: ${error}\nTemplate: ${selectedTemplate}\nContent split: ${projectsCount} projects / ${experienceCount} experiences\n\nDescribe what you expected and steps you took:\n`}
+            userEmail={profileData?.email}
+            title="Report generation start failure"
+            description="Prefilled with your template and content split. Just add what happened before the error."
+            variant="outline"
+            size="sm"
+            className="shrink-0 bg-white dark:bg-zinc-900 border-red-300 text-red-700 hover:bg-red-50 text-xs font-black uppercase tracking-wider h-8"
+          />
         </div>
       )}
 
@@ -591,8 +604,38 @@ export function GenerateClient() {
                 )}
               </p>
             )}
-            {/* Actions once complete */}
-            {isGenerationComplete && createdRunId && (
+            {/* Actions once complete or failed */}
+            {isGenerationComplete && createdRunId && liveStepLabel === "Generation failed" && (
+              <div className="mt-6 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                <div className="flex items-start gap-2 border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600" />
+                  <p className="text-xs font-bold leading-relaxed text-red-800 dark:text-red-300">
+                    Generation failed. Your input is saved — you can report this and we will check logs for run {createdRunId.slice(0, 8)}.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <ReportIssueButton
+                    defaultCategory="generation"
+                    defaultMessage={`[Generation failed]\nRun ID: ${createdRunId}\nStep: ${liveStepLabel}\nTemplate: ${selectedTemplate}\nContent split: ${projectsCount} projects / ${experienceCount} experiences\n\nWhat did you expect? Describe your job description length and any custom instructions:\n`}
+                    generationId={createdRunId}
+                    userEmail={profileData?.email}
+                    title="Report failed generation"
+                    description="Run ID and context are prefilled. Add a sentence about the job description and expected result."
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 font-black uppercase tracking-wider"
+                  >
+                    Report this failure
+                  </ReportIssueButton>
+                  <Link href="/support" className="flex-1">
+                    <Button variant="outline" className="w-full font-bold uppercase tracking-wider text-xs">
+                      Open support
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+            {isGenerationComplete && createdRunId && liveStepLabel !== "Generation failed" && (
               <div className="mt-6 flex flex-col gap-2.5 sm:flex-row pt-4 border-t border-zinc-200 dark:border-zinc-800">
                 <a
                   href={`/api/backend/generate/${createdRunId}/download`}

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ReportIssueButton } from "@/components/support/ReportIssueDialog";
 
 import { normalizeUrl } from "./BasicInfoForm";
 
@@ -829,9 +830,24 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
           </div>
 
           {githubMessage && (
-            <p className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-2.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
-              {githubMessage}
-            </p>
+            <div className="space-y-2">
+              <p className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-2.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                {githubMessage}
+              </p>
+              {(githubMessage.toLowerCase().includes("failed") || githubMessage.toLowerCase().includes("could not") || githubMessage.toLowerCase().includes("error")) && (
+                <ReportIssueButton
+                  defaultCategory="import"
+                  defaultMessage={`[GitHub import failed]\nMessage: ${githubMessage}\nInput: ${selectedRepoUrl || (githubInputMode === "fields" ? `${githubOwner}/${githubRepoName}` : githubUrl)}\nUsername: ${effectiveUsername || "-"}\n\nDescribe what repo you tried to import and expected outcome:\n`}
+                  title="Report GitHub import issue"
+                  description="Import input is prefilled. Add repo URL and what failed."
+                  variant="outline"
+                  size="xs"
+                  className="font-black uppercase tracking-wider text-[11px] border-zinc-900"
+                >
+                  Report import issue
+                </ReportIssueButton>
+              )}
+            </div>
           )}
           </div>
         </div>

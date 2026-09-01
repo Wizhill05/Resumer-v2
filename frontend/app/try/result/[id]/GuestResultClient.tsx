@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LoginModal } from "@/components/LoginModal"
+import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 
 type GuestRun = {
   id: string
@@ -116,7 +117,28 @@ export function GuestResultClient({ id }: { id: string }) {
             />
           </div>
         )}
-        {status === "failed" && <p className="text-sm font-bold text-red-700 dark:text-red-400">{run?.error_message || "Pipeline failed. Try again with more complete details."}</p>}
+        {status === "failed" && (
+          <div className="space-y-3">
+            <p className="text-sm font-bold text-red-700 dark:text-red-400">{run?.error_message || "Pipeline failed. Try again with more complete details."}</p>
+            <div className="flex flex-wrap gap-2">
+              <ReportIssueButton
+                defaultCategory="generation"
+                defaultMessage={`[Guest generation failed]\nRun ID: ${id}\nError: ${run?.error_message || "unknown"}\nStatus: failed\n\nWhat job description did you paste?\n`}
+                generationId={id}
+                title="Report guest generation failure"
+                description="Run ID is prefilled. Add job description context."
+                variant="outline"
+                size="sm"
+                className="font-black uppercase tracking-wider border-red-300 text-red-700 hover:bg-red-50 bg-white"
+              >
+                Report this failure
+              </ReportIssueButton>
+              <Link href="/support" className="inline-flex items-center justify-center border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-xs font-bold">
+                Open support
+              </Link>
+            </div>
+          </div>
+        )}
         {status === "completed" && (
           <div className="border-2 border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3">
             <p className="text-sm font-black uppercase tracking-wide text-emerald-800 dark:text-emerald-300">

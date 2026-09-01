@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { emptyGuestDraft, loadGuestDraft, mergeGuestDraft, saveGuestDraft } from "@/lib/guest-storage"
+import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 import type {
   GuestDraft, GuestEducation, GuestExperience,
   GuestExtracurricular, GuestProject
@@ -275,9 +276,22 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
           </div>
         )}
         {importErr && (
-          <div className="mt-2 flex items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-            <AlertCircle size={13} />{importErr}
-            <button onClick={() => setImportErr(null)} className="ml-auto"><X size={12} /></button>
+          <div className="mt-2 flex flex-col gap-2 rounded border border-red-200 bg-red-50 px-3 py-2.5">
+            <div className="flex items-center gap-2 text-xs text-red-700">
+              <AlertCircle size={13} className="shrink-0" />{importErr}
+              <button onClick={() => setImportErr(null)} className="ml-auto shrink-0"><X size={12} /></button>
+            </div>
+            <ReportIssueButton
+              defaultCategory="import"
+              defaultMessage={`[Guest import failed]\nError: ${importErr}\nStage: ${importStage}\nFiles: ${fileCount}\n\nWhat file did you upload?\n`}
+              title="Report guest import failure"
+              description="Import error is prefilled. Add file name if possible."
+              variant="outline"
+              size="xs"
+              className="w-fit border-red-300 text-red-700 hover:bg-red-100 bg-white font-black uppercase tracking-wider text-[11px]"
+            >
+              Report this issue
+            </ReportIssueButton>
           </div>
         )}
       </div>
@@ -664,10 +678,23 @@ function GeneratePanel({
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 rounded border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
-          <AlertCircle size={13} className="mt-0.5 shrink-0" />
-          <span className="flex-1">{error}</span>
-          <button onClick={() => setError(null)}><X size={12} /></button>
+        <div className="flex flex-col gap-2 rounded border border-red-200 bg-red-50 px-3 py-2.5">
+          <div className="flex items-start gap-2 text-xs text-red-700">
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />
+            <span className="flex-1 font-semibold">{error}</span>
+            <button onClick={() => setError(null)} className="shrink-0"><X size={12} /></button>
+          </div>
+          <ReportIssueButton
+            defaultCategory="generation"
+            defaultMessage={`[Guest generation error]\nError: ${error}\nFocus: ${focus}\nJob description length: ${jobDescription.length}\n\nDescribe steps before this error:\n`}
+            title="Report guest generation issue"
+            description="Error is prefilled. Add job description context."
+            variant="outline"
+            size="xs"
+            className="w-fit border-red-300 text-red-700 hover:bg-red-100 bg-white font-black uppercase tracking-wider text-[11px]"
+          >
+            Report this issue
+          </ReportIssueButton>
         </div>
       )}
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
+import { SUPPORT_CATEGORIES, type SupportCategoryValue } from "@/components/support/supportCategories"
 import {
   Mic,
   Square,
@@ -26,17 +26,15 @@ interface SupportClientProps {
   userName?: string
 }
 
-export function SupportClient({ userEmail, userName }: SupportClientProps) {
-  const [category, setCategory] = useState<"bug" | "billing" | "feedback" | "other">("bug")
+export function SupportClient({ userEmail }: SupportClientProps) {
+  const [category, setCategory] = useState<SupportCategoryValue>("bug")
   const [message, setMessage] = useState("")
   const [emailOverride, setEmailOverride] = useState(userEmail || "")
 
-  // Screenshots state
   const [screenshots, setScreenshots] = useState<File[]>([])
   const [screenshotPreviews, setScreenshotPreviews] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Voice recording state
   const [isRecording, setIsRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null)
@@ -45,16 +43,13 @@ export function SupportClient({ userEmail, userName }: SupportClientProps) {
   const audioChunksRef = useRef<Blob[]>([])
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Audio player state
   const [isPlaying, setIsPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Form submission state
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
 
-  // Clean up object URLs
   useEffect(() => {
     return () => {
       screenshotPreviews.forEach((url) => URL.revokeObjectURL(url))
@@ -62,77 +57,49 @@ export function SupportClient({ userEmail, userName }: SupportClientProps) {
     }
   }, [screenshotPreviews, voiceUrl])
 
-  // Handle Screenshot file pick
   const handleScreenshotChange = (files: FileList | null) => {
     if (!files) return
     const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"))
     if (screenshots.length + newFiles.length > 5) {
-      setError("Maximum 5 screenshots allowed per report.")
+      setError("Max 5 screenshots.")
       return
     }
     setError(null)
-    const updatedScreenshots = [...screenshots, ...newFiles]
-    setScreenshots(updatedScreenshots)
-
-    const updatedPreviews = newFiles.map((f) => URL.createObjectURL(f))
-    setScreenshotPreviews([...screenshotPreviews, ...updatedPreviews])
+    setScreenshots([...screenshots, ...newFiles])
+    setScreenshotPreviews([...screenshotPreviews, ...newFiles.map((f) => URL.createObjectURL(f))])
   }
 
   const removeScreenshot = (index: number) => {
-    const updatedScreenshots = screenshots.filter((_, i) => i !== index)
-    const removedPreview = screenshotPreviews[index]
-    if (removedPreview) URL.revokeObjectURL(removedPreview)
-    const updatedPreviews = screenshotPreviews.filter((_, i) => i !== index)
-
-    setScreenshots(updatedScreenshots)
-    setScreenshotPreviews(updatedPreviews)
+    const removed = screenshotPreviews[index]
+    if (removed) URL.revokeObjectURL(removed)
+    setScreenshots(screenshots.filter((_, i) => i !== index))
+    setScreenshotPreviews(screenshotPreviews.filter((_, i) => i !== index))
   }
 
-  // Voice recorder controls
   const startRecording = async () => {
     try {
       setError(null)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
       let mimeType = "audio/webm"
-      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-        mimeType = "audio/webm;codecs=opus"
-      } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
-        mimeType = "audio/ogg;codecs=opus"
-      } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
-        mimeType = "audio/mp4"
-      }
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType })
-      mediaRecorderRef.current = mediaRecorder
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) mimeType = "audio/webm;codecs=opus"
+      else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) mimeType = "audio/ogg;codecs=opus"
+      else if (MediaRecorder.isTypeSupported("audio/mp4")) mimeType = "audio/mp4"
+      const mr = new MediaRecorder(stream, { mimeType })
+      mediaRecorderRef.current = mr
       audioChunksRef.current = []
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data)
-        }
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+      mr.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: mimeType })
+        setVoiceBlob(blob)
+        setVoiceUrl(URL.createObjectURL(blob))
+        stream.getTracks().forEach((t) => t.stop())
       }
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType })
-        const url = URL.createObjectURL(audioBlob)
-        setVoiceBlob(audioBlob)
-        setVoiceUrl(url)
-
-        // Stop all audio tracks to release microphone
-        stream.getTracks().forEach((track) => track.stop())
-      }
-
-      mediaRecorder.start(200)
+      mr.start(200)
       setIsRecording(true)
       setRecordingSeconds(0)
-
-      timerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1)
-      }, 1000)
-    } catch (err) {
-      console.error("Microphone access failed:", err)
-      setError("Could not access microphone. Please check browser permissions.")
+      timerRef.current = setInterval(() => setRecordingSeconds((p) => p + 1), 1000)
+    } catch {
+      setError("Microphone access denied.")
     }
   }
 
@@ -151,297 +118,217 @@ export function SupportClient({ userEmail, userName }: SupportClientProps) {
     setIsPlaying(false)
   }
 
-  const toggleAudioPlay = () => {
+  const togglePlay = () => {
     if (!audioRef.current) return
-    if (isPlaying) {
-      audioRef.current.pause()
-      setIsPlaying(false)
-    } else {
-      audioRef.current.play()
-      setIsPlaying(true)
-    }
+    if (isPlaying) { audioRef.current.pause(); setIsPlaying(false) }
+    else { audioRef.current.play(); setIsPlaying(true) }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!message.trim()) {
-      setError("Please enter a message describing your issue or feedback.")
-      return
-    }
-
+    if (!message.trim()) { setError("Add a short description."); return }
     setIsSubmitting(true)
     setError(null)
-
     try {
-      const formData = new FormData()
-      formData.append("message", message.trim())
-      formData.append("category", category)
-
-      if (emailOverride.trim()) {
-        formData.append("email_override", emailOverride.trim())
-      }
-
-      screenshots.forEach((file) => {
-        formData.append("screenshots", file)
-      })
-
+      const fd = new FormData()
+      fd.append("message", message.trim())
+      fd.append("category", category)
+      if (emailOverride.trim()) fd.append("email_override", emailOverride.trim())
+      screenshots.forEach((f) => fd.append("screenshots", f))
       if (voiceBlob) {
-        const ext = voiceBlob.type.includes("webm") ? "webm" : "wav"
-        formData.append("voice", voiceBlob, `recording.${ext}`)
+        const ext = voiceBlob.type.includes("webm") ? "webm" : voiceBlob.type.includes("mp4") ? "mp4" : "wav"
+        fd.append("voice", voiceBlob, `recording.${ext}`)
       }
-
-      const res = await fetch("/api/backend/feedback/support", {
-        method: "POST",
-        body: formData,
-      })
-
+      const res = await fetch("/api/backend/feedback/support", { method: "POST", body: fd })
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.detail || "Failed to submit support report.")
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail || "Failed to send.")
       }
-
       setSubmitted(true)
-    } catch (err: unknown) {
-      const errorObj = err as Error
-      setError(errorObj.message || "An unexpected error occurred.")
-    } finally {
-      setIsSubmitting(false)
-    }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.")
+    } finally { setIsSubmitting(false) }
   }
 
   if (submitted) {
     return (
-      <div className="panel-strong max-w-xl mx-auto p-8 text-center space-y-5 bg-white dark:bg-zinc-900 border-2 border-black dark:border-zinc-700 shadow-[4px_4px_0px_#000000]">
-        <div className="mx-auto w-16 h-16 bg-[#ff4e26]/10 text-[#ff4e26] flex items-center justify-center border-2 border-black dark:border-zinc-700 shadow-[2px_2px_0px_#000000]">
-          <CheckCircle2 size={36} />
+      <div className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 text-center space-y-4">
+        <div className="mx-auto flex h-11 w-11 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-[#ff4e26]/10 text-[#ff4e26]">
+          <CheckCircle2 size={24} />
         </div>
-        <div className="space-y-2">
-          <h2 className="text-xl font-extrabold uppercase tracking-tight">Report Received</h2>
-          <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-            Thank you! Your feedback has been routed directly to our admin team. If you left an email address, we will keep you updated.
+        <div className="space-y-1">
+          <h2 className="text-sm font-black uppercase tracking-tight">Report sent</h2>
+          <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            Thanks — it is in the queue. We will email you when it is resolved if you left an address.
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setSubmitted(false)
-            setMessage("")
-            setScreenshots([])
-            setScreenshotPreviews([])
-            discardVoice()
-          }}
-          className="bg-black hover:bg-zinc-800 text-white font-extrabold uppercase tracking-wider shadow-[3px_3px_0px_#ff4e26] border-2 border-black"
-        >
-          Submit Another Report
-        </Button>
+        <div className="flex justify-center gap-2">
+          <Button size="sm" onClick={() => { setSubmitted(false); setMessage(""); setScreenshots([]); setScreenshotPreviews([]); discardVoice() }}>
+            Send another
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => (window.location.href = "/dashboard")}>Dashboard</Button>
+        </div>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit} className="panel-strong max-w-2xl mx-auto p-5 sm:p-7 space-y-6 bg-white dark:bg-zinc-900 border-2 border-black dark:border-zinc-700 shadow-[4px_4px_0px_#000000]">
-      {/* Category selector */}
-      <div className="space-y-2">
-        <Label className="text-xs font-extrabold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-          Category
-        </Label>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {(["bug", "billing", "feedback", "other"] as const).map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setCategory(cat)}
-              className={`py-2 px-3 text-xs font-extrabold uppercase tracking-wider border-2 transition-all ${
-                category === cat
-                  ? "bg-[#ff4e26] text-white border-black shadow-[2px_2px_0px_#000000]"
-                  : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200"
-              }`}
-            >
-              {cat === "bug" && "🐛 Bug Report"}
-              {cat === "billing" && "💳 Billing"}
-              {cat === "feedback" && "💡 Feedback"}
-              {cat === "other" && "💬 Other"}
-            </button>
-          ))}
+    <form onSubmit={handleSubmit} className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 sm:p-6 space-y-5">
+      <div className="space-y-2.5">
+        <Label className="text-[11px] font-black uppercase tracking-widest text-zinc-500">Category</Label>
+        <div className="flex flex-wrap gap-2">
+          {SUPPORT_CATEGORIES.map((cat) => {
+            const Icon = cat.icon
+            const active = category === cat.value
+            return (
+              <button
+                key={cat.value}
+                type="button"
+                onClick={() => setCategory(cat.value)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold leading-none transition-colors ${
+                  active
+                    ? "bg-[#ff4e26] text-white border-[#ff4e26] shadow-sm"
+                    : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
+                <Icon size={13} className={active ? "text-white" : "text-zinc-400"} />
+                {cat.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Message textarea */}
-      <div className="space-y-2">
-        <Label htmlFor="message" className="text-xs font-extrabold uppercase tracking-widest text-zinc-700 dark:text-zinc-300">
-          Detailed Message <span className="text-[#ff4e26]">*</span>
+      <div className="space-y-1.5">
+        <Label htmlFor="message" className="text-[11px] font-black uppercase tracking-widest text-zinc-500">
+          Message <span className="text-[#ff4e26]">*</span>
         </Label>
         <Textarea
           id="message"
-          rows={4}
+          rows={5}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Describe what happened, steps to reproduce the issue, or your feature request..."
-          className="border-2 border-black dark:border-zinc-700 font-sans focus:ring-[#ff4e26] shadow-[2px_2px_0px_#000000]"
+          placeholder="What happened? What did you expect?"
+          className="min-h-[110px] text-sm md:min-h-[128px]"
           required
         />
       </div>
 
-      {/* Email input for notifications */}
-      <div className="space-y-2">
-        <Label htmlFor="email" className="text-xs font-extrabold uppercase tracking-widest text-zinc-700 dark:text-zinc-300">
-          Your Email (for updates)
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          value={emailOverride}
-          onChange={(e) => setEmailOverride(e.target.value)}
-          placeholder="email@example.com"
-          className="border-2 border-black dark:border-zinc-700 font-mono text-sm shadow-[2px_2px_0px_#000000]"
-        />
+      <div className="grid gap-4 md:grid-cols-[1.1fr_1.6fr] md:items-end">
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className="text-[11px] font-black uppercase tracking-widest text-zinc-500">
+            Email <span className="font-medium normal-case tracking-normal">optional</span>
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            value={emailOverride}
+            onChange={(e) => setEmailOverride(e.target.value)}
+            placeholder="you@example.com"
+            className="h-9 font-mono text-sm"
+          />
+        </div>
+        <p className="hidden md:block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400 pb-1">
+          Only for a follow-up. Leave blank to stay anonymous.
+        </p>
       </div>
 
-      {/* Voice Message Recorder Section */}
-      <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs font-extrabold uppercase tracking-widest text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-            <Volume2 size={14} className="text-[#ff4e26]" />
-            Voice Message (Optional)
-          </Label>
-          {voiceBlob && <Badge className="bg-emerald-500 text-white font-mono text-[10px]">Audio Attached</Badge>}
-        </div>
-
-        {!voiceBlob && !isRecording && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={startRecording}
-            className="w-full border-2 border-black dark:border-zinc-700 border-dashed py-6 hover:bg-[#ff4e26]/5 hover:border-[#ff4e26] transition-colors"
-          >
-            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-zinc-800 dark:text-zinc-200">
-              <Mic size={18} className="text-[#ff4e26]" />
-              <span>Record Voice Message</span>
-            </div>
-          </Button>
-        )}
-
-        {isRecording && (
-          <div className="p-4 border-2 border-[#ff4e26] bg-[#ff4e26]/10 flex items-center justify-between shadow-[2px_2px_0px_#000000]">
-            <div className="flex items-center gap-3">
-              <span className="w-3 h-3 bg-[#ff4e26] rounded-full animate-ping" />
-              <span className="font-mono font-bold text-sm text-[#ff4e26]">
-                Recording: {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, "0")}
-              </span>
-            </div>
-            <Button
-              type="button"
-              onClick={stopRecording}
-              size="sm"
-              className="bg-[#ff4e26] hover:bg-[#e03d16] text-white font-extrabold uppercase tracking-wider"
-            >
-              <Square size={14} className="mr-1 fill-white" /> Stop
-            </Button>
+      <div className="grid gap-4 md:grid-cols-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-1.5">
+            <Label className="text-[11px] font-black uppercase tracking-widest text-zinc-500 flex items-center gap-1.5">
+              <Volume2 size={12} className="text-[#ff4e26]" /> Voice
+            </Label>
+            <span className="text-[10px] font-medium text-zinc-400">optional</span>
+            {voiceBlob && <span className="ml-auto text-[10px] font-mono font-bold text-emerald-600">Attached</span>}
           </div>
-        )}
 
-        {voiceUrl && !isRecording && (
-          <div className="p-3 border-2 border-black dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 flex items-center justify-between gap-3 shadow-[2px_2px_0px_#000000]">
-            <audio
-              ref={audioRef}
-              src={voiceUrl}
-              onEnded={() => setIsPlaying(false)}
-              className="hidden"
-            />
+          {!voiceBlob && !isRecording && (
             <button
               type="button"
-              onClick={toggleAudioPlay}
-              className="w-9 h-9 bg-black text-white flex items-center justify-center border border-black hover:bg-zinc-800 shrink-0"
+              onClick={startRecording}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-3 text-xs font-bold hover:border-zinc-400 dark:hover:border-zinc-600 hover:bg-white dark:hover:bg-zinc-800 transition-colors md:w-auto md:justify-start"
             >
-              {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ff4e26]/10 text-[#ff4e26]">
+                <Mic size={12} />
+              </span>
+              Record voice
             </button>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider truncate">Voice Recording</p>
-              <p className="text-[10px] font-mono text-zinc-500">Ready to upload with report</p>
+          )}
+          {isRecording && (
+            <div className="flex items-center justify-between rounded-lg border border-[#ff4e26] bg-[#ff4e26]/10 px-3 py-2.5">
+              <span className="flex items-center gap-2 text-xs font-mono font-bold text-[#ff4e26]">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[#ff4e26]" />
+                {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}
+              </span>
+              <Button type="button" size="xs" onClick={stopRecording} className="bg-[#ff4e26] hover:bg-[#e03d16] text-white h-6 px-2.5 text-[11px]">
+                <Square size={9} className="fill-white" /> Stop
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={discardVoice}
-              className="text-red-500 hover:bg-red-50 dark:hover:bg-red-950"
-            >
-              <Trash2 size={16} />
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Screenshot Attachments Section */}
-      <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs font-extrabold uppercase tracking-widest text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-            <ImageIcon size={14} className="text-[#ff4e26]" />
-            Screenshots (Max 5)
-          </Label>
-          <span className="text-[10px] font-mono font-bold text-zinc-500">{screenshots.length}/5 attached</span>
+          )}
+          {voiceUrl && !isRecording && (
+            <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-2">
+              <audio ref={audioRef} src={voiceUrl} onEnded={() => setIsPlaying(false)} className="hidden" />
+              <button type="button" onClick={togglePlay} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
+                {isPlaying ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
+              </button>
+              <span className="flex-1 truncate text-xs font-medium">Voice ready</span>
+              <button type="button" onClick={discardVoice} className="rounded-full p-1.5 text-zinc-400 hover:bg-white dark:hover:bg-zinc-700 hover:text-red-500">
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )}
         </div>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={(e) => handleScreenshotChange(e.target.files)}
-        />
-
-        {screenshotPreviews.length > 0 && (
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-            {screenshotPreviews.map((url, idx) => (
-              <div key={idx} className="relative group aspect-square border-2 border-black dark:border-zinc-700 bg-zinc-100 overflow-hidden shadow-[2px_2px_0px_#000000]">
-                {/* eslint-disable-next-html-element-suppression */}
-                <img src={url} alt={`Screenshot ${idx + 1}`} className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeScreenshot(idx)}
-                  className="absolute top-1 right-1 bg-black/80 text-white p-1 hover:bg-red-600 transition-colors"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-1.5">
+            <Label className="text-[11px] font-black uppercase tracking-widest text-zinc-500 flex items-center gap-1.5">
+              <ImageIcon size={12} className="text-[#ff4e26]" /> Screenshots
+            </Label>
+            <span className="text-[10px] font-mono text-zinc-500">{screenshots.length}/5</span>
           </div>
-        )}
-
-        {screenshots.length < 5 && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full border-2 border-black dark:border-zinc-700 py-5 font-extrabold uppercase tracking-wider text-xs shadow-[2px_2px_0px_#000000]"
-          >
-            <Upload size={16} className="mr-2 text-[#ff4e26]" /> Add Screenshot Images
-          </Button>
-        )}
+          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleScreenshotChange(e.target.files)} />
+          {screenshotPreviews.length > 0 && (
+            <div className="grid grid-cols-5 gap-1.5">
+              {screenshotPreviews.map((url, idx) => (
+                <div key={idx} className="group relative aspect-square overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100">
+                  <img src={url} alt="" className="h-full w-full object-cover" />
+                  <button type="button" onClick={() => removeScreenshot(idx)} className="absolute right-1 top-1 rounded-full bg-zinc-900/80 p-1 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition">
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {screenshots.length < 5 && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-3 text-xs font-bold hover:border-zinc-400 dark:hover:border-zinc-600 hover:bg-white dark:hover:bg-zinc-800 transition-colors md:w-auto md:justify-start"
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900">
+                <Upload size={11} />
+              </span>
+              Add images
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Error alert */}
       {error && (
-        <div className="p-3 border-2 border-red-600 bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 text-xs font-bold flex items-center gap-2 shadow-[2px_2px_0px_#000000]">
-          <AlertCircle size={16} className="shrink-0" />
-          <span>{error}</span>
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+          <AlertCircle size={14} className="shrink-0" /> <span>{error}</span>
         </div>
       )}
 
-      {/* Submit button */}
-      <Button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full py-3 bg-[#ff4e26] hover:bg-[#e03d16] text-white font-extrabold uppercase tracking-widest text-sm border-2 border-black shadow-[4px_4px_0px_#000000] disabled:opacity-50"
-      >
-        {isSubmitting ? (
-          <span className="flex items-center gap-2">
-            <Loader2 size={16} className="animate-spin" /> Submitting Report...
-          </span>
-        ) : (
-          "Send Support Report"
-        )}
-      </Button>
+      <div className="flex flex-col-reverse gap-3 border-t border-zinc-200 dark:border-zinc-800 pt-4 md:flex-row md:items-center md:justify-between">
+        <p className="text-center text-[11px] text-zinc-500 md:text-left">
+          See <a href="/privacy" className="underline decoration-zinc-300 underline-offset-2 font-bold hover:text-zinc-900 dark:hover:text-white">Privacy</a> for storage.
+        </p>
+        <Button type="submit" disabled={isSubmitting} className="h-9 px-6 text-xs md:w-auto w-full">
+          {isSubmitting ? <><Loader2 size={14} className="animate-spin" /> Sending...</> : "Send report"}
+        </Button>
+      </div>
     </form>
   )
 }
