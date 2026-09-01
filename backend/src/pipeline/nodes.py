@@ -63,6 +63,8 @@ from src.services.llm_config import llm_config_service
 
 def _structured(llm, schema, provider: str | None = None):
     """Structured output with provider-appropriate method."""
+    if isinstance(llm, ChatOpenAI):
+        return llm.with_structured_output(schema, method="function_calling")
     return llm.with_structured_output(schema)
 
 def _extract_token_usage(result: Any) -> tuple[int | None, int | None, int | None]:

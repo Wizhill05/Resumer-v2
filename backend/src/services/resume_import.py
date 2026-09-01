@@ -11,7 +11,13 @@ from src.models.profile import Profile, UserEducation, UserExperience, UserProje
 from src.models.user import User
 from src.pipeline.nodes import invoke_with_fallback, _structured
 from src.schemas.profile import DuplicateCandidate, ImportWarning, ResumeImportDraft
-from src.services.import_utils import normalize_text, similar, unique_strings
+from src.services.import_utils import (
+    education_similarity,
+    extracurricular_similarity,
+    normalize_text,
+    similar,
+    unique_strings,
+)
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_FILES = 5
@@ -222,9 +228,22 @@ def add_duplicates(draft: ResumeImportDraft, existing: dict[str, list | Profile 
 
     for imported_index, edu in enumerate(draft.education):
         for existing_edu in existing["education"] or []:
-            confidence = (similar(edu.degree, existing_edu.degree) + similar(edu.institution, existing_edu.institution)) / 2
+            confidence = education_similarity(edu.degree, edu.institution, existing_edu.degree, existing_edu.institution)
             if confidence >= 0.78:
                 duplicates.append(DuplicateCandidate(imported_index=imported_index, imported_type="education", existing_id=str(existing_edu.id), existing_type="education", confidence=round(confidence, 2), reason="Similar degree and institution", suggested_action="merge"))
+
+    for imported_index, extra in enumerate(draft.extracurriculars):
+        for existing_extra in existing["extracurriculars"] or []:
+            confidence = extracurricular_similarity(
+                extra.title,
+                extra.organization,
+                extra.bullet_points or extra.description,
+                existing_extra.title,
+                existing_extra.organization,
+                existing_extra.bullet_points or existing_extra.description,
+            )
+            if confidence >= 0.78:
+                duplicates.append(DuplicateCandidate(imported_index=imported_index, imported_type="extracurricular", existing_id=str(existing_extra.id), existing_type="extracurricular", confidence=round(confidence, 2), reason="Similar activity title, organization, or achievements", suggested_action="merge" if confidence < 0.95 else "skip"))
 
     draft.duplicate_candidates = duplicates
     return draft
@@ -265,4 +284,45 @@ def merge_drafts(drafts: list[ResumeImportDraft]) -> ResumeImportDraft:
         seen_exp.append(key)
         unique_exp.append(exp)
     merged.experiences = unique_exp
+
+    seen_edu: list[tuple[str | None, str | None]] = []
+    unique_edu = []
+    for edu in merged.education:
+        is_dup = False
+        for ex_deg, ex_inst in seen_edu:
+            if education_similarity(edu.degree, edu.institution, ex_deg, ex_inst) >= 0.80:
+                is_dup = True
+                break
+        if is_dup:
+            merged.warnings.append(ImportWarning(scope="education", message=f"Skipped duplicate education: {edu.degree} at {edu.institution}"))
+            continue
+        seen_edu.append((edu.degree, edu.institution))
+        unique_edu.append(edu)
+    merged.education = unique_edu
+
+    seen_extra: list[tuple[str | None, str | None, list[str] | str | None]] = []
+    unique_extra = []
+    for extra in merged.extracurriculars:
+        is_dup = False
+        for ex_title, ex_org, ex_bullets in seen_extra:
+            if (
+                extracurricular_similarity(
+                    extra.title,
+                    extra.organization,
+                    extra.bullet_points or extra.description,
+                    ex_title,
+                    ex_org,
+                    ex_bullets,
+                )
+                >= 0.78
+            ):
+                is_dup = True
+                break
+        if is_dup:
+            merged.warnings.append(ImportWarning(scope="extracurriculars", message=f"Skipped duplicate activity: {extra.title}"))
+            continue
+        seen_extra.append((extra.title, extra.organization, extra.bullet_points or extra.description))
+        unique_extra.append(extra)
+    merged.extracurriculars = unique_extra
+
     return merged

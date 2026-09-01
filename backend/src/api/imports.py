@@ -23,8 +23,13 @@ from src.services.resume_import import (
     load_existing_profile_data,
     merge_drafts,
 )
-from src.services.import_utils import unique_strings
-from src.services.import_utils import normalize_text, similar
+from src.services.import_utils import (
+    education_similarity,
+    extracurricular_similarity,
+    normalize_text,
+    similar,
+    unique_strings,
+)
 from src.services.import_jobs import import_jobs
 
 router = APIRouter(prefix="/profile/import", tags=["profile-import"])
@@ -59,8 +64,28 @@ def _education_exists(item, existing_education: list[UserEducation], seen: set[s
     if key in seen:
         return True
     for existing in existing_education:
-        confidence = (similar(item.degree, existing.degree) + similar(item.institution, existing.institution)) / 2
-        if confidence >= 0.86:
+        if education_similarity(item.degree, item.institution, existing.degree, existing.institution) >= 0.80:
+            return True
+    seen.add(key)
+    return False
+
+
+def _extracurricular_exists(item, existing_extracurriculars: list[UserExtracurricular], seen: set[str]) -> bool:
+    key = normalize_text(f"{item.title} {item.organization or ''}")
+    if key in seen:
+        return True
+    for existing in existing_extracurriculars:
+        if (
+            extracurricular_similarity(
+                item.title,
+                item.organization,
+                item.bullet_points or item.description,
+                existing.title,
+                existing.organization,
+                existing.bullet_points or existing.description,
+            )
+            >= 0.78
+        ):
             return True
     seen.add(key)
     return False
@@ -314,10 +339,12 @@ async def apply_import(
     existing_projects = (await db.execute(select(UserProject).where(UserProject.user_id == current_user.id))).scalars().all()
     existing_experiences = (await db.execute(select(UserExperience).where(UserExperience.user_id == current_user.id))).scalars().all()
     existing_education = (await db.execute(select(UserEducation).where(UserEducation.user_id == current_user.id))).scalars().all()
+    existing_extracurriculars = (await db.execute(select(UserExtracurricular).where(UserExtracurricular.user_id == current_user.id))).scalars().all()
     seen_projects: set[str] = set()
     seen_experiences: set[str] = set()
     seen_education: set[str] = set()
-    skipped = {"projects": 0, "experiences": 0, "education": 0}
+    seen_extracurriculars: set[str] = set()
+    skipped = {"projects": 0, "experiences": 0, "education": 0, "extracurriculars": 0}
 
     for index, item in enumerate(data.projects):
         if _project_exists(item, list(existing_projects), seen_projects):
@@ -335,6 +362,9 @@ async def apply_import(
             continue
         db.add(UserEducation(user_id=current_user.id, sort_order=item.sort_order or index, **item.model_dump(exclude={"sort_order"})))
     for index, item in enumerate(data.extracurriculars):
+        if _extracurricular_exists(item, list(existing_extracurriculars), seen_extracurriculars):
+            skipped["extracurriculars"] += 1
+            continue
         db.add(UserExtracurricular(user_id=current_user.id, sort_order=item.sort_order or index, **item.model_dump(exclude={"sort_order"})))
 
     await db.commit()
