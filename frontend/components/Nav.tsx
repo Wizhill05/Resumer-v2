@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation"
 import { Menu, X, Sun, Moon, LogOut, LayoutDashboard, Sparkles, User, History, LifeBuoy, Shield, ChevronRight } from "lucide-react"
 import { useTheme } from "next-themes"
 import { createPortal } from "react-dom"
+import { signOutAction } from "@/app/actions"
 
 const defaultLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -146,7 +147,7 @@ export function Nav() {
             </button>
 
             {/* Sign Out Button */}
-            <form action="/api/auth/signout" method="POST" className="ml-1">
+            <form action={signOutAction} className="ml-1">
               <button
                 type="submit"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-zinc-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
@@ -264,7 +265,7 @@ export function Nav() {
               }`}
               style={{ animationDelay: closing ? "0ms" : `${(links.length + 1) * 35}ms` }}
             >
-              <form action="/api/auth/signout" method="POST">
+              <form action={signOutAction}>
                 <button
                   type="submit"
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 rounded transition-all active:scale-[0.98] cursor-pointer"

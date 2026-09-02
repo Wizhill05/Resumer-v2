@@ -1,6 +1,6 @@
 "use server"
 
-import { signIn } from "@/lib/auth"
+import { signIn, signOut } from "@/lib/auth"
 
 function callbackUrl(formData?: FormData) {
   const raw = formData?.get("callbackUrl")
@@ -13,4 +13,8 @@ export async function signInGithub(formData?: FormData) {
 
 export async function signInGoogle(formData?: FormData) {
   await signIn("google", { redirectTo: callbackUrl(formData) })
+}
+
+export async function signOutAction() {
+  await signOut({ redirectTo: "/" })
 }
