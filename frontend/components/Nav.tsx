@@ -3,11 +3,10 @@
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
-import { Menu, X, Sun, Moon, LayoutDashboard, Sparkles, User, History, LifeBuoy, Shield, ChevronRight } from "lucide-react"
+import { Menu, X, Sun, Moon, LayoutDashboard, Sparkles, User, History, LifeBuoy, ChevronRight } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useSession } from "next-auth/react"
 import { useGenerationStats } from "@/components/useGenerationStats"
-import { useIsAdmin } from "@/components/useIsAdmin"
 import { createPortal } from "react-dom"
 import { AccountMenu } from "@/components/AccountMenu"
 
@@ -57,16 +56,12 @@ export function Nav() {
     ? accountUser.name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")
     : (accountUser?.email?.trim()[0]?.toUpperCase() ?? "?")
 
-  // Admin status — cached, re-verified in background (shared hook)
-  const isAdmin = useIsAdmin()
+  // Main navbar links — Admin lives in the AccountMenu dropdown only.
+  const links = defaultLinks
 
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  const links = isAdmin
-    ? [...defaultLinks, { href: "/admin", label: "Admin", icon: Shield }]
-    : defaultLinks
 
   const handleClose = useCallback(() => {
     if (!open || closing) return
