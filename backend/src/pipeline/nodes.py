@@ -91,9 +91,14 @@ def _replace_prompt_vars(prompt: str, values: dict[str, str]) -> str:
 def _clean_skill_category(category: Any) -> str:
     text = re.sub(r"[_\-]+", " ", str(category or "")).strip()
     text = re.sub(r"\s+", " ", text)
+    # Canonicalize standalone "and" to "&" so LLM variants
+    # ("Languages & Backend" vs "Languages And Backend") merge.
+    text = re.sub(r"(?i)(?<=\s)and(?=\s)|^(and)(?=\s)|(?<=\s)(and)$", "&", text)
+    text = re.sub(r"\s*&\s*", " & ", text)
+    text = re.sub(r"\s+", " ", text).strip()
     words = []
     for word in text.split(" "):
-        if word.isupper() or "/" in word:
+        if word == "&" or word.isupper() or "/" in word:
             words.append(word)
         else:
             words.append(word[:1].upper() + word[1:])
