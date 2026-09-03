@@ -50,6 +50,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async session({ session, token }) {
       return {
         ...session,
+        provider: token.provider as string | undefined,
         githubUsername: token.githubUsername as string | undefined,
         githubAccessToken: token.githubAccessToken as string | undefined,
         token: token as Record<string, unknown>,

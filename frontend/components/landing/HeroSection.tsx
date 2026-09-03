@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { InlineAuthPanel } from "@/components/landing/InlineAuthPanel"
+import { LoginModal } from "@/components/LoginModal"
 import { ArrowUpRight, FileText } from "lucide-react"
 
 export function HeroSection() {
@@ -30,7 +31,11 @@ export function HeroSection() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <LoginModal
+            callbackUrl="/dashboard"
+            triggerClassName="bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-2 border-black dark:border-zinc-700 shadow-[3px_3px_0px_#ff4e26] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_#ff4e26] active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0px_#ff4e26] transition-all text-xs font-black uppercase tracking-wider"
+          />
           <Link
             href="/try"
             className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-100 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"

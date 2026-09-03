@@ -7,6 +7,7 @@ import { Menu, X, Sun, Moon, LogOut, LayoutDashboard, Sparkles, User, History, L
 import { useTheme } from "next-themes"
 import { createPortal } from "react-dom"
 import { signOutAction } from "@/app/actions"
+import { AccountMenu } from "@/components/AccountMenu"
 
 const defaultLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -146,20 +147,12 @@ export function Nav() {
               {mounted && resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
 
-            {/* Sign Out Button */}
-            <form action={signOutAction} className="ml-1">
-              <button
-                type="submit"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-zinc-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
-                title="Sign Out"
-              >
-                <LogOut size={14} />
-                <span>Sign Out</span>
-              </button>
-            </form>
+            {/* Sign Out Button -> Account section */}
+            <AccountMenu />
           </div>
-          {/* Mobile hamburger + theme toggle */}
+          {/* Mobile account + hamburger + theme toggle */}
           <div className="flex items-center gap-1 md:hidden">
+            <AccountMenu />
             <button
               onClick={toggleTheme}
               className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"

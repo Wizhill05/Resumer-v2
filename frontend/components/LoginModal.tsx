@@ -32,7 +32,7 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
         onClick={() => setOpen(true)}
         className={triggerClassName}
       >
-        Login
+        Sign in
       </Button>
 
       {open && typeof document !== "undefined" && createPortal(
