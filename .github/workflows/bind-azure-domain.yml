@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   bind-domain:
-    name: Get Verification ID and Bind Domain
+    name: Add Custom Domain and Managed Cert
     runs-on: ubuntu-latest
 
     steps:
@@ -18,7 +18,20 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get Verification ID
+      - name: Add Custom Domain
         run: |
-          echo "=== GET CUSTOM DOMAIN VERIFICATION ID ==="
-          az containerapp show -n resumer-backend -g Resumer --query "properties.customDomainVerificationId" -o tsv
+          echo "=== ADDING CUSTOM DOMAIN ==="
+          az containerapp hostname add \
+            -n resumer-backend \
+            -g Resumer \
+            --hostname resume-backend.aryansingh.space
+
+      - name: Bind Managed Certificate
+        run: |
+          echo "=== BINDING MANAGED CERTIFICATE ==="
+          az containerapp hostname bind \
+            -n resumer-backend \
+            -g Resumer \
+            --hostname resume-backend.aryansingh.space \
+            --environment orangebush-e86649df \
+            --validation-method CNAME || true
