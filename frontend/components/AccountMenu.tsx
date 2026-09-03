@@ -4,10 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
 import {
-  LayoutDashboard,
-  History,
-  User,
-  LifeBuoy,
   Settings,
   LogOut,
   ChevronDown,
@@ -91,10 +87,6 @@ export function AccountMenu() {
 
   const menuLinks = [
     { href: "/account", label: "Manage account", icon: Settings },
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/profile", label: "Resume profile", icon: User },
-    { href: "/dashboard/history", label: "History", icon: History },
-    { href: "/support", label: "Support", icon: LifeBuoy },
   ]
 
   return (

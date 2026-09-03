@@ -1,16 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
-import {
-  LayoutDashboard,
-  History,
-  User,
-  LifeBuoy,
-  LogOut,
-  Copy,
-  Check,
-} from "lucide-react"
+import { LogOut, Copy, Check } from "lucide-react"
 import { signOutAction } from "@/app/actions"
 
 interface AccountClientProps {
@@ -52,17 +43,10 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
     } catch {}
   }
 
-  const links = [
-    { href: "/dashboard", label: "Dashboard", desc: "Generate tailored resumes", icon: LayoutDashboard },
-    { href: "/profile", label: "Resume profile", desc: "Source material for generation", icon: User },
-    { href: "/dashboard/history", label: "History", desc: "Past generations and PDFs", icon: History },
-    { href: "/support", label: "Support", desc: "Help and feedback", icon: LifeBuoy },
-  ]
-
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+    <div className="max-w-xl">
       {/* Identity card */}
-      <section className="border-2 border-black bg-white p-5 shadow-[5px_5px_0px_#000000] md:col-span-2 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-[5px_5px_0px_#3f3f46]">
+      <section className="border-2 border-black bg-white p-5 shadow-[5px_5px_0px_#000000] dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-[5px_5px_0px_#3f3f46]">
         <div className="flex items-center gap-4">
           {image ? (
             <img
@@ -125,41 +109,6 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
             Sign out
           </button>
         </form>
-      </section>
-
-      {/* Quick links */}
-      <section className="md:col-span-3">
-        <p className="mb-2 font-mono text-[10px] font-bold tracking-widest text-zinc-500 uppercase dark:text-zinc-400">
-          Quick links
-        </p>
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          {links.map((link) => {
-            const Icon = link.icon
-            return (
-              <Link
-                key={link.href + link.label}
-                href={link.href}
-                className="group flex items-center gap-3 border-2 border-black bg-white p-4 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_#000000] dark:border-zinc-700 dark:bg-zinc-900 dark:hover:shadow-[4px_4px_0px_#3f3f46]"
-              >
-                <span className="border border-zinc-200 bg-zinc-50 p-2 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-300">
-                  <Icon size={18} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-extrabold tracking-tight uppercase">
-                    {link.label}
-                  </span>
-                  <span className="block truncate text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                    {link.desc}
-                  </span>
-                </span>
-              </Link>
-            )
-          })}
-        </div>
-        <p className="mt-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-          Looking for resume source data (experience, projects, education)? That
-          lives under <Link href="/profile" className="font-bold underline">Resume profile</Link>.
-        </p>
       </section>
     </div>
   )

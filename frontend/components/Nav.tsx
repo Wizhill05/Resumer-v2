@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { Menu, X, Sun, Moon, LogOut, LayoutDashboard, Sparkles, User, History, LifeBuoy, Shield, ChevronRight } from "lucide-react"
 import { useTheme } from "next-themes"
+import { useSession } from "next-auth/react"
 import { createPortal } from "react-dom"
 import { signOutAction } from "@/app/actions"
 import { AccountMenu } from "@/components/AccountMenu"
@@ -26,6 +27,11 @@ export function Nav() {
   const [closing, setClosing] = useState(false)
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const { data: session } = useSession()
+  const accountUser = session?.user
+  const accountInitials = accountUser?.name?.trim()
+    ? accountUser.name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")
+    : (accountUser?.email?.trim()[0]?.toUpperCase() ?? "?")
 
   // Admin status — read from sessionStorage first, then verify in background
   const [isAdmin, setIsAdmin] = useState(false)
@@ -150,9 +156,8 @@ export function Nav() {
             {/* Sign Out Button -> Account section */}
             <AccountMenu />
           </div>
-          {/* Mobile account + hamburger + theme toggle */}
+          {/* Mobile hamburger + theme toggle (account lives inside the menu) */}
           <div className="flex items-center gap-1 md:hidden">
-            <AccountMenu />
             <button
               onClick={toggleTheme}
               className="p-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors cursor-pointer"
@@ -213,6 +218,55 @@ export function Nav() {
           {/* Navigation Links Area */}
           <div className="flex-1 overflow-y-auto px-4 py-5 flex flex-col justify-between">
             <div className="space-y-1.5">
+              {/* Account — identity entry, opens /account */}
+              {accountUser && (
+                <div
+                  className={closing ? "mobile-nav-item-exit" : "mobile-nav-item"}
+                  style={{ animationDelay: closing ? "0ms" : "0ms" }}
+                >
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-2 px-2">
+                    Account
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleNavigate("/account")}
+                    className={`w-full flex items-center gap-3 p-3.5 rounded border transition-all duration-150 active:scale-[0.98] cursor-pointer text-left ${
+                      pathname === "/account"
+                        ? "border-[#ff4e26] bg-[#ff4e26]/10 font-black shadow-2xs"
+                        : "border-zinc-200/60 dark:border-zinc-800/60 bg-white/70 dark:bg-zinc-900/70 hover:border-zinc-300 dark:hover:border-zinc-700 font-bold"
+                    }`}
+                  >
+                    {accountUser.image ? (
+                      <img
+                        src={accountUser.image}
+                        alt=""
+                        width={36}
+                        height={36}
+                        referrerPolicy="no-referrer"
+                        className="h-9 w-9 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ff4e26] text-xs font-black text-white"
+                      >
+                        {accountInitials}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-base uppercase tracking-tight text-zinc-800 dark:text-zinc-200">
+                        {accountUser.name ?? "Account"}
+                      </span>
+                      {accountUser.email && (
+                        <span className="block truncate text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                          {accountUser.email}
+                        </span>
+                      )}
+                    </span>
+                    <ChevronRight size={15} className="text-zinc-400 dark:text-zinc-600 shrink-0" />
+                  </button>
+                </div>
+              )}
               <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-2 px-2">
                 Navigation
               </p>
