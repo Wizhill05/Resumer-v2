@@ -1,0 +1,34 @@
+name: Debug Azure Inventory (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inventory:
+    name: List Container Apps
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Subscription and inventory
+        run: |
+          echo "=== ACCOUNT ==="
+          az account show --query "{name:name,id:id,tenant:tenantId}" -o json || true
+          echo "=== RESOURCE GROUPS ==="
+          az group list --query "[].{name:name,location:location}" -o table || true
+          echo "=== ALL CONTAINER APPS (all RGs) ==="
+          az containerapp list --query "[].{name:name,rg:resourceGroup,running:properties.runningStatus,provision:properties.provisioningState,rev:properties.latestRevisionName,fqdn:properties.configuration.ingress.fqdn}" -o table || true
+          echo "=== ALL REVISIONS OF EACH APP ==="
+          for app in $(az containerapp list --query "[].{name:name,rg:resourceGroup}" -o tsv | awk '{print $1":"$2}'); do
+            name="${app%%:*}"; rg="${app##*:}"
+            echo "--- $name ($rg) ---"
+            az containerapp revision list -n "$name" -g "$rg" --query "[].{rev:name,active:properties.active,replicas:properties.replicas,traffic:properties.trafficWeight,health:properties.healthState,provision:properties.provisioningState}" -o table || true
+          done
