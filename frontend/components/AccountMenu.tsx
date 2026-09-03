@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
 import {
+  User,
+  Shield,
   Settings,
   LogOut,
   ChevronDown,
@@ -12,6 +14,7 @@ import {
 } from "lucide-react"
 import { signOutAction } from "@/app/actions"
 import { LoginModal } from "@/components/LoginModal"
+import { useIsAdmin } from "@/components/useIsAdmin"
 
 function initials(name?: string | null, email?: string | null) {
   if (name?.trim()) {
@@ -34,6 +37,7 @@ function providerLabel(provider?: string) {
 
 export function AccountMenu() {
   const { data: session, status } = useSession()
+  const isAdmin = useIsAdmin()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -87,6 +91,10 @@ export function AccountMenu() {
 
   const menuLinks = [
     { href: "/account", label: "Manage account", icon: Settings },
+    { href: "/profile", label: "Resume profile", icon: User },
+    // Admin entry is conditional: the overlay nav already lists Admin,
+    // the dropdown only shows it to admins to avoid dead ends.
+    ...(isAdmin ? [{ href: "/admin", label: "Admin", icon: Shield }] : []),
   ]
 
   return (

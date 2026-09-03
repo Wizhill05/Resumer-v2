@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
-import { Menu, X, Sun, Moon, LogOut, LayoutDashboard, Sparkles, User, History, LifeBuoy, Shield, ChevronRight } from "lucide-react"
+import { Menu, X, Sun, Moon, LayoutDashboard, Sparkles, User, History, LifeBuoy, Shield, ChevronRight } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useSession } from "next-auth/react"
+import { useGenerationStats } from "@/components/useGenerationStats"
+import { useIsAdmin } from "@/components/useIsAdmin"
 import { createPortal } from "react-dom"
-import { signOutAction } from "@/app/actions"
 import { AccountMenu } from "@/components/AccountMenu"
 
 const defaultLinks = [
@@ -18,7 +19,30 @@ const defaultLinks = [
   { href: "/support", label: "Support", icon: LifeBuoy },
 ]
 
-const ADMIN_CACHE_KEY = "resumer_is_admin"
+function AccountStatsLine() {
+  const { data: stats } = useGenerationStats()
+  if (!stats) return null
+  const leftLabel = stats.cap === null ? "Unlimited" : `${stats.remaining} of ${stats.cap} left today`
+  const pct = stats.cap === null ? 100 : Math.min(100, (stats.usedToday / stats.cap) * 100)
+  return (
+    <span className="mt-1 block">
+      <span className="block text-[11px] font-bold text-zinc-500 dark:text-zinc-400">
+        {leftLabel}
+        <span className="mx-1 text-zinc-300 dark:text-zinc-600">•</span>
+        {stats.total} total
+      </span>
+      <span
+        aria-hidden="true"
+        className="mt-1 block h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+      >
+        <span
+          className="block h-full rounded-full bg-[#ff4e26] transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+    </span>
+  )
+}
 
 export function Nav() {
   const router = useRouter()
@@ -33,29 +57,11 @@ export function Nav() {
     ? accountUser.name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")
     : (accountUser?.email?.trim()[0]?.toUpperCase() ?? "?")
 
-  // Admin status — read from sessionStorage first, then verify in background
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Admin status — cached, re-verified in background (shared hook)
+  const isAdmin = useIsAdmin()
 
   useEffect(() => {
     setMounted(true)
-
-    // Immediately restore cached admin status (no flicker)
-    try {
-      const cached = sessionStorage.getItem(ADMIN_CACHE_KEY)
-      if (cached === "1") setIsAdmin(true)
-    } catch {}
-
-    // Background-verify admin access
-    fetch("/api/backend/admin/analytics")
-      .then((res) => {
-        const admin = res.ok
-        setIsAdmin(admin)
-        try { sessionStorage.setItem(ADMIN_CACHE_KEY, admin ? "1" : "0") } catch {}
-      })
-      .catch(() => {
-        setIsAdmin(false)
-        try { sessionStorage.setItem(ADMIN_CACHE_KEY, "0") } catch {}
-      })
   }, [])
 
   const links = isAdmin
@@ -262,6 +268,7 @@ export function Nav() {
                           {accountUser.email}
                         </span>
                       )}
+                      <AccountStatsLine />
                     </span>
                     <ChevronRight size={15} className="text-zinc-400 dark:text-zinc-600 shrink-0" />
                   </button>
@@ -305,23 +312,13 @@ export function Nav() {
               })}
             </div>
 
-            {/* Bottom Actions */}
+            {/* Bottom footer */}
             <div
-              className={`pt-5 border-t border-zinc-200 dark:border-zinc-800 mt-6 space-y-3 ${
+              className={`pt-5 border-t border-zinc-200 dark:border-zinc-800 mt-6 ${
                 closing ? "mobile-nav-item-exit" : "mobile-nav-item"
               }`}
               style={{ animationDelay: closing ? "0ms" : `${(links.length + 1) * 35}ms` }}
             >
-              <form action={signOutAction}>
-                <button
-                  type="submit"
-                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-extrabold uppercase tracking-wider text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 rounded transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  <LogOut size={14} />
-                  Sign Out
-                </button>
-              </form>
-
               <div className="flex items-center justify-between px-1 text-[10px] font-mono text-zinc-400 dark:text-zinc-500">
                 <span>Resumer v2.0</span>
                 <span>ATS Optimized</span>
