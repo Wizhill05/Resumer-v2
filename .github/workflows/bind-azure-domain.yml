@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   bind-domain:
-    name: Add Custom Domain and Managed Cert
+    name: Bind Managed Certificate
     runs-on: ubuntu-latest
 
     steps:
@@ -18,14 +18,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Add Custom Domain
-        run: |
-          echo "=== ADDING CUSTOM DOMAIN ==="
-          az containerapp hostname add \
-            -n resumer-backend \
-            -g Resumer \
-            --hostname resume-backend.aryansingh.space
-
       - name: Bind Managed Certificate
         run: |
           echo "=== BINDING MANAGED CERTIFICATE ==="
@@ -33,5 +25,5 @@ jobs:
             -n resumer-backend \
             -g Resumer \
             --hostname resume-backend.aryansingh.space \
-            --environment orangebush-e86649df \
-            --validation-method CNAME || true
+            --environment aca-env-resumer \
+            --validation-method CNAME
