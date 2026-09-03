@@ -42,3 +42,26 @@ def test_normalize_skills_merges_ampersand_variants():
     )
     assert len(merged) == 1
     assert sorted(next(iter(merged.values()))) == ["Java", "Python"]
+
+
+def test_schema_merges_comma_variants_without_duplication():
+    payload = {
+        "summary": "Test summary.",
+        "categories": [
+            {"category": "Cloud, MLOps & Infrastructure", "skills": ["AWS", "Docker"]},
+            {"category": "Soft Skills", "skills": ["Agile"]},
+        ],
+        "skills": {
+            "Cloud MLOps And Infrastructure": ["AWS", "Docker"],
+            "Soft Skills": ["Agile"],
+        },
+    }
+    obj = TailoredSummaryAndSkills.model_validate(payload)
+    skills = obj.model_dump()["skills"]
+    assert len(skills) == 2, f"duplicated skills categories: {list(skills)}"
+
+
+def test_clean_skill_category_canonicalizes_commas():
+    assert _clean_skill_category("Cloud MLOps And Infrastructure") == _clean_skill_category(
+        "Cloud, MLOps & Infrastructure"
+    )

@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _canonical_skill_key(name: Any) -> str:
-    """Canonical key for merging: case-insensitive, `_`/`-` → space, standalone `and` → `&`."""
-    text = re.sub(r"[_\-]+", " ", str(name or "")).strip()
+    """Canonical key for merging: case-insensitive, `_`/`-`/`,` → space, standalone `and` → `&`."""
+    text = re.sub(r"[_\-,]+", " ", str(name or "")).strip()
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"(?i)(?<=\s)and(?=\s)|^(and)(?=\s)|(?<=\s)(and)$", "&", text)
     text = re.sub(r"\s*&\s*", " & ", text)
@@ -17,7 +17,7 @@ def _canonical_skill_key(name: Any) -> str:
 
 def _display_skill_category(name: Any) -> str:
     """Clean display name with canonical `&` (mirrors pipeline _clean_skill_category)."""
-    text = re.sub(r"[_\-]+", " ", str(name or "")).strip()
+    text = re.sub(r"[_\-,]+", " ", str(name or "")).strip()
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"(?i)(?<=\s)and(?=\s)|^(and)(?=\s)|(?<=\s)(and)$", "&", text)
     text = re.sub(r"\s*&\s*", " & ", text)

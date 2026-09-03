@@ -89,7 +89,7 @@ def _replace_prompt_vars(prompt: str, values: dict[str, str]) -> str:
 
 
 def _clean_skill_category(category: Any) -> str:
-    text = re.sub(r"[_\-]+", " ", str(category or "")).strip()
+    text = re.sub(r"[_\-,]+", " ", str(category or "")).strip()
     text = re.sub(r"\s+", " ", text)
     # Canonicalize standalone "and" to "&" so LLM variants
     # ("Languages & Backend" vs "Languages And Backend") merge.
