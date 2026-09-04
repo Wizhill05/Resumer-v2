@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Save, Download, RotateCcw, X, Loader2, Eye, Edit3 } from "lucide-react"
+import { posthog } from "@/lib/posthog"
 import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 import { ResumeJsonEditor } from "@/components/editor/ResumeJsonEditor"
 import { ResumeFormEditor } from "@/components/editor/ResumeFormEditor"
@@ -117,6 +118,12 @@ export function EditorClient({ payload }: Props) {
   }
 
   async function handleExportPdf() {
+    posthog.capture("resume_pdf_downloaded", {
+      resume_id: payload.id,
+      job_title: payload.job_title,
+      company: payload.company,
+      template_id: payload.template_id,
+    })
     if (dirty) await handleSave()
     window.location.href = `/api/backend/generate/${payload.id}/download`
   }

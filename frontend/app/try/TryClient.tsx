@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { emptyGuestDraft, loadGuestDraft, mergeGuestDraft, saveGuestDraft } from "@/lib/guest-storage"
 import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
+import { posthog } from "@/lib/posthog"
 import type {
   GuestDraft, GuestEducation, GuestExperience,
   GuestExtracurricular, GuestProject
@@ -823,6 +824,11 @@ export function TryClient() {
     if (draft.experiences.length < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
     if (draft.projects.length < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
     setError(null); setSubmitting(true)
+    posthog.capture("guest_generation_started", {
+      projects_count: activeFocus.projects,
+      experience_count: activeFocus.experience,
+      has_custom_instructions: !!instructions,
+    })
     try {
       const res = await fetch("/api/guest/generate", {
         method: "POST",

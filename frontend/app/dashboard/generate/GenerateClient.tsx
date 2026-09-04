@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { posthog } from "@/lib/posthog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -186,6 +187,14 @@ export function GenerateClient() {
     setError(null)
     setIsSubmitting(true)
 
+    posthog.capture("resume_generation_started", {
+      template_id: selectedTemplate,
+      projects_count: projectsCount,
+      experience_count: experienceCount,
+      has_custom_instructions: !!instructions,
+      send_email: sendEmail,
+    })
+
     try {
       const response = await fetch("/api/backend/generate", {
         method: "POST",
@@ -239,6 +248,10 @@ export function GenerateClient() {
             setLivePercent(100)
             setLiveStepLabel(log.message === "completed" ? "Resume complete" : "Generation failed")
             setIsGenerationComplete(true)
+            posthog.capture(log.message === "completed" ? "resume_generation_completed" : "resume_generation_failed", {
+              run_id: createdRunId,
+              template_id: selectedTemplate,
+            })
             queryClient.invalidateQueries({ queryKey: ["history"] })
             return
           }

@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LoginModal } from "@/components/LoginModal"
 import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
+import { posthog } from "@/lib/posthog"
 
 type GuestRun = {
   id: string
@@ -151,7 +152,19 @@ export function GuestResultClient({ id }: { id: string }) {
         )}
         <div className="flex flex-wrap gap-3">
           {status === "completed" ? (
-            <a href={`/api/guest/generate/${id}/preview`} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46]">
+            <a
+              href={`/api/guest/generate/${id}/preview`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                posthog.capture("guest_resume_pdf_downloaded", {
+                  run_id: id,
+                  job_title: run?.job_title,
+                  company: run?.company,
+                })
+              }}
+              className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46]"
+            >
               <CheckCircle2 size={18} className="mr-2" /> Download PDF
             </a>
           ) : status === "failed" ? null : (
