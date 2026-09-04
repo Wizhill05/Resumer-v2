@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Save, Download, RotateCcw, X, Loader2, Eye } from "lucide-react"
+import { Save, Download, RotateCcw, X, Loader2, Eye, Edit3 } from "lucide-react"
 import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
 import { ResumeJsonEditor } from "@/components/editor/ResumeJsonEditor"
 import { ResumeFormEditor } from "@/components/editor/ResumeFormEditor"
@@ -20,7 +20,8 @@ export function EditorClient({ payload }: Props) {
   const router = useRouter()
 
   // Editor view mode
-  const [editorMode, setEditorMode] = useState<"form" | "json">("form")
+  const [editorMode, setEditorMode] = useState<"form" | "json" | "preview">("form")
+  const [lastEditMode, setLastEditMode] = useState<"form" | "json">("form")
 
   // Editor state
   const [rawJson, setRawJson] = useState<string>(
@@ -38,9 +39,6 @@ export function EditorClient({ payload }: Props) {
   const [fitPageCount, setFitPageCount] = useState<number>(payload.page_count ?? 1)
   const [fitWarning, setFitWarning] = useState<boolean>(payload.fit_warning)
   const [revision, setRevision] = useState<number>(payload.editor_revision)
-
-  // Mobile preview view state
-  const [showMobilePreview, setShowMobilePreview] = useState(false)
 
   // Save state
   const [saving, setSaving] = useState(false)
@@ -168,8 +166,8 @@ export function EditorClient({ payload }: Props) {
           {dirty && <span className="ml-2 text-xs text-amber-600 font-bold">unsaved</span>}
         </div>
 
-        {/* Fit info (hidden on mobile, visible on desktop) */}
-        <div className="hidden md:block">
+        {/* Fit info */}
+        <div className={editorMode === "preview" ? "block" : "hidden md:block"}>
           <FontFitBar
             fontPt={fitFontPt}
             pageCount={fitPageCount}
@@ -241,25 +239,50 @@ export function EditorClient({ payload }: Props) {
 
       {/* Split pane / Content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
-        {/* Left — Editor (Full on mobile, 45% on desktop) */}
-        <div className="w-full md:w-[45%] min-w-0 min-h-0 md:border-r border-zinc-300 dark:border-zinc-700 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
+        {/* Left — Editor (Full on mobile, 45% on desktop; hidden on mobile if in preview mode) */}
+        <div
+          className={`w-full md:w-[45%] min-w-0 min-h-0 md:border-r border-zinc-300 dark:border-zinc-700 flex flex-col overflow-hidden bg-white dark:bg-zinc-900 ${
+            editorMode === "preview" ? "hidden md:flex" : "flex"
+          }`}
+        >
           {/* Mode Toggler */}
           <div className="flex border-b border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 shrink-0">
             <button
-              onClick={() => setEditorMode("form")}
+              onClick={() => {
+                setEditorMode("form")
+                setLastEditMode("form")
+              }}
               className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center border-r border-zinc-300 dark:border-zinc-700 outline-none transition-colors cursor-pointer ${
-                editorMode === "form" ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
+                editorMode === "form"
+                  ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]"
+                  : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
               }`}
             >
               Form Editor
             </button>
             <button
-              onClick={() => setEditorMode("json")}
-              className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center outline-none transition-colors cursor-pointer ${
-                editorMode === "json" ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
+              onClick={() => {
+                setEditorMode("json")
+                setLastEditMode("json")
+              }}
+              className={`flex-1 py-2 text-xs font-black uppercase tracking-wider text-center border-r md:border-r-0 border-zinc-300 dark:border-zinc-700 outline-none transition-colors cursor-pointer ${
+                editorMode === "json"
+                  ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]"
+                  : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
               }`}
             >
               Raw JSON
+            </button>
+            {/* Mobile-only Preview segment tab */}
+            <button
+              onClick={() => setEditorMode("preview")}
+              className={`md:hidden flex-1 py-2 text-xs font-black uppercase tracking-wider text-center outline-none transition-colors cursor-pointer ${
+                editorMode === "preview"
+                  ? "bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]"
+                  : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
+              }`}
+            >
+              Preview
             </button>
           </div>
 
@@ -274,81 +297,70 @@ export function EditorClient({ payload }: Props) {
           )}
         </div>
 
-        {/* Right — Preview (Hidden on mobile, 55% on desktop) */}
-        <div className="hidden md:block flex-1 min-w-0 overflow-hidden">
-          <ResumePreviewPane
-            preview={preview}
-            loading={previewLoading}
-            manifest={payload.manifest}
-            onFitChange={handleFitChange}
-          />
-        </div>
-
-        {/* Mobile Full Screen Preview Drawer/Overlay */}
-        {showMobilePreview && (
-          <div className="fixed inset-0 z-50 flex flex-col h-screen h-[100dvh] max-h-[100dvh] bg-zinc-100 dark:bg-zinc-900 md:hidden">
-            {/* Drawer Header */}
-            <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
-              <button
-                onClick={() => setShowMobilePreview(false)}
-                className="flex items-center gap-1 py-1.5 text-xs border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:border-zinc-500 bg-white dark:bg-zinc-800 px-2.5 rounded transition-colors cursor-pointer font-bold animate-fade-in"
-              >
-                <X size={14} />
-                Back to Edit
-              </button>
-
-              <FontFitBar
-                fontPt={fitFontPt}
-                pageCount={fitPageCount}
-                fits={!fitWarning}
-                minFontSize={payload.manifest.min_font_size}
-                maxFontSize={payload.manifest.max_font_size}
-                targetPages={payload.manifest.target_pages}
-              />
-            </div>
-
-            {/* Drawer Preview area */}
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <ResumePreviewPane
-                preview={preview}
-                loading={previewLoading}
-                manifest={payload.manifest}
-                onFitChange={handleFitChange}
-              />
-            </div>
-
-            {/* Drawer Footer controls */}
-            <div className="h-16 shrink-0 border-t border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-around px-4">
-              <button
-                onClick={handleSave}
-                disabled={!dirty || !!jsonError || saving}
-                className="flex-1 max-w-[130px] flex items-center justify-center gap-1 py-2 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-40 rounded transition-colors cursor-pointer"
-              >
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                Save
-              </button>
-              <button
-                onClick={handleExportPdf}
-                disabled={saving}
-                className="flex-1 max-w-[130px] flex items-center justify-center gap-1 py-2 text-xs font-bold bg-[#ff4e26] text-white hover:bg-[#e03d16] disabled:opacity-40 rounded transition-colors cursor-pointer"
-              >
-                <Download size={13} />
-                Export PDF
-              </button>
-            </div>
+        {/* Right / Preview Pane (Visible on desktop always; on mobile only when editorMode === "preview") */}
+        <div
+          className={`flex-1 min-w-0 min-h-0 flex-col overflow-hidden ${
+            editorMode === "preview" ? "flex" : "hidden md:flex"
+          }`}
+        >
+          {/* Mobile subheader when viewing preview to easily switch back */}
+          <div className="md:hidden flex border-b border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 shrink-0">
+            <button
+              onClick={() => {
+                setEditorMode("form")
+                setLastEditMode("form")
+              }}
+              className="flex-1 py-2 text-xs font-black uppercase tracking-wider text-center border-r border-zinc-300 dark:border-zinc-700 outline-none transition-colors cursor-pointer text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
+            >
+              Form Editor
+            </button>
+            <button
+              onClick={() => {
+                setEditorMode("json")
+                setLastEditMode("json")
+              }}
+              className="flex-1 py-2 text-xs font-black uppercase tracking-wider text-center border-r border-zinc-300 dark:border-zinc-700 outline-none transition-colors cursor-pointer text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-zinc-200"
+            >
+              Raw JSON
+            </button>
+            <button
+              onClick={() => setEditorMode("preview")}
+              className="flex-1 py-2 text-xs font-black uppercase tracking-wider text-center outline-none transition-colors cursor-pointer bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-100 border-b-2 border-b-[#ff4e26]"
+            >
+              Preview
+            </button>
           </div>
-        )}
+
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <ResumePreviewPane
+              preview={preview}
+              loading={previewLoading}
+              manifest={payload.manifest}
+              onFitChange={handleFitChange}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Bottom Sticky Action Navigation Bar (Mobile Only) */}
       <div className="shrink-0 h-16 border-t border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-around px-4 md:hidden z-40">
-        <button
-          onClick={() => setShowMobilePreview(true)}
-          className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white cursor-pointer"
-        >
-          <Eye size={20} />
-          <span className="text-[10px] font-black uppercase tracking-wide mt-0.5">Preview</span>
-        </button>
+        {editorMode === "preview" ? (
+          <button
+            onClick={() => setEditorMode(lastEditMode)}
+            className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white cursor-pointer"
+          >
+            <Edit3 size={20} />
+            <span className="text-[10px] font-black uppercase tracking-wide mt-0.5">Edit</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => setEditorMode("preview")}
+            className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white cursor-pointer"
+          >
+            <Eye size={20} />
+            <span className="text-[10px] font-black uppercase tracking-wide mt-0.5">Preview</span>
+          </button>
+        )}
 
         <button
           onClick={handleSave}
