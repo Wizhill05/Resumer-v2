@@ -152,7 +152,7 @@ export function EditorClient({ payload }: Props) {
   const title = [payload.job_title, payload.company].filter(Boolean).join(" — ") || "Resume Editor"
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-zinc-900 overflow-hidden pb-16 md:pb-0">
+    <div className="flex flex-col h-screen h-[100dvh] max-h-[100dvh] bg-white dark:bg-zinc-900 overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0">
         <button
@@ -240,9 +240,9 @@ export function EditorClient({ payload }: Props) {
       {fitWarning && <FitWarningBanner pageCount={fitPageCount} />}
 
       {/* Split pane / Content area */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
         {/* Left — Editor (Full on mobile, 45% on desktop) */}
-        <div className="w-full md:w-[45%] min-w-0 md:border-r border-zinc-300 dark:border-zinc-700 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
+        <div className="w-full md:w-[45%] min-w-0 min-h-0 md:border-r border-zinc-300 dark:border-zinc-700 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
           {/* Mode Toggler */}
           <div className="flex border-b border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-900 shrink-0">
             <button
@@ -286,9 +286,9 @@ export function EditorClient({ payload }: Props) {
 
         {/* Mobile Full Screen Preview Drawer/Overlay */}
         {showMobilePreview && (
-          <div className="fixed inset-0 z-50 flex flex-col bg-zinc-100 dark:bg-zinc-900 md:hidden">
+          <div className="fixed inset-0 z-50 flex flex-col h-screen h-[100dvh] max-h-[100dvh] bg-zinc-100 dark:bg-zinc-900 md:hidden">
             {/* Drawer Header */}
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+            <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-2.5 border-b border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
               <button
                 onClick={() => setShowMobilePreview(false)}
                 className="flex items-center gap-1 py-1.5 text-xs border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:border-zinc-500 bg-white dark:bg-zinc-800 px-2.5 rounded transition-colors cursor-pointer font-bold animate-fade-in"
@@ -308,7 +308,7 @@ export function EditorClient({ payload }: Props) {
             </div>
 
             {/* Drawer Preview area */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <ResumePreviewPane
                 preview={preview}
                 loading={previewLoading}
@@ -318,7 +318,7 @@ export function EditorClient({ payload }: Props) {
             </div>
 
             {/* Drawer Footer controls */}
-            <div className="h-16 border-t border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-around px-4">
+            <div className="h-16 shrink-0 border-t border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-around px-4">
               <button
                 onClick={handleSave}
                 disabled={!dirty || !!jsonError || saving}
@@ -341,7 +341,7 @@ export function EditorClient({ payload }: Props) {
       </div>
 
       {/* Bottom Sticky Action Navigation Bar (Mobile Only) */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 border-t border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-around px-4 md:hidden z-40">
+      <div className="shrink-0 h-16 border-t border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-around px-4 md:hidden z-40">
         <button
           onClick={() => setShowMobilePreview(true)}
           className="flex-1 max-w-[100px] flex flex-col items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white cursor-pointer"

@@ -9,7 +9,7 @@ export default async function TryPage() {
   if (session) redirect("/dashboard")
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white">
+    <main className="flex h-screen h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white">
       {/* App nav */}
       <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-4 py-2.5 md:px-6">
         <Link href="/" className="resumer-mark px-2.5 py-1 text-base font-black md:text-lg">

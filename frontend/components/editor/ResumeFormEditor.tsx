@@ -136,7 +136,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
 
   // Bullet points helpers (Experience, Projects)
   function updateBulletPoint(key: "experiences" | "projects", itemIndex: number, bulletIndex: number, text: string) {
-    const items = [...((resume[key] || []) as any[])]
+    const items = [...((resume[key] || []) as Array<{ bullet_points?: string[] }>)]
     const bullets = [...(items[itemIndex].bullet_points || [])]
     bullets[bulletIndex] = text
     items[itemIndex] = { ...items[itemIndex], bullet_points: bullets }
@@ -144,7 +144,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
   }
 
   function addBulletPoint(key: "experiences" | "projects", itemIndex: number) {
-    const items = [...((resume[key] || []) as any[])]
+    const items = [...((resume[key] || []) as Array<{ bullet_points?: string[] }>)]
     const bullets = [...(items[itemIndex].bullet_points || [])]
     bullets.push("")
     items[itemIndex] = { ...items[itemIndex], bullet_points: bullets }
@@ -152,7 +152,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
   }
 
   function deleteBulletPoint(key: "experiences" | "projects", itemIndex: number, bulletIndex: number) {
-    const items = [...((resume[key] || []) as any[])]
+    const items = [...((resume[key] || []) as Array<{ bullet_points?: string[] }>)]
     const bullets = [...(items[itemIndex].bullet_points || [])]
     bullets.splice(bulletIndex, 1)
     items[itemIndex] = { ...items[itemIndex], bullet_points: bullets }
@@ -160,7 +160,7 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-auto p-4 space-y-3 bg-zinc-50 dark:bg-zinc-900">
+    <div className="flex-1 min-h-0 overflow-auto p-4 space-y-3 bg-zinc-50 dark:bg-zinc-900">
       {/* 1. PERSONAL DETAILS */}
       <Section
         title="Personal Details"
