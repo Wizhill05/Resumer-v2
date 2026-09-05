@@ -267,12 +267,12 @@ export function ReplaceProjectModal({
             {isReplacing ? (
               <>
                 <Loader2 className="animate-spin" size={13} />
-                <span>Re-tailoring...</span>
+                <span>Starting...</span>
               </>
             ) : (
               <>
                 <ArrowLeftRight size={13} />
-                <span>Replace with AI</span>
+                <span>AI</span>
               </>
             )}
           </button>

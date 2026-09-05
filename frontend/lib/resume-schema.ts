@@ -101,9 +101,11 @@ export type EditorSaveResponse = {
 
 export type ReplaceProjectResponse = {
   success: boolean
-  tailored_resume: TailoredResume
-  orphans_detected: number
-  orphans_repaired: number
+  status: string
+  generation_id: string
+  tailored_resume?: TailoredResume | null
+  orphans_detected?: number
+  orphans_repaired?: number
   font_size?: number | null
   page_count?: number | null
   fit_warning?: boolean

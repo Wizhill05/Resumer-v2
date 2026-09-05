@@ -159,21 +159,9 @@ export function EditorClient({ payload }: Props) {
       }
 
       const data: ReplaceProjectResponse = await res.json()
-      if (data.tailored_resume) {
-        setParsedResume(data.tailored_resume as Record<string, unknown>)
-        setRawJson(JSON.stringify(data.tailored_resume, null, 2))
-        if (data.font_size) setFitFontPt(data.font_size)
-        if (data.page_count) setFitPageCount(data.page_count)
-        if (typeof data.fit_warning === "boolean") setFitWarning(data.fit_warning)
-        setRevision((prev) => prev + 1)
-        setDirty(false)
-
-        const repairNotice =
-          data.orphans_repaired > 0
-            ? ` (repaired ${data.orphans_repaired} orphan line${data.orphans_repaired > 1 ? "s" : ""})`
-            : ""
-        setReplaceSuccessMsg(`Project replaced & re-tailored successfully${repairNotice}!`)
-        setTimeout(() => setReplaceSuccessMsg(null), 6000)
+      if (data.status === "remaking_project" || data.success) {
+        router.push(`/dashboard/history/${payload.id}/remake`)
+        return
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to replace project"
