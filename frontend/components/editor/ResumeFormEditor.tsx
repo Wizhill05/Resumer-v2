@@ -440,6 +440,8 @@ export function ResumeFormEditor({
               totalItems={(resume.projects || []).length}
               onDelete={() => deleteArrayItem("projects", idx)}
               onMove={(dir) => reorderArrayItem("projects", idx, dir)}
+              onReplace={onReplaceProject ? () => setReplacingProjectIndex(idx) : undefined}
+              isReplacing={isReplacingProject}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 <div className="md:col-span-2">
@@ -509,25 +511,6 @@ export function ResumeFormEditor({
                   <Plus size={11} /> Add Bullet Point
                 </button>
               </div>
-
-              {/* Replace project action slab button */}
-              {onReplaceProject && (
-                <div className="mt-3.5 pt-2.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setReplacingProjectIndex(idx)}
-                    disabled={isReplacingProject}
-                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-zinc-100 bg-zinc-100 hover:bg-zinc-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 rounded transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
-                    title="Replace this project with another from your profile"
-                  >
-                    <ArrowLeftRight size={12} className="text-zinc-500" />
-                    <span>Replace from Profile</span>
-                  </button>
-                  <span className="text-[10px] text-zinc-400">
-                    Re-tailors with AI &amp; fixes orphans
-                  </span>
-                </div>
-              )}
             </ItemCard>
           ))}
 
@@ -852,6 +835,8 @@ function ItemCard({
   totalItems,
   onDelete,
   onMove,
+  onReplace,
+  isReplacing,
   children,
 }: {
   title: string
@@ -859,14 +844,32 @@ function ItemCard({
   totalItems: number
   onDelete: () => void
   onMove: (dir: "up" | "down") => void
+  onReplace?: () => void
+  isReplacing?: boolean
   children: React.ReactNode
 }) {
   return (
     <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded overflow-hidden shadow-xs">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 px-3 py-2 bg-zinc-100/70 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-100/70 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700">
         <span className="text-xs font-extrabold uppercase text-zinc-800 dark:text-zinc-200 truncate">{title}</span>
         <div className="flex items-center gap-1 shrink-0">
+          {onReplace && (
+            <button
+              type="button"
+              onClick={onReplace}
+              disabled={isReplacing}
+              className="group relative h-7 w-7 flex items-center justify-center hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 rounded cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Replace this project from profile with AI"
+              aria-label="Replace project from profile"
+            >
+              <ArrowLeftRight size={13} />
+              {/* Tooltip on hover */}
+              <span className="pointer-events-none absolute -top-8 right-0 hidden group-hover:flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded shadow-md z-30 transition-opacity">
+                Replace from profile
+              </span>
+            </button>
+          )}
           {index > 0 && (
             <button onClick={() => onMove("up")} className="h-7 w-7 flex items-center justify-center hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 rounded cursor-pointer transition-colors" title="Move Up">
               <ArrowUp size={13} />
