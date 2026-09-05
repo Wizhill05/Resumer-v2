@@ -31,6 +31,9 @@ const nodeProgressMap: Record<string, number> = {
   orphan_repair: 76,
   content_reduction: 84,
   saver: 95,
+  replace_project_start: 15,
+  replace_project: 35,
+  render_pdf: 88,
 }
 
 const nodeLabels: Record<string, string> = {
@@ -45,11 +48,15 @@ const nodeLabels: Record<string, string> = {
   orphan_repair: "Fixing layout issues",
   content_reduction: "Optimizing fit",
   saver: "Saving files",
+  replace_project_start: "Remaking project",
+  replace_project: "Remaking project",
+  render_pdf: "Rendering updated PDF",
 }
 
-function useLiveProgress(runId: string, enabled: boolean, onDone: () => void) {
-  const [percent, setPercent] = useState(10)
-  const [stepLabel, setStepLabel] = useState("Starting")
+function useLiveProgress(runId: string, enabled: boolean, onDone: () => void, initialStatus?: string) {
+  const isRemake = initialStatus === "remaking_project"
+  const [percent, setPercent] = useState(isRemake ? 15 : 10)
+  const [stepLabel, setStepLabel] = useState(isRemake ? "Remaking project" : "Starting")
   const onDoneRef = useRef(onDone)
   useEffect(() => {
     onDoneRef.current = onDone
@@ -232,13 +239,22 @@ function LiveProgressRow({
   onDelete: (id: string) => void
   refetch: () => void
 }) {
-  const { percent, stepLabel } = useLiveProgress(run.id, true, refetch)
+  const { percent, stepLabel } = useLiveProgress(run.id, true, refetch, run.status)
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   })
 
   return (
-    <div className="flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group bg-zinc-50/50 dark:bg-zinc-800/50">
+    <div
+      onClick={() => {
+        if (run.status === "remaking_project") {
+          window.location.href = `/dashboard/history/${run.id}/remake`
+        }
+      }}
+      className={`flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group bg-zinc-50/50 dark:bg-zinc-800/50 ${
+        run.status === "remaking_project" ? "cursor-pointer hover:bg-zinc-100/60 dark:hover:bg-zinc-800/80" : ""
+      }`}
+    >
       {/* Left: dot + info */}
       <div className="flex items-start gap-3 min-w-0 flex-1">
         <StatusDot status="in_progress" />
@@ -293,13 +309,22 @@ function LiveProgressGridCard({
   onDelete: (id: string) => void
   refetch: () => void
 }) {
-  const { percent, stepLabel } = useLiveProgress(run.id, true, refetch)
+  const { percent, stepLabel } = useLiveProgress(run.id, true, refetch, run.status)
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   })
 
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 overflow-hidden flex flex-col group hover:border-gray-400 dark:hover:border-zinc-500 transition-colors">
+    <div
+      onClick={() => {
+        if (run.status === "remaking_project") {
+          window.location.href = `/dashboard/history/${run.id}/remake`
+        }
+      }}
+      className={`bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 overflow-hidden flex flex-col group hover:border-gray-400 dark:hover:border-zinc-500 transition-colors ${
+        run.status === "remaking_project" ? "cursor-pointer" : ""
+      }`}
+    >
       {/* Thumbnail placeholder with progress */}
       <div className="relative border-b border-gray-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800" style={{ aspectRatio: "210/297" }}>
         <div className="w-full h-full flex flex-col items-center justify-center p-4 gap-3">
@@ -776,7 +801,7 @@ export function HistoryClient() {
         <>
           <div className="p-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
             {visibleRuns.map((run) => (
-              run.status === "in_progress" || run.status === "pending" ? (
+              run.status === "in_progress" || run.status === "pending" || run.status === "remaking_project" ? (
                 <LiveProgressGridCard key={run.id} run={run} onDelete={deleteRun} refetch={refetch} />
               ) : (
                 <GridCard key={run.id} run={run} onDelete={deleteRun} onPreview={setFullscreenRun} />
@@ -799,7 +824,7 @@ export function HistoryClient() {
         <>
           <div className="divide-y divide-gray-100 dark:divide-zinc-800">
             {visibleRuns.map((run) => {
-              if (run.status === "in_progress" || run.status === "pending") {
+              if (run.status === "in_progress" || run.status === "pending" || run.status === "remaking_project") {
                 return (
                   <LiveProgressRow
                     key={run.id}
