@@ -11,7 +11,13 @@ import { ResumePreviewPane } from "@/components/editor/ResumePreviewPane"
 import { FitWarningBanner } from "@/components/editor/FitWarningBanner"
 import { FontFitBar } from "@/components/editor/FontFitBar"
 import { useDebouncedHtmlPreview } from "@/components/editor/useDebouncedHtmlPreview"
-import type { EditorPayload, EditorSaveResponse, EditorProfile, TailoredResume } from "@/lib/resume-schema"
+import type {
+  EditorPayload,
+  EditorSaveResponse,
+  EditorProfile,
+  TailoredResume,
+  ReplaceProjectResponse,
+} from "@/lib/resume-schema"
 
 type Props = {
   payload: EditorPayload
@@ -44,6 +50,11 @@ export function EditorClient({ payload }: Props) {
   // Save state
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Replace project state
+  const [isReplacingProject, setIsReplacingProject] = useState(false)
+  const [replaceSuccessMsg, setReplaceSuccessMsg] = useState<string | null>(null)
+  const [replaceError, setReplaceError] = useState<string | null>(null)
 
   // Authoritative PDF preview (debounced)
   const { preview, loading: previewLoading } = useDebouncedHtmlPreview({
@@ -114,6 +125,62 @@ export function EditorClient({ payload }: Props) {
       setSaveError(e instanceof Error ? e.message : "Save failed")
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleReplaceProject(targetIndex: number, profileProjectId: string) {
+    if (!parsedResume) return
+    setIsReplacingProject(true)
+    setReplaceError(null)
+    setReplaceSuccessMsg(null)
+
+    try {
+      const res = await fetch(`/api/backend/generate/${payload.id}/replace-project`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_project_index: targetIndex,
+          profile_project_id: profileProjectId,
+          current_resume: parsedResume,
+          profile,
+        }),
+      })
+
+      if (!res.ok) {
+        let errDetail = "Failed to replace project"
+        try {
+          const errJson = await res.json()
+          errDetail = errJson.detail || errJson.error || errDetail
+        } catch {
+          const text = await res.text()
+          if (text) errDetail = text
+        }
+        throw new Error(errDetail)
+      }
+
+      const data: ReplaceProjectResponse = await res.json()
+      if (data.tailored_resume) {
+        setParsedResume(data.tailored_resume as Record<string, unknown>)
+        setRawJson(JSON.stringify(data.tailored_resume, null, 2))
+        if (data.font_size) setFitFontPt(data.font_size)
+        if (data.page_count) setFitPageCount(data.page_count)
+        if (typeof data.fit_warning === "boolean") setFitWarning(data.fit_warning)
+        setRevision((prev) => prev + 1)
+        setDirty(false)
+
+        const repairNotice =
+          data.orphans_repaired > 0
+            ? ` (repaired ${data.orphans_repaired} orphan line${data.orphans_repaired > 1 ? "s" : ""})`
+            : ""
+        setReplaceSuccessMsg(`Project replaced & re-tailored successfully${repairNotice}!`)
+        setTimeout(() => setReplaceSuccessMsg(null), 6000)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to replace project"
+      setReplaceError(msg)
+      throw err
+    } finally {
+      setIsReplacingProject(false)
     }
   }
 
@@ -241,6 +308,26 @@ export function EditorClient({ payload }: Props) {
         </div>
       )}
 
+      {/* Replace project error bar */}
+      {replaceError && (
+        <div className="px-4 py-2.5 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 flex items-center justify-between">
+          <span className="text-xs font-semibold text-red-700 dark:text-red-400">{replaceError}</span>
+          <button onClick={() => setReplaceError(null)} className="text-red-400 hover:text-red-600 p-1">
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* Replace project success bar */}
+      {replaceSuccessMsg && (
+        <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800 flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+          <span>{replaceSuccessMsg}</span>
+          <button onClick={() => setReplaceSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700 p-1">
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
       {/* Overflow warning */}
       {fitWarning && <FitWarningBanner pageCount={fitPageCount} />}
 
@@ -298,6 +385,8 @@ export function EditorClient({ payload }: Props) {
               resume={(parsedResume || {}) as TailoredResume}
               profile={profile}
               onUpdate={handleFormUpdate}
+              onReplaceProject={handleReplaceProject}
+              isReplacingProject={isReplacingProject}
             />
           ) : (
             <ResumeJsonEditor value={rawJson} onChange={handleEditorChange} />

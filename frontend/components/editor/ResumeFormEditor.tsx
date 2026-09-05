@@ -14,18 +14,29 @@ import {
   Plus,
   Trash2,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  ArrowLeftRight,
 } from "lucide-react"
 import type { EditorProfile, TailoredResume } from "@/lib/resume-schema"
+import { ReplaceProjectModal } from "./ReplaceProjectModal"
 
 type Props = {
   resume: TailoredResume
   profile: EditorProfile
   onUpdate: (resume: TailoredResume, profile: EditorProfile) => void
+  onReplaceProject?: (targetIndex: number, profileProjectId: string) => Promise<void>
+  isReplacingProject?: boolean
 }
 
-export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
+export function ResumeFormEditor({
+  resume,
+  profile,
+  onUpdate,
+  onReplaceProject,
+  isReplacingProject,
+}: Props) {
   const [expandedSection, setExpandedSection] = useState<string | null>("personal")
+  const [replacingProjectIndex, setReplacingProjectIndex] = useState<number | null>(null)
 
   function toggleSection(section: string) {
     setExpandedSection(expandedSection === section ? null : section)
@@ -498,6 +509,25 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
                   <Plus size={11} /> Add Bullet Point
                 </button>
               </div>
+
+              {/* Replace project action slab button */}
+              {onReplaceProject && (
+                <div className="mt-3.5 pt-2.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setReplacingProjectIndex(idx)}
+                    disabled={isReplacingProject}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-zinc-100 bg-zinc-100 hover:bg-zinc-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 rounded transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
+                    title="Replace this project with another from your profile"
+                  >
+                    <ArrowLeftRight size={12} className="text-zinc-500" />
+                    <span>Replace from Profile</span>
+                  </button>
+                  <span className="text-[10px] text-zinc-400">
+                    Re-tailors with AI &amp; fixes orphans
+                  </span>
+                </div>
+              )}
             </ItemCard>
           ))}
 
@@ -517,6 +547,25 @@ export function ResumeFormEditor({ resume, profile, onUpdate }: Props) {
             <Plus size={13} />
             Add Project
           </button>
+
+          {/* Modal to pick replacement project from user profile */}
+          <ReplaceProjectModal
+            isOpen={replacingProjectIndex !== null}
+            onClose={() => setReplacingProjectIndex(null)}
+            targetProjectName={
+              replacingProjectIndex !== null
+                ? (resume.projects || [])[replacingProjectIndex]?.name || `Project ${replacingProjectIndex + 1}`
+                : ""
+            }
+            activeProjectNames={(resume.projects || []).map((p) => p.name || "")}
+            onConfirmReplace={async (selectedId) => {
+              if (replacingProjectIndex !== null && onReplaceProject) {
+                await onReplaceProject(replacingProjectIndex, selectedId)
+                setReplacingProjectIndex(null)
+              }
+            }}
+            isReplacing={!!isReplacingProject}
+          />
         </div>
       </Section>
 
