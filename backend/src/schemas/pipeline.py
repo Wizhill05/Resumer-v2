@@ -165,6 +165,7 @@ class TailoredResume(BaseModel):
     experiences: list[TailoredExperience] = Field(default_factory=list)
     projects: list[TailoredProject] = Field(default_factory=list)
     education: list[dict] = Field(default_factory=list)
+    extracurriculars: list[dict] = Field(default_factory=list)
 
     @field_validator("skills", mode="before")
     @classmethod

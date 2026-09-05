@@ -32,6 +32,8 @@ from src.schemas.generation import (
     RenderHtmlRequest,
     RenderHtmlResponse,
     RenderPdfPreviewResponse,
+    ReplaceProjectRequest,
+    ReplaceProjectResponse,
 )
 from src.template_registry.service import TemplateRegistryService
 
@@ -780,7 +782,7 @@ async def get_editor_payload(
         page_count=metadata.get("page_count"),
         fit_warning=metadata.get("fit_warning", False),
         manifest=EditorManifest(
-            min_font_size=manifest_obj.min_font_size,
+            min_font_size=min(8.5, manifest_obj.min_font_size),
             max_font_size=manifest_obj.max_font_size,
             target_pages=manifest_obj.target_pages,
             page_margin_mm=manifest_obj.page_margin_mm,
@@ -896,12 +898,15 @@ async def render_pdf_preview_for_editor(
 
     from src.services.resume_render import fit_and_render_pdf
 
+    manifest_data = manifest_obj.model_dump()
+    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
+
     try:
         pdf_bytes, fit_result = fit_and_render_pdf(
             template_id=gen.template_id,
             profile=profile_data,
             resume=data.resume,
-            manifest=manifest_obj.model_dump(),
+            manifest=manifest_data,
         )
 
         import base64
@@ -970,10 +975,14 @@ async def detect_orphans_for_editor(
 
     from src.services.resume_render import detect_resume_orphans
 
+    manifest_data = manifest_obj.model_dump() if manifest_obj else {}
+    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
+
     result = detect_resume_orphans(
         template_id=gen.template_id,
         profile=profile_data,
         resume=candidate_resume,
+        manifest=manifest_data,
         font_size=font_size,
     )
     if not result.get("success"):
@@ -1034,12 +1043,15 @@ async def save_editor(
     # Run WeasyPrint binary search
     from src.services.resume_render import build_resume_markdown, fit_and_render_pdf
 
+    manifest_data = manifest_obj.model_dump()
+    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
+
     try:
         pdf_bytes, fit_result = fit_and_render_pdf(
             template_id=gen.template_id,
             profile=profile_data,
             resume=data.resume,
-            manifest=manifest_obj.model_dump(),
+            manifest=manifest_data,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF render failed: {e}")
@@ -1113,6 +1125,88 @@ async def save_editor(
         fit_warning=not fit_result.fits_target,
         pdf_storage_key=pdf_key if pdf_uploaded else None,
         thumb_storage_key=thumb_key if thumb_uploaded else None,
+    )
+
+
+@router.post("/{gen_id}/replace-project", response_model=ReplaceProjectResponse)
+async def replace_project_for_editor(
+    gen_id: str,
+    data: ReplaceProjectRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace an existing project in the resume with another project from user profile.
+
+    Edits are unlimited and free. Re-tailors the projects with LLM and runs orphan repair.
+    """
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
+
+    # 1. Fetch replacement project from UserProject, verifying ownership
+    from src.models.profile import UserProject
+
+    proj_res = await db.execute(
+        select(UserProject).where(
+            UserProject.id == data.profile_project_id,
+            UserProject.user_id == current_user.id,
+        )
+    )
+    user_project = proj_res.scalar_one_or_none()
+    if not user_project:
+        raise HTTPException(
+            status_code=404, detail="Profile project not found or access denied."
+        )
+
+    # 2. Check target project index
+    projects = data.current_resume.get("projects") or []
+    if data.target_project_index < 0 or data.target_project_index >= len(projects):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid target_project_index {data.target_project_index}. Resume has {len(projects)} projects.",
+        )
+
+    # 3. Resolve profile data
+    metadata = gen.render_metadata or {}
+    profile_data = data.profile or metadata.get("profile")
+    if not profile_data:
+        from src.models.profile import Profile
+
+        profile_res = await db.execute(
+            select(Profile).where(Profile.user_id == current_user.id)
+        )
+        profile = profile_res.scalar_one_or_none()
+        profile_data = {
+            "full_name": profile.full_name if profile else "",
+            "email": profile.email if profile else None,
+            "phone": profile.phone if profile else None,
+            "location": profile.location if profile else None,
+            "linkedin_url": profile.linkedin_url if profile else None,
+            "github_url": profile.github_url if profile else None,
+            "portfolio_url": profile.portfolio_url if profile else None,
+            "subtitle": profile.subtitle if profile else None,
+        }
+
+    # 4. Set status to remaking_project and launch detached background task
+    import asyncio
+    from src.services.resume_retailor import run_background_replace_project
+
+    gen.status = "remaking_project"
+    await db.commit()
+
+    asyncio.create_task(
+        run_background_replace_project(
+            gen_id=str(gen.id),
+            target_project_index=data.target_project_index,
+            profile_project_id=data.profile_project_id,
+            current_resume=data.current_resume,
+            profile_data=profile_data,
+            user_id=current_user.id,
+        )
+    )
+
+    return ReplaceProjectResponse(
+        success=True,
+        status="remaking_project",
+        generation_id=str(gen.id),
     )
 
 

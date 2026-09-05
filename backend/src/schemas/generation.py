@@ -158,3 +158,28 @@ class OrphanDetectionResponse(BaseModel):
     orphans: list[OrphanItemOut] = []
     actionable_instructions_for_ai: str
     error: str | None = None
+
+
+# ── Replace Project Schemas ───────────────────────────────────────────────────
+
+
+class ReplaceProjectRequest(BaseModel):
+    """Body for POST /generate/{id}/replace-project."""
+    target_project_index: int
+    profile_project_id: uuid.UUID
+    current_resume: dict[str, Any]
+    profile: dict[str, Any] | None = None
+
+
+class ReplaceProjectResponse(BaseModel):
+    """Response for POST /generate/{id}/replace-project."""
+    success: bool
+    status: str = "remaking_project"
+    generation_id: str
+    tailored_resume: dict[str, Any] | None = None
+    orphans_detected: int = 0
+    orphans_repaired: int = 0
+    font_size: float | None = None
+    page_count: int | None = None
+    fit_warning: bool = False
+    error: str | None = None

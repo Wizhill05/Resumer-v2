@@ -11,7 +11,13 @@ import { ResumePreviewPane } from "@/components/editor/ResumePreviewPane"
 import { FitWarningBanner } from "@/components/editor/FitWarningBanner"
 import { FontFitBar } from "@/components/editor/FontFitBar"
 import { useDebouncedHtmlPreview } from "@/components/editor/useDebouncedHtmlPreview"
-import type { EditorPayload, EditorSaveResponse, EditorProfile, TailoredResume } from "@/lib/resume-schema"
+import type {
+  EditorPayload,
+  EditorSaveResponse,
+  EditorProfile,
+  TailoredResume,
+  ReplaceProjectResponse,
+} from "@/lib/resume-schema"
 
 type Props = {
   payload: EditorPayload
@@ -44,6 +50,11 @@ export function EditorClient({ payload }: Props) {
   // Save state
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Replace project state
+  const [isReplacingProject, setIsReplacingProject] = useState(false)
+  const [replaceSuccessMsg, setReplaceSuccessMsg] = useState<string | null>(null)
+  const [replaceError, setReplaceError] = useState<string | null>(null)
 
   // Authoritative PDF preview (debounced)
   const { preview, loading: previewLoading } = useDebouncedHtmlPreview({
@@ -117,6 +128,50 @@ export function EditorClient({ payload }: Props) {
     }
   }
 
+  async function handleReplaceProject(targetIndex: number, profileProjectId: string) {
+    if (!parsedResume) return
+    setIsReplacingProject(true)
+    setReplaceError(null)
+    setReplaceSuccessMsg(null)
+
+    try {
+      const res = await fetch(`/api/backend/generate/${payload.id}/replace-project`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_project_index: targetIndex,
+          profile_project_id: profileProjectId,
+          current_resume: parsedResume,
+          profile,
+        }),
+      })
+
+      if (!res.ok) {
+        let errDetail = "Failed to replace project"
+        try {
+          const errJson = await res.json()
+          errDetail = errJson.detail || errJson.error || errDetail
+        } catch {
+          const text = await res.text()
+          if (text) errDetail = text
+        }
+        throw new Error(errDetail)
+      }
+
+      const data: ReplaceProjectResponse = await res.json()
+      if (data.status === "remaking_project" || data.success) {
+        router.push(`/dashboard/history/${payload.id}/remake`)
+        return
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to replace project"
+      setReplaceError(msg)
+      throw err
+    } finally {
+      setIsReplacingProject(false)
+    }
+  }
+
   async function handleExportPdf() {
     posthog.capture("resume_pdf_downloaded", {
       resume_id: payload.id,
@@ -159,22 +214,26 @@ export function EditorClient({ payload }: Props) {
   return (
     <div className="flex flex-col h-screen h-[100dvh] max-h-[100dvh] bg-white dark:bg-zinc-900 overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0">
-        <button
-          onClick={handleClose}
-          className="p-1 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
-          aria-label="Close editor"
-        >
-          <X size={16} />
-        </button>
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <button
+            onClick={handleClose}
+            className="p-1 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors shrink-0"
+            aria-label="Close editor"
+          >
+            <X size={16} />
+          </button>
 
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-zinc-950 dark:text-zinc-100 truncate">{title}</span>
-          {dirty && <span className="ml-2 text-xs text-amber-600 font-bold">unsaved</span>}
+          <div className="min-w-0 truncate">
+            <span className="text-xs sm:text-sm font-semibold text-zinc-950 dark:text-zinc-100 truncate block">
+              {title}
+            </span>
+            {dirty && <span className="text-[10px] text-amber-600 font-bold">unsaved</span>}
+          </div>
         </div>
 
         {/* Fit info */}
-        <div className={editorMode === "preview" ? "block" : "hidden md:block"}>
+        <div className="shrink-0 flex items-center">
           <FontFitBar
             fontPt={fitFontPt}
             pageCount={fitPageCount}
@@ -185,7 +244,7 @@ export function EditorClient({ payload }: Props) {
           />
         </div>
 
-        <div className="hidden md:flex items-center gap-1">
+        <div className="hidden md:flex items-center gap-1 shrink-0">
           <button
             onClick={handleReset}
             disabled={!dirty || saving}
@@ -238,6 +297,26 @@ export function EditorClient({ payload }: Props) {
               <X size={13} />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Replace project error bar */}
+      {replaceError && (
+        <div className="px-4 py-2.5 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 flex items-center justify-between">
+          <span className="text-xs font-semibold text-red-700 dark:text-red-400">{replaceError}</span>
+          <button onClick={() => setReplaceError(null)} className="text-red-400 hover:text-red-600 p-1">
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* Replace project success bar */}
+      {replaceSuccessMsg && (
+        <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 border-b border-emerald-200 dark:border-emerald-800 flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+          <span>{replaceSuccessMsg}</span>
+          <button onClick={() => setReplaceSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700 p-1">
+            <X size={13} />
+          </button>
         </div>
       )}
 
@@ -298,6 +377,8 @@ export function EditorClient({ payload }: Props) {
               resume={(parsedResume || {}) as TailoredResume}
               profile={profile}
               onUpdate={handleFormUpdate}
+              onReplaceProject={handleReplaceProject}
+              isReplacingProject={isReplacingProject}
             />
           ) : (
             <ResumeJsonEditor value={rawJson} onChange={handleEditorChange} />

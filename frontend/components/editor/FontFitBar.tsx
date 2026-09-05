@@ -40,8 +40,8 @@ export function FontFitBar({ fontPt, pageCount, fits, minFontSize, maxFontSize, 
           {fontPt.toFixed(1)}pt
         </span>
 
-        {/* Range bar */}
-        <div className="w-16 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" title={`${minFontSize}pt – ${maxFontSize}pt`}>
+        {/* Range bar (hidden on small mobile screens to prevent header overlap) */}
+        <div className="hidden sm:block w-16 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" title={`${minFontSize}pt – ${maxFontSize}pt`}>
           <div
             className="h-full rounded-full transition-all duration-300"
             style={{ width: `${clampedPct}%`, background: barColor }}

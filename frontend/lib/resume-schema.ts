@@ -98,3 +98,17 @@ export type EditorSaveResponse = {
   pdf_storage_key?: string | null
   thumb_storage_key?: string | null
 }
+
+export type ReplaceProjectResponse = {
+  success: boolean
+  status: string
+  generation_id: string
+  tailored_resume?: TailoredResume | null
+  orphans_detected?: number
+  orphans_repaired?: number
+  font_size?: number | null
+  page_count?: number | null
+  fit_warning?: boolean
+  error?: string | null
+}
+
