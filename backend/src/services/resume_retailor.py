@@ -111,6 +111,8 @@ async def retailor_resume_with_project(
 
     manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
     max_bullets = manifest_obj.max_bullets_per_project if manifest_obj else 3
+    manifest_data = manifest_obj.model_dump() if manifest_obj else {}
+    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
 
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
@@ -128,7 +130,7 @@ async def retailor_resume_with_project(
             "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported.\n"
             "- Do not invent metrics, deployments, users, awards, or technologies not supported by input.\n"
             "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
-            "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
+            "- Line-fit: craft each bullet to either comfortably fit on a single line or completely fill two lines. Avoid short orphan second lines.\n"
             "- No prose outside the structured output."
         ),
         default_user=(
@@ -179,6 +181,7 @@ async def retailor_resume_with_project(
         template_id=gen.template_id,
         profile=profile_data,
         resume=updated_resume,
+        manifest=manifest_data,
     )
 
     initial_orphans = first_detect.get("orphans") or []
@@ -221,6 +224,7 @@ async def retailor_resume_with_project(
                 template_id=gen.template_id,
                 profile=profile_data,
                 resume=updated_resume,
+                manifest=manifest_data,
             )
             remaining_orphans = second_detect.get("orphans") or []
             orphans_repaired_count = max(0, orphans_detected_count - len(remaining_orphans))
@@ -304,11 +308,14 @@ async def run_background_replace_project(
             if not manifest_obj:
                 raise ValueError(f"Template '{gen.template_id}' manifest missing.")
 
+            manifest_data = manifest_obj.model_dump()
+            manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
+
             pdf_bytes, fit_res = fit_and_render_pdf(
                 template_id=gen.template_id,
                 profile=profile_data,
                 resume=tailored_resume,
-                manifest=manifest_obj.model_dump(),
+                manifest=manifest_data,
             )
 
             md_text = build_resume_markdown(profile=profile_data, resume=tailored_resume)

@@ -782,7 +782,7 @@ async def get_editor_payload(
         page_count=metadata.get("page_count"),
         fit_warning=metadata.get("fit_warning", False),
         manifest=EditorManifest(
-            min_font_size=manifest_obj.min_font_size,
+            min_font_size=min(8.5, manifest_obj.min_font_size),
             max_font_size=manifest_obj.max_font_size,
             target_pages=manifest_obj.target_pages,
             page_margin_mm=manifest_obj.page_margin_mm,
@@ -898,12 +898,15 @@ async def render_pdf_preview_for_editor(
 
     from src.services.resume_render import fit_and_render_pdf
 
+    manifest_data = manifest_obj.model_dump()
+    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
+
     try:
         pdf_bytes, fit_result = fit_and_render_pdf(
             template_id=gen.template_id,
             profile=profile_data,
             resume=data.resume,
-            manifest=manifest_obj.model_dump(),
+            manifest=manifest_data,
         )
 
         import base64
@@ -972,10 +975,14 @@ async def detect_orphans_for_editor(
 
     from src.services.resume_render import detect_resume_orphans
 
+    manifest_data = manifest_obj.model_dump() if manifest_obj else {}
+    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
+
     result = detect_resume_orphans(
         template_id=gen.template_id,
         profile=profile_data,
         resume=candidate_resume,
+        manifest=manifest_data,
         font_size=font_size,
     )
     if not result.get("success"):
@@ -1036,12 +1043,15 @@ async def save_editor(
     # Run WeasyPrint binary search
     from src.services.resume_render import build_resume_markdown, fit_and_render_pdf
 
+    manifest_data = manifest_obj.model_dump()
+    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
+
     try:
         pdf_bytes, fit_result = fit_and_render_pdf(
             template_id=gen.template_id,
             profile=profile_data,
             resume=data.resume,
-            manifest=manifest_obj.model_dump(),
+            manifest=manifest_data,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF render failed: {e}")
