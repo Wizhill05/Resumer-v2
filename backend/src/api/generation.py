@@ -32,6 +32,8 @@ from src.schemas.generation import (
     RenderHtmlRequest,
     RenderHtmlResponse,
     RenderPdfPreviewResponse,
+    ReplaceProjectRequest,
+    ReplaceProjectResponse,
 )
 from src.template_registry.service import TemplateRegistryService
 
@@ -1113,6 +1115,109 @@ async def save_editor(
         fit_warning=not fit_result.fits_target,
         pdf_storage_key=pdf_key if pdf_uploaded else None,
         thumb_storage_key=thumb_key if thumb_uploaded else None,
+    )
+
+
+@router.post("/{gen_id}/replace-project", response_model=ReplaceProjectResponse)
+async def replace_project_for_editor(
+    gen_id: str,
+    data: ReplaceProjectRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace an existing project in the resume with another project from user profile.
+
+    Edits are unlimited and free. Re-tailors the projects with LLM and runs orphan repair.
+    """
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
+
+    # 1. Fetch replacement project from UserProject, verifying ownership
+    from src.models.profile import UserProject
+
+    proj_res = await db.execute(
+        select(UserProject).where(
+            UserProject.id == data.profile_project_id,
+            UserProject.user_id == current_user.id,
+        )
+    )
+    user_project = proj_res.scalar_one_or_none()
+    if not user_project:
+        raise HTTPException(
+            status_code=404, detail="Profile project not found or access denied."
+        )
+
+    # 2. Check target project index
+    projects = data.current_resume.get("projects") or []
+    if data.target_project_index < 0 or data.target_project_index >= len(projects):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid target_project_index {data.target_project_index}. Resume has {len(projects)} projects.",
+        )
+
+    # 3. Resolve profile data
+    metadata = gen.render_metadata or {}
+    profile_data = data.profile or metadata.get("profile")
+    if not profile_data:
+        from src.models.profile import Profile
+
+        profile_res = await db.execute(
+            select(Profile).where(Profile.user_id == current_user.id)
+        )
+        profile = profile_res.scalar_one_or_none()
+        profile_data = {
+            "full_name": profile.full_name if profile else "",
+            "email": profile.email if profile else None,
+            "phone": profile.phone if profile else None,
+            "location": profile.location if profile else None,
+            "linkedin_url": profile.linkedin_url if profile else None,
+            "github_url": profile.github_url if profile else None,
+            "portfolio_url": profile.portfolio_url if profile else None,
+            "subtitle": profile.subtitle if profile else None,
+        }
+
+    # 4. Invoke retailor service
+    from src.services.resume_retailor import retailor_resume_with_project
+
+    try:
+        retailor_result = await retailor_resume_with_project(
+            db=db,
+            gen=gen,
+            target_project_index=data.target_project_index,
+            new_project=user_project,
+            current_resume=data.current_resume,
+            profile_data=profile_data,
+        )
+    except Exception as e:
+        logger = logging.getLogger("resumer.editor.replace_project")
+        logger.error(f"Replace project failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to replace project: {str(e)}"
+        )
+
+    # 5. Persist updated resume into render_metadata and increment revision
+    updated_metadata = dict(gen.render_metadata or {})
+    current_rev = updated_metadata.get("editor_revision", 0)
+    updated_metadata["tailored_resume"] = retailor_result["tailored_resume"]
+    updated_metadata["editor_revision"] = current_rev + 1
+    updated_metadata["edited_at"] = datetime.now(timezone.utc).isoformat()
+    if retailor_result.get("font_size"):
+        updated_metadata["font_size"] = retailor_result["font_size"]
+    if retailor_result.get("page_count"):
+        updated_metadata["page_count"] = retailor_result["page_count"]
+    updated_metadata["fit_warning"] = retailor_result.get("fit_warning", False)
+    gen.render_metadata = updated_metadata
+
+    await db.commit()
+    await db.refresh(gen)
+
+    return ReplaceProjectResponse(
+        success=True,
+        tailored_resume=retailor_result["tailored_resume"],
+        orphans_detected=retailor_result["orphans_detected"],
+        orphans_repaired=retailor_result["orphans_repaired"],
+        font_size=retailor_result.get("font_size"),
+        page_count=retailor_result.get("page_count"),
+        fit_warning=retailor_result.get("fit_warning", False),
     )
 
 
