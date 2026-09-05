@@ -19,3 +19,4 @@ docs/
 frontend/bun.lock
 .vercel/
 omp-html/
+.worktrees/
