@@ -37,6 +37,14 @@ export function ResumeFormEditor({
 }: Props) {
   const [expandedSection, setExpandedSection] = useState<string | null>("personal")
   const [replacingProjectIndex, setReplacingProjectIndex] = useState<number | null>(null)
+  const [expandedProjects, setExpandedProjects] = useState<Record<number, boolean>>({})
+
+  function toggleProjectExpanded(idx: number) {
+    setExpandedProjects((prev) => ({
+      ...prev,
+      [idx]: !prev[idx],
+    }))
+  }
 
   function toggleSection(section: string) {
     setExpandedSection(expandedSection === section ? null : section)
@@ -433,11 +441,14 @@ export function ResumeFormEditor({
       >
         <div className="space-y-3">
           {(resume.projects || []).map((proj, idx) => (
-            <ItemCard
+            <ProjectCard
               key={idx}
-              title={proj.name || "Project Name"}
+              title={proj.name || `Project ${idx + 1}`}
+              subtitle={proj.project_summary}
               index={idx}
               totalItems={(resume.projects || []).length}
+              isExpanded={!!expandedProjects[idx]}
+              onToggleExpand={() => toggleProjectExpanded(idx)}
               onDelete={() => deleteArrayItem("projects", idx)}
               onMove={(dir) => reorderArrayItem("projects", idx, dir)}
               onReplace={onReplaceProject ? () => setReplacingProjectIndex(idx) : undefined}
@@ -511,7 +522,7 @@ export function ResumeFormEditor({
                   <Plus size={11} /> Add Bullet Point
                 </button>
               </div>
-            </ItemCard>
+            </ProjectCard>
           ))}
 
           <button
@@ -835,8 +846,6 @@ function ItemCard({
   totalItems,
   onDelete,
   onMove,
-  onReplace,
-  isReplacing,
   children,
 }: {
   title: string
@@ -844,8 +853,6 @@ function ItemCard({
   totalItems: number
   onDelete: () => void
   onMove: (dir: "up" | "down") => void
-  onReplace?: () => void
-  isReplacing?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -853,40 +860,159 @@ function ItemCard({
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-100/70 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700">
         <span className="text-xs font-extrabold uppercase text-zinc-800 dark:text-zinc-200 truncate">{title}</span>
-        <div className="flex items-center gap-1 shrink-0">
-          {onReplace && (
-            <button
-              type="button"
-              onClick={onReplace}
-              disabled={isReplacing}
-              className="group relative h-7 w-7 flex items-center justify-center hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 rounded cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Replace this project from profile with AI"
-              aria-label="Replace project from profile"
-            >
-              <ArrowLeftRight size={13} />
-              {/* Tooltip on hover */}
-              <span className="pointer-events-none absolute -top-8 right-0 hidden group-hover:flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded shadow-md z-30 transition-opacity">
-                Replace from profile
-              </span>
-            </button>
-          )}
+        <div className="flex items-center gap-1.5 shrink-0">
           {index > 0 && (
-            <button onClick={() => onMove("up")} className="h-7 w-7 flex items-center justify-center hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 rounded cursor-pointer transition-colors" title="Move Up">
-              <ArrowUp size={13} />
+            <button
+              onClick={() => onMove("up")}
+              className="h-7 w-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded cursor-pointer transition-colors shadow-2xs"
+              title="Move Up"
+            >
+              <ArrowUp size={13} strokeWidth={2.5} />
             </button>
           )}
           {index < totalItems - 1 && (
-            <button onClick={() => onMove("down")} className="h-7 w-7 flex items-center justify-center hover:bg-zinc-200/80 dark:hover:bg-zinc-700 text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-100 rounded cursor-pointer transition-colors" title="Move Down">
-              <ArrowDown size={13} />
+            <button
+              onClick={() => onMove("down")}
+              className="h-7 w-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded cursor-pointer transition-colors shadow-2xs"
+              title="Move Down"
+            >
+              <ArrowDown size={13} strokeWidth={2.5} />
             </button>
           )}
-          <button onClick={onDelete} className="h-7 w-7 flex items-center justify-center text-zinc-400 hover:text-red-500 rounded ml-0.5 cursor-pointer transition-colors" title="Delete">
+          <button
+            onClick={onDelete}
+            className="h-7 w-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-600 hover:text-red-600 dark:text-zinc-300 dark:hover:text-red-400 border border-zinc-300 dark:border-zinc-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded cursor-pointer transition-colors shadow-2xs"
+            title="Delete"
+          >
             <Trash2 size={13} />
           </button>
         </div>
       </div>
       {/* Body */}
       <div className="p-3 space-y-2.5">{children}</div>
+    </div>
+  )
+}
+
+function ProjectCard({
+  title,
+  subtitle,
+  index,
+  totalItems,
+  isExpanded,
+  onToggleExpand,
+  onDelete,
+  onMove,
+  onReplace,
+  isReplacing,
+  children,
+}: {
+  title: string
+  subtitle?: string | null
+  index: number
+  totalItems: number
+  isExpanded: boolean
+  onToggleExpand: () => void
+  onDelete: () => void
+  onMove: (dir: "up" | "down") => void
+  onReplace?: () => void
+  isReplacing?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden shadow-xs">
+      {/* 2-Row Header */}
+      <div className="p-3 bg-zinc-50/90 dark:bg-zinc-800/80 border-b border-zinc-200 dark:border-zinc-700 space-y-2.5">
+        {/* Row 1: Top Left Title + Top Right (Replace + Delete) */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-100 truncate">
+              {title || "Untitled Project"}
+            </h4>
+            {subtitle && (
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+                {subtitle}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Replace Button - Crisp white background, high contrast, clean tooltip */}
+            {onReplace && (
+              <button
+                type="button"
+                onClick={onReplace}
+                disabled={isReplacing}
+                className="group relative h-8 px-2.5 flex items-center gap-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-md shadow-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold"
+                title="Replace project from profile with AI"
+                aria-label="Replace project from profile"
+              >
+                <ArrowLeftRight size={13} className="text-zinc-900 dark:text-zinc-100" />
+                <span className="hidden sm:inline text-[11px]">Replace</span>
+                {/* Tooltip on hover */}
+                <span className="pointer-events-none absolute -top-8 right-0 hidden group-hover:flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded shadow-md z-30 transition-opacity">
+                  Replace from profile
+                </span>
+              </button>
+            )}
+
+            {/* Delete Button */}
+            <button
+              type="button"
+              onClick={onDelete}
+              className="h-8 w-8 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-600 hover:text-red-600 dark:text-zinc-300 dark:hover:text-red-400 border border-zinc-300 dark:border-zinc-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md shadow-xs transition-all cursor-pointer"
+              title="Delete Project"
+              aria-label="Delete project"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: Bottom Left (Reorder arrows) + Bottom Right (Details Dropdown) */}
+        <div className="flex items-center justify-between pt-1 border-t border-zinc-200/70 dark:border-zinc-700/60">
+          {/* Bottom Left: Reorder Up/Down */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onMove("up")}
+              disabled={index === 0}
+              className="h-7 px-2 flex items-center gap-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold"
+              title="Move Up"
+            >
+              <ArrowUp size={12} strokeWidth={2.5} />
+              <span className="text-[10px]">Up</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onMove("down")}
+              disabled={index >= totalItems - 1}
+              className="h-7 px-2 flex items-center gap-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold"
+              title="Move Down"
+            >
+              <ArrowDown size={12} strokeWidth={2.5} />
+              <span className="text-[10px]">Down</span>
+            </button>
+          </div>
+
+          {/* Bottom Right: Dropdown details toggle */}
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="h-7 px-2.5 flex items-center gap-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded shadow-xs text-xs font-bold transition-all cursor-pointer"
+          >
+            <span>{isExpanded ? "Collapse" : "Edit Details"}</span>
+            {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Collapsible Details Body */}
+      {isExpanded && (
+        <div className="p-3.5 space-y-3 bg-white dark:bg-zinc-900 animate-in fade-in-50 duration-150">
+          {children}
+        </div>
+      )}
     </div>
   )
 }
