@@ -174,7 +174,9 @@ class ReplaceProjectRequest(BaseModel):
 class ReplaceProjectResponse(BaseModel):
     """Response for POST /generate/{id}/replace-project."""
     success: bool
-    tailored_resume: dict[str, Any]
+    status: str = "remaking_project"
+    generation_id: str
+    tailored_resume: dict[str, Any] | None = None
     orphans_detected: int = 0
     orphans_repaired: int = 0
     font_size: float | None = None

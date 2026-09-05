@@ -21,6 +21,7 @@ def test_replace_project_request_schema():
 def test_replace_project_response_schema():
     res = ReplaceProjectResponse(
         success=True,
+        generation_id=str(uuid4()),
         tailored_resume={"projects": []},
         orphans_detected=0,
         orphans_repaired=0,

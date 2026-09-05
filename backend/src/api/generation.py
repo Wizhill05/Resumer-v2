@@ -1175,49 +1175,28 @@ async def replace_project_for_editor(
             "subtitle": profile.subtitle if profile else None,
         }
 
-    # 4. Invoke retailor service
-    from src.services.resume_retailor import retailor_resume_with_project
+    # 4. Set status to remaking_project and launch detached background task
+    import asyncio
+    from src.services.resume_retailor import run_background_replace_project
 
-    try:
-        retailor_result = await retailor_resume_with_project(
-            db=db,
-            gen=gen,
+    gen.status = "remaking_project"
+    await db.commit()
+
+    asyncio.create_task(
+        run_background_replace_project(
+            gen_id=str(gen.id),
             target_project_index=data.target_project_index,
-            new_project=user_project,
+            profile_project_id=data.profile_project_id,
             current_resume=data.current_resume,
             profile_data=profile_data,
+            user_id=current_user.id,
         )
-    except Exception as e:
-        logger = logging.getLogger("resumer.editor.replace_project")
-        logger.error(f"Replace project failed: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to replace project: {str(e)}"
-        )
-
-    # 5. Persist updated resume into render_metadata and increment revision
-    updated_metadata = dict(gen.render_metadata or {})
-    current_rev = updated_metadata.get("editor_revision", 0)
-    updated_metadata["tailored_resume"] = retailor_result["tailored_resume"]
-    updated_metadata["editor_revision"] = current_rev + 1
-    updated_metadata["edited_at"] = datetime.now(timezone.utc).isoformat()
-    if retailor_result.get("font_size"):
-        updated_metadata["font_size"] = retailor_result["font_size"]
-    if retailor_result.get("page_count"):
-        updated_metadata["page_count"] = retailor_result["page_count"]
-    updated_metadata["fit_warning"] = retailor_result.get("fit_warning", False)
-    gen.render_metadata = updated_metadata
-
-    await db.commit()
-    await db.refresh(gen)
+    )
 
     return ReplaceProjectResponse(
         success=True,
-        tailored_resume=retailor_result["tailored_resume"],
-        orphans_detected=retailor_result["orphans_detected"],
-        orphans_repaired=retailor_result["orphans_repaired"],
-        font_size=retailor_result.get("font_size"),
-        page_count=retailor_result.get("page_count"),
-        fit_warning=retailor_result.get("fit_warning", False),
+        status="remaking_project",
+        generation_id=str(gen.id),
     )
 
 

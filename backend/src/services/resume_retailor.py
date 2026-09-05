@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import copy
+import io
 import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from langchain_core.prompts import ChatPromptTemplate
 
+from src.core.database import AsyncSessionLocal
+from src.core.storage import StorageService
 from src.models.generation import Generation
 from src.models.profile import UserProject
 from src.pipeline.nodes import (
@@ -18,15 +23,21 @@ from src.pipeline.nodes import (
     orphan_repair_node,
 )
 from src.schemas.pipeline import TailoredProjectBatch
-from src.services.resume_render import detect_resume_orphans
+from src.services.resume_render import (
+    build_resume_markdown,
+    detect_resume_orphans,
+    fit_and_render_pdf,
+)
 from src.template_registry.service import TemplateRegistryService
 
 logger = logging.getLogger("resumer.retailor")
 
 
-async def _safe_log_progress(db: AsyncSession, gen_id: str, node_name: str, message: str):
+async def _safe_log_progress(
+    db: AsyncSession, gen_id: str, node_name: str, message: str, level: str = "info"
+):
     try:
-        await log_progress(db, gen_id, node_name, message)
+        await log_progress(db, gen_id, node_name, message, level=level)
     except Exception as e:
         logger.info(f"[{node_name}] {message} (db log skipped: {e})")
 
@@ -232,3 +243,144 @@ async def retailor_resume_with_project(
         "page_count": final_page_count,
         "fit_warning": final_fit_warning,
     }
+
+
+async def run_background_replace_project(
+    *,
+    gen_id: str,
+    target_project_index: int,
+    profile_project_id: UUID,
+    current_resume: dict[str, Any],
+    profile_data: dict[str, Any],
+    user_id: UUID,
+) -> None:
+    """Detached background task to re-tailor projects, render PDF, and update generation state."""
+    async with AsyncSessionLocal() as session:
+        try:
+            gen_res = await session.execute(
+                select(Generation).where(
+                    Generation.id == UUID(gen_id), Generation.user_id == user_id
+                )
+            )
+            gen = gen_res.scalar_one_or_none()
+            if not gen:
+                logger.error(f"[background_replace] Generation {gen_id} not found.")
+                return
+
+            proj_res = await session.execute(
+                select(UserProject).where(
+                    UserProject.id == profile_project_id, UserProject.user_id == user_id
+                )
+            )
+            user_project = proj_res.scalar_one_or_none()
+            if not user_project:
+                logger.error(f"[background_replace] UserProject {profile_project_id} not found.")
+                gen.status = "failed"
+                await session.commit()
+                return
+
+            await _safe_log_progress(
+                session, gen_id, "replace_project_start", "Preparing project replacement..."
+            )
+
+            # 1. Re-tailor project & run orphan repair
+            retailor_result = await retailor_resume_with_project(
+                db=session,
+                gen=gen,
+                target_project_index=target_project_index,
+                new_project=user_project,
+                current_resume=current_resume,
+                profile_data=profile_data,
+            )
+
+            tailored_resume = retailor_result["tailored_resume"]
+
+            # 2. Render PDF & Thumbnail
+            await _safe_log_progress(
+                session, gen_id, "render_pdf", "Rendering updated PDF and thumbnail..."
+            )
+
+            manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
+            if not manifest_obj:
+                raise ValueError(f"Template '{gen.template_id}' manifest missing.")
+
+            pdf_bytes, fit_res = fit_and_render_pdf(
+                template_id=gen.template_id,
+                profile=profile_data,
+                resume=tailored_resume,
+                manifest=manifest_obj.model_dump(),
+            )
+
+            md_text = build_resume_markdown(profile=profile_data, resume=tailored_resume)
+
+            thumb_bytes: bytes | None = None
+            try:
+                import pypdfium2 as pdfium  # type: ignore[import-untyped]
+                pdf_doc = pdfium.PdfDocument(pdf_bytes)
+                page = pdf_doc[0]
+                scale = 400 / page.get_width()
+                bitmap = page.render(scale=scale, rotation=0)
+                pil_image = bitmap.to_pil()
+                buf = io.BytesIO()
+                pil_image.save(buf, format="WEBP", quality=80)
+                thumb_bytes = buf.getvalue()
+            except Exception as thumb_err:
+                logger.warning(f"Thumbnail generation failed: {thumb_err}")
+
+            # 3. Upload to R2
+            pdf_key = f"runs/{gen_id}/resume.pdf"
+            md_key = f"runs/{gen_id}/resume.md"
+            thumb_key = f"runs/{gen_id}/thumb.webp"
+
+            storage = StorageService()
+            storage.upload_bytes(pdf_bytes, pdf_key, "application/pdf")
+            if md_text:
+                storage.upload_bytes(md_text.encode("utf-8"), md_key, "text/markdown")
+            if thumb_bytes:
+                storage.upload_bytes(thumb_bytes, thumb_key, "image/webp")
+
+            # 4. Save metadata and status
+            metadata = dict(gen.render_metadata or {})
+            rev = metadata.get("editor_revision", 0) + 1
+            metadata["tailored_resume"] = tailored_resume
+            metadata["profile"] = profile_data
+            metadata["font_size"] = fit_res.font_size
+            metadata["page_count"] = fit_res.page_count
+            metadata["fit_warning"] = not fit_res.fits_target
+            metadata["editor_revision"] = rev
+            metadata["edited_at"] = datetime.now(timezone.utc).isoformat()
+
+            gen.render_metadata = metadata
+            gen.pdf_storage_key = pdf_key
+            gen.md_storage_key = md_key
+            if thumb_bytes:
+                gen.thumb_storage_key = thumb_key
+            gen.status = "completed"
+            gen.completed_at = datetime.now(timezone.utc)
+
+            await session.commit()
+
+            await _safe_log_progress(
+                session, gen_id, "saver", "Resume remade and PDF saved successfully."
+            )
+            await _safe_log_progress(
+                session, gen_id, "completed", "completed", level="status"
+            )
+
+        except Exception as e:
+            logger.error(f"[background_replace] Error remaking project for {gen_id}: {e}", exc_info=True)
+            try:
+                gen_res = await session.execute(
+                    select(Generation).where(Generation.id == UUID(gen_id))
+                )
+                gen = gen_res.scalar_one_or_none()
+                if gen:
+                    gen.status = "failed"
+                    gen.error_message = str(e)
+                    await session.commit()
+                await _safe_log_progress(
+                    session, gen_id, "failed", f"Failed: {str(e)}", level="status"
+                )
+            except Exception as commit_err:
+                logger.error(f"Failed to record failure status: {commit_err}")
+

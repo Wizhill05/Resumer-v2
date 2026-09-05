@@ -110,20 +110,11 @@ async def test_replace_project_endpoint_success(monkeypatch):
     mock_result.scalar_one_or_none.return_value = mock_project
     mock_db.execute.return_value = mock_result
 
-    # Mock retailor_resume_with_project
-    async def mock_retailor(*args, **kwargs):
-        return {
-            "tailored_resume": {
-                "projects": [{"name": "Replacement Project", "bullet_points": ["Achieved X"]}],
-            },
-            "orphans_detected": 1,
-            "orphans_repaired": 1,
-            "font_size": 9.5,
-            "page_count": 1,
-            "fit_warning": False,
-        }
+    # Mock run_background_replace_project
+    async def mock_background(*args, **kwargs):
+        pass
 
-    monkeypatch.setattr("src.services.resume_retailor.retailor_resume_with_project", mock_retailor)
+    monkeypatch.setattr("src.services.resume_retailor.run_background_replace_project", mock_background)
 
     req = ReplaceProjectRequest(
         target_project_index=0,
@@ -139,8 +130,7 @@ async def test_replace_project_endpoint_success(monkeypatch):
     )
 
     assert res.success is True
-    assert res.orphans_detected == 1
-    assert res.orphans_repaired == 1
-    assert res.tailored_resume["projects"][0]["name"] == "Replacement Project"
-    assert mock_gen.render_metadata["editor_revision"] == 2
+    assert res.status == "remaking_project"
+    assert res.generation_id == str(mock_gen.id)
+    assert mock_gen.status == "remaking_project"
     assert mock_db.commit.called
