@@ -1,44 +1,14 @@
 import ast
-import re
 
 from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
-def _canonical_skill_key(name: Any) -> str:
-    """Canonical key for merging: case-insensitive, `_`/`-`/`,` → space, standalone `and` → `&`."""
-    text = re.sub(r"[_\-,]+", " ", str(name or "")).strip()
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"(?i)(?<=\s)and(?=\s)|^(and)(?=\s)|(?<=\s)(and)$", "&", text)
-    text = re.sub(r"\s*&\s*", " & ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text.lower()
-
-
-def _display_skill_category(name: Any) -> str:
-    """Clean display name with canonical `&` (mirrors pipeline _clean_skill_category)."""
-    text = re.sub(r"[_\-,]+", " ", str(name or "")).strip()
-    text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"(?i)(?<=\s)and(?=\s)|^(and)(?=\s)|(?<=\s)(and)$", "&", text)
-    text = re.sub(r"\s*&\s*", " & ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    words = []
-    for word in text.split(" "):
-        if word == "&" or word.isupper() or "/" in word:
-            words.append(word)
-        else:
-            words.append(word[:1].upper() + word[1:])
-    return " ".join(words)
-
-
-def _merge_skill_items(existing: list[str], new_items: list[str]) -> list[str]:
-    merged = list(existing)
-    seen = set(existing)
-    for item in new_items:
-        if item not in seen:
-            seen.add(item)
-            merged.append(item)
-    return merged
+from src.core.skill_categories import (
+    merge_skill_categories,
+    merge_skill_items,
+    skill_category_display as _display_skill_category,
+    skill_category_key as _canonical_skill_key,
+)
 
 
 def _coerce_str_to_list(v):
@@ -88,49 +58,40 @@ class TailoredSummaryAndSkills(BaseModel):
         if not isinstance(data, dict):
             return data
 
-        # Merge `categories` (contract) and `skills` dict (legacy/dual output)
-        # on canonical keys so "&" vs "And" variants don't duplicate.
-        merged: dict[str, list[str]] = {}
-        display: dict[str, str] = {}
+        # `categories` is the single source of truth. The model also fills the
+        # legacy `skills` dict with the same categories under drifted names
+        # ("Programming & Backend" vs "Programming Backend") — merging both is
+        # what duplicated skill sections, so `skills` is only used as a
+        # fallback when the model emitted no categories at all.
+        categories = data.get("categories")
+        if isinstance(categories, list) and categories:
+            source: list[tuple[Any, Any]] = []
+            for cat in categories:
+                if isinstance(cat, dict):
+                    source.append((cat.get("category") or "General", cat.get("skills") or cat.get("items") or []))
+                elif hasattr(cat, "category") and hasattr(cat, "skills"):
+                    source.append((cat.category, list(cat.skills)))
+        else:
+            source = []
+            raw_skills = data.get("skills")
+            if isinstance(raw_skills, dict):
+                source = list(raw_skills.items())
+            elif isinstance(raw_skills, list):
+                for item in raw_skills:
+                    if isinstance(item, dict):
+                        source.append((item.get("category") or "General", item.get("skills") or item.get("items") or []))
+                    elif isinstance(item, str) and ":" in item:
+                        parts = item.split(":", 1)
+                        source.append((parts[0].strip(), parts[1]))
 
-        def _add(name: Any, items: Any) -> None:
-            key = _canonical_skill_key(name)
-            if not key:
-                return
+        coerced: list[tuple[Any, Any]] = []
+        for name, items in source:
             clean_items = _coerce_str_to_list(items)
             if isinstance(clean_items, str):
                 clean_items = [clean_items]
-            clean_items = [str(i) for i in (clean_items or []) if str(i).strip()]
-            if not clean_items:
-                return
-            label = _display_skill_category(name) or "General"
-            if key in merged:
-                merged[key] = _merge_skill_items(merged[key], clean_items)
-            else:
-                merged[key] = list(clean_items)
-                display[key] = label
+            coerced.append((name, clean_items))
 
-        categories = data.get("categories")
-        if isinstance(categories, list):
-            for cat in categories:
-                if isinstance(cat, dict):
-                    _add(cat.get("category") or "General", cat.get("skills") or cat.get("items") or [])
-                elif hasattr(cat, "category") and hasattr(cat, "skills"):
-                    _add(cat.category, list(cat.skills))
-
-        raw_skills = data.get("skills")
-        if isinstance(raw_skills, dict):
-            for k, v in raw_skills.items():
-                _add(k, v)
-        elif isinstance(raw_skills, list):
-            for item in raw_skills:
-                if isinstance(item, dict):
-                    _add(item.get("category") or "General", item.get("skills") or item.get("items") or [])
-                elif isinstance(item, str) and ":" in item:
-                    parts = item.split(":", 1)
-                    _add(parts[0].strip(), parts[1])
-
-        data["skills"] = {display[k]: v for k, v in merged.items()}
+        data["skills"] = merge_skill_categories(coerced)
         return data
 
 class TailoredProject(BaseModel):
@@ -171,22 +132,13 @@ class TailoredResume(BaseModel):
     @classmethod
     def coerce_skill_values(cls, v):
         if isinstance(v, dict):
-            merged: dict[str, list[str]] = {}
-            display: dict[str, str] = {}
+            coerced: dict[Any, Any] = {}
             for k, val in v.items():
-                key = _canonical_skill_key(k)
                 items = _coerce_str_to_list(val)
                 if isinstance(items, str):
                     items = [items]
-                items = [str(i) for i in (items or []) if str(i).strip()]
-                if not key or not items:
-                    continue
-                if key in merged:
-                    merged[key] = _merge_skill_items(merged[key], items)
-                else:
-                    merged[key] = list(items)
-                    display[key] = _display_skill_category(k) or "General"
-            return {display[k]: items for k, items in merged.items()}
+                coerced[k] = items
+            return merge_skill_categories(coerced)
         return v
 
 

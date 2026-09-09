@@ -23,6 +23,7 @@ from src.models.generation import Generation, GenerationLog, GenerationNodeMetri
 from src.services.font_fit import find_best_font_size
 from src.services.resume_render import build_resume_markdown, detect_orphans_in_weasyprint
 from src.pipeline.state import ResumeGraphState
+from src.core.skill_categories import merge_skill_categories, skill_category_display
 from src.schemas.pipeline import (
     JobAnalysis,
     SelectedItems,
@@ -89,20 +90,8 @@ def _replace_prompt_vars(prompt: str, values: dict[str, str]) -> str:
 
 
 def _clean_skill_category(category: Any) -> str:
-    text = re.sub(r"[_\-,]+", " ", str(category or "")).strip()
-    text = re.sub(r"\s+", " ", text)
-    # Canonicalize standalone "and" to "&" so LLM variants
-    # ("Languages & Backend" vs "Languages And Backend") merge.
-    text = re.sub(r"(?i)(?<=\s)and(?=\s)|^(and)(?=\s)|(?<=\s)(and)$", "&", text)
-    text = re.sub(r"\s*&\s*", " & ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    words = []
-    for word in text.split(" "):
-        if word == "&" or word.isupper() or "/" in word:
-            words.append(word)
-        else:
-            words.append(word[:1].upper() + word[1:])
-    return " ".join(words)
+    """Canonical display name for a skill category (shared logic in core)."""
+    return skill_category_display(category)
 
 
 def _coerce_skill_items(items: Any) -> list[str]:
@@ -145,20 +134,11 @@ def _coerce_skill_items(items: Any) -> list[str]:
 def _normalize_skills(skills: Any) -> dict[str, list[str]]:
     if not isinstance(skills, dict):
         return {}
-
-    normalized: dict[str, list[str]] = {}
-    for category, items in skills.items():
-        clean_category = _clean_skill_category(category)
-        clean_items = _coerce_skill_items(items)
-        if not clean_category or not clean_items:
-            continue
-        if clean_category in normalized:
-            normalized[clean_category].extend(
-                item for item in clean_items if item not in normalized[clean_category]
-            )
-        else:
-            normalized[clean_category] = clean_items
-    return normalized
+    # Merge on canonical keys (shared logic in core) so drifted variants like
+    # "Programming & Backend" vs "Programming Backend" collapse into one.
+    return merge_skill_categories(
+        {category: _coerce_skill_items(items) for category, items in skills.items()}
+    )
 
 
 async def record_node_metric(
