@@ -43,6 +43,12 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
+  // Id assigned by the backend when a background auto-save creates a new entry,
+  // so subsequent auto-saves PUT instead of POSTing duplicates.
+  const [createdId, setCreatedId] = useState<string | null>(null)
+  // Only explicit user actions (Save button, tab switch) close the dialog after saving.
+  const closeAfterSaveRef = useRef(false)
+  const activeRecordId = editingId ?? createdId
 
   const { data: extracurriculars = [], isLoading } = useQuery<ExtracurricularItem[]>({
     queryKey: ["extracurriculars"],
@@ -58,6 +64,7 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
     handleSubmit,
     reset,
     watch,
+    getValues,
     formState: { errors, isDirty, isValid },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -69,6 +76,7 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
     reset()
     setEditingId(null)
     setIsAdding(false)
+    setCreatedId(null)
   }, [reset])
 
   const saveMutation = useMutation({
@@ -83,10 +91,10 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
           : [],
       }
 
-      const url = editingId
-        ? `/api/backend/profile/extracurriculars/${editingId}`
+      const url = activeRecordId
+        ? `/api/backend/profile/extracurriculars/${activeRecordId}`
         : "/api/backend/profile/extracurriculars"
-      const method = editingId ? "PUT" : "POST"
+      const method = activeRecordId ? "PUT" : "POST"
 
       const res = await fetch(url, {
         method,
@@ -96,16 +104,25 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
       if (!res.ok) throw new Error("Failed to save extracurricular activity")
       return res.json()
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       try {
         localStorage.removeItem("resumer_draft_extracurricular")
       } catch {}
       queryClient.invalidateQueries({ queryKey: ["extracurriculars"] })
-      handleCancel()
+      if (closeAfterSaveRef.current) {
+        closeAfterSaveRef.current = false
+        handleCancel()
+      } else {
+        // Background auto-save: keep the dialog open, adopt the created id for
+        // future saves, and re-baseline dirty state so the idle timer stops.
+        if (!editingId) setCreatedId(saved.id)
+        reset(getValues())
+      }
     },
   })
 
-  const performSave = useCallback(async (): Promise<boolean> => {
+  const performSave = useCallback(async (closeOnSuccess = false): Promise<boolean> => {
+    closeAfterSaveRef.current = closeOnSuccess
     if (!isDirty) {
       handleCancel()
       return true
@@ -191,15 +208,18 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
   const renderForm = () => (
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 p-0 backdrop-blur-xs md:static md:z-auto md:block md:bg-transparent md:p-0 md:backdrop-blur-none">
       <form
-        onSubmit={handleSubmit((data) => saveMutation.mutate(data))}
+        onSubmit={handleSubmit((data) => {
+          closeAfterSaveRef.current = true
+          saveMutation.mutate(data)
+        })}
         className="max-h-[90dvh] overflow-y-auto rounded-t-xl border-t border-zinc-300 bg-white p-4 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 md:max-h-none md:rounded-none md:border md:border-zinc-200 md:bg-zinc-50 md:shadow-none md:dark:border-zinc-700 md:dark:bg-zinc-900/50 md:p-4 pixel-enter space-y-4"
       >
         <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
           <div className="flex items-center gap-3">
             <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
-              {editingId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
+              {activeRecordId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
             </h3>
-            <SaveStatusBadge status={status} onSaveNow={isDirty ? performSave : undefined} />
+            <SaveStatusBadge status={status} onSaveNow={isDirty ? () => performSave(false) : undefined} />
           </div>
           <Button
             type="button"
