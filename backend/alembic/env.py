@@ -78,6 +78,11 @@ def run_migrations_online() -> None:
                 connection.commit()
         except Exception:
             pass
+        finally:
+            # Close the implicit transaction opened by the probe SELECT.
+            # Leaving it open makes alembic's later commit a no-op, so every
+            # migration on a fresh database silently rolls back.
+            connection.rollback()
 
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
