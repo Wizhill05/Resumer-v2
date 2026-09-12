@@ -557,6 +557,19 @@ class MCPAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Bypass MCP authentication for OAuth and public discovery endpoints
+        path = scope.get("path", "")
+        if (
+            path.startswith("/oauth/")
+            or path.startswith("/.well-known/")
+            or path.startswith("/docs")
+            or path.startswith("/openapi.json")
+            or path == "/healthz"
+            or path == "/system/health"
+        ):
+            await self.app(scope, receive, send)
+            return
+
         # Always permit CORS OPTIONS preflight
         if scope.get("method") == "OPTIONS":
             response = Response(
