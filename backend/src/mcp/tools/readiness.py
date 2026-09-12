@@ -14,11 +14,13 @@ from src.models.profile import (
     UserExtracurricular,
     UserProject,
 )
+from src.services.content_split import resolve_default_split
 from src.template_registry.service import TemplateRegistryService
 
 
 async def list_templates_handler() -> dict[str, Any]:
     """List available resume templates with their layout manifests, content splits, and constraints."""
+    user = get_current_mcp_user()
     templates = TemplateRegistryService.list_templates()
     return {
         "templates": [
@@ -28,7 +30,7 @@ async def list_templates_handler() -> dict[str, Any]:
                 "description": t.description,
                 "target_pages": t.target_pages,
                 "content_slots": t.content_slots,
-                "default_content_split": t.default_content_split.model_dump(),
+                "default_content_split": resolve_default_split(user, t).model_dump(),
                 "allowed_content_splits": [s.model_dump() for s in t.allowed_content_splits],
                 "has_summary": t.has_summary,
                 "has_education": t.has_education,
@@ -61,9 +63,10 @@ async def check_readiness_handler(
             },
         }
 
-    # Resolve required split
-    req_projects = template.default_content_split.projects
-    req_experience = template.default_content_split.experience
+    # Resolve required split (explicit choice → stored user preference → template default)
+    default_split = resolve_default_split(user, template)
+    req_projects = default_split.projects
+    req_experience = default_split.experience
     if content_split:
         req_projects = content_split.get("projects", req_projects)
         req_experience = content_split.get("experience", req_experience)

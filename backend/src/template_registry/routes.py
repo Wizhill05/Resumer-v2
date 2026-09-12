@@ -3,9 +3,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
-from src.core.auth import get_current_user
+from src.core.auth import get_current_user, get_optional_user
 from src.core.config import settings
+from src.models.user import User
 from src.schemas.template import TemplateManifest
+from src.services.content_split import resolve_default_split
 from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -27,8 +29,14 @@ _MIME_MAP = {
 
 
 @router.get("", response_model=list[TemplateManifest])
-async def list_templates():
-    return TemplateRegistryService.list_templates()
+async def list_templates(user: User | None = Depends(get_optional_user)):
+    """List template manifests with each user's effective default split."""
+    return [
+        t.model_copy(
+            update={"default_content_split": resolve_default_split(user, t)}
+        )
+        for t in TemplateRegistryService.list_templates()
+    ]
 
 
 @router.get("/{template_id}/assets/{asset_path:path}")

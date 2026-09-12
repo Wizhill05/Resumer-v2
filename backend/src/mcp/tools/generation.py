@@ -16,6 +16,7 @@ from src.mcp.context import get_current_mcp_user, get_mcp_db
 from src.mcp.tools.readiness import check_readiness_handler
 from src.models.generation import Generation, GenerationLog
 from src.models.profile import Profile, UserEducation, UserExperience, UserExtracurricular, UserProject
+from src.services.content_split import resolve_default_split, save_user_split_preference, split_is_allowed
 from src.template_registry.service import TemplateRegistryService
 
 async def generate_resume_handler(
@@ -46,10 +47,36 @@ async def generate_resume_handler(
             "message": f"Template '{template_id}' does not exist. Call list_templates for valid options.",
         }
 
-    # 2. Check profile readiness before starting
+    # 2. Resolve the effective split (explicit choice → stored user preference → template default)
+    explicit_split: dict[str, int] | None = None
+    if content_split is not None:
+        projects = content_split.get("projects")
+        experience = content_split.get("experience")
+        if (
+            not isinstance(projects, int)
+            or not isinstance(experience, int)
+            or not split_is_allowed(projects, experience, template)
+        ):
+            allowed = [(s.projects, s.experience) for s in template.allowed_content_splits]
+            return {
+                "success": False,
+                "status": "error",
+                "error_code": "INVALID_CONTENT_SPLIT",
+                "message": (
+                    f"Invalid content_split ({projects}, {experience}) for template '{template_id}'. "
+                    f"Allowed splits (projects, experience): {allowed}"
+                ),
+            }
+        explicit_split = {"projects": projects, "experience": experience}
+        effective_split = explicit_split
+    else:
+        default_split = resolve_default_split(user, template)
+        effective_split = {"projects": default_split.projects, "experience": default_split.experience}
+
+    # 3. Check profile readiness against the effective split before starting
     readiness = await check_readiness_handler(
         template_id=template_id,
-        content_split=content_split,
+        content_split=effective_split,
         job_description=job_description,
     )
     if not readiness["is_ready"]:
@@ -62,12 +89,15 @@ async def generate_resume_handler(
             "ai_steering": readiness["ai_steering"],
         }
 
-    effective_split = content_split or template.default_content_split.model_dump()
-
-    # 3. Create Generation record and trigger pipeline
+    # 4. Create Generation record and trigger pipeline
     async with get_mcp_db() as db:
         await reap_stuck_generations(db)
         await check_rate_limit(user, db)
+
+        if explicit_split is not None:
+            await save_user_split_preference(
+                db, user.id, explicit_split["projects"], explicit_split["experience"]
+            )
 
         gen = Generation(
             user_id=user.id,

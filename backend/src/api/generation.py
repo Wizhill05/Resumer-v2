@@ -21,6 +21,7 @@ from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
 from src.models.user import User
 from src.schemas.generation import GenerationCreate, GenerationOut
+from src.services.content_split import resolve_default_split
 from src.schemas.generation import (
     EditorManifest,
     EditorPayload,
@@ -168,9 +169,12 @@ async def start_generation(
                 ),
             )
         resolved_split = {"projects": data.content_split.projects, "experience": data.content_split.experience}
+        # Implicitly learn the user's preferred split for future runs.
+        current_user.preferred_projects = data.content_split.projects
+        current_user.preferred_experience = data.content_split.experience
     else:
-        # Fall back to template default.
-        d = manifest.default_content_split
+        # Fall back to the user's stored preference, then the template default.
+        d = resolve_default_split(current_user, manifest)
         resolved_split = {"projects": d.projects, "experience": d.experience}
 
     # ── Validate sufficient profile material exists in DB ─────────────────────

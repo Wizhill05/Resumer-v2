@@ -20,3 +20,10 @@ frontend/bun.lock
 .vercel/
 omp-html/
 .worktrees/
+
+# Runtime artifacts
+*.log
+*.pid
+
+# Generated imp research exports
+frontend/public/imp/

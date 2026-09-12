@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect, useRef } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { posthog } from "@/lib/posthog"
 import { Button } from "@/components/ui/button"
@@ -75,8 +75,7 @@ export function GenerateClient() {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
-  const [projectsCount, setProjectsCount] = useState<number>(2)
-  const [experienceCount, setExperienceCount] = useState<number>(2)
+  const [splitOverride, setSplitOverride] = useState<{ projects: number; experience: number } | null>(null)
   const [adjustmentNotice, setAdjustmentNotice] = useState<string | null>(null)
   const [advancedExpanded, setAdvancedExpanded] = useState(false)
   const [createdRunId, setCreatedRunId] = useState<string | null>(null)
@@ -127,6 +126,13 @@ export function GenerateClient() {
     [templates, selectedTemplate]
   )
 
+  // The backend personalizes default_content_split from the user's stored
+  // preference; derive the counters during render so their choice survives
+  // template refetches while any manual adjustment takes precedence.
+  const baseTemplate = activeTemplate ?? templates[0]
+  const projectsCount = splitOverride?.projects ?? baseTemplate?.default_content_split.projects ?? 2
+  const experienceCount = splitOverride?.experience ?? baseTemplate?.default_content_split.experience ?? 2
+
   const numProfileProjects = profileProjects.length
   const numProfileExperiences = profileExperiences.length
   const hasEnoughProjects = numProfileProjects >= projectsCount
@@ -138,19 +144,17 @@ export function GenerateClient() {
     if (target < 1 || target > 3) return
 
     if (target === 1) {
-      setExperienceCount(3)
-      setProjectsCount(1)
+      setSplitOverride({ projects: 1, experience: 3 })
       setAdjustmentNotice("1 project requires min. 3 experiences for 1-page ATS layout")
       return
     } else if (target === 2) {
       if (experienceCount === 1) {
-        setExperienceCount(2)
-        setProjectsCount(2)
+        setSplitOverride({ projects: 2, experience: 2 })
         setAdjustmentNotice("Shifted experience to 2 (1 experience requires 3 projects)")
         return
       }
     }
-    setProjectsCount(target)
+    setSplitOverride({ projects: target, experience: experienceCount })
     setAdjustmentNotice(null)
   }
 
@@ -159,19 +163,17 @@ export function GenerateClient() {
     if (target < 1 || target > 3) return
 
     if (target === 1) {
-      setProjectsCount(3)
-      setExperienceCount(1)
+      setSplitOverride({ projects: 3, experience: 1 })
       setAdjustmentNotice("1 experience requires min. 3 projects for 1-page ATS layout")
       return
     } else if (target === 2) {
       if (projectsCount === 1) {
-        setProjectsCount(2)
-        setExperienceCount(2)
+        setSplitOverride({ projects: 2, experience: 2 })
         setAdjustmentNotice("Shifted projects to 2 (1 project requires 3 experiences)")
         return
       }
     }
-    setExperienceCount(target)
+    setSplitOverride({ projects: projectsCount, experience: target })
     setAdjustmentNotice(null)
   }
 

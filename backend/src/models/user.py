@@ -23,4 +23,6 @@ class User(Base):
     first_generation_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     feedback_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
+    preferred_projects: Mapped[int | None] = mapped_column(Integer)
+    preferred_experience: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
