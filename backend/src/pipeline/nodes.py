@@ -262,6 +262,11 @@ async def invoke_with_fallback(
             started = time.perf_counter()
             try:
                 result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
+                if result is None:
+                    raise ValueError(
+                        "Structured output parse failed: model returned no tool call. "
+                        "Retrying with key rotation and provider fallback."
+                    )
                 prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(result)
                 await record_node_metric(
                     gen_id,
