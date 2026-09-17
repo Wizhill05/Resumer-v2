@@ -1,8 +1,5 @@
 from src.core.config import settings
-
-
-import re
-from src.core.config import settings
+from src.core.file_links import format_resume_filename, resolve_resume_username
 
 
 def send_completion_email(to_email: str | None, gen, pdf_bytes: bytes | None = None) -> None:
@@ -324,9 +321,14 @@ def send_completion_email(to_email: str | None, gen, pdf_bytes: bytes | None = N
 
         # ── Attach PDF if present and successful ─────────────────────────────
         if pdf_bytes and gen.status == "completed":
-            safe_title = re.sub(r'[^\w\s-]', '', gen.job_title or "Resume").strip()
-            safe_title = re.sub(r'[-\s]+', '_', safe_title)
-            filename = f"Resume_{safe_title}.pdf"
+            render_profile = ((getattr(gen, "render_metadata", None) or {}).get("profile") or {})
+            guest_profile = ((getattr(gen, "guest_input_snapshot", None) or {}).get("profile") or {})
+            username = resolve_resume_username(
+                guest_profile.get("full_name"), render_profile.get("full_name")
+            )
+            filename = format_resume_filename(
+                username=username, job_title=getattr(gen, "job_title", None)
+            )
             email_payload["attachments"] = [
                 {
                     "filename": filename,

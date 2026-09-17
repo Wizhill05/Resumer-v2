@@ -7,6 +7,7 @@ from src.core.file_links import (
     build_resume_file_link,
     format_resume_filename,
     generate_file_token,
+    resolve_resume_username,
     verify_file_token,
 )
 
@@ -53,12 +54,23 @@ def test_token_expiration_rejected():
 
 
 def test_format_resume_filename():
-    assert format_resume_filename("Software Engineer", "Google") == "Resume_Google_Software_Engineer.pdf"
-    assert format_resume_filename(None, "Meta") == "Resume_Meta.pdf"
-    assert format_resume_filename("Backend Dev", None) == "Resume_Backend_Dev.pdf"
-    assert format_resume_filename("Target Role", "Unknown Company") == "Resume_Tailored.pdf"
-    assert format_resume_filename("", "") == "Resume_Tailored.pdf"
-    assert format_resume_filename("Senior Architect / Lead!", "Acme & Co.") == "Resume_Acme_Co_Senior_Architect_Lead.pdf"
+    assert format_resume_filename("Aryan Singh", "Software Engineer") == "Aryan_Singh_Software_Engineer.pdf"
+    assert format_resume_filename("Jane", None) == "Jane_Resume.pdf"
+    assert format_resume_filename(None, "Backend Dev") == "User_Backend_Dev.pdf"
+    assert format_resume_filename("", "") == "User_Resume.pdf"
+    assert format_resume_filename(None, None) == "User_Resume.pdf"
+    assert format_resume_filename("John Doe!", "Senior Architect / Lead!") == "John_Doe_Senior_Architect_Lead.pdf"
+    # company is ignored for backward compatibility — always Username_JobTitle.pdf
+    assert (
+        format_resume_filename("Aryan Singh", "Software Engineer", company="Google")
+        == "Aryan_Singh_Software_Engineer.pdf"
+    )
+
+
+def test_resolve_resume_username():
+    assert resolve_resume_username("", "  ", "Aryan Singh") == "Aryan Singh"
+    assert resolve_resume_username(None, None) is None
+    assert resolve_resume_username(" Jane ") == "Jane"
 
 
 def test_build_resume_file_link(monkeypatch):

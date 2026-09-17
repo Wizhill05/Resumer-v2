@@ -56,25 +56,36 @@ def verify_file_token(
         return False
 
 
+def _sanitize_filename_part(value: str | None, fallback: str) -> str:
+    """Sanitize a single filename part for HTTP Content-Disposition usage."""
+    if not value or not value.strip():
+        return fallback
+    cleaned = re.sub(r'[^a-zA-Z0-9_\-]', '_', value.strip())
+    cleaned = re.sub(r'_+', '_', cleaned).strip('_')
+    return cleaned or fallback
+
+
+def resolve_resume_username(*candidates: str | None) -> str | None:
+    """Return the first non-empty username candidate, if any."""
+    for candidate in candidates:
+        if candidate and candidate.strip():
+            return candidate.strip()
+    return None
+
+
 def format_resume_filename(
+    username: str | None = None,
     job_title: str | None = None,
     company: str | None = None,
 ) -> str:
-    """Format a clean, human-friendly download filename slug."""
-    parts: list[str] = []
-    if company and company.strip() and company.strip().lower() != "unknown company":
-        parts.append(company.strip())
-    if job_title and job_title.strip() and job_title.strip().lower() != "target role":
-        parts.append(job_title.strip())
+    """Format download filename as Username_JobTitle.pdf.
 
-    if not parts:
-        return "Resume_Tailored.pdf"
-
-    slug = "_".join(parts)
-    # Sanitize characters unsafe for HTTP Content-Disposition filename
-    clean_slug = re.sub(r'[^a-zA-Z0-9_\-]', '_', slug)
-    clean_slug = re.sub(r'_+', '_', clean_slug).strip('_')
-    return f"Resume_{clean_slug or 'Tailored'}.pdf"
+    `company` is accepted for backward compatibility but intentionally
+    ignored — the filename is always Username_JobTitle.pdf.
+    """
+    clean_user = _sanitize_filename_part(username, "User")
+    clean_title = _sanitize_filename_part(job_title, "Resume")
+    return f"{clean_user}_{clean_title}.pdf"
 
 
 def build_resume_file_link(
