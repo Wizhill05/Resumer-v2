@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react"
 import { BasicInfoForm } from "@/components/profile/BasicInfoForm"
+import { DefaultsSection } from "@/components/profile/DefaultsSection"
 import { ExperienceForm } from "@/components/profile/ExperienceForm"
 import { ProjectForm } from "@/components/profile/ProjectForm"
 import { EducationForm } from "@/components/profile/EducationForm"
@@ -105,6 +106,8 @@ export function ProfileClient() {
   ]
 
   return (
+    <div className="space-y-3 md:space-y-4">
+      <DefaultsSection />
     <div className="grid grid-cols-1 gap-3 md:grid-cols-[13rem_1fr] md:gap-5">
       {/* Mobile Sticky Tab Bar & Desktop Sidebar */}
       <div className="sticky top-0 z-20 -mx-3 bg-[#fbfbf3]/95 px-3 py-2 backdrop-blur-md dark:bg-zinc-900/95 md:static md:mx-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
@@ -165,6 +168,7 @@ export function ProfileClient() {
           onCancel={handleModalCancel}
         />
       )}
+      </div>
     </div>
   )
 }

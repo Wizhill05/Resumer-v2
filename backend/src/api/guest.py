@@ -131,6 +131,7 @@ def _out(gen: Generation) -> GuestGenerationOut:
         created_at=gen.created_at.isoformat(),
         completed_at=gen.completed_at.isoformat() if gen.completed_at else None,
         content_split=gen.content_split,
+        creativity_mode=getattr(gen, "creativity_mode", None) or "larp",
         error_message=gen.error_message,
     )
 
@@ -326,6 +327,7 @@ async def start_guest_generation(
         status="pending",
         content_split=resolved_split,
         is_guest=True,
+        creativity_mode=data.creativity_mode or "larp",
         guest_token_hash=token_hash,
         guest_input_snapshot=snapshot,
         expires_at=datetime.now(timezone.utc) + timedelta(days=GUEST_ARTIFACT_DAYS),

@@ -22,6 +22,7 @@ from src.schemas.profile import (
     ExtracurricularOut,
     ExtracurricularUpdate,
 )
+from src.schemas.generation import UserDefaultsOut, UserDefaultsUpdate
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -63,7 +64,54 @@ async def update_profile(
     return profile
 
 
+# ── Generation defaults ─────────────────────────────────────────────────────
+
+
+@router.get("/defaults", response_model=UserDefaultsOut)
+async def get_defaults(
+    current_user: User = Depends(get_current_user),
+):
+    from src.services.content_split import resolve_default_mode
+
+    return UserDefaultsOut(
+        creativity_mode=resolve_default_mode(current_user),
+        preferred_projects=current_user.preferred_projects,
+        preferred_experience=current_user.preferred_experience,
+    )
+
+
+@router.put("/defaults", response_model=UserDefaultsOut)
+async def update_defaults(
+    data: UserDefaultsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi import HTTPException
+    from src.services.content_split import is_valid_mode, resolve_default_mode
+
+    updates = data.model_dump(exclude_unset=True)
+    if "creativity_mode" in updates:
+        mode_val = updates["creativity_mode"]
+        if mode_val is not None and not is_valid_mode(mode_val):
+            raise HTTPException(status_code=422, detail="Invalid creativity_mode. Allowed: proper, larp, super_larp.")
+        current_user.preferred_creativity_mode = mode_val
+    for key in ("preferred_projects", "preferred_experience"):
+        if key in updates:
+            val = updates[key]
+            if val is not None and not (0 <= val <= 5):
+                raise HTTPException(status_code=422, detail=f"Invalid {key}. Allowed range: 0-5.")
+            setattr(current_user, key, val)
+    await db.commit()
+    await db.refresh(current_user)
+    return UserDefaultsOut(
+        creativity_mode=resolve_default_mode(current_user),
+        preferred_projects=current_user.preferred_projects,
+        preferred_experience=current_user.preferred_experience,
+    )
+
+
 # ── Projects ──────────────────────────────────────────────────────────────────
+
 
 @router.get("/projects", response_model=list[ProjectOut])
 async def list_projects(

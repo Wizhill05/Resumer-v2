@@ -27,6 +27,7 @@ from src.mcp.tools.generation import (
     download_resume_handler,
     generate_resume_handler,
     get_generation_status_handler,
+    set_generation_defaults_handler,
 )
 from src.mcp.tools.profile import (
     add_education_handler,
@@ -411,6 +412,7 @@ async def generate_resume(
     company: str | None = None,
     content_split: dict[str, int] | None = None,
     instructions: str | None = None,
+    creativity_mode: str | None = None,
     wait_for_completion: bool = True,
     ctx: Context = None,
 ) -> dict[str, Any]:
@@ -419,6 +421,8 @@ async def generate_resume(
     By default, this tool waits for the generation pipeline to complete (~15-25 seconds) and directly returns
     the completed status, the public PDF download URL, and the complete structured resume_json.
     You MUST present the PDF download URL in Markdown format (e.g. [Download Role Resume (PDF)](url)) and a brief summary to the user.
+    creativity_mode ("proper" | "larp" | "super_larp") applies to this run only; omit it to use the
+    user's stored default (see set_generation_defaults).
     """
     return await generate_resume_handler(
         job_description=job_description,
@@ -427,8 +431,27 @@ async def generate_resume(
         company=company,
         content_split=content_split,
         instructions=instructions,
+        creativity_mode=creativity_mode,
         wait_for_completion=wait_for_completion,
         ctx=ctx,
+    )
+
+
+@mcp_server.tool()
+async def set_generation_defaults(
+    creativity_mode: str | None = None,
+    projects: int | None = None,
+    experience: int | None = None,
+) -> dict[str, Any]:
+    """Get or change the user's stored generation defaults.
+
+    Call with no arguments to read the current defaults. creativity_mode must be proper, larp,
+    or super_larp. projects/experience are the default content counts (0-5 each).
+    """
+    return await set_generation_defaults_handler(
+        creativity_mode=creativity_mode,
+        projects=projects,
+        experience=experience,
     )
 
 

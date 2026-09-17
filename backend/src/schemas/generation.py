@@ -2,7 +2,10 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
+
+CreativityMode = Literal["proper", "larp", "super_larp"]
 
 
 class ContentSplitRequest(BaseModel):
@@ -22,6 +25,11 @@ class GenerationCreate(BaseModel):
     # Optional — backend falls back to template default when absent.
     content_split: ContentSplitRequest | None = None
     send_email: bool | None = None
+    # Truthfulness/creativity control. Proper = only profile facts.
+    # LARP = embellish existing entries + prioritize JD skills.
+    # Super LARP = LARP + invented JD-hyper-focused first project.
+    # None = use the user's stored default (falls back to larp).
+    creativity_mode: CreativityMode | None = None
 
 
 class GenerationOut(BaseModel):
@@ -38,8 +46,26 @@ class GenerationOut(BaseModel):
     thumb_storage_key: str | None = None
     content_split: dict | None = None
     send_email: bool | None = None
+    creativity_mode: CreativityMode | None = None
 
     model_config = {"from_attributes": True}
+
+
+# ── User default preferences ─────────────────────────────────────────────────
+
+
+class UserDefaultsOut(BaseModel):
+    """Stored per-user generation defaults (profile Defaults section)."""
+    creativity_mode: str
+    preferred_projects: int | None = None
+    preferred_experience: int | None = None
+
+
+class UserDefaultsUpdate(BaseModel):
+    """Body for PUT /profile/defaults. All fields optional."""
+    creativity_mode: CreativityMode | None = None
+    preferred_projects: int | None = None
+    preferred_experience: int | None = None
 
 
 # ── Editor schemas ─────────────────────────────────────────────────────────────

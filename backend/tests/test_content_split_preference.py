@@ -272,3 +272,96 @@ async def test_rest_generate_without_split_uses_stored_preference(setup_test_env
         )
         gen = await start_generation(req, current_user, db)
         assert gen.content_split == {"projects": 3, "experience": 2}
+        assert gen.creativity_mode == "larp"
+
+
+async def test_rest_generate_respects_custom_default_mode(setup_test_env, monkeypatch):
+    user, session_maker = setup_test_env
+    await _seed_profile(session_maker, user.id, projects=2, experiences=2)
+
+    async with session_maker() as db:
+        current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        current_user.preferred_creativity_mode = "proper"
+        await db.commit()
+
+    async def mock_noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("src.api.generation.reap_stuck_generations", mock_noop)
+    monkeypatch.setattr("src.api.generation.check_rate_limit", mock_noop)
+    monkeypatch.setattr("src.api.generation.trigger_pipeline", mock_noop)
+
+    async with session_maker() as db:
+        current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        req = GenerationCreate(
+            template_id="personal-classic",
+            job_description="Backend Engineer requiring Python",
+        )
+        gen = await start_generation(req, current_user, db)
+        assert gen.creativity_mode == "proper"
+
+
+async def test_rest_generate_allows_per_run_mode_override_without_changing_user_default(setup_test_env, monkeypatch):
+    user, session_maker = setup_test_env
+    await _seed_profile(session_maker, user.id, projects=2, experiences=2)
+
+    async with session_maker() as db:
+        current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        current_user.preferred_creativity_mode = "proper"
+        await db.commit()
+
+    async def mock_noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("src.api.generation.reap_stuck_generations", mock_noop)
+    monkeypatch.setattr("src.api.generation.check_rate_limit", mock_noop)
+    monkeypatch.setattr("src.api.generation.trigger_pipeline", mock_noop)
+
+    async with session_maker() as db:
+        current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        req = GenerationCreate(
+            template_id="personal-classic",
+            job_description="Backend Engineer requiring Python",
+            creativity_mode="super_larp",
+        )
+        gen = await start_generation(req, current_user, db)
+        assert gen.creativity_mode == "super_larp"
+
+    # User's default mode must remain "proper"
+    async with session_maker() as db:
+        reloaded = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert reloaded.preferred_creativity_mode == "proper"
+
+
+async def test_put_profile_defaults_persists_creativity_mode(setup_test_env):
+    user, session_maker = setup_test_env
+    from src.api.profile import get_defaults, update_defaults
+    from src.schemas.generation import UserDefaultsUpdate
+
+    async with session_maker() as db:
+        current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert current_user.preferred_creativity_mode == "larp"
+
+        # Update to super_larp
+        updated = await update_defaults(
+            UserDefaultsUpdate(creativity_mode="super_larp", preferred_projects=4, preferred_experience=1),
+            current_user=current_user,
+            db=db,
+        )
+        assert updated.creativity_mode == "super_larp"
+        assert updated.preferred_projects == 4
+        assert updated.preferred_experience == 1
+
+    # Verify fresh fetch from database
+    async with session_maker() as db:
+        refetched_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert refetched_user.preferred_creativity_mode == "super_larp"
+        assert refetched_user.preferred_projects == 4
+        assert refetched_user.preferred_experience == 1
+
+        defaults_out = await get_defaults(current_user=refetched_user)
+        assert defaults_out.creativity_mode == "super_larp"
+        assert defaults_out.preferred_projects == 4
+        assert defaults_out.preferred_experience == 1
+
+

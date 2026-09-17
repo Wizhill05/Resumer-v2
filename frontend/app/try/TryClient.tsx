@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { emptyGuestDraft, loadGuestDraft, mergeGuestDraft, saveGuestDraft } from "@/lib/guest-storage"
 import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
+import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
 import { posthog } from "@/lib/posthog"
 import type {
   GuestDraft, GuestEducation, GuestExperience,
@@ -655,6 +656,7 @@ function GeneratePanel({
   jobDescription, setJobDescription,
   keywords, setKeywords,
   instructions, setInstructions,
+  creativityMode, setCreativityMode,
   error, setError,
 }: {
   draft: GuestDraft
@@ -667,6 +669,8 @@ function GeneratePanel({
   setKeywords: (v: string) => void
   instructions: string
   setInstructions: (v: string) => void
+  creativityMode: CreativityMode
+  setCreativityMode: (v: CreativityMode) => void
   error: string | null
   setError: (e: string | null) => void
 }) {
@@ -754,6 +758,7 @@ function GeneratePanel({
               <Input placeholder="Emphasise backend work" className="h-8 text-sm" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
             </Field>
           </div>
+          <CreativityModeSelector value={creativityMode} onChange={setCreativityMode} compact />
         </div>
       </div>
 
@@ -792,6 +797,7 @@ export function TryClient() {
   const [jobDescription, setJobDescription] = useState("")
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
+  const [creativityMode, setCreativityMode] = useState<CreativityMode>("larp")
 
   useEffect(() => {
     startTransition(() => {
@@ -839,6 +845,7 @@ export function TryClient() {
           keywords: splitCommas(keywords),
           instructions: instructions || null,
           content_split: { projects: activeFocus.projects, experience: activeFocus.experience },
+          creativity_mode: creativityMode,
           ...draft,
         }),
       })
@@ -932,6 +939,7 @@ export function TryClient() {
                 jobDescription={jobDescription} setJobDescription={setJobDescription}
                 keywords={keywords} setKeywords={setKeywords}
                 instructions={instructions} setInstructions={setInstructions}
+                creativityMode={creativityMode} setCreativityMode={setCreativityMode}
                 error={error} setError={setError}
               />
             )}

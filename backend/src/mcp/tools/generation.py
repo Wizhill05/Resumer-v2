@@ -15,8 +15,15 @@ from src.core.storage import StorageService
 from src.mcp.context import get_current_mcp_user, get_mcp_db
 from src.mcp.tools.readiness import check_readiness_handler
 from src.models.generation import Generation, GenerationLog
+from src.models.user import User
 from src.models.profile import Profile, UserEducation, UserExperience, UserExtracurricular, UserProject
-from src.services.content_split import resolve_default_split, save_user_split_preference, split_is_allowed
+from src.services.content_split import (
+    is_valid_mode,
+    resolve_default_mode,
+    resolve_default_split,
+    save_user_split_preference,
+    split_is_allowed,
+)
 from src.template_registry.service import TemplateRegistryService
 
 async def generate_resume_handler(
@@ -26,6 +33,7 @@ async def generate_resume_handler(
     company: str | None = None,
     content_split: dict[str, int] | None = None,
     instructions: str | None = None,
+    creativity_mode: str | None = None,
     wait_for_completion: bool = True,
     timeout_seconds: int = 60,
     ctx: Any = None,
@@ -34,8 +42,19 @@ async def generate_resume_handler(
 
     By default, waits for the generation pipeline to complete (~15-25s) and directly returns
     the completed resume status, download URL, and complete structured resume_json.
+    creativity_mode is per-run only ("proper" | "larp" | "super_larp"); omit it to use the
+    user's stored default. Change the stored default with set_generation_defaults.
     """
     user = get_current_mcp_user()
+
+    if creativity_mode is not None and not is_valid_mode(creativity_mode):
+        return {
+            "success": False,
+            "status": "error",
+            "error_code": "INVALID_CREATIVITY_MODE",
+            "message": f"Invalid creativity_mode '{creativity_mode}'. Allowed: proper, larp, super_larp.",
+        }
+    effective_mode = creativity_mode or resolve_default_mode(user)
 
     # 1. Validate template
     template = TemplateRegistryService.get_template_manifest(template_id)
@@ -107,6 +126,7 @@ async def generate_resume_handler(
             company=company,
             instructions=instructions,
             content_split=effective_split,
+            creativity_mode=effective_mode,
             status="pending",
             is_guest=False,
             send_email=False,
@@ -126,6 +146,7 @@ async def generate_resume_handler(
             "status": "in_progress",
             "template_id": template_id,
             "content_split": effective_split,
+            "creativity_mode": effective_mode,
             "estimated_duration_seconds": 20,
             "poll_tool": "get_generation_status",
             "message": (
@@ -197,6 +218,7 @@ async def generate_resume_handler(
             "editor_revision": render_meta.get("editor_revision", 0),
             "resume_json": tailored_resume,
             "content_split": effective_split,
+            "creativity_mode": effective_mode,
             "message": (
                 f"Resume successfully generated for '{role_title}'! "
                 f"Download link: [{label}]({download_url})"
@@ -219,6 +241,7 @@ async def generate_resume_handler(
         "status": latest_gen.status,
         "template_id": template_id,
         "content_split": effective_split,
+        "creativity_mode": effective_mode,
         "poll_tool": "get_generation_status",
         "message": (
             f"Resume generation is still processing in background (elapsed {timeout_seconds}s). "
@@ -349,3 +372,45 @@ async def download_resume_handler(generation_id: str) -> dict[str, Any]:
             "resume_json": render_meta.get("tailored_resume"),
             "message": f"Resume PDF download link: [{label}]({download_url})",
         }
+
+
+async def set_generation_defaults_handler(
+    creativity_mode: str | None = None,
+    projects: int | None = None,
+    experience: int | None = None,
+) -> dict[str, Any]:
+    """Get or change the user's stored generation defaults.
+
+    Omit all arguments to read the current defaults. Pass any argument to update it.
+    creativity_mode must be proper, larp, or super_larp. projects/experience are the
+    default content counts (0-5 each); they apply when valid for the chosen template.
+    """
+    user = get_current_mcp_user()
+    if creativity_mode is not None and not is_valid_mode(creativity_mode):
+        return {
+            "success": False,
+            "error": f"Invalid creativity_mode '{creativity_mode}'. Allowed: proper, larp, super_larp.",
+        }
+    for label, value in (("projects", projects), ("experience", experience)):
+        if value is not None and not (isinstance(value, int) and 0 <= value <= 5):
+            return {"success": False, "error": f"Invalid {label} '{value}'. Allowed range: 0-5."}
+
+    async with get_mcp_db() as db:
+        res = await db.execute(select(User).where(User.id == user.id))
+        db_user = res.scalar_one_or_none()
+        if not db_user:
+            return {"success": False, "error": "User not found."}
+        if creativity_mode is not None:
+            db_user.preferred_creativity_mode = creativity_mode
+        if projects is not None:
+            db_user.preferred_projects = projects
+        if experience is not None:
+            db_user.preferred_experience = experience
+        await db.commit()
+        await db.refresh(db_user)
+        defaults = {
+            "creativity_mode": resolve_default_mode(db_user),
+            "preferred_projects": db_user.preferred_projects,
+            "preferred_experience": db_user.preferred_experience,
+        }
+    return {"success": True, "defaults": defaults}

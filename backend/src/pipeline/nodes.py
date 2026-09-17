@@ -141,6 +141,54 @@ def _normalize_skills(skills: Any) -> dict[str, list[str]]:
     )
 
 
+# ── Creativity mode helpers ───────────────────────────────────────────────────
+
+VALID_CREATIVITY_MODES = ("proper", "larp", "super_larp")
+
+
+def _creativity_mode(state: dict[str, Any]) -> str:
+    mode = (state.get("creativity_mode") or "larp").lower().strip()
+    return mode if mode in VALID_CREATIVITY_MODES else "larp"
+
+
+def _prompt_name(base: str, mode: str) -> str:
+    """Per-mode prompt config keys so Proper/LARP/Super-LARP evolve independently."""
+    return f"{base}_{mode}" if mode in ("larp", "super_larp") else base
+
+
+def _ensure_jd_skill_coverage(
+    skills: dict[str, list[str]], jd_skills: list[str], mode: str
+) -> dict[str, list[str]]:
+    """In LARP modes guarantee JD skills appear in the skills section.
+
+    Proper mode returns skills untouched. LARP/Super-LARP append any missing
+    JD extracted_skills (case-insensitive) to the first non-soft category,
+    creating one if needed. Caps injected skills to avoid unbounded stuffing.
+    """
+    if mode not in ("larp", "super_larp") or not jd_skills:
+        return skills
+    existing_lower = {s.lower() for items in skills.values() for s in items}
+    missing = []
+    for s in jd_skills:
+        name = (s or "").strip()
+        if name and name.lower() not in existing_lower:
+            missing.append(name)
+            existing_lower.add(name.lower())
+    if not missing:
+        return skills
+    missing = missing[:15]
+    target_key = None
+    for key in skills:
+        if "soft" not in key.lower():
+            target_key = key
+            break
+    if target_key is None:
+        target_key = next(iter(skills), "Tools & Technologies")
+        skills.setdefault(target_key, [])
+    skills[target_key] = [*skills.get(target_key, []), *missing]
+    return skills
+
+
 async def record_node_metric(
     gen_id: str | None,
     node_name: str | None,
@@ -538,19 +586,37 @@ async def summary_skills_node(
         "Generating tailored summary & categorizing skills...",
     )
 
+    mode = _creativity_mode(state)
+    if mode == "proper":
+        skills_rule = (
+            "- categories: 3-6 skill categories total (e.g. Languages, Frontend, Backend, Tools, Soft Skills). Must include a 'Soft Skills' category.\n"
+            "- Each category must have a category name and a list of short skill names.\n"
+            "- Use ONLY skills evidenced in candidate material; include a job-matching skill only if the candidate plausibly demonstrates it.\n"
+            "- Vary selection per job but never invent tools the candidate has no basis for."
+        )
+        summary_rule = "- Anchor summary in candidate evidence and job priorities; do not claim unsupported years, degrees, employers, or certifications."
+    else:
+        skills_rule = (
+            "- categories: 3-6 skill categories total (e.g. Languages, Frontend, Backend, Tools, Soft Skills). Must include a 'Soft Skills' category.\n"
+            "- Each category must have a category name and a list of short skill names.\n"
+            "- START from the job's extracted skills and make coverage the priority: every important job skill MUST appear somewhere, even if absent from the candidate profile.\n"
+            "- Blend in candidate skills lightly for variety, but job-required skills take precedence. Vary wording/order per job so outputs do not look identical."
+        )
+        summary_rule = (
+            "- Write a vivid, varied summary anchored in job priorities; mirror the job's language and foreground its top 2-3 requirements. "
+            "You may imply familiarity with job-required tools even when candidate evidence is thin."
+        )
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
-        "summary_skills",
+        _prompt_name("summary_skills", mode),
         default_system=(
             "ROLE: Senior resume writer optimizing top-of-resume positioning for ATS and human reviewers.\n"
             "TASK: Write a concise targeted summary and categorized skills from candidate material and job analysis.\n"
             "OUTPUT CONTRACT: Return only the structured TailoredSummaryAndSkills object with summary and categories.\n"
             "RULES:\n"
             "- summary: exactly 1-2 sentences, maximum 30 words, no first person, no fluff.\n"
-            "- Anchor summary in candidate evidence and job priorities; do not claim unsupported years, degrees, employers, or certifications.\n"
-            "- categories: 3-6 skill categories total (e.g. Languages, Frontend, Backend, Tools, Soft Skills). Must include a 'Soft Skills' category.\n"
-            "- Each category must have a category name and a list of short skill names.\n"
-            "- Prioritize job-matching skills first; include plausible demonstrated skills, not random keyword stuffing.\n"
+            f"{summary_rule}\n"
+            f"{skills_rule}\n"
             "- No prose outside the structured output."
         ),
         default_user=(
@@ -588,6 +654,8 @@ async def summary_skills_node(
             if isinstance(c, dict) and c.get("category")
         }
     summary_draft["skills"] = _normalize_skills(skills_dict)
+    jd_skills = (state.get("job_analysis") or {}).get("extracted_skills") or []
+    summary_draft["skills"] = _ensure_jd_skill_coverage(summary_draft["skills"], jd_skills, mode)
     return {"summary_draft": summary_draft}
 
 
@@ -616,9 +684,23 @@ async def experience_node(
             f"Bullet Points:\n" + "\n".join(exp.get("bullet_points") or []) + "\n"
         )
 
+    mode = _creativity_mode(state)
+    if mode == "proper":
+        truth_rule = "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence."
+        variety_rule = "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact."
+    else:
+        truth_rule = (
+            "- LARP MODE: you may embellish freely within the existing role/company. Add job-required features, tools, and "
+            "plausible metrics/scale the candidate did not state, as long as role, organization, and dates stay intact. "
+            "Never create a new employer or role, but do not be afraid to claim the job's stack."
+        )
+        variety_rule = (
+            "- Rewrite creatively so no two resumes read the same: vary verbs, structures, and which JD requirements each bullet proves. "
+            "Foreground exact JD keywords, technologies, and responsibilities in every entry."
+        )
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
-        "experience_writer",
+        _prompt_name("experience_writer", mode),
         default_system=(
             "ROLE: Senior technical resume writer.\n"
             "TASK: Rewrite selected experience entries to prove fit for the target job while preserving truth.\n"
@@ -627,8 +709,8 @@ async def experience_node(
             "- Preserve role, organization, dates, and location unless input is missing.\n"
             "- Each entry should contain 2-4 bullet_points, limited by available source material.\n"
             "- Start every bullet with a strong past-tense action verb.\n"
-            "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact.\n"
-            "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence.\n"
+            f"{variety_rule}\n"
+            f"{truth_rule}\n"
             "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks, e.g. **35%**, **FastAPI**, **400ms**.\n"
             "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
             "- Keep bullets concise, specific, and ATS-readable. No periods required.\n"
@@ -698,9 +780,25 @@ async def project_node(
             f"Bullet Points:\n" + "\n".join(proj.get("bullet_points") or []) + "\n"
         )
 
+    mode = _creativity_mode(state)
+    if mode == "proper":
+        tech_rule = "- technologies: normalized list of technologies from input plus clearly supported technologies only."
+        depth_rule = "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported."
+        invent_rule = "- Do not invent metrics, deployments, users, awards, or technologies not supported by input."
+    else:
+        tech_rule = "- technologies: normalized list that MUST foreground the job's required stack; add missing JD technologies even if absent from input."
+        depth_rule = (
+            "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact. "
+            "Vary phrasing per job so outputs do not look templated."
+        )
+        invent_rule = (
+            "- LARP MODE: you may add plausible JD-aligned features, integrations, and metrics to the existing project "
+            "(e.g. claim the missing feature because it fits the job). Never invent a wholly new project here — "
+            "that is reserved for Super LARP slot 1 — but do not be afraid to stretch details."
+        )
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
-        "projects_writer",
+        _prompt_name("projects_writer", mode),
         default_system=(
             "ROLE: Senior technical resume writer specializing in project sections.\n"
             "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
@@ -709,10 +807,10 @@ async def project_node(
             "- Preserve project name unless spelling cleanup is needed.\n"
             "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
             "- description: one concise sentence explaining what the project does and why it matters.\n"
-            "- technologies: normalized list of technologies from input plus clearly supported technologies only.\n"
+            f"{tech_rule}\n"
             "- bullet_points: 2-3 concise achievement bullets, each starting with a strong action verb.\n"
-            "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported.\n"
-            "- Do not invent metrics, deployments, users, awards, or technologies not supported by input.\n"
+            f"{depth_rule}\n"
+            f"{invent_rule}\n"
             "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
             "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
             "- No prose outside the structured output."
@@ -753,6 +851,67 @@ async def project_node(
         })
 
     await log_progress(db, gen_id, "projects_writer", "Finished tailoring all project entries.")
+    if mode == "super_larp" and tailored_projs:
+        await log_progress(
+            db, gen_id, "projects_writer",
+            "Super LARP: replacing first project with JD-hyper-focused synthetic project...",
+        )
+        try:
+            from src.schemas.pipeline import TailoredProject as TailoredProjectSchema
+
+            synth_sys, _ = await get_prompt_config(
+                db,
+                "synthetic_project_super_larp",
+                default_system=(
+                    "ROLE: Senior engineer inventing a single hyper-relevant portfolio project for a resume.\n"
+                    "TASK: Invent ONE project that mirrors the target job description as closely as possible.\n"
+                    "OUTPUT CONTRACT: Return only the structured TailoredProject object.\n"
+                    "RULES:\n"
+                    "- Name: realistic, specific, not a copy of the job title (e.g. 'Realtime Fraud Scoring API').\n"
+                    "- project_summary: 2-4 words, e.g. 'ML Scoring Service'.\n"
+                    "- description: one sentence on what it does and why it matters for this job.\n"
+                    "- technologies: the job's core stack (normalize names), 4-8 items.\n"
+                    "- bullet_points: 2-3 achievement bullets starting with strong action verbs, each embedding JD keywords, "
+                    "plausible architecture, scale, and metrics. Bold numbers and key tech with **.\n"
+                    "- Keep it believable as a personal project; no employer claims, no awards.\n"
+                    "- No prose outside the structured output."
+                ),
+                default_user=(
+                    "INPUT: Job Analysis\n{job_analysis}\n\n"
+                    "Invent the single most job-aligned project for this role."
+                ),
+            )
+            synth_prompt = ChatPromptTemplate.from_messages(
+                [("system", synth_sys), ("user", "INPUT: Job Analysis\n{job_analysis}")]
+            )
+            synth = await invoke_with_fallback(
+                lambda llm, p: synth_prompt | _structured(llm, TailoredProjectSchema, p),
+                {"job_analysis": job_analysis},
+                node_name="projects_writer",
+                gen_id=gen_id,
+                is_pro=state.get("is_pro", False),
+            )
+            tailored_projs[0] = {
+                "name": synth.name,
+                "project_summary": synth.project_summary,
+                "description": synth.description,
+                "technologies": synth.technologies,
+                "bullet_points": synth.bullet_points[:max_bullets],
+                "github_url": None,
+                "live_url": None,
+                "start_date": None,
+                "end_date": None,
+            }
+            await log_progress(
+                db, gen_id, "projects_writer",
+                f"Super LARP: synthetic project '{synth.name}' installed in slot 1.",
+            )
+        except Exception as exc:
+            await log_progress(
+                db, gen_id, "projects_writer",
+                f"Super LARP synthetic project failed, keeping tailored projects: {exc}",
+                "warning",
+            )
     return {"projects_draft": tailored_projs}
 
 

@@ -21,7 +21,7 @@ from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
 from src.models.user import User
 from src.schemas.generation import GenerationCreate, GenerationOut
-from src.services.content_split import resolve_default_split
+from src.services.content_split import resolve_default_split, resolve_default_mode, is_valid_mode
 from src.schemas.generation import (
     EditorManifest,
     EditorPayload,
@@ -197,6 +197,15 @@ async def start_generation(
             ),
         )
 
+    # ── Resolve creativity mode: explicit per-run choice wins, else user default ──
+    if data.creativity_mode is not None and not is_valid_mode(data.creativity_mode):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid creativity_mode '{data.creativity_mode}'. Allowed: proper, larp, super_larp.",
+        )
+    # Per-run override only; the stored default changes via /profile/defaults.
+    resolved_mode = data.creativity_mode or resolve_default_mode(current_user)
+
     gen = Generation(
         user_id=current_user.id,
         template_id=data.template_id,
@@ -209,6 +218,7 @@ async def start_generation(
         status="pending",
         content_split=resolved_split,
         send_email=data.send_email,
+        creativity_mode=resolved_mode,
     )
     db.add(gen)
     await db.commit()

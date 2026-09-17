@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info } from "lucide-react"
 import Link from "next/link"
 import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
+import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
 type Step = "input" | "submitted"
 
 type ContentSplit = {
@@ -72,6 +73,7 @@ export function GenerateClient() {
   const [jobDescription, setJobDescription] = useState("")
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
+  const [creativityMode, setCreativityMode] = useState<CreativityMode>("larp")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
@@ -120,6 +122,22 @@ export function GenerateClient() {
   })
 
   const [sendEmail, setSendEmail] = useState<boolean | null>(null)
+
+  // Load the user's stored generation defaults (mode + content counts) once.
+  useEffect(() => {
+    fetch("/api/backend/profile/defaults")
+      .then(async (res) => {
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.creativity_mode === "proper" || data.creativity_mode === "larp" || data.creativity_mode === "super_larp") {
+          setCreativityMode(data.creativity_mode)
+        }
+        if (typeof data.preferred_projects === "number" && typeof data.preferred_experience === "number") {
+          setSplitOverride({ projects: data.preferred_projects, experience: data.preferred_experience })
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const activeTemplate = useMemo(
     () => templates.find((t) => t.id === selectedTemplate) ?? null,
@@ -207,6 +225,7 @@ export function GenerateClient() {
           keywords: keywords ? keywords.split(",").map((k) => k.trim()) : [],
           instructions: instructions || null,
           content_split: { projects: projectsCount, experience: experienceCount },
+          creativity_mode: creativityMode,
           send_email: sendEmail,
         }),
       })
@@ -522,6 +541,7 @@ export function GenerateClient() {
                   </div>
                 </div>
 
+                <CreativityModeSelector value={creativityMode} onChange={setCreativityMode} />
                 {/* Email toggle */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Email notification</Label>

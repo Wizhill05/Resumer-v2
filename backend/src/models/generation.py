@@ -33,6 +33,7 @@ class Generation(Base):
     thumb_storage_key: Mapped[str | None] = mapped_column(String)
     render_metadata: Mapped[dict | None] = mapped_column(JSONB)
     content_split: Mapped[dict | None] = mapped_column(JSONB)
+    creativity_mode: Mapped[str] = mapped_column(String, default="larp", server_default="larp")
     is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
     send_email: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     guest_token_hash: Mapped[str | None] = mapped_column(String)

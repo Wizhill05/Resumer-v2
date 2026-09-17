@@ -656,3 +656,75 @@
 .mobile-nav-item-exit {
   animation: mobile-nav-item-exit 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Super LARP boost: pure UI rocket thruster vibration / high-frequency shiver with flame glow (no emojis/icons) */
+@keyframes super-larp-thruster-shiver {
+  0% {
+    transform: translateX(0);
+    box-shadow: 0 0 0 rgba(255, 78, 38, 0);
+  }
+  4% {
+    transform: translateX(-8px);
+    box-shadow: -8px 0 20px rgba(255, 78, 38, 0.75), 4px 0 10px rgba(255, 78, 38, 0.4);
+  }
+  8% {
+    transform: translateX(8px);
+    box-shadow: 8px 0 22px rgba(255, 78, 38, 0.8), -4px 0 10px rgba(255, 78, 38, 0.4);
+  }
+  14% {
+    transform: translateX(-7px);
+    box-shadow: -7px 0 20px rgba(255, 78, 38, 0.75);
+  }
+  20% {
+    transform: translateX(7px);
+    box-shadow: 7px 0 20px rgba(255, 78, 38, 0.75);
+  }
+  26% {
+    transform: translateX(-6px);
+    box-shadow: 0 0 24px rgba(255, 78, 38, 0.7);
+  }
+  32% {
+    transform: translateX(6px);
+    box-shadow: 0 0 22px rgba(255, 78, 38, 0.7);
+  }
+  38% {
+    transform: translateX(-5px);
+  }
+  44% {
+    transform: translateX(5px);
+    box-shadow: 0 0 18px rgba(255, 78, 38, 0.6);
+  }
+  50% {
+    transform: translateX(-4px);
+  }
+  56% {
+    transform: translateX(4px);
+    box-shadow: 0 0 15px rgba(255, 78, 38, 0.5);
+  }
+  64% {
+    transform: translateX(-3px);
+  }
+  72% {
+    transform: translateX(3px);
+    box-shadow: 0 0 12px rgba(255, 78, 38, 0.4);
+  }
+  80% {
+    transform: translateX(-2px);
+  }
+  88% {
+    transform: translateX(2px);
+    box-shadow: 0 0 8px rgba(255, 78, 38, 0.3);
+  }
+  94% {
+    transform: translateX(-1px);
+  }
+  100% {
+    transform: translateX(0);
+    box-shadow: 0 0 0 rgba(255, 78, 38, 0);
+  }
+}
+
+.super-larp-thruster {
+  animation: super-larp-thruster-shiver 0.95s cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+  will-change: transform, box-shadow;
+}

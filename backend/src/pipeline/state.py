@@ -17,6 +17,8 @@ class ResumeGraphState(TypedDict):
     # Enforced by backend before AI runs; drives exact limits in every pipeline node.
     content_split: dict
     is_pro: Optional[bool]
+    # Truthfulness control: "proper" | "larp" | "super_larp". Defaults to proper.
+    creativity_mode: str
 
     # Outputs
     job_analysis: Optional[dict]

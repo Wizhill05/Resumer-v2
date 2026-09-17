@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from src.schemas.generation import ContentSplitRequest
+from src.schemas.generation import ContentSplitRequest, CreativityMode
 from src.schemas.profile import (
     EducationCreate,
     ExperienceCreate,
@@ -17,6 +17,7 @@ class GuestGenerationCreate(BaseModel):
     instructions: str | None = None
     model_used: str = "poolside/laguna-xs-2.1:free"
     content_split: ContentSplitRequest | None = None
+    creativity_mode: CreativityMode = "larp"
     profile: ProfileUpdate = ProfileUpdate()
     experiences: list[ExperienceCreate] = Field(default_factory=list)
     projects: list[ProjectCreate] = Field(default_factory=list)
@@ -34,4 +35,5 @@ class GuestGenerationOut(BaseModel):
     created_at: str
     completed_at: str | None = None
     content_split: dict | None = None
+    creativity_mode: str | None = None
     error_message: str | None = None
