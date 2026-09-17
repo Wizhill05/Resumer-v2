@@ -124,14 +124,14 @@ async def test_get_resume_pdf_r2_streaming(files_test_env, monkeypatch):
         res = await client.get(f"/files/gen/{gen_id}/resume.pdf?t={token}")
         assert res.status_code == 200
         assert res.headers["content-type"] == "application/pdf"
-        assert 'inline; filename="Resume_Google_Software_Engineer.pdf"' in res.headers["content-disposition"]
+        assert 'inline; filename="Alex_Dev_Software_Engineer.pdf"' in res.headers["content-disposition"]
         assert res.headers["referrer-policy"] == "no-referrer"
         assert res.content == b"%PDF-1.4 Mock Streamed PDF Content"
 
         # 2. Attachment download (?dl=1)
         dl_res = await client.get(f"/files/gen/{gen_id}/resume.pdf?t={token}&dl=1")
         assert dl_res.status_code == 200
-        assert 'attachment; filename="Resume_Google_Software_Engineer.pdf"' in dl_res.headers["content-disposition"]
+        assert 'attachment; filename="Alex_Dev_Software_Engineer.pdf"' in dl_res.headers["content-disposition"]
 
 
 @pytest.mark.asyncio

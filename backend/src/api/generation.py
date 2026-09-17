@@ -16,6 +16,7 @@ from src.core.auth import get_current_user
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.executor import trigger_pipeline
+from src.core.file_links import format_resume_filename, resolve_resume_username
 from src.core.notify import send_completion_email
 from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
@@ -636,14 +637,30 @@ async def download_generation(
     if gen.status != "completed":
         raise HTTPException(status_code=400, detail="Generation is not completed yet.")
 
+    from src.models.profile import Profile
+
+    async def _resolve_download_username() -> str | None:
+        render_profile_name = ((gen.render_metadata or {}).get("profile") or {}).get("full_name")
+        if render_profile_name and render_profile_name.strip():
+            return render_profile_name.strip()
+        try:
+            profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
+            profile = profile_res.scalar_one_or_none()
+            if profile and profile.full_name and profile.full_name.strip():
+                return profile.full_name.strip()
+        except Exception:
+            pass
+        user_name = getattr(current_user, "name", None)
+        if user_name and user_name.strip():
+            return user_name.strip()
+        return None
+
+    _username = await _resolve_download_username()
+    _filename = format_resume_filename(username=_username, job_title=gen.job_title)
+
     # Try R2 presigned URL with content-disposition
     storage = StorageService()
     if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
-        _parts = [gen.job_title, gen.company]
-        _slug = "-".join(
-            p.lower().replace(" ", "-") for p in _parts if p and p != "Unknown Company"
-        ) or "resume"
-        _filename = f"{_slug}.pdf"
         presigned_url = storage.get_presigned_url(
             gen.pdf_storage_key,
             response_content_disposition=f'attachment; filename="{_filename}"',
@@ -659,7 +676,6 @@ async def download_generation(
     if not tailored_resume:
         raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
-    from src.models.profile import Profile
     profile_data = metadata.get("profile")
     if not profile_data:
         profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
@@ -700,15 +716,14 @@ async def download_generation(
         raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {e}")
 
     pdf_bytes = HTML(string=html_rendered, base_url=font_base_url).write_pdf()
-    _parts = [gen.job_title, gen.company]
-    _slug = "-".join(
-        p.lower().replace(" ", "-") for p in _parts if p and p != "Unknown Company"
-    ) or "resume"
-    filename = f"{_slug}.pdf"
+    username = resolve_resume_username(
+        (profile_data or {}).get("full_name"), _username
+    )
+    filename = format_resume_filename(username=username, job_title=gen.job_title)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

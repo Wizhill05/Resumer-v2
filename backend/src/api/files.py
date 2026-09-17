@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.database import get_db
-from src.core.file_links import format_resume_filename, verify_file_token
+from src.core.file_links import format_resume_filename, resolve_resume_username, verify_file_token
 from src.core.storage import StorageService
 from src.models.generation import Generation
 from src.models.profile import Profile
@@ -67,8 +67,36 @@ async def get_resume_pdf(
             detail=f"Generation is not completed yet (current status: '{gen.status}').",
         )
 
-    # 4. Determine response headers
-    filename = format_resume_filename(job_title=gen.job_title, company=gen.company)
+    # 4. Determine response headers (always Username_JobTitle.pdf)
+    metadata = gen.render_metadata or {}
+    guest_profile_name = None
+    if gen.is_guest and gen.guest_input_snapshot:
+        guest_profile_name = (gen.guest_input_snapshot.get("profile") or {}).get("full_name")
+    metadata_profile_name = (metadata.get("profile") or {}).get("full_name")
+
+    db_profile_name = None
+    db_user_name = None
+    try:
+        profile_res = await db.execute(select(Profile).where(Profile.user_id == gen.user_id))
+        db_profile = profile_res.scalar_one_or_none()
+        if db_profile:
+            db_profile_name = db_profile.full_name
+    except Exception:
+        db_profile_name = None
+    try:
+        from src.models.user import User
+
+        user_res = await db.execute(select(User).where(User.id == gen.user_id))
+        db_user = user_res.scalar_one_or_none()
+        if db_user:
+            db_user_name = db_user.name
+    except Exception:
+        db_user_name = None
+
+    username = resolve_resume_username(
+        guest_profile_name, metadata_profile_name, db_profile_name, db_user_name
+    )
+    filename = format_resume_filename(username=username, job_title=gen.job_title)
     disposition_type = "attachment" if dl == 1 else "inline"
     common_headers = {
         "Content-Disposition": f'{disposition_type}; filename="{filename}"',

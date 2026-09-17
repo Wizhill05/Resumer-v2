@@ -16,6 +16,7 @@ from src.core.auth import get_current_admin
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal, get_db
 from src.core.executor import trigger_pipeline
+from src.core.file_links import format_resume_filename, resolve_resume_username
 from src.core.storage import StorageService
 from src.models.generation import (
     Generation,
@@ -698,11 +699,12 @@ async def _render_generation_pdf(
         raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {exc}")
 
     pdf = HTML(string=html, base_url=str(settings.TEMPLATES_DIR / gen.template_id)).write_pdf()
-    filename = f"{filename_prefix}-{gen.id}.pdf"
+    username = resolve_resume_username((profile_data or {}).get("full_name"))
+    filename = format_resume_filename(username=username, job_title=gen.job_title)
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
