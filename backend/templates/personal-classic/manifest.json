@@ -21,7 +21,7 @@
   "default_content_split": { "projects": 2, "experience": 2, "label": "Balanced (2 Projects, 2 Experiences)" },
   "max_skills_categories": 6,
   "max_bullets_per_project": 3,
-  "max_bullets_per_experience": 4,
+  "max_bullets_per_experience": 3,
   "target_pages": 1,
   "min_font_size": 9.0,
   "max_font_size": 11.5,

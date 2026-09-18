@@ -115,7 +115,7 @@ class TailoredExperience(BaseModel):
     end_date: str | None = Field(default=None, description="End date from input, e.g. YYYY-MM-DD, Month YYYY, or Present.")
     bullet_points: list[str] = Field(
         default_factory=list,
-        description="2-4 job-tailored achievement bullets using action verbs, supported claims only, with numbers/metrics/key technologies bolded in markdown."
+        description="2-3 job-tailored achievement bullets using action verbs, supported claims only, with numbers/metrics/key technologies bolded in markdown."
     )
 
 

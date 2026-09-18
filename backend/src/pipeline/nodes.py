@@ -368,7 +368,21 @@ async def get_prompt_config(db: AsyncSession, name: str, default_system: str, de
                     and "small" not in prompt_text.lower()
                 )
             )
-            if "OUTPUT CONTRACT:" not in (cfg.system_prompt or "") or not orphan_contract_ready:
+            # Experience/projects writers previously allowed 2-4 bullets; hard limit is now 2-3.
+            # Refresh stale DB prompts so the 4-bullet instruction can't persist.
+            # NOTE: project_summary legitimately uses "2-4 words" — only match bullet rules.
+            bullet_ready = True
+            if name.startswith("experience_writer") or name.startswith("projects_writer"):
+                _sys = cfg.system_prompt or ""
+                _sys_low = _sys.lower()
+                bullet_ready = (
+                    "2-4 bullet" not in _sys
+                    and "2–4 bullet" not in _sys
+                    and "never more than 4" not in _sys_low
+                    and "max 4 bullet" not in _sys_low
+                    and "up to 4 bullet" not in _sys_low
+                )
+            if "OUTPUT CONTRACT:" not in (cfg.system_prompt or "") or not orphan_contract_ready or not bullet_ready:
                 cfg.system_prompt = default_system
                 cfg.user_prompt = default_user
                 await db.commit()
@@ -672,7 +686,7 @@ async def experience_node(
         return {"experience_draft": []}
 
     max_exp = state.get("content_split", {}).get("experience", 2)
-    max_bullets = state["template_manifest"].get("max_bullets_per_experience", 4)
+    max_bullets = state["template_manifest"].get("max_bullets_per_experience", 3)
     job_analysis = str(state["job_analysis"])
     batch = experiences[:max_exp]
 
@@ -707,7 +721,7 @@ async def experience_node(
             "OUTPUT CONTRACT: Return only the structured TailoredExperienceBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
             "RULES:\n"
             "- Preserve role, organization, dates, and location unless input is missing.\n"
-            "- Each entry should contain 2-4 bullet_points, limited by available source material.\n"
+            "- Each entry must contain 2-3 bullet_points (hard limit: never more than 3), limited by available source material.\n"
             "- Start every bullet with a strong past-tense action verb.\n"
             f"{variety_rule}\n"
             f"{truth_rule}\n"
@@ -808,7 +822,7 @@ async def project_node(
             "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
             "- description: one concise sentence explaining what the project does and why it matters.\n"
             f"{tech_rule}\n"
-            "- bullet_points: 2-3 concise achievement bullets, each starting with a strong action verb.\n"
+            "- bullet_points: 2-3 concise achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
             f"{depth_rule}\n"
             f"{invent_rule}\n"
             "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
@@ -871,7 +885,7 @@ async def project_node(
                     "- project_summary: 2-4 words, e.g. 'ML Scoring Service'.\n"
                     "- description: one sentence on what it does and why it matters for this job.\n"
                     "- technologies: the job's core stack (normalize names), 4-8 items.\n"
-                    "- bullet_points: 2-3 achievement bullets starting with strong action verbs, each embedding JD keywords, "
+                    "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3) starting with strong action verbs, each embedding JD keywords, "
                     "plausible architecture, scale, and metrics. Bold numbers and key tech with **.\n"
                     "- Keep it believable as a personal project; no employer claims, no awards.\n"
                     "- No prose outside the structured output."
@@ -1017,6 +1031,18 @@ async def assembly_node(
     max_proj = content_split.get("projects", len(projects))
     experiences = experiences[:max_exp]
     projects = projects[:max_proj]
+
+    # Hard bullet cap: never more than 3 per entry, regardless of LLM output
+    # or stale DB prompt configs. Prevents 2-page overflow.
+    manifest = state.get("template_manifest") or {}
+    max_exp_bullets = manifest.get("max_bullets_per_experience", 3)
+    max_proj_bullets = manifest.get("max_bullets_per_project", 3)
+    for exp in experiences:
+        if isinstance(exp.get("bullet_points"), list):
+            exp["bullet_points"] = exp["bullet_points"][:max_exp_bullets]
+    for proj in projects:
+        if isinstance(proj.get("bullet_points"), list):
+            proj["bullet_points"] = proj["bullet_points"][:max_proj_bullets]
 
     # Map education directly
     education = []
@@ -1618,6 +1644,7 @@ async def orphan_repair_node(
         return raw_text
 
     applied = 0
+    applied_entries: list[dict[str, Any]] = []
     try:
         json_text = extract_json(raw_response)
         result = json.loads(json_text)
@@ -1658,8 +1685,9 @@ async def orphan_repair_node(
                 projects[item_idx]["bullet_points"][bullet_idx] = new_text
             elif section_key == "extracurriculars":
                 extracurriculars_draft[item_idx]["description"] = new_text
-            
+
             applied += 1
+            applied_entries.append(entry)
 
         await log_progress(
             db,
@@ -1675,6 +1703,127 @@ async def orphan_repair_node(
             f"Error parsing LLM repair response: {e}. Raw response:\n{raw_response}",
             "error",
         )
+
+    # ── Fallback verification: never let an expansion grow lines or break page fit ──
+    # The expand repair adds text, so it can overshoot (2 lines → 3) or push a tight
+    # 1-page resume to 2 pages. The graph routes overflow → content_reduction (not
+    # back to repair), so a bad expansion would otherwise never be reverted — the
+    # next render diverts to point deletion while the over-long expansion stays.
+    # Verify locally with WeasyPrint and fall back to the pre-repair original:
+    #   1. Page-overflow guard: if verification overflows but pre-repair fit, revert all.
+    #   2. Per-bullet guard: if a repaired bullet grew to 3+ lines, revert just it.
+    if applied_entries:
+        try:
+            _manifest = state.get("template_manifest") or {}
+            _profile = state.get("profile") or {}
+            _template_id = _manifest.get("id")
+            if _template_id and _profile:
+                from weasyprint import HTML as _VerifyHTML  # type: ignore[import-untyped]
+
+                _target_pages = _manifest.get("target_pages", 1)
+                _pre_repair_pages = state.get("page_count", 1)
+                _verify_fs = state.get("font_size") or _manifest.get("max_font_size", 10.0)
+                _margin = _manifest.get("page_margin_mm", 15)
+
+                _base_resume = dict(state.get("tailored_resume") or {})
+                if not _base_resume:
+                    _summary_draft = state.get("summary_draft") or {}
+                    _base_resume = {
+                        "summary": _summary_draft.get("summary"),
+                        "skills": _summary_draft.get("skills"),
+                        "education": state.get("education") or [],
+                    }
+                _candidate = dict(_base_resume)
+                _candidate["experiences"] = experiences
+                _candidate["projects"] = projects
+                _candidate["extracurriculars"] = extracurriculars_draft
+
+                _html = TemplateRegistryService.render_template(
+                    _template_id,
+                    {
+                        "profile": _profile,
+                        "resume": _candidate,
+                        "font_size": _verify_fs,
+                        "page_margin_mm": _margin,
+                    },
+                )
+                _verify_doc = None
+                if _html:
+                    _font_base = str(settings.TEMPLATES_DIR / _template_id)
+                    _verify_doc = _VerifyHTML(string=_html, base_url=_font_base).render()
+                    _new_pages = len(_verify_doc.pages)
+                    _new_orphans = detect_orphans_in_weasyprint(_verify_doc)
+
+                    def _current_text(_entry: dict[str, Any]) -> str:
+                        _sk = _entry["section_key"]
+                        _ii = _entry["item_idx"]
+                        _bi = _entry["bullet_idx"]
+                        if _sk == "experience":
+                            return experiences[_ii]["bullet_points"][_bi]
+                        if _sk == "projects":
+                            return projects[_ii]["bullet_points"][_bi]
+                        return extracurriculars_draft[_ii]["description"]
+
+                    def _revert(_entry: dict[str, Any]) -> None:
+                        _sk = _entry["section_key"]
+                        _ii = _entry["item_idx"]
+                        _bi = _entry["bullet_idx"]
+                        _hk = _entry["history_key"]
+                        _orig = _entry["original_md"]
+                        if _sk == "experience":
+                            experiences[_ii]["bullet_points"][_bi] = _orig
+                        elif _sk == "projects":
+                            projects[_ii]["bullet_points"][_bi] = _orig
+                        else:
+                            extracurriculars_draft[_ii]["description"] = _orig
+                        repair_history.pop(_hk, None)
+
+                    # Guard 1: expansion broke page fit — revert everything.
+                    if _new_pages > _target_pages and _pre_repair_pages <= _target_pages:
+                        for _entry in applied_entries:
+                            _revert(_entry)
+                        applied = 0
+                        await log_progress(
+                            db,
+                            gen_id,
+                            "orphan_repair",
+                            f"Verification: expansion pushed resume to {_new_pages} page(s) "
+                            f"(target {_target_pages}). Reverted {len(applied_entries)} "
+                            "repair(s) to pre-repair originals to preserve 1-page fit.",
+                            "warning",
+                        )
+                    else:
+                        # Guard 2: per-bullet line growth — revert only grown bullets.
+                        _oversize = {
+                            clean_text(_o.get("text", ""))
+                            for _o in _new_orphans
+                            if _o.get("renderedLines", 0) > 2
+                        }
+                        _grown_reverts = 0
+                        for _entry in applied_entries:
+                            if clean_text(_current_text(_entry)) in _oversize:
+                                _revert(_entry)
+                                _grown_reverts += 1
+                        if _grown_reverts:
+                            applied -= _grown_reverts
+                            await log_progress(
+                                db,
+                                gen_id,
+                                "orphan_repair",
+                                f"Verification: {_grown_reverts} repaired bullet(s) grew to 3+ "
+                                "lines after filling. Reverted to pre-repair originals.",
+                                "warning",
+                            )
+                    del _verify_doc
+                    gc.collect()
+        except Exception as ve:
+            await log_progress(
+                db,
+                gen_id,
+                "orphan_repair",
+                f"Verification render skipped ({ve}); keeping applied repairs.",
+                "warning",
+            )
 
     return {
         "experience_draft": experiences,

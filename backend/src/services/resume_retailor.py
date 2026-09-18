@@ -126,7 +126,7 @@ async def retailor_resume_with_project(
             "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
             "- description: one concise sentence explaining what the project does and why it matters.\n"
             "- technologies: normalized list of technologies from input plus clearly supported technologies only.\n"
-            "- bullet_points: 2-3 concise achievement bullets, each starting with a strong action verb.\n"
+            "- bullet_points: 2-3 concise achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
             "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported.\n"
             "- Do not invent metrics, deployments, users, awards, or technologies not supported by input.\n"
             "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
