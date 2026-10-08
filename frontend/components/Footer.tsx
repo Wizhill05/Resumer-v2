@@ -24,6 +24,12 @@ export function Footer({ variant = "simple" }: FooterProps) {
           {/* Right: Links */}
           <div className="flex items-center gap-5 text-xs font-mono font-bold text-zinc-600 dark:text-zinc-400">
             <Link
+              href="/connect"
+              className="hover:text-zinc-900 dark:hover:text-white transition-colors"
+            >
+              ChatGPT
+            </Link>
+            <Link
               href="/support"
               className="hover:text-zinc-900 dark:hover:text-white transition-colors"
             >
@@ -69,6 +75,12 @@ export function Footer({ variant = "simple" }: FooterProps) {
 
           {/* Right: Minimal Navigation */}
           <div className="flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-mono font-black uppercase">
+            <Link
+              href="/connect"
+              className="text-zinc-900 dark:text-zinc-200 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"
+            >
+              ChatGPT
+            </Link>
             <Link
               href="/try"
               className="inline-flex items-center gap-1 text-zinc-900 dark:text-zinc-200 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"

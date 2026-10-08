@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Callable
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import ToolAnnotations
 from sqlalchemy import select
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
@@ -53,13 +54,13 @@ from src.models.user import User
 mcp_server = MCPServer(
     name="Resumer MCP Server",
     instructions=(
-        "Resumer is an AI-powered resume engineering platform that generates single-page, ATS-optimized resumes "
+        "Resumer generates single-page, ATS-optimized resumes "
         "from user profile facts and job descriptions.\n\n"
         "## ARCHITECTURAL CONCEPTS\n"
         "1. Master Profile vs Tailored Generation:\n"
-        "   - The user's Profile (`get_profile`, `add_project`, `add_experience`, etc.) is their global database of historical career facts.\n"
+        "   - The user's Profile (`get_profile`, `add_project`, `add_experience`, etc.) is their database of historical career facts.\n"
         "   - A Generation (`generate_resume`, `get_resume_json`, `render_resume`) is an isolated, job-tailored resume artifact for a specific role and company.\n"
-        "   - DO NOT confuse them: If a user asks to add/edit a project in their portfolio/profile, use `add_project` / `update_project`. If they ask to add, remove, or change a project in an existing resume, fetch and edit `resume_json` on that `generation_id`.\n\n"
+        "   - If a user asks to add or edit a project in their career profile, use `add_project` or `update_project`. If they ask to add, remove, or change a project in an existing resume, fetch and edit `resume_json` on that `generation_id`.\n\n"
         "2. Structured `resume_json` Data Model:\n"
         "   {\n"
         "     \"summary\": \"Concise 2-3 sentence professional summary (~30-40 words).\",\n"
@@ -111,38 +112,53 @@ mcp_server = MCPServer(
         "## WORKFLOW PROTOCOLS\n\n"
         "### 1. Generating a New Resume:\n"
         "- Call `check_readiness(template_id=\"personal-classic\", job_description=...)` to identify profile gaps.\n"
-        "- If readiness returns missing sections, prompt the user or add missing data via profile tools.\n"
+        "- If readiness returns missing sections, ask the user or add missing data via profile tools.\n"
         "- Call `generate_resume(job_description=..., template_id=\"personal-classic\", company=..., job_title=...)`.\n"
         "- By default `generate_resume` waits for pipeline completion (~15-25s) and returns the completed resume JSON and PDF download link.\n"
-        "- Output the download link formatted in clean Markdown: `[Download <Company> <Role> Resume (PDF)](download_url)` along with a concise 3-4 bullet summary of how the resume was tailored.\n\n"
-        "### 2. Modifying an Existing Resume (MANDATORY 4-STEP PROTOCOL):\n"
+        "- Output the download link in Markdown: `[Download <Company> <Role> Resume (PDF)](download_url)` along with a concise 3-4 bullet summary of how the resume was tailored.\n\n"
+        "### 2. Modifying an Existing Resume:\n"
         "When the user asks to add, remove, or tweak projects, experience, or bullet points on a tailored resume:\n"
         "- Step 1: Call `get_resume_json(generation_id=...)` to retrieve the current tailored resume structure.\n"
         "- Step 2: Modify the target section or projects/experiences in the dictionary.\n"
-        "- Step 3 (CRITICAL): Call `detect_orphans(generation_id=..., resume_json=...)` immediately after making changes.\n"
-        "  * WeasyPrint layout analysis inspects line boxes to catch orphan lines (<75% line fill on the last line) and page overflow (>1 page).\n"
-        "  * If orphans or overflows are reported, refine the bullet text to match the returned character targets (e.g. expand short 2nd lines or trim 3+ line overflows).\n"
+        "- Step 3: Call `detect_orphans(generation_id=..., resume_json=...)` to check for layout issues or page overflow.\n"
+        "  * If orphans or overflows are reported, refine the bullet text to match the returned character targets.\n"
         "- Step 4: Call `render_resume(generation_id=..., resume_json=...)` to compile the final PDF, update storage, and get the new download link.\n"
         "- Present the updated Markdown PDF download link to the user.\n"
     ),
 )
 
+READ_ONLY_ANNOTATIONS = ToolAnnotations(
+    read_only_hint=True,
+    destructive_hint=False,
+    open_world_hint=False,
+)
+MUTATING_ANNOTATIONS = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    open_world_hint=False,
+)
+DESTRUCTIVE_ANNOTATIONS = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    open_world_hint=False,
+)
+
 
 # ── Profile & Data Tools ──────────────────────────────────────────────────────
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def get_profile() -> dict[str, Any]:
-    """Retrieve user's complete profile including contact info, projects, experiences, education, and extracurriculars."""
+    """Retrieve the user's complete profile including contact info, projects, experiences, education, and extracurriculars."""
     return await get_profile_handler()
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def list_data_summary() -> dict[str, Any]:
-    """Get a concise summary of all stored profile data: counts per section, completeness percentage, and specific gaps."""
+    """Get a summary of stored profile data: counts per section, completeness percentage, and gaps."""
     return await list_data_summary_handler()
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def update_profile(
     full_name: str | None = None,
     email: str | None = None,
@@ -170,7 +186,7 @@ async def update_profile(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def add_project(
     name: str,
     description: str | None = None,
@@ -181,12 +197,7 @@ async def add_project(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Add a new software project to the user's permanent master profile.
-
-    NOTE: Use this tool ONLY when adding a project to the user's global profile database.
-    If you need to add a project to an already-generated resume, fetch the resume via get_resume_json,
-    update its 'projects' list, verify with detect_orphans, and compile with render_resume.
-    """
+    """Add a new project to the user's profile database."""
     return await add_project_handler(
         name=name,
         description=description,
@@ -199,7 +210,7 @@ async def add_project(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def update_project(
     project_id: str,
     name: str | None = None,
@@ -211,7 +222,7 @@ async def update_project(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Update an existing software project in the user's permanent master profile by project_id."""
+    """Update an existing project in the user's profile database by project_id."""
     return await update_project_handler(
         project_id=project_id,
         name=name,
@@ -225,12 +236,13 @@ async def update_project(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_project(project_id: str) -> dict[str, Any]:
-    """Remove a project from the user's permanent master profile by project_id."""
+    """Remove a project from the user's profile database by project_id."""
+    return await delete_project_handler(project_id=project_id)
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def add_experience(
     role: str,
     organization: str,
@@ -239,11 +251,7 @@ async def add_experience(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Add a work experience entry to the user's permanent master profile.
-
-    NOTE: Use this tool ONLY when adding career history to the user's global profile database.
-    If modifying an already-generated resume, edit resume_json, check detect_orphans, and call render_resume.
-    """
+    """Add a work experience entry to the user's profile database."""
     return await add_experience_handler(
         role=role,
         organization=organization,
@@ -254,7 +262,7 @@ async def add_experience(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def update_experience(
     experience_id: str,
     role: str | None = None,
@@ -264,7 +272,7 @@ async def update_experience(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Update an existing work experience entry in the user's permanent master profile."""
+    """Update an existing work experience entry in the user's profile database."""
     return await update_experience_handler(
         experience_id=experience_id,
         role=role,
@@ -276,12 +284,13 @@ async def update_experience(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_experience(experience_id: str) -> dict[str, Any]:
-    """Remove a work experience entry from the user's permanent master profile."""
+    """Remove a work experience entry from the user's profile database."""
+    return await delete_experience_handler(experience_id=experience_id)
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def add_education(
     degree: str,
     institution: str,
@@ -303,7 +312,7 @@ async def add_education(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def update_education(
     education_id: str,
     degree: str | None = None,
@@ -327,13 +336,13 @@ async def update_education(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_education(education_id: str) -> dict[str, Any]:
     """Remove an education entry from the user's profile."""
     return await delete_education_handler(education_id=education_id)
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def add_extracurricular(
     title: str,
     organization: str | None = None,
@@ -342,7 +351,7 @@ async def add_extracurricular(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Add an extracurricular entry to the user's profile."""
+    """Add an extracurricular activity entry to the user's profile."""
     return await add_extracurricular_handler(
         title=title,
         organization=organization,
@@ -353,7 +362,7 @@ async def add_extracurricular(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def update_extracurricular(
     extracurricular_id: str,
     title: str | None = None,
@@ -363,7 +372,7 @@ async def update_extracurricular(
     end_date: str | None = None,
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Update an existing extracurricular entry."""
+    """Update an existing extracurricular activity entry in the user's profile."""
     return await update_extracurricular_handler(
         extracurricular_id=extracurricular_id,
         title=title,
@@ -375,36 +384,34 @@ async def update_extracurricular(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_extracurricular(extracurricular_id: str) -> dict[str, Any]:
-    """Remove an extracurricular entry from the user's profile."""
+    """Remove an extracurricular activity entry from the user's profile."""
     return await delete_extracurricular_handler(extracurricular_id=extracurricular_id)
 
 
 # ── Readiness & Gap Detection Tools ──────────────────────────────────────────
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def list_templates() -> dict[str, Any]:
-    """Returns available resume templates from TemplateRegistryService with default and allowed content splits."""
+    """List available resume templates with default and allowed content splits."""
     return await list_templates_handler()
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def check_readiness(
     template_id: str = "personal-classic",
     content_split: dict[str, int] | None = None,
     job_description: str | None = None,
 ) -> dict[str, Any]:
-    """Check if the user's profile has enough data to generate a resume for a given template and content split.
-    If blocked, returns explicit AI steering directives and clarifying questions to ask the user.
-    """
+    """Check if profile data is sufficient to generate a resume for a given template and content split."""
     return await check_readiness_handler(
         template_id=template_id,
         content_split=content_split,
         job_description=job_description,
     )
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def generate_resume(
     job_description: str,
     template_id: str = "personal-classic",
@@ -416,13 +423,10 @@ async def generate_resume(
     wait_for_completion: bool = True,
     ctx: Context = None,
 ) -> dict[str, Any]:
-    """Generate a complete, ATS-optimized, tailored single-page resume for a job description.
+    """Generate a tailored single-page resume for a job description.
 
-    By default, this tool waits for the generation pipeline to complete (~15-25 seconds) and directly returns
-    the completed status, the public PDF download URL, and the complete structured resume_json.
-    You MUST present the PDF download URL in Markdown format (e.g. [Download Role Resume (PDF)](url)) and a brief summary to the user.
-    creativity_mode ("proper" | "larp" | "super_larp") applies to this run only; omit it to use the
-    user's stored default (see set_generation_defaults).
+    Waits for generation to complete and returns status, a PDF download URL, and structured resume JSON.
+    creativity_mode ("proper" | "larp" | "super_larp") applies to this run only; omit to use stored default.
     """
     return await generate_resume_handler(
         job_description=job_description,
@@ -437,17 +441,13 @@ async def generate_resume(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def set_generation_defaults(
     creativity_mode: str | None = None,
     projects: int | None = None,
     experience: int | None = None,
 ) -> dict[str, Any]:
-    """Get or change the user's stored generation defaults.
-
-    Call with no arguments to read the current defaults. creativity_mode must be proper, larp,
-    or super_larp. projects/experience are the default content counts (0-5 each).
-    """
+    """Get or change the user's stored generation defaults, including creativity mode and section counts."""
     return await set_generation_defaults_handler(
         creativity_mode=creativity_mode,
         projects=projects,
@@ -455,43 +455,39 @@ async def set_generation_defaults(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def get_generation_status(
     generation_id: str,
     wait_for_completion: bool = True,
 ) -> dict[str, Any]:
-    """Check progress, logs, and results of a resume generation run.
-
-    When wait_for_completion is True (default), it waits for the generation to finish and returns
-    the PDF download URL and complete structured resume_json as soon as the resume is ready.
-    """
+    """Check progress, logs, and results of a resume generation run."""
     return await get_generation_status_handler(
         generation_id=generation_id,
         wait_for_completion=wait_for_completion,
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def download_resume(generation_id: str) -> dict[str, Any]:
-    """Get public PDF download URL and resume JSON for a completed resume generation."""
+    """Get the PDF download URL and resume JSON for a completed resume generation."""
     return await download_resume_handler(generation_id=generation_id)
 
 
 # ── Surgical Editing & Preview Tools ──────────────────────────────────────────
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def get_resume_json(
     generation_id: str,
     section: str | None = None,
 ) -> dict[str, Any]:
-    """Retrieve the full tailored resume JSON or specific section for a completed generation."""
+    """Retrieve the tailored resume JSON or a specific section for a completed generation."""
     return await get_resume_json_handler(
         generation_id=generation_id,
         section=section,
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def edit_resume_section(
     generation_id: str,
     path: str,
@@ -499,7 +495,7 @@ async def edit_resume_section(
     value: Any = None,
     expected_revision: int | None = None,
 ) -> dict[str, Any]:
-    """Edit a specific part of a completed resume's tailored JSON without full regeneration. Supports surgical updates (set, append, remove)."""
+    """Edit a specific part of a completed resume's tailored JSON without full regeneration."""
     return await edit_resume_section_handler(
         generation_id=generation_id,
         path=path,
@@ -509,27 +505,19 @@ async def edit_resume_section(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def preview_resume(generation_id: str) -> dict[str, Any]:
-    """Trigger Jinja/HTML re-render preview for a generated resume and check page overflow."""
+    """Preview resume HTML rendering and check whether content fits the target page count."""
     return await preview_resume_handler(generation_id=generation_id)
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def detect_orphans(
     generation_id: str,
     resume_json: dict[str, Any] | None = None,
     font_size: float | None = None,
 ) -> dict[str, Any]:
-    """Inspect WeasyPrint layout tree for orphan lines and page overflow in a tailored resume.
-
-    CRITICAL WORKFLOW INSTRUCTION:
-    Whenever you add, modify, or remove projects, work experience, or bullet points in a resume,
-    you MUST call this tool immediately BEFORE finalizing the resume.
-    It inspects WeasyPrint line boxes to detect bullets where the last line has only 1-3 words (<75% line fill)
-    or bullets that overflow to 3+ lines.
-    If orphans are detected, follow the actionable guidance to adjust bullet phrasing, then call render_resume.
-    """
+    """Inspect layout line boxes in a tailored resume to detect orphan lines or multi-page overflow."""
     return await detect_orphans_handler(
         generation_id=generation_id,
         resume_json=resume_json,
@@ -537,18 +525,14 @@ async def detect_orphans(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def render_resume(
     generation_id: str,
     resume_json: dict[str, Any] | None = None,
     font_size: float | None = None,
     expected_revision: int | None = None,
 ) -> dict[str, Any]:
-    """Compile and save resume edits into WeasyPrint PDF, update Cloudflare R2 storage, and return a fresh download link.
-
-    Pass modified resume_json directly to re-render in a single step with automatic font-fitting, or omit resume_json
-    to save edits previously staged via edit_resume_section.
-    """
+    """Compile modified resume JSON into PDF format with typography fitting and update file storage."""
     return await render_resume_handler(
         generation_id=generation_id,
         resume_json=resume_json,
@@ -557,12 +541,12 @@ async def render_resume(
     )
 
 
-@mcp_server.tool()
+@mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
 async def save_resume_edits(
     generation_id: str,
     expected_revision: int,
 ) -> dict[str, Any]:
-    """Persist staged edits, re-render WeasyPrint PDF, and update R2 storage."""
+    """Persist staged resume edits, re-render PDF, and update file storage."""
     return await save_resume_edits_handler(
         generation_id=generation_id,
         expected_revision=expected_revision,
