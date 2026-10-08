@@ -28,7 +28,9 @@ def get_current_mcp_user() -> User:
     """Retrieve the current authenticated User in this MCP request context."""
     user = _current_mcp_user_var.get()
     if not user:
-        raise PermissionError("Unauthenticated MCP tool invocation. Bearer token missing or invalid.")
+        raise PermissionError(
+            "Your Resumer session has expired or is unauthenticated. Please reconnect the connector to continue."
+        )
     return user
 
 

@@ -270,14 +270,26 @@ async def update_project_handler(
 ) -> dict[str, Any]:
     """Update an existing project by project_id."""
     user = get_current_mcp_user()
-    proj_uuid = uuid.UUID(project_id)
+    try:
+        proj_uuid = uuid.UUID(project_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid project_id format: '{project_id}'.",
+            "hint": "Check your existing projects with get_profile to find valid project IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             select(UserProject).where(UserProject.id == proj_uuid, UserProject.user_id == user.id)
         )
         proj = res.scalar_one_or_none()
         if not proj:
-            return {"success": False, "error": f"Project {project_id} not found"}
+            return {
+                "success": False,
+                "error": f"Project '{project_id}' not found.",
+                "hint": "Check your existing projects with get_profile or add a new project using add_project.",
+            }
 
         if name is not None:
             proj.name = name
@@ -304,13 +316,28 @@ async def update_project_handler(
 async def delete_project_handler(project_id: str) -> dict[str, Any]:
     """Delete a project from profile."""
     user = get_current_mcp_user()
-    proj_uuid = uuid.UUID(project_id)
+    try:
+        proj_uuid = uuid.UUID(project_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid project_id format: '{project_id}'.",
+            "hint": "Check your existing projects with get_profile to find valid project IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             delete(UserProject).where(UserProject.id == proj_uuid, UserProject.user_id == user.id)
         )
         await db.commit()
-        return {"success": res.rowcount > 0, "deleted_id": project_id}
+        if res.rowcount == 0:
+            return {
+                "success": False,
+                "deleted_id": project_id,
+                "error": f"Project '{project_id}' not found.",
+                "hint": "Check your existing projects with get_profile.",
+            }
+        return {"success": True, "deleted_id": project_id}
 
 
 # --- Experience CRUD ---
@@ -353,14 +380,26 @@ async def update_experience_handler(
 ) -> dict[str, Any]:
     """Update an existing work experience entry."""
     user = get_current_mcp_user()
-    exp_uuid = uuid.UUID(experience_id)
+    try:
+        exp_uuid = uuid.UUID(experience_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid experience_id format: '{experience_id}'.",
+            "hint": "Check your work history with get_profile to find valid experience IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             select(UserExperience).where(UserExperience.id == exp_uuid, UserExperience.user_id == user.id)
         )
         exp = res.scalar_one_or_none()
         if not exp:
-            return {"success": False, "error": f"Experience {experience_id} not found"}
+            return {
+                "success": False,
+                "error": f"Experience '{experience_id}' not found.",
+                "hint": "Check your work history with get_profile or add a new role using add_experience.",
+            }
 
         if role is not None:
             exp.role = role
@@ -383,13 +422,28 @@ async def update_experience_handler(
 async def delete_experience_handler(experience_id: str) -> dict[str, Any]:
     """Remove a work experience entry."""
     user = get_current_mcp_user()
-    exp_uuid = uuid.UUID(experience_id)
+    try:
+        exp_uuid = uuid.UUID(experience_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid experience_id format: '{experience_id}'.",
+            "hint": "Check your work history with get_profile to find valid experience IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             delete(UserExperience).where(UserExperience.id == exp_uuid, UserExperience.user_id == user.id)
         )
         await db.commit()
-        return {"success": res.rowcount > 0, "deleted_id": experience_id}
+        if res.rowcount == 0:
+            return {
+                "success": False,
+                "deleted_id": experience_id,
+                "error": f"Experience '{experience_id}' not found.",
+                "hint": "Check your work history with get_profile.",
+            }
+        return {"success": True, "deleted_id": experience_id}
 
 
 # --- Education CRUD ---
@@ -434,14 +488,26 @@ async def update_education_handler(
 ) -> dict[str, Any]:
     """Update an education entry."""
     user = get_current_mcp_user()
-    edu_uuid = uuid.UUID(education_id)
+    try:
+        edu_uuid = uuid.UUID(education_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid education_id format: '{education_id}'.",
+            "hint": "Check your education history with get_profile to find valid education IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             select(UserEducation).where(UserEducation.id == edu_uuid, UserEducation.user_id == user.id)
         )
         edu = res.scalar_one_or_none()
         if not edu:
-            return {"success": False, "error": f"Education {education_id} not found"}
+            return {
+                "success": False,
+                "error": f"Education '{education_id}' not found.",
+                "hint": "Check your education history with get_profile or add a new entry using add_education.",
+            }
 
         if degree is not None:
             edu.degree = degree
@@ -466,13 +532,28 @@ async def update_education_handler(
 async def delete_education_handler(education_id: str) -> dict[str, Any]:
     """Delete an education record."""
     user = get_current_mcp_user()
-    edu_uuid = uuid.UUID(education_id)
+    try:
+        edu_uuid = uuid.UUID(education_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid education_id format: '{education_id}'.",
+            "hint": "Check your education history with get_profile to find valid education IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             delete(UserEducation).where(UserEducation.id == edu_uuid, UserEducation.user_id == user.id)
         )
         await db.commit()
-        return {"success": res.rowcount > 0, "deleted_id": education_id}
+        if res.rowcount == 0:
+            return {
+                "success": False,
+                "deleted_id": education_id,
+                "error": f"Education '{education_id}' not found.",
+                "hint": "Check your education history with get_profile.",
+            }
+        return {"success": True, "deleted_id": education_id}
 
 
 # --- Extracurricular CRUD ---
@@ -514,14 +595,26 @@ async def update_extracurricular_handler(
 ) -> dict[str, Any]:
     """Update an extracurricular entry."""
     user = get_current_mcp_user()
-    extra_uuid = uuid.UUID(extracurricular_id)
+    try:
+        extra_uuid = uuid.UUID(extracurricular_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid extracurricular_id format: '{extracurricular_id}'.",
+            "hint": "Check your extracurricular history with get_profile to find valid IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             select(UserExtracurricular).where(UserExtracurricular.id == extra_uuid, UserExtracurricular.user_id == user.id)
         )
         extra = res.scalar_one_or_none()
         if not extra:
-            return {"success": False, "error": f"Extracurricular {extracurricular_id} not found"}
+            return {
+                "success": False,
+                "error": f"Extracurricular '{extracurricular_id}' not found.",
+                "hint": "Check your extracurricular history with get_profile or add a new entry using add_extracurricular.",
+            }
 
         if title is not None:
             extra.title = title
@@ -544,10 +637,25 @@ async def update_extracurricular_handler(
 async def delete_extracurricular_handler(extracurricular_id: str) -> dict[str, Any]:
     """Delete an extracurricular entry."""
     user = get_current_mcp_user()
-    extra_uuid = uuid.UUID(extracurricular_id)
+    try:
+        extra_uuid = uuid.UUID(extracurricular_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid extracurricular_id format: '{extracurricular_id}'.",
+            "hint": "Check your extracurricular history with get_profile to find valid IDs.",
+        }
+
     async with get_mcp_db() as db:
         res = await db.execute(
             delete(UserExtracurricular).where(UserExtracurricular.id == extra_uuid, UserExtracurricular.user_id == user.id)
         )
         await db.commit()
-        return {"success": res.rowcount > 0, "deleted_id": extracurricular_id}
+        if res.rowcount == 0:
+            return {
+                "success": False,
+                "deleted_id": extracurricular_id,
+                "error": f"Extracurricular '{extracurricular_id}' not found.",
+                "hint": "Check your extracurricular history with get_profile.",
+            }
+        return {"success": True, "deleted_id": extracurricular_id}

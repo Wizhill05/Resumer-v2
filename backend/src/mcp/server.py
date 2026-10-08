@@ -144,18 +144,30 @@ DESTRUCTIVE_ANNOTATIONS = ToolAnnotations(
 )
 
 
+async def _safe_tool_call(coro: Any) -> dict[str, Any]:
+    """Execute a tool handler coroutine, catching authentication and authorization exceptions gracefully."""
+    try:
+        return await coro
+    except PermissionError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "hint": "Your Resumer session has expired. Please reconnect the connector in ChatGPT to continue.",
+        }
+
+
 # ── Profile & Data Tools ──────────────────────────────────────────────────────
 
 @mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def get_profile() -> dict[str, Any]:
     """Retrieve the user's complete profile including contact info, projects, experiences, education, and extracurriculars."""
-    return await get_profile_handler()
+    return await _safe_tool_call(get_profile_handler())
 
 
 @mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def list_data_summary() -> dict[str, Any]:
     """Get a summary of stored profile data: counts per section, completeness percentage, and gaps."""
-    return await list_data_summary_handler()
+    return await _safe_tool_call(list_data_summary_handler())
 
 
 @mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
@@ -172,17 +184,19 @@ async def update_profile(
     skills: list[str] | None = None,
 ) -> dict[str, Any]:
     """Update profile contact details, subtitle, summary, and skills."""
-    return await update_profile_handler(
-        full_name=full_name,
-        email=email,
-        phone=phone,
-        location=location,
-        linkedin_url=linkedin_url,
-        github_url=github_url,
-        portfolio_url=portfolio_url,
-        subtitle=subtitle,
-        summary=summary,
-        skills=skills,
+    return await _safe_tool_call(
+        update_profile_handler(
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            location=location,
+            linkedin_url=linkedin_url,
+            github_url=github_url,
+            portfolio_url=portfolio_url,
+            subtitle=subtitle,
+            summary=summary,
+            skills=skills,
+        )
     )
 
 
@@ -198,15 +212,17 @@ async def add_project(
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
     """Add a new project to the user's profile database."""
-    return await add_project_handler(
-        name=name,
-        description=description,
-        technologies=technologies,
-        github_url=github_url,
-        live_url=live_url,
-        start_date=start_date,
-        end_date=end_date,
-        bullet_points=bullet_points,
+    return await _safe_tool_call(
+        add_project_handler(
+            name=name,
+            description=description,
+            technologies=technologies,
+            github_url=github_url,
+            live_url=live_url,
+            start_date=start_date,
+            end_date=end_date,
+            bullet_points=bullet_points,
+        )
     )
 
 
@@ -223,23 +239,25 @@ async def update_project(
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
     """Update an existing project in the user's profile database by project_id."""
-    return await update_project_handler(
-        project_id=project_id,
-        name=name,
-        description=description,
-        technologies=technologies,
-        github_url=github_url,
-        live_url=live_url,
-        start_date=start_date,
-        end_date=end_date,
-        bullet_points=bullet_points,
+    return await _safe_tool_call(
+        update_project_handler(
+            project_id=project_id,
+            name=name,
+            description=description,
+            technologies=technologies,
+            github_url=github_url,
+            live_url=live_url,
+            start_date=start_date,
+            end_date=end_date,
+            bullet_points=bullet_points,
+        )
     )
 
 
 @mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_project(project_id: str) -> dict[str, Any]:
     """Remove a project from the user's profile database by project_id."""
-    return await delete_project_handler(project_id=project_id)
+    return await _safe_tool_call(delete_project_handler(project_id=project_id))
 
 
 @mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
@@ -252,13 +270,15 @@ async def add_experience(
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
     """Add a work experience entry to the user's profile database."""
-    return await add_experience_handler(
-        role=role,
-        organization=organization,
-        location=location,
-        start_date=start_date,
-        end_date=end_date,
-        bullet_points=bullet_points,
+    return await _safe_tool_call(
+        add_experience_handler(
+            role=role,
+            organization=organization,
+            location=location,
+            start_date=start_date,
+            end_date=end_date,
+            bullet_points=bullet_points,
+        )
     )
 
 
@@ -273,21 +293,23 @@ async def update_experience(
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
     """Update an existing work experience entry in the user's profile database."""
-    return await update_experience_handler(
-        experience_id=experience_id,
-        role=role,
-        organization=organization,
-        location=location,
-        start_date=start_date,
-        end_date=end_date,
-        bullet_points=bullet_points,
+    return await _safe_tool_call(
+        update_experience_handler(
+            experience_id=experience_id,
+            role=role,
+            organization=organization,
+            location=location,
+            start_date=start_date,
+            end_date=end_date,
+            bullet_points=bullet_points,
+        )
     )
 
 
 @mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_experience(experience_id: str) -> dict[str, Any]:
     """Remove a work experience entry from the user's profile database."""
-    return await delete_experience_handler(experience_id=experience_id)
+    return await _safe_tool_call(delete_experience_handler(experience_id=experience_id))
 
 
 @mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
@@ -301,14 +323,16 @@ async def add_education(
     coursework: list[str] | None = None,
 ) -> dict[str, Any]:
     """Add an education entry to the user's profile."""
-    return await add_education_handler(
-        degree=degree,
-        institution=institution,
-        location=location,
-        start_date=start_date,
-        end_date=end_date,
-        gpa=gpa,
-        coursework=coursework,
+    return await _safe_tool_call(
+        add_education_handler(
+            degree=degree,
+            institution=institution,
+            location=location,
+            start_date=start_date,
+            end_date=end_date,
+            gpa=gpa,
+            coursework=coursework,
+        )
     )
 
 
@@ -324,22 +348,24 @@ async def update_education(
     coursework: list[str] | None = None,
 ) -> dict[str, Any]:
     """Update an existing education entry."""
-    return await update_education_handler(
-        education_id=education_id,
-        degree=degree,
-        institution=institution,
-        location=location,
-        start_date=start_date,
-        end_date=end_date,
-        gpa=gpa,
-        coursework=coursework,
+    return await _safe_tool_call(
+        update_education_handler(
+            education_id=education_id,
+            degree=degree,
+            institution=institution,
+            location=location,
+            start_date=start_date,
+            end_date=end_date,
+            gpa=gpa,
+            coursework=coursework,
+        )
     )
 
 
 @mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_education(education_id: str) -> dict[str, Any]:
     """Remove an education entry from the user's profile."""
-    return await delete_education_handler(education_id=education_id)
+    return await _safe_tool_call(delete_education_handler(education_id=education_id))
 
 
 @mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
@@ -352,13 +378,15 @@ async def add_extracurricular(
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
     """Add an extracurricular activity entry to the user's profile."""
-    return await add_extracurricular_handler(
-        title=title,
-        organization=organization,
-        description=description,
-        start_date=start_date,
-        end_date=end_date,
-        bullet_points=bullet_points,
+    return await _safe_tool_call(
+        add_extracurricular_handler(
+            title=title,
+            organization=organization,
+            description=description,
+            start_date=start_date,
+            end_date=end_date,
+            bullet_points=bullet_points,
+        )
     )
 
 
@@ -373,21 +401,23 @@ async def update_extracurricular(
     bullet_points: list[str] | None = None,
 ) -> dict[str, Any]:
     """Update an existing extracurricular activity entry in the user's profile."""
-    return await update_extracurricular_handler(
-        extracurricular_id=extracurricular_id,
-        title=title,
-        organization=organization,
-        description=description,
-        start_date=start_date,
-        end_date=end_date,
-        bullet_points=bullet_points,
+    return await _safe_tool_call(
+        update_extracurricular_handler(
+            extracurricular_id=extracurricular_id,
+            title=title,
+            organization=organization,
+            description=description,
+            start_date=start_date,
+            end_date=end_date,
+            bullet_points=bullet_points,
+        )
     )
 
 
 @mcp_server.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
 async def delete_extracurricular(extracurricular_id: str) -> dict[str, Any]:
     """Remove an extracurricular activity entry from the user's profile."""
-    return await delete_extracurricular_handler(extracurricular_id=extracurricular_id)
+    return await _safe_tool_call(delete_extracurricular_handler(extracurricular_id=extracurricular_id))
 
 
 # ── Readiness & Gap Detection Tools ──────────────────────────────────────────
@@ -395,7 +425,7 @@ async def delete_extracurricular(extracurricular_id: str) -> dict[str, Any]:
 @mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def list_templates() -> dict[str, Any]:
     """List available resume templates with default and allowed content splits."""
-    return await list_templates_handler()
+    return await _safe_tool_call(list_templates_handler())
 
 
 @mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
@@ -405,10 +435,12 @@ async def check_readiness(
     job_description: str | None = None,
 ) -> dict[str, Any]:
     """Check if profile data is sufficient to generate a resume for a given template and content split."""
-    return await check_readiness_handler(
-        template_id=template_id,
-        content_split=content_split,
-        job_description=job_description,
+    return await _safe_tool_call(
+        check_readiness_handler(
+            template_id=template_id,
+            content_split=content_split,
+            job_description=job_description,
+        )
     )
 
 @mcp_server.tool(annotations=MUTATING_ANNOTATIONS)
@@ -428,16 +460,18 @@ async def generate_resume(
     Waits for generation to complete and returns status, a PDF download URL, and structured resume JSON.
     creativity_mode ("proper" | "larp" | "super_larp") applies to this run only; omit to use stored default.
     """
-    return await generate_resume_handler(
-        job_description=job_description,
-        template_id=template_id,
-        job_title=job_title,
-        company=company,
-        content_split=content_split,
-        instructions=instructions,
-        creativity_mode=creativity_mode,
-        wait_for_completion=wait_for_completion,
-        ctx=ctx,
+    return await _safe_tool_call(
+        generate_resume_handler(
+            job_description=job_description,
+            template_id=template_id,
+            job_title=job_title,
+            company=company,
+            content_split=content_split,
+            instructions=instructions,
+            creativity_mode=creativity_mode,
+            wait_for_completion=wait_for_completion,
+            ctx=ctx,
+        )
     )
 
 
@@ -448,10 +482,12 @@ async def set_generation_defaults(
     experience: int | None = None,
 ) -> dict[str, Any]:
     """Get or change the user's stored generation defaults, including creativity mode and section counts."""
-    return await set_generation_defaults_handler(
-        creativity_mode=creativity_mode,
-        projects=projects,
-        experience=experience,
+    return await _safe_tool_call(
+        set_generation_defaults_handler(
+            creativity_mode=creativity_mode,
+            projects=projects,
+            experience=experience,
+        )
     )
 
 
@@ -461,16 +497,18 @@ async def get_generation_status(
     wait_for_completion: bool = True,
 ) -> dict[str, Any]:
     """Check progress, logs, and results of a resume generation run."""
-    return await get_generation_status_handler(
-        generation_id=generation_id,
-        wait_for_completion=wait_for_completion,
+    return await _safe_tool_call(
+        get_generation_status_handler(
+            generation_id=generation_id,
+            wait_for_completion=wait_for_completion,
+        )
     )
 
 
 @mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def download_resume(generation_id: str) -> dict[str, Any]:
     """Get the PDF download URL and resume JSON for a completed resume generation."""
-    return await download_resume_handler(generation_id=generation_id)
+    return await _safe_tool_call(download_resume_handler(generation_id=generation_id))
 
 
 # ── Surgical Editing & Preview Tools ──────────────────────────────────────────
@@ -481,9 +519,11 @@ async def get_resume_json(
     section: str | None = None,
 ) -> dict[str, Any]:
     """Retrieve the tailored resume JSON or a specific section for a completed generation."""
-    return await get_resume_json_handler(
-        generation_id=generation_id,
-        section=section,
+    return await _safe_tool_call(
+        get_resume_json_handler(
+            generation_id=generation_id,
+            section=section,
+        )
     )
 
 
@@ -496,19 +536,21 @@ async def edit_resume_section(
     expected_revision: int | None = None,
 ) -> dict[str, Any]:
     """Edit a specific part of a completed resume's tailored JSON without full regeneration."""
-    return await edit_resume_section_handler(
-        generation_id=generation_id,
-        path=path,
-        operation=operation,
-        value=value,
-        expected_revision=expected_revision,
+    return await _safe_tool_call(
+        edit_resume_section_handler(
+            generation_id=generation_id,
+            path=path,
+            operation=operation,
+            value=value,
+            expected_revision=expected_revision,
+        )
     )
 
 
 @mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
 async def preview_resume(generation_id: str) -> dict[str, Any]:
     """Preview resume HTML rendering and check whether content fits the target page count."""
-    return await preview_resume_handler(generation_id=generation_id)
+    return await _safe_tool_call(preview_resume_handler(generation_id=generation_id))
 
 
 @mcp_server.tool(annotations=READ_ONLY_ANNOTATIONS)
@@ -518,10 +560,12 @@ async def detect_orphans(
     font_size: float | None = None,
 ) -> dict[str, Any]:
     """Inspect layout line boxes in a tailored resume to detect orphan lines or multi-page overflow."""
-    return await detect_orphans_handler(
-        generation_id=generation_id,
-        resume_json=resume_json,
-        font_size=font_size,
+    return await _safe_tool_call(
+        detect_orphans_handler(
+            generation_id=generation_id,
+            resume_json=resume_json,
+            font_size=font_size,
+        )
     )
 
 
@@ -533,11 +577,13 @@ async def render_resume(
     expected_revision: int | None = None,
 ) -> dict[str, Any]:
     """Compile modified resume JSON into PDF format with typography fitting and update file storage."""
-    return await render_resume_handler(
-        generation_id=generation_id,
-        resume_json=resume_json,
-        font_size=font_size,
-        expected_revision=expected_revision,
+    return await _safe_tool_call(
+        render_resume_handler(
+            generation_id=generation_id,
+            resume_json=resume_json,
+            font_size=font_size,
+            expected_revision=expected_revision,
+        )
     )
 
 
@@ -547,9 +593,11 @@ async def save_resume_edits(
     expected_revision: int,
 ) -> dict[str, Any]:
     """Persist staged resume edits, re-render PDF, and update file storage."""
-    return await save_resume_edits_handler(
-        generation_id=generation_id,
-        expected_revision=expected_revision,
+    return await _safe_tool_call(
+        save_resume_edits_handler(
+            generation_id=generation_id,
+            expected_revision=expected_revision,
+        )
     )
 # ── ASGI Auth Wrapper Middleware ──────────────────────────────────────────────
 
@@ -616,7 +664,11 @@ class MCPAuthMiddleware:
                 base_url = getattr(settings, "BACKEND_URL", "").strip().rstrip("/") or "https://resumer-backend.aryansingh.space"
 
             response = Response(
-                content=json.dumps({"error": "Unauthorized: Missing Bearer token in Authorization header."}),
+                content=json.dumps({
+                    "error": "Unauthorized: Missing Bearer token in Authorization header.",
+                    "message": "Your Resumer session is not authenticated. Please connect or reconnect the Resumer connector in ChatGPT to continue.",
+                    "hint": "Connect or reconnect your Resumer account via the ChatGPT connector settings.",
+                }),
                 status_code=401,
                 media_type="application/json",
                 headers={
@@ -638,7 +690,11 @@ class MCPAuthMiddleware:
 
         if not payload:
             response = Response(
-                content=json.dumps({"error": "Unauthorized: Invalid or expired Bearer token."}),
+                content=json.dumps({
+                    "error": "Unauthorized: Invalid or expired Bearer token.",
+                    "message": "Your Resumer session has expired. Reconnect the connector to continue.",
+                    "hint": "Your Resumer session has expired. Reconnect the connector to continue.",
+                }),
                 status_code=401,
                 media_type="application/json",
                 headers={
@@ -683,7 +739,11 @@ class MCPAuthMiddleware:
         if not user:
             response = JSONResponse(
                 status_code=401,
-                content={"error": "User resolution failed."},
+                content={
+                    "error": "Unauthorized: User resolution failed.",
+                    "message": "Could not identify your Resumer account from this session.",
+                    "hint": "Please reconnect the connector in ChatGPT to refresh your account details.",
+                },
             )
             await response(scope, receive, send)
             return

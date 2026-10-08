@@ -372,7 +372,7 @@ async def oauth_authorize_post(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required to authorize client.",
+            detail="Your Resumer session has expired or authentication is required. Please sign in to authorize this connection.",
         )
 
     # 3. Create Authorization Code
@@ -485,15 +485,27 @@ async def oauth_token(
         auth_code_obj = result.scalar_one_or_none()
 
         if not auth_code_obj:
-            raise HTTPException(status_code=400, detail="Invalid authorization code")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid authorization code. Please reconnect the connector to request a new session.",
+            )
         if auth_code_obj.used:
-            raise HTTPException(status_code=400, detail="Authorization code already used")
+            raise HTTPException(
+                status_code=400,
+                detail="Authorization code already used. Please reconnect the connector to request a new session.",
+            )
         if is_expired(auth_code_obj.expires_at):
-            raise HTTPException(status_code=400, detail="Authorization code expired")
+            raise HTTPException(
+                status_code=400,
+                detail="Authorization code expired. Please reconnect the connector to request a new session.",
+            )
 
         # Verify PKCE
         if not verify_pkce(code_verifier, auth_code_obj.code_challenge, auth_code_obj.code_challenge_method):
-            raise HTTPException(status_code=400, detail="Invalid code_verifier (PKCE verification failed)")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid code_verifier (PKCE verification failed). Please reconnect the connector to try again.",
+            )
 
         # Mark code as used
         auth_code_obj.used = True
@@ -549,7 +561,10 @@ async def oauth_token(
         refresh_obj = result.scalar_one_or_none()
 
         if not refresh_obj:
-            raise HTTPException(status_code=400, detail="Invalid refresh token")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid refresh token. Your Resumer session has expired; reconnect the connector to continue.",
+            )
 
         # Token Replay Detection: if a revoked token is presented, revoke all tokens in the family!
         if refresh_obj.revoked:
@@ -561,11 +576,14 @@ async def oauth_token(
             await db.commit()
             raise HTTPException(
                 status_code=400,
-                detail="Revoked refresh token presented. All tokens in this family have been invalidated.",
+                detail="Revoked refresh token presented. All tokens in this family have been invalidated. Please reconnect the connector.",
             )
 
         if is_expired(refresh_obj.expires_at):
-            raise HTTPException(status_code=400, detail="Refresh token expired")
+            raise HTTPException(
+                status_code=400,
+                detail="Refresh token expired. Your Resumer session has expired; reconnect the connector to continue.",
+            )
 
         # Mark previous refresh token revoked (Single-Use Token Rotation)
         refresh_obj.revoked = True
@@ -661,7 +679,7 @@ async def oauth_userinfo(
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid Bearer token",
+            detail="Your Resumer session has expired or is missing an authorization token. Please reconnect the connector to continue.",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         )
 
@@ -669,7 +687,7 @@ async def oauth_userinfo(
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail="Your Resumer session has expired or the token is invalid. Please reconnect the connector to continue.",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         )
 

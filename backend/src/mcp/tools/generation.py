@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException
 from src.api.generation import check_rate_limit, reap_stuck_generations
 from src.core.config import settings
 from src.core.executor import trigger_pipeline
@@ -52,7 +53,9 @@ async def generate_resume_handler(
             "success": False,
             "status": "error",
             "error_code": "INVALID_CREATIVITY_MODE",
+            "error": f"Invalid creativity_mode '{creativity_mode}'.",
             "message": f"Invalid creativity_mode '{creativity_mode}'. Allowed: proper, larp, super_larp.",
+            "hint": "Choose an allowed creativity mode: proper (strict facts), larp (engaging framing), or super_larp (bold framing).",
         }
     effective_mode = creativity_mode or resolve_default_mode(user)
 
@@ -63,7 +66,9 @@ async def generate_resume_handler(
             "success": False,
             "status": "error",
             "error_code": "TEMPLATE_NOT_FOUND",
+            "error": f"Template '{template_id}' does not exist.",
             "message": f"Template '{template_id}' does not exist. Call list_templates for valid options.",
+            "hint": "Call list_templates to view all available templates and their supported sections.",
         }
 
     # 2. Resolve the effective split (explicit choice → stored user preference → template default)
@@ -81,10 +86,12 @@ async def generate_resume_handler(
                 "success": False,
                 "status": "error",
                 "error_code": "INVALID_CONTENT_SPLIT",
+                "error": f"Invalid content_split ({projects}, {experience}) for template '{template_id}'.",
                 "message": (
                     f"Invalid content_split ({projects}, {experience}) for template '{template_id}'. "
                     f"Allowed splits (projects, experience): {allowed}"
                 ),
+                "hint": "Choose an allowed split from list_templates or omit content_split to use the template default.",
             }
         explicit_split = {"projects": projects, "experience": experience}
         effective_split = explicit_split
@@ -103,38 +110,52 @@ async def generate_resume_handler(
             "success": False,
             "status": "blocked",
             "error_code": "INSUFFICIENT_PROFILE_DATA",
+            "error": "Cannot start resume generation: profile does not have enough data to satisfy template requirements.",
             "message": "Cannot start resume generation: profile does not have enough data to satisfy template requirements.",
+            "hint": "Add your work history and projects first via add_project or add_experience.",
             "blocking_reasons": readiness["blocking_reasons"],
+            "missing_sections": readiness["blocking_reasons"],
             "ai_steering": readiness["ai_steering"],
         }
 
     # 4. Create Generation record and trigger pipeline
-    async with get_mcp_db() as db:
-        await reap_stuck_generations(db)
-        await check_rate_limit(user, db)
+    try:
+        async with get_mcp_db() as db:
+            await reap_stuck_generations(db)
+            await check_rate_limit(user, db)
 
-        if explicit_split is not None:
-            await save_user_split_preference(
-                db, user.id, explicit_split["projects"], explicit_split["experience"]
+            if explicit_split is not None:
+                await save_user_split_preference(
+                    db, user.id, explicit_split["projects"], explicit_split["experience"]
+                )
+
+            gen = Generation(
+                user_id=user.id,
+                template_id=template_id,
+                job_description=job_description,
+                job_title=job_title,
+                company=company,
+                instructions=instructions,
+                content_split=effective_split,
+                creativity_mode=effective_mode,
+                status="pending",
+                is_guest=False,
+                send_email=False,
             )
-
-        gen = Generation(
-            user_id=user.id,
-            template_id=template_id,
-            job_description=job_description,
-            job_title=job_title,
-            company=company,
-            instructions=instructions,
-            content_split=effective_split,
-            creativity_mode=effective_mode,
-            status="pending",
-            is_guest=False,
-            send_email=False,
-        )
-        db.add(gen)
-        await db.commit()
-        await db.refresh(gen)
-        gen_id = gen.id
+            db.add(gen)
+            await db.commit()
+            await db.refresh(gen)
+            gen_id = gen.id
+    except HTTPException as e:
+        detail_msg = e.detail if isinstance(e.detail, str) else "Rate limit reached."
+        return {
+            "success": False,
+            "status": "error",
+            "error_code": "RATE_LIMIT_EXCEEDED",
+            "error": detail_msg,
+            "message": detail_msg,
+            "hint": "You have reached your daily or monthly resume generation limit. Please wait for the quota to reset or upgrade your account.",
+        }
 
     # 4. Trigger the generation pipeline
     await trigger_pipeline(str(gen_id))
@@ -194,7 +215,9 @@ async def generate_resume_handler(
             "success": False,
             "status": "error",
             "error_code": "GENERATION_NOT_FOUND",
+            "error": f"Generation '{gen_id}' could not be reloaded from database.",
             "message": f"Generation '{gen_id}' could not be reloaded from database.",
+            "hint": "Call get_generation_status to check if the background run completed.",
         }
 
     if latest_gen.status == "completed":
@@ -230,8 +253,10 @@ async def generate_resume_handler(
             "success": False,
             "generation_id": str(gen_id),
             "status": "failed",
+            "error": latest_gen.error_message or "Resume generation pipeline failed.",
             "error_message": latest_gen.error_message or "Resume generation pipeline failed.",
             "message": f"Resume generation failed: {latest_gen.error_message}",
+            "hint": "Review the job description text or retry generation with template_id='personal-classic'.",
         }
 
     # Timed out while still in progress
@@ -257,7 +282,14 @@ async def get_generation_status_handler(
 ) -> dict[str, Any]:
     """Check progress, logs, and results of a resume generation run."""
     user = get_current_mcp_user()
-    gen_uuid = uuid.UUID(generation_id)
+    try:
+        gen_uuid = uuid.UUID(generation_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid generation_id format: '{generation_id}'.",
+            "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+        }
 
     start_time = asyncio.get_event_loop().time()
     poll_interval = 1.0
@@ -271,7 +303,11 @@ async def get_generation_status_handler(
             )
             gen = res.scalar_one_or_none()
             if not gen:
-                return {"success": False, "error": f"Generation '{generation_id}' not found."}
+                return {
+                    "success": False,
+                    "error": f"Generation '{generation_id}' not found.",
+                    "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+                }
 
             # Fetch step logs
             log_res = await db.execute(
@@ -338,7 +374,14 @@ async def get_generation_status_handler(
 async def download_resume_handler(generation_id: str) -> dict[str, Any]:
     """Retrieve PDF download URL and resume JSON for a completed resume generation."""
     user = get_current_mcp_user()
-    gen_uuid = uuid.UUID(generation_id)
+    try:
+        gen_uuid = uuid.UUID(generation_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid generation_id format: '{generation_id}'.",
+            "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+        }
 
     async with get_mcp_db() as db:
         res = await db.execute(
@@ -346,13 +389,18 @@ async def download_resume_handler(generation_id: str) -> dict[str, Any]:
         )
         gen = res.scalar_one_or_none()
         if not gen:
-            return {"success": False, "error": f"Generation '{generation_id}' not found."}
+            return {
+                "success": False,
+                "error": f"Generation '{generation_id}' not found.",
+                "hint": "Generate a resume first via generate_resume before attempting to download.",
+            }
 
         if gen.status != "completed":
             return {
                 "success": False,
                 "status": gen.status,
-                "error": "Resume is not ready for download. Check status using get_generation_status.",
+                "error": f"Resume is currently in status '{gen.status}' and not ready for download.",
+                "hint": f"Poll get_generation_status(generation_id='{generation_id}', wait_for_completion=True) until status is 'completed'.",
             }
 
         render_meta = gen.render_metadata or {}
@@ -390,16 +438,25 @@ async def set_generation_defaults_handler(
         return {
             "success": False,
             "error": f"Invalid creativity_mode '{creativity_mode}'. Allowed: proper, larp, super_larp.",
+            "hint": "Allowed creativity modes are: proper (strict facts), larp (engaging framing), or super_larp (bold framing).",
         }
     for label, value in (("projects", projects), ("experience", experience)):
         if value is not None and not (isinstance(value, int) and 0 <= value <= 5):
-            return {"success": False, "error": f"Invalid {label} '{value}'. Allowed range: 0-5."}
+            return {
+                "success": False,
+                "error": f"Invalid {label} '{value}'. Allowed range: 0-5.",
+                "hint": f"The number of {label} must be an integer between 0 and 5.",
+            }
 
     async with get_mcp_db() as db:
         res = await db.execute(select(User).where(User.id == user.id))
         db_user = res.scalar_one_or_none()
         if not db_user:
-            return {"success": False, "error": "User not found."}
+            return {
+                "success": False,
+                "error": "User not found.",
+                "hint": "Your Resumer session may have expired. Reconnect the connector to continue.",
+            }
         if creativity_mode is not None:
             db_user.preferred_creativity_mode = creativity_mode
         if projects is not None:
