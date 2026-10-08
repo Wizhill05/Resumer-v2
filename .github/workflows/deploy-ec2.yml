@@ -1,0 +1,49 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy-ec2.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy backend on resumer-vps
+    runs-on: [self-hosted, resumer-vps]
+    timeout-minutes: 30
+
+    steps:
+      - name: Pull latest code
+        working-directory: /opt/resumer
+        run: |
+          git fetch origin main
+          git merge --ff-only origin/main
+
+      - name: Rebuild and restart backend
+        working-directory: /opt/resumer
+        run: |
+          docker compose build backend
+          docker compose up -d backend
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 20); do
+            sleep 3
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:48000/mcp -H "Content-Type: application/json" -d "{}")
+            echo "attempt $i -> $CODE"
+            if [ "$CODE" = "401" ]; then
+              echo "backend healthy (401 = auth-guarded MCP endpoint)"
+              exit 0
+            fi
+          done
+          echo "backend unhealthy after deploy"
+          docker logs resumer-backend-1 | tail -20
+          exit 1
