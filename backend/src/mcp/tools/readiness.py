@@ -54,6 +54,8 @@ async def check_readiness_handler(
             "is_ready": False,
             "status": "BLOCKED",
             "score": 0,
+            "error": f"Template '{template_id}' not found.",
+            "hint": "Call list_templates to view all available templates and their supported sections.",
             "blocking_reasons": [f"Template '{template_id}' not found."],
             "gaps": [],
             "ai_steering": {
@@ -204,7 +206,7 @@ async def check_readiness_handler(
         ai_action = "PROCEED_TO_GENERATE"
         directive = "The candidate profile is complete and ready. You may proceed to call generate_resume."
 
-    return {
+    response_data: dict[str, Any] = {
         "is_ready": is_ready,
         "status": "READY" if is_ready else "BLOCKED",
         "score": score,
@@ -241,3 +243,9 @@ async def check_readiness_handler(
             },
         },
     }
+
+    if not is_ready:
+        response_data["error"] = "Profile does not meet template requirements."
+        response_data["hint"] = "Add your missing work history or projects first via add_project or add_experience before generating."
+
+    return response_data

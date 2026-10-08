@@ -80,7 +80,14 @@ async def get_resume_json_handler(
 ) -> dict[str, Any]:
     """Retrieve full tailored resume JSON or specific section for a completed generation."""
     user = get_current_mcp_user()
-    gen_uuid = uuid.UUID(generation_id)
+    try:
+        gen_uuid = uuid.UUID(generation_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid generation_id format: '{generation_id}'.",
+            "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+        }
 
     async with get_mcp_db() as db:
         res = await db.execute(
@@ -88,10 +95,19 @@ async def get_resume_json_handler(
         )
         gen = res.scalar_one_or_none()
         if not gen:
-            return {"success": False, "error": f"Generation '{generation_id}' not found."}
+            return {
+                "success": False,
+                "error": f"Generation '{generation_id}' not found.",
+                "hint": "Generate a resume first via generate_resume to create a tailored resume before editing.",
+            }
 
         if gen.status != "completed":
-            return {"success": False, "error": f"Generation is in status '{gen.status}', not completed."}
+            return {
+                "success": False,
+                "status": gen.status,
+                "error": f"Generation is in status '{gen.status}', not completed.",
+                "hint": f"Wait for generation to complete with get_generation_status(generation_id='{generation_id}') before inspecting resume JSON.",
+            }
 
         metadata = gen.render_metadata or {}
         tailored = metadata.get("tailored_resume", {})
@@ -127,7 +143,14 @@ async def edit_resume_section_handler(
 ) -> dict[str, Any]:
     """Surgically update a section or bullet point in a tailored resume without full regeneration."""
     user = get_current_mcp_user()
-    gen_uuid = uuid.UUID(generation_id)
+    try:
+        gen_uuid = uuid.UUID(generation_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid generation_id format: '{generation_id}'.",
+            "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+        }
 
     async with get_mcp_db() as db:
         res = await db.execute(
@@ -135,10 +158,19 @@ async def edit_resume_section_handler(
         )
         gen = res.scalar_one_or_none()
         if not gen:
-            return {"success": False, "error": f"Generation '{generation_id}' not found."}
+            return {
+                "success": False,
+                "error": f"Generation '{generation_id}' not found.",
+                "hint": "Generate a resume first via generate_resume to create a tailored resume before editing sections.",
+            }
 
         if gen.status != "completed":
-            return {"success": False, "error": f"Generation is in status '{gen.status}', not completed."}
+            return {
+                "success": False,
+                "status": gen.status,
+                "error": f"Generation is in status '{gen.status}', not completed.",
+                "hint": f"Wait for generation to complete with get_generation_status(generation_id='{generation_id}') before editing sections.",
+            }
 
         metadata = dict(gen.render_metadata or {})
         current_revision = metadata.get("editor_revision", 0)
@@ -146,7 +178,9 @@ async def edit_resume_section_handler(
             return {
                 "success": False,
                 "error_code": "REVISION_CONFLICT",
+                "error": f"Revision conflict: expected revision {expected_revision}, but current revision is {current_revision}.",
                 "message": f"Revision conflict: expected {expected_revision}, but current revision is {current_revision}.",
+                "hint": f"Fetch latest resume state with get_resume_json(generation_id='{generation_id}') and pass expected_revision={current_revision}.",
                 "current_revision": current_revision,
             }
 
@@ -154,7 +188,11 @@ async def edit_resume_section_handler(
         try:
             _apply_json_patch(tailored, path, operation, value)
         except Exception as e:
-            return {"success": False, "error": f"Failed to apply patch at '{path}': {e}"}
+            return {
+                "success": False,
+                "error": f"Failed to apply patch at '{path}': {e}",
+                "hint": "Inspect the resume structure using get_resume_json to confirm valid section keys and array indices.",
+            }
 
         # Update in metadata (staged in DB)
         metadata["tailored_resume"] = tailored
@@ -174,7 +212,14 @@ async def edit_resume_section_handler(
 async def preview_resume_handler(generation_id: str) -> dict[str, Any]:
     """Trigger Jinja/HTML preview and check WeasyPrint page-fitting overflow without saving."""
     user = get_current_mcp_user()
-    gen_uuid = uuid.UUID(generation_id)
+    try:
+        gen_uuid = uuid.UUID(generation_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid generation_id format: '{generation_id}'.",
+            "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+        }
 
     async with get_mcp_db() as db:
         res = await db.execute(
@@ -182,7 +227,11 @@ async def preview_resume_handler(generation_id: str) -> dict[str, Any]:
         )
         gen = res.scalar_one_or_none()
         if not gen:
-            return {"success": False, "error": f"Generation '{generation_id}' not found."}
+            return {
+                "success": False,
+                "error": f"Generation '{generation_id}' not found.",
+                "hint": "Generate a resume first via generate_resume before previewing.",
+            }
 
         metadata = gen.render_metadata or {}
         tailored = metadata.get("tailored_resume", {})
@@ -203,7 +252,11 @@ async def preview_resume_handler(generation_id: str) -> dict[str, Any]:
 
     manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
     if not manifest_obj:
-        return {"success": False, "error": f"Template '{gen.template_id}' manifest missing."}
+        return {
+            "success": False,
+            "error": f"Template '{gen.template_id}' manifest missing.",
+            "hint": "Use list_templates to check registered template IDs.",
+        }
 
     try:
         pdf_bytes, fit_result = fit_and_render_pdf(
@@ -213,7 +266,11 @@ async def preview_resume_handler(generation_id: str) -> dict[str, Any]:
             manifest=manifest_obj.model_dump(),
         )
     except Exception as e:
-        return {"success": False, "error": f"Preview render failed: {e}"}
+        return {
+            "success": False,
+            "error": f"Preview render failed: {e}",
+            "hint": "Check tailored resume JSON structure with get_resume_json to ensure all expected fields exist.",
+        }
 
     overflow_warning = None
     suggested_reductions = []
@@ -254,7 +311,14 @@ async def render_resume_handler(
     assets to storage, and returns the fresh capability download URL and updated metadata.
     """
     user = get_current_mcp_user()
-    gen_uuid = uuid.UUID(generation_id)
+    try:
+        gen_uuid = uuid.UUID(generation_id)
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid generation_id format: '{generation_id}'.",
+            "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+        }
 
     async with get_mcp_db() as db:
         res = await db.execute(
@@ -262,7 +326,11 @@ async def render_resume_handler(
         )
         gen = res.scalar_one_or_none()
         if not gen:
-            return {"success": False, "error": f"Generation '{generation_id}' not found."}
+            return {
+                "success": False,
+                "error": f"Generation '{generation_id}' not found.",
+                "hint": "Generate a resume first via generate_resume before rendering changes.",
+            }
 
         metadata = dict(gen.render_metadata or {})
         current_revision = metadata.get("editor_revision", 0)
@@ -270,7 +338,9 @@ async def render_resume_handler(
             return {
                 "success": False,
                 "error_code": "REVISION_CONFLICT",
+                "error": f"Revision conflict: expected revision {expected_revision}, but current revision is {current_revision}.",
                 "message": f"Revision conflict: expected {expected_revision}, current {current_revision}.",
+                "hint": f"Fetch latest resume state with get_resume_json(generation_id='{generation_id}') before re-rendering.",
                 "current_revision": current_revision,
             }
 
@@ -296,7 +366,11 @@ async def render_resume_handler(
 
     manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
     if not manifest_obj:
-        return {"success": False, "error": f"Template '{gen.template_id}' manifest missing."}
+        return {
+            "success": False,
+            "error": f"Template '{gen.template_id}' manifest missing.",
+            "hint": "Use list_templates to check registered template IDs.",
+        }
 
     # 1. WeasyPrint compile
     try:
@@ -323,7 +397,11 @@ async def render_resume_handler(
             fits_target = fit_result.fits_target
             effective_font_size = fit_result.font_size
     except Exception as e:
-        return {"success": False, "error": f"PDF render failed: {e}"}
+        return {
+            "success": False,
+            "error": f"PDF render failed: {e}",
+            "hint": "Check tailored resume JSON structure with get_resume_json to verify valid data types.",
+        }
 
     # 2. Markdown
     md_text = build_resume_markdown(profile=profile_data, resume=tailored)
@@ -421,8 +499,12 @@ async def detect_orphans_handler(
     user = get_current_mcp_user()
     try:
         gen_uuid = uuid.UUID(generation_id)
-    except ValueError:
-        return {"success": False, "error": f"Invalid generation ID format: '{generation_id}'"}
+    except (ValueError, AttributeError):
+        return {
+            "success": False,
+            "error": f"Invalid generation ID format: '{generation_id}'",
+            "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
+        }
 
     async with get_mcp_db() as db:
         res = await db.execute(
@@ -430,15 +512,28 @@ async def detect_orphans_handler(
         )
         gen = res.scalar_one_or_none()
         if not gen:
-            return {"success": False, "error": f"Generation '{generation_id}' not found."}
+            return {
+                "success": False,
+                "error": f"Generation '{generation_id}' not found.",
+                "hint": "Generate a resume first via generate_resume before checking orphan lines.",
+            }
 
         if gen.status != "completed":
-            return {"success": False, "error": f"Generation is in status '{gen.status}', not completed."}
+            return {
+                "success": False,
+                "status": gen.status,
+                "error": f"Generation is in status '{gen.status}', not completed.",
+                "hint": f"Wait for generation to complete with get_generation_status(generation_id='{generation_id}') before analyzing layout.",
+            }
 
         metadata = gen.render_metadata or {}
         target_resume = resume_json if resume_json is not None else metadata.get("tailored_resume", {})
         if not target_resume:
-            return {"success": False, "error": "No resume data found to analyze."}
+            return {
+                "success": False,
+                "error": "No resume data found to analyze.",
+                "hint": "Generate a resume first via generate_resume or pass resume_json explicitly.",
+            }
 
         profile_data = metadata.get("profile")
         if not profile_data:

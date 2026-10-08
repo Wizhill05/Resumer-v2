@@ -577,3 +577,79 @@ async def test_mcp_generation_failure_and_timeout(setup_test_env: User, monkeypa
     assert timeout_res["success"] is True
     assert timeout_res["status"] == "pending" or timeout_res["status"] == "in_progress"
     assert timeout_res["poll_tool"] == "get_generation_status"
+
+
+@pytest.mark.asyncio
+async def test_mcp_error_clarity(setup_test_env: User):
+    """Verify that all error paths return structured, actionable dicts with clear hints."""
+    # 1. Invalid and non-existent generation IDs
+    status_bad_uuid = await get_generation_status_handler("not-a-valid-uuid")
+    assert status_bad_uuid["success"] is False
+    assert "Invalid generation_id format" in status_bad_uuid["error"]
+    assert "generate_resume" in status_bad_uuid["hint"]
+
+    status_not_found = await get_generation_status_handler(str(uuid.uuid4()))
+    assert status_not_found["success"] is False
+    assert "not found" in status_not_found["error"]
+    assert "generate_resume" in status_not_found["hint"]
+
+    dl_bad_uuid = await download_resume_handler("not-a-valid-uuid")
+    assert dl_bad_uuid["success"] is False
+    assert "generate_resume" in dl_bad_uuid["hint"]
+
+    json_bad_uuid = await get_resume_json_handler("not-a-valid-uuid")
+    assert json_bad_uuid["success"] is False
+    assert "generate_resume" in json_bad_uuid["hint"]
+
+    edit_bad_uuid = await edit_resume_section_handler("not-a-valid-uuid", path="summary")
+    assert edit_bad_uuid["success"] is False
+    assert "generate_resume" in edit_bad_uuid["hint"]
+
+    preview_bad_uuid = await preview_resume_handler("not-a-valid-uuid")
+    assert preview_bad_uuid["success"] is False
+    assert "generate_resume" in preview_bad_uuid["hint"]
+
+    render_bad_uuid = await render_resume_handler("not-a-valid-uuid")
+    assert render_bad_uuid["success"] is False
+    assert "generate_resume" in render_bad_uuid["hint"]
+
+    # 2. Invalid entity IDs for profile tools
+    proj_bad = await update_project_handler("invalid-proj-id", name="New Name")
+    assert proj_bad["success"] is False
+    assert "get_profile" in proj_bad["hint"]
+
+    proj_del_bad = await delete_project_handler("invalid-proj-id")
+    assert proj_del_bad["success"] is False
+    assert "get_profile" in proj_del_bad["hint"]
+
+    exp_bad = await update_experience_handler("invalid-exp-id", role="New Role")
+    assert exp_bad["success"] is False
+    assert "get_profile" in exp_bad["hint"]
+
+    edu_bad = await update_education_handler("invalid-edu-id", degree="M.S.")
+    assert edu_bad["success"] is False
+    assert "get_profile" in edu_bad["hint"]
+
+    extra_bad = await update_extracurricular_handler("invalid-extra-id", title="Lead")
+    assert extra_bad["success"] is False
+    assert "get_profile" in extra_bad["hint"]
+
+    # 3. Readiness failure with actionable hints
+    readiness_bad_template = await check_readiness_handler(template_id="non-existent-template")
+    assert readiness_bad_template["is_ready"] is False
+    assert "list_templates" in readiness_bad_template["hint"]
+
+    readiness_empty = await check_readiness_handler(template_id="personal-classic")
+    assert readiness_empty["is_ready"] is False
+    assert "add_project or add_experience" in readiness_empty["hint"]
+
+    # 4. Safe tool call on unauthenticated context
+    from src.mcp.server import _safe_tool_call
+    async def unauth_handler():
+        raise PermissionError("Your Resumer session has expired or is unauthenticated.")
+
+    safe_res = await _safe_tool_call(unauth_handler())
+    assert safe_res["success"] is False
+    assert "expired" in safe_res["error"]
+    assert "reconnect the connector" in safe_res["hint"].lower()
+
