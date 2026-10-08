@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, ExternalLink, FileText } from "lucide-react"
+import Link from "next/link"
+import { ChevronDown, ExternalLink, FileText, Sparkles } from "lucide-react"
 
 const FAQS: { q: string; a: string }[] = [
   {
@@ -19,6 +20,10 @@ const FAQS: { q: string; a: string }[] = [
   {
     q: "GitHub import empty",
     a: "Repos must be public and username correct. Report with the username if it still fails.",
+  },
+  {
+    q: "How do I use Resumer inside ChatGPT?",
+    a: "Open /connect to copy your MCP endpoint URL. In ChatGPT, go to Settings → Connectors → Create custom connector, paste the URL, and sign in to link your account.",
   },
 ]
 
@@ -52,6 +57,15 @@ export function SupportFaq() {
       <div className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
         <h3 className="text-xs font-black uppercase tracking-widest">Other ways</h3>
         <div className="mt-3 grid gap-2">
+          <Link
+            href="/connect"
+            className="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-xs font-bold hover:border-zinc-900 dark:hover:border-zinc-500 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles size={14} /> ChatGPT connector
+            </span>
+            <span className="text-[10px] font-mono text-zinc-400">→</span>
+          </Link>
           <a
             href="https://github.com/Wizhill05/resumer-v2/issues"
             target="_blank"
