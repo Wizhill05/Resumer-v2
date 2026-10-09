@@ -21,7 +21,7 @@ async def seed():
             return
 
         user_id = user.id
-        user.name = "Alex Rivera"
+        user.name = "Sam Altman"
         user.first_generation_completed = True
         user.preferred_creativity_mode = "larp"
         user.preferred_projects = 3
@@ -34,44 +34,36 @@ async def seed():
             profile = Profile(user_id=user_id)
             session.add(profile)
 
-        profile.full_name = "Alex Rivera"
+        profile.full_name = "Sam Altman"
         profile.email = REVIEWER_EMAIL
-        profile.phone = "+1 (555) 234-5678"
+        profile.phone = "+1 (415) 867-5309"
         profile.location = "San Francisco, CA"
-        profile.linkedin_url = "https://linkedin.com/in/alex-rivera-tech"
-        profile.github_url = "https://github.com/alexrivera-dev"
-        profile.portfolio_url = "https://alexrivera.dev"
-        profile.subtitle = "Staff Software Engineer | Distributed Systems & Cloud Platforms"
+        profile.linkedin_url = "https://linkedin.com/in/samaltman"
+        profile.github_url = "https://github.com/sama"
+        profile.portfolio_url = "https://blog.samaltman.com"
+        profile.subtitle = "CEO @ OpenAI | Former President @ Y Combinator | Technologist & Investor"
         profile.summary = (
-            "Staff Software Engineer with 8+ years of experience designing and scaling low-latency distributed systems, "
-            "cloud-native backend services, and developer platforms. Track record of improving system throughput by 4x, "
-            "reducing cloud infrastructure costs by 35%, and leading engineering teams through high-velocity product launches "
-            "across AWS and Kubernetes environments."
+            "Co-Founder & CEO of OpenAI, leading the research, scaling, and commercial deployment of frontier artificial "
+            "intelligence systems including GPT-4, o1, and ChatGPT. Former President of Y Combinator, backing and scaling "
+            "transformative companies including Airbnb, Stripe, Dropbox, and Reddit. Passionate about supercomputing, "
+            "clean fusion energy, and ensuring artificial general intelligence benefits all of humanity."
         )
         profile.skills = [
-            "Go",
-            "Python",
-            "TypeScript",
-            "Rust",
-            "FastAPI",
-            "React",
-            "Next.js",
-            "Node.js",
-            "Docker",
-            "Kubernetes",
-            "AWS (ECS, EKS, RDS, S3, CloudFront)",
-            "PostgreSQL",
-            "Redis",
-            "Kafka",
-            "gRPC",
-            "GraphQL",
-            "Terraform",
-            "CI/CD (GitHub Actions)",
-            "Prometheus",
-            "Grafana",
-            "System Architecture",
-            "ATS Optimization",
-            "Distributed Systems",
+            "Artificial General Intelligence",
+            "Frontier Model Scaling",
+            "Executive Leadership",
+            "Product Strategy",
+            "Supercomputing Infrastructure",
+            "AI Safety & Governance",
+            "Venture Capital & Investing",
+            "Startup Acceleration",
+            "Capital Allocation",
+            "Nuclear & Fusion Energy",
+            "Distributed Compute",
+            "Board Governance",
+            "Reinforcement Learning (RLHF)",
+            "Zero-Knowledge Cryptography",
+            "Public Policy & Senate Testimony",
         ]
 
         # 3. Clean up existing records for fresh idempotent seed
@@ -85,61 +77,61 @@ async def seed():
         experiences = [
             UserExperience(
                 user_id=user_id,
-                role="Staff Software Engineer",
-                organization="Stripe",
+                role="Chief Executive Officer & Co-Founder",
+                organization="OpenAI",
                 location="San Francisco, CA",
-                start_date=date(2022, 3, 1),
+                start_date=date(2019, 3, 1),
                 end_date=None,
                 bullet_points=[
-                    "Architected real-time transaction processing pipeline in Go handling 12,000+ RPS with p99 latency under 28ms across multi-region active-active clusters.",
-                    "Designed and deployed automated database failover across AWS us-east-1 and us-west-2, elevating payment network availability to 99.999%.",
-                    "Led a cross-functional team of 7 senior engineers executing zero-downtime database schema migration across 150M+ customer payment records.",
-                    "Spearheaded infrastructure cost-optimization initiative transitioning EC2 fleets to AWS Graviton3, slashing cloud expenditure by $420k annually.",
+                    "Scaled OpenAI into the world's leading frontier AI lab, creating ChatGPT which reached 100M+ weekly active users faster than any product in internet history.",
+                    "Spearheaded research and multi-modal product roadmap delivering GPT-3, GPT-4, DALL·E, Sora, and reasoning models (o1 series).",
+                    "Orchestrated landmark strategic partnerships and capital raises totaling over $13B with Microsoft, Oracle, and global institutional partners to secure multi-gigawatt compute capacity.",
+                    "Represented the AI industry in global policy dialogues, testifying before the US Senate and advising G7 leaders on AI safety standards and democratic access.",
                 ],
                 sort_order=1,
                 source="manual",
             ),
             UserExperience(
                 user_id=user_id,
-                role="Senior Backend Engineer",
-                organization="DoorDash",
-                location="San Francisco, CA",
-                start_date=date(2019, 6, 1),
-                end_date=date(2022, 2, 28),
+                role="President",
+                organization="Y Combinator",
+                location="Mountain View & San Francisco, CA",
+                start_date=date(2014, 2, 1),
+                end_date=date(2019, 3, 1),
                 bullet_points=[
-                    "Built real-time dispatch and routing microservices in Python (FastAPI), Kafka, and Redis caching serving 4M+ daily active delivery orders.",
-                    "Implemented predictive ETA scoring ML inference pipeline cutting driver idle time by 18% and increasing on-time fulfillment to 94.2%.",
-                    "Authored internal developer CLI and automated GitHub Actions CI/CD workflows, shortening average pull request deploy turnaround from 45 min to 9 min.",
-                    "Mentored 5 engineers and established core reliability & API design guidelines adopted by 40+ engineering squads.",
+                    "Led the world's preeminent startup accelerator, expanding the combined portfolio valuation to over $150B across companies like Stripe, Airbnb, DoorDash, Cruise, and Coinbase.",
+                    "Founded YC Research to fund non-profit open research on long-term breakthrough technologies, directly incubating OpenAI, Basic Income Project, and HARC.",
+                    "Created YC Continuity, a $1B growth-stage investment fund supporting alumni companies through late-stage rounds and IPOs.",
+                    "Launched YC Fellowship and Startup School, democratizing access to startup education for hundreds of thousands of founders worldwide.",
                 ],
                 sort_order=2,
                 source="manual",
             ),
             UserExperience(
                 user_id=user_id,
-                role="Software Engineer",
-                organization="Twilio",
-                location="San Francisco, CA",
-                start_date=date(2017, 8, 1),
-                end_date=date(2019, 5, 31),
+                role="Partner",
+                organization="Y Combinator",
+                location="Mountain View, CA",
+                start_date=date(2011, 10, 1),
+                end_date=date(2014, 2, 1),
                 bullet_points=[
-                    "Developed high-throughput voice and messaging delivery services in Node.js and Go processing over 250M monthly webhook dispatches.",
-                    "Optimized PostgreSQL partitioning and index strategy, eliminating lock contention and reducing slow query occurrences by 65%.",
-                    "Implemented automated synthetic canary monitoring in Datadog and PagerDuty, lowering mean-time-to-detection (MTTD) by 40%.",
+                    "Mentored hundreds of early-stage founders on product-market fit, viral distribution, business model design, and fundraising.",
+                    "Served as lead partner for dozens of breakout technology companies, negotiating terms and advising executive teams through hypergrowth.",
                 ],
                 sort_order=3,
                 source="manual",
             ),
             UserExperience(
                 user_id=user_id,
-                role="Software Engineering Intern",
-                organization="Mozilla",
+                role="Co-Founder & CEO",
+                organization="Loopt",
                 location="Mountain View, CA",
-                start_date=date(2016, 5, 1),
-                end_date=date(2016, 8, 31),
+                start_date=date(2005, 6, 1),
+                end_date=date(2012, 3, 1),
                 bullet_points=[
-                    "Contributed C++ and Rust optimizations to Firefox networking engine, improving DOM page rendering speed by 7% on low-memory mobile devices.",
-                    "Authored 80+ automated unit and integration tests achieving 92% test coverage on core HTTP/2 protocol parser.",
+                    "Co-founded pioneering mobile location-sharing network as part of Y Combinator's inaugural Summer 2005 batch.",
+                    "Secured direct carrier distribution deals with Sprint Nextel, Verizon, and AT&T, scaling to millions of mobile users.",
+                    "Successfully led company through acquisition by Green Dot Corporation for $43.4M in 2012.",
                 ],
                 sort_order=4,
                 source="manual",
@@ -151,66 +143,65 @@ async def seed():
         projects = [
             UserProject(
                 user_id=user_id,
-                name="CloudScale — Distributed Cache & Key-Value Store",
-                description="High-throughput distributed in-memory key-value engine with Raft consensus and linearizable storage.",
-                technologies=["Go", "Raft", "gRPC", "Docker", "Prometheus"],
-                github_url="https://github.com/alexrivera-dev/cloudscale",
-                live_url="https://cloudscale.alexrivera.dev",
-                start_date=date(2023, 1, 1),
-                end_date=date(2023, 8, 1),
+                name="ChatGPT & Frontier LLM Ecosystem",
+                description="The fastest-growing consumer application in internet history, delivering conversational intelligence to 200M+ users.",
+                technologies=["Frontier AI", "Transformers", "RLHF", "Distributed Compute", "Supercomputing Clusters"],
+                github_url="https://github.com/openai",
+                live_url="https://chatgpt.com",
+                start_date=date(2022, 1, 1),
+                end_date=None,
                 bullet_points=[
-                    "Engineered distributed key-value store using Raft consensus in Go, supporting linearizable reads and atomic transactional writes.",
-                    "Achieved 85,000 writes/sec sustained throughput with sub-millisecond network hops over gRPC and memory-mapped ring buffers.",
-                    "Published open-source library featured on Hacker News front page, accumulating 3,400+ GitHub stars.",
+                    "Guided architecture, safety alignment, and launch of ChatGPT, achieving 100M active users within 60 days of release.",
+                    "Built global enterprise and developer API ecosystem powering over 3M developers and 92% of Fortune 500 companies.",
+                    "Pioneered Reinforcement Learning from Human Feedback (RLHF) and frontier model system prompt design.",
                 ],
                 sort_order=1,
                 source="manual",
             ),
             UserProject(
                 user_id=user_id,
-                name="ResumeEngine — ATS Resume Compiler & Layout Analyzer",
-                description="Deterministic resume generation and single-page constraint compiler with typography orphan detection.",
-                technologies=["Python", "FastAPI", "PostgreSQL", "Next.js", "Docker"],
-                github_url="https://github.com/alexrivera-dev/resume-engine",
-                live_url="https://resume-engine.demo.app",
-                start_date=date(2024, 2, 1),
-                end_date=date(2024, 9, 1),
+                name="Worldcoin (World Network) — Proof of Personhood Protocol",
+                description="Decentralized open-source identity and financial network designed to preserve human uniqueness in an AI era.",
+                technologies=["Zero-Knowledge Proofs", "Biometrics", "Ethereum", "Optimism", "Privacy Protocols"],
+                github_url="https://github.com/worldcoin",
+                live_url="https://world.org",
+                start_date=date(2020, 6, 1),
+                end_date=None,
                 bullet_points=[
-                    "Engineered automated resume compilation pipeline converting structured JSON into single-page PDF artifacts with WeasyPrint.",
-                    "Implemented font-size binary search algorithm guaranteeing 100% single-page constraint satisfaction without text clipping.",
-                    "Integrated real-time typography orphan detection identifying trailing single-word line wraps.",
+                    "Co-founded global proof-of-personhood protocol using zero-knowledge iris cryptography to separate human intelligence from AI bots.",
+                    "Scaled network to over 10M verified humans across 160+ countries while maintaining complete cryptographic privacy.",
                 ],
                 sort_order=2,
                 source="manual",
             ),
             UserProject(
                 user_id=user_id,
-                name="EventStream — Real-Time WebSocket Analytics Hub",
-                description="High-velocity event streaming and analytics dashboard with sub-second ingestion latency.",
-                technologies=["TypeScript", "React", "Kafka", "ClickHouse", "Tailwind CSS"],
-                github_url="https://github.com/alexrivera-dev/eventstream",
-                live_url="https://eventstream.alexrivera.dev",
-                start_date=date(2023, 9, 1),
-                end_date=date(2024, 1, 15),
+                name="Helion Energy — Commercial Clean Fusion Power",
+                description="Magneto-inertial fusion company building zero-carbon baseload energy for next-generation compute.",
+                technologies=["Plasma Physics", "Magnetic Compression", "Clean Energy", "Power Grid Infrastructure"],
+                github_url=None,
+                live_url="https://helionenergy.com",
+                start_date=date(2021, 1, 1),
+                end_date=None,
                 bullet_points=[
-                    "Developed real-time observability dashboard processing 50k events/sec with sub-second ingestion latency using ClickHouse.",
-                    "Engineered responsive React canvas charting interface rendering 100,000+ data points smoothly at 60 FPS.",
+                    "Lead investor and Chairman backing commercial fusion energy generator, closing first private fusion power purchase agreement with Microsoft for 50MW+ by 2028.",
+                    "Secured regulatory framework and advanced prototype testing demonstrating net electricity recovery from pulsed magnetic fusion.",
                 ],
                 sort_order=3,
                 source="manual",
             ),
             UserProject(
                 user_id=user_id,
-                name="AuthGate — Lightweight OAuth 2.1 & PKCE Gateway",
-                description="RFC 8414 and RFC 7636 compliant authorization server with PKCE and dynamic client registration.",
-                technologies=["Python", "OAuth 2.1", "Redis", "JWT", "PostgreSQL"],
-                github_url="https://github.com/alexrivera-dev/authgate",
-                live_url="https://authgate.demo.app",
-                start_date=date(2024, 6, 1),
-                end_date=date(2024, 10, 1),
+                name="Oklo — Advanced Nuclear Fast Fission Microreactors",
+                description="Clean nuclear microreactor technology delivering distributed zero-carbon power.",
+                technologies=["Fast Fission", "Liquid Metal Coolant", "Nuclear Engineering", "Micro-reactors"],
+                github_url=None,
+                live_url="https://oklo.com",
+                start_date=date(2020, 1, 1),
+                end_date=None,
                 bullet_points=[
-                    "Created RFC 8414 and RFC 7636 compliant OAuth 2.1 authorization server with PKCE (S256) and dynamic client registration.",
-                    "Secured token issuance with rotating refresh token families, preventing replay and session hijacking attacks.",
+                    "Chairman leading deployment of small modular nuclear fission reactors fueled by recycled nuclear waste.",
+                    "Guided successful public listing on the New York Stock Exchange (NYSE: OKLO) to finance multi-site commercial microreactor deployment.",
                 ],
                 sort_order=4,
                 source="manual",
@@ -222,34 +213,32 @@ async def seed():
         education = [
             UserEducation(
                 user_id=user_id,
-                institution="University of California, Berkeley",
-                degree="Bachelor of Science in Computer Science",
-                location="Berkeley, CA",
-                start_date=date(2013, 9, 1),
-                end_date=date(2017, 5, 15),
-                gpa="3.88 / 4.0",
+                institution="Stanford University",
+                degree="Computer Science (Left early to build Loopt & Y Combinator)",
+                location="Stanford, CA",
+                start_date=date(2003, 9, 1),
+                end_date=date(2005, 6, 1),
+                gpa=None,
                 coursework=[
-                    "Distributed Systems",
-                    "Operating Systems",
-                    "Algorithms & Complexity",
-                    "Database Systems",
-                    "Computer Networking",
                     "Artificial Intelligence",
+                    "Compiler Optimization",
+                    "Algorithms & Data Structures",
+                    "Computer Architecture",
                 ],
                 sort_order=1,
             ),
             UserEducation(
                 user_id=user_id,
-                institution="Stanford University (Continuing Studies)",
-                degree="Graduate Certificate in Cloud Architecture & Scalable Systems",
-                location="Stanford, CA",
-                start_date=date(2018, 9, 1),
-                end_date=date(2019, 6, 15),
+                institution="John Burroughs School",
+                degree="High School Diploma",
+                location="St. Louis, MO",
+                start_date=date(1999, 9, 1),
+                end_date=date(2003, 6, 1),
                 gpa=None,
                 coursework=[
-                    "Cloud Native Engineering",
-                    "High Performance Computing",
-                    "Advanced Distributed Storage",
+                    "Mathematics",
+                    "Computer Science",
+                    "Physics",
                 ],
                 sort_order=2,
             ),
@@ -260,137 +249,148 @@ async def seed():
         extracurriculars = [
             UserExtracurricular(
                 user_id=user_id,
-                title="Open Source Maintainer & Contributor",
-                organization="CNCF & Open Source Community",
-                description="Active contributor to Go and cloud-native projects with over 5,000 GitHub contributions.",
-                start_date=date(2020, 1, 1),
+                title="AI Safety & Policy Advocacy",
+                organization="US Senate & Global AI Safety Summits",
+                description="Advised global governments and legislative bodies on frontier AI safety and democratization.",
+                start_date=date(2023, 5, 1),
                 end_date=None,
                 bullet_points=[
-                    "Co-maintainer of popular Go caching utilities downloaded 1.2M+ times monthly.",
-                    "Regular speaker at Bay Area Go and Kubernetes meetups on distributed consensus and high-throughput microservices.",
+                    "Testified before the US Senate Judiciary Subcommittee on Artificial Intelligence, proposing independent auditing and safety licensing frameworks.",
+                    "Co-developed voluntary commitments with the White House and international safety institutes for pre-deployment frontier evaluations.",
                 ],
                 sort_order=1,
             ),
             UserExtracurricular(
                 user_id=user_id,
-                title="Hackathon Mentor & Technical Judge",
-                organization="CalHacks (UC Berkeley)",
-                description="Mentored student development teams on scalable system design.",
-                start_date=date(2021, 10, 1),
+                title="Angel Investing & Philanthropy",
+                organization="Hydrazine Capital & Personal Portfolio",
+                description="Early seed investor backing generational technology founders.",
+                start_date=date(2010, 1, 1),
                 end_date=None,
                 bullet_points=[
-                    "Mentored 120+ collegiate student developers on full-stack architecture, deployment pipelines, and database optimization.",
+                    "Early-stage backer of 40+ category-defining tech companies including Stripe, Reddit, Pinterest, Airbnb, and Asana.",
+                    "Served on the Board of Directors for Reddit and spearheaded early public goods philanthropy initiatives.",
                 ],
                 sort_order=2,
             ),
         ]
         session.add_all(extracurriculars)
 
-        # 8. Insert Completed Sample Generations
+        # 8. Insert Completed Sample Generation
         now_dt = datetime.now(timezone.utc)
         tailored_resume_1 = {
             "header": {
-                "name": "Alex Rivera",
+                "name": "Sam Altman",
                 "email": REVIEWER_EMAIL,
-                "phone": "+1 (555) 234-5678",
+                "phone": "+1 (415) 867-5309",
                 "location": "San Francisco, CA",
-                "linkedin": "https://linkedin.com/in/alex-rivera-tech",
-                "github": "https://github.com/alexrivera-dev",
-                "website": "https://alexrivera.dev",
+                "linkedin": "https://linkedin.com/in/samaltman",
+                "github": "https://github.com/sama",
+                "website": "https://blog.samaltman.com",
             },
             "summary": (
-                "Staff Software Engineer with 8+ years building high-throughput distributed systems and payment platforms. "
-                "Proven track record scaling transaction pipelines to 12,000+ RPS and delivering 99.999% SLA across multi-region AWS environments."
+                "Co-Founder & CEO of OpenAI with 15+ years scaling transformative technology companies from inception to global impact. "
+                "Architected product and commercialization strategy for ChatGPT and frontier LLMs, partnered with hyperscalers for multi-gigawatt compute, "
+                "and championed global AI governance to ensure AGI benefits humanity."
             ),
             "skills": {
-                "Languages": ["Go", "Python", "TypeScript", "Rust", "SQL"],
-                "Cloud & Infrastructure": ["AWS (ECS, EKS, RDS, S3)", "Docker", "Kubernetes", "Terraform", "CI/CD"],
-                "Distributed Systems": ["Kafka", "Redis", "gRPC", "PostgreSQL", "Raft Consensus", "Prometheus"],
+                "Executive Leadership": ["Frontier Model Scaling", "Product Strategy", "Capital Allocation", "Board Governance", "Public Policy"],
+                "Technology & Infrastructure": ["Supercomputing Clusters", "Distributed Compute", "Clean Fusion & Nuclear Energy", "Zero-Knowledge Proofs"],
+                "Venture & Ecosystem": ["Startup Acceleration", "Venture Capital", "Hyperscaler Partnerships", "Developer Platforms"],
             },
             "experiences": [
                 {
-                    "company": "Stripe",
-                    "role": "Staff Software Engineer",
+                    "company": "OpenAI",
+                    "role": "Chief Executive Officer & Co-Founder",
                     "location": "San Francisco, CA",
-                    "start_date": "Mar 2022",
+                    "start_date": "Mar 2019",
                     "end_date": "Present",
                     "bullet_points": [
-                        "Architected real-time transaction processing pipeline in Go handling 12,000+ RPS with p99 latency under 28ms across active-active clusters.",
-                        "Designed and deployed automated database failover across AWS us-east-1 and us-west-2, elevating payment network availability to 99.999%.",
-                        "Led cross-functional team of 7 senior engineers executing zero-downtime database migration across 150M+ customer payment records.",
-                        "Spearheaded infrastructure cost-optimization initiative transitioning EC2 fleets to Graviton3, slashing cloud spend by $420k annually.",
+                        "Scaled OpenAI into the world's leading frontier AI lab, creating ChatGPT which reached 100M+ weekly active users faster than any product in internet history.",
+                        "Spearheaded research and multi-modal product roadmap delivering GPT-3, GPT-4, DALL·E, Sora, and reasoning models (o1 series).",
+                        "Orchestrated landmark strategic partnerships and capital raises totaling over $13B with Microsoft, Oracle, and global institutional partners to secure multi-gigawatt compute capacity.",
+                        "Represented the AI industry in global policy dialogues, testifying before the US Senate and advising G7 leaders on AI safety standards and democratic access.",
                     ],
                 },
                 {
-                    "company": "DoorDash",
-                    "role": "Senior Backend Engineer",
-                    "location": "San Francisco, CA",
-                    "start_date": "Jun 2019",
-                    "end_date": "Feb 2022",
+                    "company": "Y Combinator",
+                    "role": "President",
+                    "location": "Mountain View, CA",
+                    "start_date": "Feb 2014",
+                    "end_date": "Mar 2019",
                     "bullet_points": [
-                        "Built real-time dispatch and routing microservices in Python (FastAPI), Kafka, and Redis caching serving 4M+ daily active delivery orders.",
-                        "Implemented predictive ETA scoring ML inference pipeline cutting driver idle time by 18% and boosting on-time fulfillment to 94.2%.",
-                        "Authored internal developer CLI and automated GitHub Actions CI/CD workflows, shortening average PR deploy turnaround from 45 min to 9 min.",
+                        "Led the world's preeminent startup accelerator, expanding the combined portfolio valuation to over $150B across companies like Stripe, Airbnb, DoorDash, Cruise, and Coinbase.",
+                        "Founded YC Research to fund non-profit open research on long-term breakthrough technologies, directly incubating OpenAI, Basic Income Project, and HARC.",
+                        "Created YC Continuity, a $1B growth-stage investment fund supporting alumni companies through late-stage rounds and IPOs.",
                     ],
                 },
                 {
-                    "company": "Twilio",
-                    "role": "Software Engineer",
-                    "location": "San Francisco, CA",
-                    "start_date": "Aug 2017",
-                    "end_date": "May 2019",
+                    "company": "Loopt",
+                    "role": "Co-Founder & CEO",
+                    "location": "Mountain View, CA",
+                    "start_date": "Jun 2005",
+                    "end_date": "Mar 2012",
                     "bullet_points": [
-                        "Developed high-throughput voice and messaging delivery services in Node.js and Go processing over 250M monthly webhook dispatches.",
-                        "Optimized PostgreSQL partitioning and index strategy, eliminating lock contention and reducing slow query occurrences by 65%.",
+                        "Co-founded pioneering mobile location-sharing network as part of Y Combinator's inaugural Summer 2005 batch.",
+                        "Secured direct carrier distribution deals with Sprint Nextel, Verizon, and AT&T, scaling to millions of mobile users.",
+                        "Successfully led company through acquisition by Green Dot Corporation for $43.4M in 2012.",
                     ],
                 },
             ],
             "projects": [
                 {
-                    "name": "CloudScale — Distributed Cache & Key-Value Store",
-                    "role": "Creator & Lead Architect",
-                    "start_date": "Jan 2023",
-                    "end_date": "Aug 2023",
-                    "github_url": "https://github.com/alexrivera-dev/cloudscale",
+                    "name": "ChatGPT & Frontier LLM Ecosystem",
+                    "role": "Co-Founder & CEO",
+                    "start_date": "Jan 2022",
+                    "end_date": "Present",
+                    "live_url": "https://chatgpt.com",
                     "bullet_points": [
-                        "Engineered distributed key-value store using Raft consensus in Go, supporting linearizable reads and atomic transactional writes.",
-                        "Achieved 85,000 writes/sec sustained throughput with sub-millisecond network hops over gRPC and memory-mapped ring buffers.",
-                        "Published open-source library featured on Hacker News front page with 3,400+ GitHub stars.",
+                        "Guided architecture, safety alignment, and launch of ChatGPT, achieving 100M active users within 60 days of release.",
+                        "Built global enterprise and developer API ecosystem powering over 3M developers and 92% of Fortune 500 companies.",
                     ],
                 },
                 {
-                    "name": "ResumeEngine — ATS Resume Compiler",
-                    "role": "Creator",
-                    "start_date": "Feb 2024",
-                    "end_date": "Sep 2024",
-                    "github_url": "https://github.com/alexrivera-dev/resume-engine",
+                    "name": "Worldcoin (World Network)",
+                    "role": "Co-Founder",
+                    "start_date": "Jun 2020",
+                    "end_date": "Present",
+                    "live_url": "https://world.org",
                     "bullet_points": [
-                        "Engineered automated resume compilation pipeline converting structured JSON into single-page PDF artifacts with WeasyPrint.",
-                        "Implemented font-size binary search algorithm guaranteeing 100% single-page constraint satisfaction without text clipping.",
+                        "Co-founded global proof-of-personhood protocol using zero-knowledge iris cryptography to separate human intelligence from AI bots.",
+                        "Scaled network to over 10M verified humans across 160+ countries while maintaining complete cryptographic privacy.",
+                    ],
+                },
+                {
+                    "name": "Helion Energy",
+                    "role": "Chairman & Lead Investor",
+                    "start_date": "Jan 2021",
+                    "end_date": "Present",
+                    "live_url": "https://helionenergy.com",
+                    "bullet_points": [
+                        "Lead investor and Chairman backing commercial fusion energy generator, closing first private fusion power purchase agreement with Microsoft for 50MW+ by 2028.",
                     ],
                 },
             ],
             "education": [
                 {
-                    "institution": "University of California, Berkeley",
-                    "degree": "B.S. in Computer Science",
-                    "location": "Berkeley, CA",
-                    "start_date": "Sep 2013",
-                    "end_date": "May 2017",
-                    "gpa": "3.88 / 4.0",
+                    "institution": "Stanford University",
+                    "degree": "Computer Science (Left early to build Loopt & YC)",
+                    "location": "Stanford, CA",
+                    "start_date": "Sep 2003",
+                    "end_date": "Jun 2005",
                     "bullet_points": [
-                        "Coursework: Distributed Systems, Operating Systems, Algorithms & Complexity, Database Systems, Computer Networking",
+                        "Coursework: Artificial Intelligence, Compiler Optimization, Algorithms & Data Structures",
                     ],
                 }
             ],
             "extracurriculars": [
                 {
-                    "title": "Open Source Maintainer & Contributor",
-                    "organization": "CNCF Community",
-                    "start_date": "Jan 2020",
+                    "title": "AI Safety & Policy Advocacy",
+                    "organization": "US Senate & Global AI Summits",
+                    "start_date": "May 2023",
                     "end_date": "Present",
                     "bullet_points": [
-                        "Co-maintainer of popular Go caching utilities downloaded 1.2M+ times monthly.",
+                        "Testified before the US Senate Judiciary Subcommittee on Artificial Intelligence, proposing independent auditing and safety licensing frameworks.",
                     ],
                 }
             ],
@@ -399,14 +399,14 @@ async def seed():
         gen1 = Generation(
             user_id=user_id,
             template_id="personal-classic",
-            job_title="Staff Distributed Systems Engineer",
-            company="Stripe",
+            job_title="Chief Executive Officer",
+            company="OpenAI",
             job_description=(
-                "We are looking for a Staff Distributed Systems Engineer to design, scale, and optimize Stripe's core global "
-                "transaction routing engine. You will work with Go, Kafka, AWS, and low-latency storage engines to deliver "
-                "five-nines reliability."
+                "OpenAI is seeking an executive to lead our mission of ensuring artificial general intelligence benefits all of humanity. "
+                "The ideal candidate will have deep expertise in frontier model development, supercomputing partnerships, organization scaling, "
+                "and global AI policy."
             ),
-            keywords=["Go", "Distributed Systems", "Kafka", "AWS", "High Throughput", "Low Latency", "Raft", "Multi-region"],
+            keywords=["AGI", "Frontier AI", "Supercomputing", "Compute Scaling", "Executive Leadership", "AI Safety", "Public Policy"],
             model_used="claude-3.5-sonnet",
             status="completed",
             creativity_mode="larp",
@@ -421,7 +421,7 @@ async def seed():
         session.add(gen1)
 
         await session.commit()
-        print(f"Successfully seeded comprehensive reviewer data for {REVIEWER_EMAIL} (user_id: {user_id})!")
+        print(f"Successfully seeded Sam Altman reviewer data for {REVIEWER_EMAIL} (user_id: {user_id})!")
 
 
 if __name__ == "__main__":
