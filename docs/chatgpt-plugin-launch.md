@@ -209,17 +209,14 @@ The OpenAI app review process evaluates:
 ## Part 4. Open items and post-launch checklist
 
 ### 4.1 Reviewer login decision
-Resumer currently supports social login via Google and GitHub (`frontend/lib/auth.ts`). Reviewers require a reliable method to authenticate. Choose one of the two strategies below before submitting:
-
-- [ ] **Option A: Provision dedicated test social accounts** (Recommended for immediate submission):
-  - Create a dedicated Google test account (e.g. `openai-review@resumer.app`).
-  - Add this email as a test user in Google Cloud Console OAuth consent settings.
-  - Provide credentials in the private review instructions notes in the submission portal.
-  - *Trade-off*: Does not require code changes in Resumer, but credentials must be maintained and monitored.
-- [ ] **Option B: Add direct email / magic link login**:
-  - Implement email and password or magic link authentication in NextAuth and the backend.
-  - Provide a fixed test user account and password to the review team.
-  - *Trade-off*: More robust for automated test runs, but requires implementing and testing an additional authentication provider.
+Direct email authentication is now implemented via **Option B**:
+- [x] **Option B: Direct email & password authentication**:
+  - Implemented via NextAuth Credentials provider and FastAPI backend (`/auth/email/register` & `/auth/email/login`).
+  - Available on all authentication views (Login Modal, Homepage Hero, and `/oauth/authorize` MCP connection screen) via the gray link **"Use Email Instead"**.
+  - Reviewers can either register their own test account directly during connection, or you can provide pre-registered reviewer credentials in the submission notes:
+    - Example email: `reviewer@resumer.test` (or `reviewer@openai.com`)
+    - Password: `<your-test-password>`
+- [ ] **Option A (Alternative): Dedicated test Google/GitHub account** (Optional fallback if preferred).
 
 ### 4.2 Pre-submission tasks
 - [x] Generate 512x512 PNG logo asset (`resumer-icon-512.png`) with transparent-safe background (stored at `docs/assets/resumer-icon-512.png` and `frontend/public/resumer-icon-512.png`).
