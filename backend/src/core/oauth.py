@@ -195,5 +195,10 @@ async def ensure_oauth_schema() -> None:
                 ALTER TABLE oauth_refresh_tokens ADD COLUMN IF NOT EXISTS revoked BOOLEAN DEFAULT FALSE;
                 ALTER TABLE oauth_refresh_tokens ALTER COLUMN scopes DROP NOT NULL;
             """))
+
+            # 5. Ensure users table has hashed_password for direct email authentication
+            await conn.execute(text("""
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS hashed_password VARCHAR;
+            """))
     except Exception as e:
         print(f"[oauth/startup] Warning: ensure_oauth_schema check encountered: {e}")

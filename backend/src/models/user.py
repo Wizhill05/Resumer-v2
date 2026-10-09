@@ -20,6 +20,7 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String)
     image: Mapped[str | None] = mapped_column(String)
     provider: Mapped[str | None] = mapped_column(String)
+    hashed_password: Mapped[str | None] = mapped_column(String, nullable=True)
     first_generation_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     feedback_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
