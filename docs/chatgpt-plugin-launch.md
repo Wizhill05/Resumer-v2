@@ -45,7 +45,7 @@ Use the pre-written fields below directly when filling out the submission form.
 
 - **App name**: Resumer
 - **Logo specification**: Square PNG, 512x512 pixels minimum, transparent-safe background, legible at 32x32 pixel sizes.
-  - *Status*: `TODO-asset: logo not yet created`. Prepare `resumer-icon-512.png` prior to submission.
+  - *Status*: **Ready**. Generated 512x512 square PNG asset at `docs/assets/resumer-icon-512.png` and hosted publicly at `https://resumer.aryansingh.space/resumer-icon-512.png` (also located at `frontend/public/resumer-icon-512.png`). Vector SVG is tracked at `docs/assets/resumer.svg` and `frontend/public/icon.svg`.
 - **Short description** (148 characters):
   Tailor single-page, ATS-optimized resumes from your career profile and job descriptions. Edit bullet points, check layout fit, and export clean PDFs.
 - **Long description**:
@@ -222,7 +222,7 @@ Resumer currently supports social login via Google and GitHub (`frontend/lib/aut
   - *Trade-off*: More robust for automated test runs, but requires implementing and testing an additional authentication provider.
 
 ### 4.2 Pre-submission tasks
-- [ ] Generate 512x512 PNG logo asset (`resumer-icon-512.png`) with transparent-safe background.
+- [x] Generate 512x512 PNG logo asset (`resumer-icon-512.png`) with transparent-safe background (stored at `docs/assets/resumer-icon-512.png` and `frontend/public/resumer-icon-512.png`).
 - [ ] Verify production Railway backend domain and confirm DNS stability.
 - [ ] Verify that `BACKEND_URL` in Railway environment variables is set to the HTTPS production domain.
 - [ ] Verify that `NEXT_PUBLIC_MCP_URL` in Vercel environment variables points to the production `/mcp` route.

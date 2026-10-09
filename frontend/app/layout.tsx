@@ -21,9 +21,10 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
     ],
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
   },
   alternates: {
     canonical: "/",
@@ -45,6 +46,14 @@ export const metadata: Metadata = {
       "Build ATS-friendly, job-focused resumes from job descriptions and export polished PDF drafts faster.",
     url: siteUrl,
     siteName: "Resumer",
+    images: [
+      {
+        url: "/resumer-icon-512.png",
+        width: 512,
+        height: 512,
+        alt: "Resumer Logo",
+      },
+    ],
     locale: "en_US",
     type: "website",
   },
@@ -53,6 +62,7 @@ export const metadata: Metadata = {
     title: "Resumer | ATS Resume Builder",
     description:
       "Build ATS-friendly, job-focused resumes from job descriptions and export polished PDF drafts faster.",
+    images: ["/resumer-icon-512.png"],
   },
 };
 
