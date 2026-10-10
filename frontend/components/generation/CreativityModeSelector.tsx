@@ -18,7 +18,7 @@ const MODE_INFO: { title: string; body: string }[] = [
   },
   {
     title: "LARP — embellish to match the job",
-    body: "Keeps your real roles, companies, and project names, but freely adds job-required features, tools, and plausible metrics inside them. The skills section starts from the job's required skills so nothing the posting asks for is missing. Each run is written creatively so resumes don't all read the same.",
+    body: "Keeps your real roles, companies, and project names, but freely adds job-required features, tools, and plausible metrics inside them. The skills section starts from the job's required skills so nothing the posting asks for is missing. Each run is written creatively so résumés don't all read the same.",
   },
   {
     title: "Super LARP — plus an invented hero project",

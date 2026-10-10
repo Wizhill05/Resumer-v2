@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Resumer | ATS Resume Builder",
-    short_name: "Resumer",
+    name: "Résumer | ATS Résumé Builder",
+    short_name: "Résumer",
     description:
-      "Build ATS-friendly, job-focused resumes from messy job descriptions and export polished PDF drafts faster.",
+      "Build ATS-friendly, job-focused résumés from messy job descriptions and export polished PDF drafts faster.",
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",

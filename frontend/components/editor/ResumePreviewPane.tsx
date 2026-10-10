@@ -66,7 +66,7 @@ export function ResumePreviewPane({ preview, loading, manifest, onFitChange }: P
                 >
                   <img
                     src={pageImage}
-                    alt={`Resume page ${index + 1}`}
+                    alt={`Résumé page ${index + 1}`}
                     className="block h-auto w-full"
                     draggable={false}
                   />
@@ -80,7 +80,7 @@ export function ResumePreviewPane({ preview, loading, manifest, onFitChange }: P
             className="mx-auto flex items-center justify-center bg-white text-sm text-zinc-400 dark:text-zinc-500 shadow-[0_2px_10px_rgb(24_24_27/0.16)]"
             style={{ width: A4_WIDTH_PX * zoom, aspectRatio: "210 / 297" }}
           >
-            {loading ? "Rendering PDF preview..." : "Edit your resume to load the preview"}
+            {loading ? "Rendering PDF preview..." : "Edit your résumé to load the preview"}
           </div>
         )}
       </div>

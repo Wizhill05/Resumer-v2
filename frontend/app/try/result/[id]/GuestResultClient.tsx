@@ -37,7 +37,7 @@ const nodeLabels: Record<string, string> = {
   experience_writer: "Writing experience",
   projects_writer: "Writing projects",
   extracurricular_writer: "Writing extracurriculars",
-  assembly: "Assembling resume",
+  assembly: "Assembling résumé",
   renderer: "Rendering PDF",
   orphan_repair: "Fixing layout issues",
   content_reduction: "Optimizing fit",
@@ -97,10 +97,10 @@ export function GuestResultClient({ id }: { id: string }) {
         <div>
           <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff4e26]">Guest generation</p>
           <h1 className="mt-2 text-4xl font-black uppercase leading-[0.92] tracking-[-0.045em] md:text-6xl dark:text-white">
-            {status === "completed" ? "Resume ready." : status === "failed" ? "Generation failed." : "Resume cooking."}
+            {status === "completed" ? "Résumé ready." : status === "failed" ? "Generation failed." : "Résumé cooking."}
           </h1>
           <p className="mt-3 text-sm font-bold text-zinc-600 dark:text-zinc-400">
-            {run?.job_title || "Tailored Resume"}{run?.company ? ` at ${run.company}` : ""}
+            {run?.job_title || "Tailored Résumé"}{run?.company ? ` at ${run.company}` : ""}
           </p>
         </div>
         <div className="h-3 overflow-hidden border border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-900">
@@ -110,7 +110,7 @@ export function GuestResultClient({ id }: { id: string }) {
         {status !== "completed" && status !== "failed" && (
           <div className="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80 px-3 py-2.5">
             <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-              Sign in to save this resume to your history automatically.
+              Sign in to save this résumé to your history automatically.
             </p>
             <LoginModal
               callbackUrl="/dashboard?importGuestDraft=1"
@@ -143,7 +143,7 @@ export function GuestResultClient({ id }: { id: string }) {
         {status === "completed" && (
           <div className="border-2 border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3">
             <p className="text-sm font-black uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
-              Your resume is ready. Download it now.
+              Your résumé is ready. Download it now.
             </p>
             <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
               Log in to save it to your account and access it anytime.
@@ -175,7 +175,7 @@ export function GuestResultClient({ id }: { id: string }) {
           <Link href="/try" className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-5 text-sm font-black uppercase tracking-wide text-zinc-950 dark:text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46]">Make another</Link>
           <LoginModal callbackUrl="/dashboard?importGuestDraft=1" triggerClassName="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46]" />
         </div>
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Login saves history and keeps future resumes tied to your account.</p>
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Login saves history and keeps future résumés tied to your account.</p>
       </div>
     </section>
   )

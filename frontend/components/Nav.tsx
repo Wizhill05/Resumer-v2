@@ -124,7 +124,7 @@ export function Nav() {
             href="/dashboard"
             className="resumer-mark px-2.5 py-1 text-base font-black md:text-lg"
           >
-            Resumer
+            Résumer
           </Link>
 
           {/* Desktop links */}
@@ -195,7 +195,7 @@ export function Nav() {
               onClick={() => handleNavigate("/dashboard")}
               className="resumer-mark px-2.5 py-1 text-base font-black transition-transform active:scale-95 cursor-pointer"
             >
-              Resumer
+              Résumer
             </button>
 
             <div className="flex items-center gap-1">
@@ -315,7 +315,7 @@ export function Nav() {
               style={{ animationDelay: closing ? "0ms" : `${(links.length + 1) * 35}ms` }}
             >
               <div className="flex items-center justify-between px-1 text-[10px] font-mono text-zinc-400 dark:text-zinc-500">
-                <span>Resumer v2.0</span>
+                <span>Résumer v2.0</span>
                 <span>ATS Optimized</span>
               </div>
             </div>

@@ -21,7 +21,7 @@ export const SUPPORT_CATEGORIES: SupportCategory[] = [
   {
     value: "generation",
     label: "Generation Issue",
-    description: "Resume generation failed or output looks wrong",
+    description: "Résumé generation failed or output looks wrong",
     icon: Sparkles,
   },
   {
@@ -45,7 +45,7 @@ export const SUPPORT_CATEGORIES: SupportCategory[] = [
   {
     value: "feedback",
     label: "Feature Request",
-    description: "Idea to make Resumer better",
+    description: "Idea to make Résumer better",
     icon: Lightbulb,
   },
   {

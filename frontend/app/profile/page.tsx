@@ -16,7 +16,7 @@ export default async function ProfilePage() {
         <div className="page-header space-y-0.5">
           <h1 className="text-xl font-extrabold uppercase tracking-tight md:text-2xl">Your Profile</h1>
           <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 md:text-sm">
-            Source material for your tailored resumes.
+            Source material for your tailored résumés.
           </p>
         </div>
 

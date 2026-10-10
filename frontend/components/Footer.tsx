@@ -17,7 +17,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
               </span>
             </div>
             <span className="text-xs font-mono font-semibold text-zinc-500 dark:text-zinc-400">
-              © {new Date().getFullYear()} Resumer
+              © {new Date().getFullYear()} Résumer
             </span>
           </div>
 
@@ -69,7 +69,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
               </span>
             </div>
             <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-              ATS Resume Tailoring Engine
+              ATS Résumé Tailoring Engine
             </p>
           </div>
 

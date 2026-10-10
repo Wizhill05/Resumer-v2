@@ -30,7 +30,7 @@ export const ADMIN_TAB_INFO: Record<AdminTabId, { group: string; title: string; 
   generations: {
     group: "Overview & Operations",
     title: "Live Generations",
-    description: "Real-time resume generation trace inspector and execution status",
+    description: "Real-time résumé generation trace inspector and execution status",
   },
   timing: {
     group: "Overview & Operations",

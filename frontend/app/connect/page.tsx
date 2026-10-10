@@ -6,7 +6,7 @@ import { ConnectClient } from "./ConnectClient"
 export const metadata: Metadata = {
   title: "Add to ChatGPT",
   description:
-    "Connect Resumer to ChatGPT to build, tailor, and export single-page resumes directly inside your chats.",
+    "Connect Résumer to ChatGPT to build, tailor, and export single-page résumés directly inside your chats.",
 }
 
 export default function ConnectPage() {

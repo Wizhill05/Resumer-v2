@@ -26,11 +26,11 @@ const nodeProgressMap: Record<string, number> = {
 
 const nodeLabels: Record<string, string> = {
   replace_project_start: "Preparing project replacement",
-  replace_project: "Swapping profile project into resume",
+  replace_project: "Swapping profile project into résumé",
   projects_writer: "Rewriting project achievements with AI",
   orphan_repair: "Checking & fixing layout line-wraps",
   render_pdf: "Rendering updated PDF document",
-  saver: "Saving resume & generating preview",
+  saver: "Saving résumé & generating preview",
   completed: "Complete",
 }
 
@@ -127,10 +127,10 @@ export function RemakeClient({ runId }: Props) {
           </div>
           <h2 className="text-xl font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100 md:text-2xl">
             {isComplete
-              ? "Project Replaced & Resume Remade"
+              ? "Project Replaced & Résumé Remade"
               : isFailed
               ? "Project Remake Encountered an Issue"
-              : "Remaking Resume with New Project"}
+              : "Remaking Résumé with New Project"}
           </h2>
           <p className="text-xs font-medium text-amber-600 dark:text-amber-400 md:text-sm">
             {isComplete ? "All sections updated & PDF rendered" : `${stepLabel} (${percent}%)`}
@@ -176,7 +176,7 @@ export function RemakeClient({ runId }: Props) {
           <div className="mt-6 space-y-4">
             <div className="p-3.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg flex items-start gap-2.5 text-xs text-red-700 dark:text-red-400">
               <AlertCircle size={16} className="shrink-0 mt-0.5" />
-              <span>{errorMessage || "An error occurred while remaking the project. Your original resume remains safe."}</span>
+              <span>{errorMessage || "An error occurred while remaking the project. Your original résumé remains safe."}</span>
             </div>
             <div className="flex justify-center gap-3">
               <Link
@@ -202,7 +202,7 @@ export function RemakeClient({ runId }: Props) {
           <div className="mt-8 space-y-4 pt-6 border-t border-zinc-100 dark:border-zinc-800">
             <div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
               <CheckCircle2 size={16} />
-              <span>Resume has been updated with the new project &amp; layout checked!</span>
+              <span>Résumé has been updated with the new project &amp; layout checked!</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
@@ -212,7 +212,7 @@ export function RemakeClient({ runId }: Props) {
                 className="inline-flex items-center justify-center gap-2 h-10 px-4 border border-zinc-900 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-extrabold uppercase text-xs tracking-wider rounded-md shadow-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
               >
                 <Edit3 size={14} />
-                <span>Edit Resume</span>
+                <span>Edit Résumé</span>
               </Link>
 
               {/* 2. Download the new PDF */}

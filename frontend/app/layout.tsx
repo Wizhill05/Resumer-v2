@@ -13,11 +13,11 @@ const spaceGrotesk = Space_Grotesk({
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Resumer | ATS Resume Builder",
-    template: "%s | Resumer",
+    default: "Résumer | ATS Résumé Builder",
+    template: "%s | Résumer",
   },
   description:
-    "Build ATS-friendly, job-focused resumes from messy job descriptions and export polished PDF drafts faster.",
+    "Build ATS-friendly, job-focused résumés from messy job descriptions and export polished PDF drafts faster.",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
@@ -41,17 +41,17 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "Resumer | ATS Resume Builder",
+    title: "Résumer | ATS Résumé Builder",
     description:
-      "Build ATS-friendly, job-focused resumes from job descriptions and export polished PDF drafts faster.",
+      "Build ATS-friendly, job-focused résumés from job descriptions and export polished PDF drafts faster.",
     url: siteUrl,
-    siteName: "Resumer",
+    siteName: "Résumer",
     images: [
       {
         url: "/resumer-icon-512.png",
         width: 512,
         height: 512,
-        alt: "Resumer Logo",
+        alt: "Résumer Logo",
       },
     ],
     locale: "en_US",
@@ -59,9 +59,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Resumer | ATS Resume Builder",
+    title: "Résumer | ATS Résumé Builder",
     description:
-      "Build ATS-friendly, job-focused resumes from job descriptions and export polished PDF drafts faster.",
+      "Build ATS-friendly, job-focused résumés from job descriptions and export polished PDF drafts faster.",
     images: ["/resumer-icon-512.png"],
   },
 };

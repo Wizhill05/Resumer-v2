@@ -22,7 +22,7 @@ const FAQS: { q: string; a: string }[] = [
     a: "Repos must be public and username correct. Report with the username if it still fails.",
   },
   {
-    q: "How do I use Resumer inside ChatGPT?",
+    q: "How do I use Résumer inside ChatGPT?",
     a: "Open /connect to copy your MCP endpoint URL. In ChatGPT, go to Settings → Connectors → Create custom connector, paste the URL, and sign in to link your account.",
   },
 ]

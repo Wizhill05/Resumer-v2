@@ -209,7 +209,7 @@ export function EditorClient({ payload }: Props) {
     return () => window.removeEventListener("keydown", onKey)
   }, [parsedResume, profile, jsonError, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const title = [payload.job_title, payload.company].filter(Boolean).join(" — ") || "Resume Editor"
+  const title = [payload.job_title, payload.company].filter(Boolean).join(" — ") || "Résumé Editor"
 
   return (
     <div className="flex flex-col h-screen h-[100dvh] max-h-[100dvh] bg-white dark:bg-zinc-900 overflow-hidden">

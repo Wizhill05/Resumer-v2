@@ -120,7 +120,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
             </div>
             <h3 className="text-xl font-extrabold uppercase tracking-tight">Thank You!</h3>
             <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
-              Your feedback helps us make Resumer even better.
+              Your feedback helps us make Résumer even better.
             </p>
           </div>
         ) : (
@@ -134,7 +134,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                 Tell us about your experience
               </h2>
               <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                How satisfied are you with your generated resume?
+                How satisfied are you with your generated résumé?
               </p>
             </div>
 

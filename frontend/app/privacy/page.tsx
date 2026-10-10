@@ -5,16 +5,16 @@ export default function PrivacyPage() {
     <main className="min-h-screen bg-[#fbfbf3] px-5 py-8 text-black md:px-8">
       <div className="mx-auto max-w-3xl">
         <Link href="/" className="resumer-mark px-3 py-1 text-xl font-black">
-          Resumer
+          Résumer
         </Link>
         <section className="mt-10 border border-zinc-900 bg-white p-6 shadow-[4px_4px_0_#18181b] md:p-10">
           <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#ff4e26]">Privacy Policy</p>
-          <h1 className="mt-4 text-4xl font-black uppercase leading-none tracking-[-0.07em] md:text-6xl">Your resume data stays purposeful.</h1>
+          <h1 className="mt-4 text-4xl font-black uppercase leading-none tracking-[-0.07em] md:text-6xl">Your résumé data stays purposeful.</h1>
           <div className="mt-8 space-y-5 text-sm font-semibold leading-relaxed text-zinc-600">
-            <p>Resumer stores account, profile, job description, generation history, and resume output data needed to provide resume generation features.</p>
-            <p>We use this data to authenticate you, build resumes, show past generations, and improve reliability. We do not sell personal data.</p>
-            <p>No-login trial uses essential cookies to keep an anonymous guest session, enforce the 5-resume daily limit, and protect access to guest downloads. These cookies do not store your full resume content.</p>
-            <p>Guest draft details imported or typed in the trial are stored in your browser device storage. They are sent to the server only when you import resumes for parsing or generate a resume.</p>
+            <p>Résumer stores account, profile, job description, generation history, and résumé output data needed to provide résumé generation features.</p>
+            <p>We use this data to authenticate you, build résumés, show past generations, and improve reliability. We do not sell personal data.</p>
+            <p>No-login trial uses essential cookies to keep an anonymous guest session, enforce the 5-résumé daily limit, and protect access to guest downloads. These cookies do not store your full résumé content.</p>
+            <p>Guest draft details imported or typed in the trial are stored in your browser device storage. They are sent to the server only when you import résumés for parsing or generate a résumé.</p>
             <p>Guest generation inputs and artifacts may be stored temporarily so the pipeline can finish and you can download the PDF. Guest artifacts are intended to expire and are not account history.</p>
             <p>OAuth providers may share basic account details such as name, email, and avatar depending on provider settings.</p>
             <p>You can delete generated history inside app where supported. For account or data removal requests, contact project owner/admin.</p>

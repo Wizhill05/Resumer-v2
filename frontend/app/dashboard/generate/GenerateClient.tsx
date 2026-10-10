@@ -57,7 +57,7 @@ const nodeLabels: Record<string, string> = {
   project: "Writing projects",
   extracurricular_writer: "Writing extracurriculars",
   extracurricular: "Writing extracurriculars",
-  assembly: "Assembling resume",
+  assembly: "Assembling résumé",
   renderer: "Rendering PDF",
   render: "Rendering PDF",
   orphan_repair: "Fixing layout issues",
@@ -267,7 +267,7 @@ export function GenerateClient() {
           since = log.id
           if (log.level === "status" && (log.message === "completed" || log.message === "failed")) {
             setLivePercent(100)
-            setLiveStepLabel(log.message === "completed" ? "Resume complete" : "Generation failed")
+            setLiveStepLabel(log.message === "completed" ? "Résumé complete" : "Generation failed")
             setIsGenerationComplete(true)
             posthog.capture(log.message === "completed" ? "resume_generation_completed" : "resume_generation_failed", {
               run_id: createdRunId,
@@ -285,7 +285,7 @@ export function GenerateClient() {
         }
         if (data.status === "completed" || data.status === "failed") {
           setLivePercent(100)
-          setLiveStepLabel(data.status === "completed" ? "Resume complete" : "Generation failed")
+          setLiveStepLabel(data.status === "completed" ? "Résumé complete" : "Generation failed")
           setIsGenerationComplete(true)
           queryClient.invalidateQueries({ queryKey: ["history"] })
         }
@@ -578,7 +578,7 @@ export function GenerateClient() {
                   <Loader2 className="animate-spin" size={18} /> Generating...
                 </>
               ) : (
-                "Generate Tailored Resume"
+                "Generate Tailored Résumé"
               )}
             </Button>
             <p className="text-center font-mono text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
@@ -597,7 +597,7 @@ export function GenerateClient() {
                 {isGenerationComplete ? "Complete" : "Processing"}
               </p>
               <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white md:text-2xl">
-                {isGenerationComplete ? "Your Resume is Ready" : "Tailoring Your Resume"}
+                {isGenerationComplete ? "Your Résumé is Ready" : "Tailoring Your Résumé"}
               </h3>
               <p className="mt-1 text-xs font-medium text-amber-500 dark:text-amber-400 md:text-sm">
                 {liveStepLabel} ({livePercent}%)

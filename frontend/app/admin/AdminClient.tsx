@@ -1699,7 +1699,7 @@ export function AdminClient() {
                                     disabled={gen.status !== "completed"}
                                     onClick={() => { window.location.href = `/api/backend/admin/generations/${gen.id}/download` }}
                                   >
-                                    <Download size={12} /> Final resume
+                                    <Download size={12} /> Final résumé
                                   </button>
                                   <button
                                     type="button"

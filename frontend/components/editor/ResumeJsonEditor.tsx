@@ -71,7 +71,7 @@ export function ResumeJsonEditor({ value, onChange }: Props) {
             isError && !isEmpty ? "border-l-4 border-red-400" : "border-l-4 border-transparent"
           }`}
           style={{ fontFamily: "'Fira Code', 'Cascadia Code', 'Menlo', monospace" }}
-          aria-label="Resume JSON editor"
+          aria-label="Résumé JSON editor"
         />
       </div>
     </div>

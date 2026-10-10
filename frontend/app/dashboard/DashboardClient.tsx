@@ -166,7 +166,7 @@ export function DashboardClient() {
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile needed</p>
               <h2 className="text-lg font-extrabold uppercase tracking-tight md:text-xl dark:text-white">Import source material first</h2>
               <p className="mt-1 text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
-                Missing: {missing.join(", ")}. Upload old resumes or paste GitHub project links to fill this faster.
+                Missing: {missing.join(", ")}. Upload old résumés or paste GitHub project links to fill this faster.
               </p>
             </div>
             <Link href="/onboarding" className="w-full md:w-auto">
@@ -182,13 +182,13 @@ export function DashboardClient() {
           <div className="grid gap-3 p-3.5 md:gap-4 md:grid-cols-[1fr_auto] md:items-center md:p-6">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile ready</p>
-              <h2 className="text-xl font-extrabold uppercase tracking-tight md:text-4xl dark:text-white">Generate resume now</h2>
+              <h2 className="text-xl font-extrabold uppercase tracking-tight md:text-4xl dark:text-white">Generate résumé now</h2>
               <p className="mt-1 max-w-2xl text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
                 You have source material in every profile section. Paste job post and choose focus next.
               </p>
             </div>
             <Link href="/dashboard/generate" className="w-full md:w-auto">
-              <Button size="lg" className="w-full md:w-auto text-base">Generate Resume</Button>
+              <Button size="lg" className="w-full md:w-auto text-base">Generate Résumé</Button>
             </Link>
           </div>
         </section>

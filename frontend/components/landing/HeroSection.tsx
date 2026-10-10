@@ -57,7 +57,7 @@ export function HeroSection() {
 
             {/* 1-Sentence Subtitle */}
             <p className="text-base sm:text-lg font-bold text-zinc-600 dark:text-zinc-300 max-w-xl mb-6 leading-relaxed">
-              Paste a job posting. Resumer extracts target signals and generates a high-match ATS PDF in seconds.
+              Paste a job posting. Résumer extracts target signals and generates a high-match ATS PDF in seconds.
             </p>
 
             {/* Monochromatic ATS Platform Icons Row */}

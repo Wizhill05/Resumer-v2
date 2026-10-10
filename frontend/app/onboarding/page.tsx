@@ -15,7 +15,7 @@ export default async function OnboardingPage() {
         <div className="page-header space-y-0.5">
           <h1 className="text-xl font-extrabold uppercase tracking-tight md:text-2xl">Build Profile</h1>
           <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 md:text-sm">
-            Import old resumes or enter details to start generating.
+            Import old résumés or enter details to start generating.
           </p>
         </div>
         <ProfileClient />

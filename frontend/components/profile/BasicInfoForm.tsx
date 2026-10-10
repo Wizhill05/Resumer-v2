@@ -282,7 +282,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
             <Mail size={14} className="text-[#ff4e26]" /> Receive Completion Emails
           </Label>
           <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-            Automatically send an email with the PDF attachment when a resume generation completes.
+            Automatically send an email with the PDF attachment when a résumé generation completes.
           </p>
         </div>
         <Controller

@@ -91,7 +91,7 @@ export function AccountMenu() {
 
   const menuLinks = [
     { href: "/account", label: "Manage account", icon: Settings },
-    { href: "/profile", label: "Resume profile", icon: User },
+    { href: "/profile", label: "Résumé profile", icon: User },
     // Admin entry is conditional: the overlay nav already lists Admin,
     // the dropdown only shows it to admins to avoid dead ends.
     ...(isAdmin ? [{ href: "/admin", label: "Admin", icon: Shield }] : []),

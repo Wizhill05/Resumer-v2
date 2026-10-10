@@ -139,7 +139,7 @@ export function ReplaceProjectModal({
                 No projects found in your profile
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
-                Add your projects in the Profile tab first to swap them into your resumes anytime.
+                Add your projects in the Profile tab first to swap them into your résumés anytime.
               </p>
             </div>
           )}
@@ -148,7 +148,7 @@ export function ReplaceProjectModal({
             <div className="py-10 px-4 text-center space-y-2">
               <FolderGit size={28} className="mx-auto text-zinc-400" />
               <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                All profile projects are already in this resume
+                All profile projects are already in this résumé
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
                 Add more projects in the Profile section to replace existing entries.
@@ -188,7 +188,7 @@ export function ReplaceProjectModal({
                         </span>
                         {isActive && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 font-semibold shrink-0">
-                            Active in resume
+                            Active in résumé
                           </span>
                         )}
                       </div>

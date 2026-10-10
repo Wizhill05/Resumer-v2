@@ -43,10 +43,10 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
             ChatGPT connector
           </p>
           <h1 className="text-2xl font-black uppercase tracking-tight md:text-3xl">
-            Add Resumer to ChatGPT
+            Add Résumer to ChatGPT
           </h1>
           <p className="max-w-2xl text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Generate and tailor single-page, ATS-formatted resumes directly inside ChatGPT using your stored profile facts and job descriptions.
+            Generate and tailor single-page, ATS-formatted résumés directly inside ChatGPT using your stored profile facts and job descriptions.
           </p>
         </div>
         <div className="hidden md:flex flex-col items-end gap-1 text-right">
@@ -138,7 +138,7 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
                     Paste the MCP endpoint URL
                   </p>
                   <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-                    Paste the copied URL into the connector configuration. ChatGPT will inspect the endpoint and discover the available Resumer tools.
+                    Paste the copied URL into the connector configuration. ChatGPT will inspect the endpoint and discover the available Résumer tools.
                   </p>
                 </div>
               </li>
@@ -152,7 +152,7 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
                     Sign in on the consent screen
                   </p>
                   <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-                    ChatGPT prompts you to authorize the connector. Follow the prompt to sign in with your Resumer account using Google or GitHub and grant access.
+                    ChatGPT prompts you to authorize the connector. Follow the prompt to sign in with your Résumer account using Google or GitHub and grant access.
                   </p>
                 </div>
               </li>
@@ -163,10 +163,10 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
                 </span>
                 <div>
                   <p className="font-bold text-zinc-900 dark:text-zinc-100">
-                    Start a chat and ask for a resume
+                    Start a chat and ask for a résumé
                   </p>
                   <p className="mt-0.5 text-zinc-600 dark:text-zinc-400">
-                    In any chat where the connector is enabled, paste a job description or ask ChatGPT to draft, review, or tailor your resume from your profile.
+                    In any chat where the connector is enabled, paste a job description or ask ChatGPT to draft, review, or tailor your résumé from your profile.
                   </p>
                 </div>
               </li>
@@ -183,7 +183,7 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
             </div>
 
             <p className="mt-3 text-xs leading-relaxed text-zinc-700 dark:text-zinc-300">
-              The connector links your Resumer account directly to ChatGPT. Instead of copying career notes back and forth, ChatGPT reads your verified work history, formats bullet points, and generates production-ready PDF files.
+              The connector links your Résumer account directly to ChatGPT. Instead of copying career notes back and forth, ChatGPT reads your verified work history, formats bullet points, and generates production-ready PDF files.
             </p>
 
             <div className="mt-4 space-y-2">
@@ -193,7 +193,7 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
               <ul className="list-disc pl-4 space-y-1.5 text-xs text-zinc-600 dark:text-zinc-400">
                 <li>Reading your saved projects, experiences, education, and skills.</li>
                 <li>Checking if your profile has enough entries for a selected template.</li>
-                <li>Generating a job-tailored resume from a job description.</li>
+                <li>Generating a job-tailored résumé from a job description.</li>
                 <li>Verifying layout bounds to catch awkward line breaks and overflow before compiling.</li>
                 <li>Compiling and returning direct download links for the rendered PDF.</li>
                 <li>Updating master profile entries when you add new achievements.</li>
@@ -238,7 +238,7 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
                   Tools not appearing
                 </p>
                 <p className="mt-1 leading-relaxed text-zinc-600 dark:text-zinc-400">
-                  Open the Resumer connector in ChatGPT Settings and click <strong>Refresh</strong> to re-fetch the tool registry.
+                  Open the Résumer connector in ChatGPT Settings and click <strong>Refresh</strong> to re-fetch the tool registry.
                 </p>
               </div>
 

@@ -77,7 +77,7 @@ export function ResumeImportPanel() {
       setStage("done")
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to import resume")
+      setError(err instanceof Error ? err.message : "Failed to import résumé")
       setStage("idle")
     },
   })
@@ -166,7 +166,7 @@ export function ResumeImportPanel() {
           className="flex min-w-0 flex-1 items-center gap-2 text-left font-black uppercase tracking-tight text-zinc-800 dark:text-zinc-200"
         >
           <FileUp size={16} className="shrink-0 text-[#ff4e26]" />
-          <span className="truncate text-xs">Import from PDF Resumes</span>
+          <span className="truncate text-xs">Import from PDF Résumés</span>
           {showExpanded ? <ChevronUp size={14} className="shrink-0 text-zinc-400" /> : <ChevronDown size={14} className="shrink-0 text-zinc-400" />}
         </button>
         <Button
@@ -185,7 +185,7 @@ export function ResumeImportPanel() {
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Fast import</p>
-            <h2 className="text-base font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100 md:text-lg">Upload old resumes</h2>
+            <h2 className="text-base font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100 md:text-lg">Upload old résumés</h2>
             <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 md:text-sm">PDF only. Max 5 files, 5MB each. We stage results before saving.</p>
           </div>
           <div className="hidden md:flex md:gap-2">
@@ -219,7 +219,7 @@ export function ResumeImportPanel() {
           <div className="flex gap-2">
             <ReportIssueButton
               defaultCategory="import"
-              defaultMessage={`[Import failed - Resume PDF]\nError: ${error}\nStage: ${stage}\nFiles: ${fileCount}\n\nWhat file did you upload and what did you expect to extract?\n`}
+              defaultMessage={`[Import failed - Résumé PDF]\nError: ${error}\nStage: ${stage}\nFiles: ${fileCount}\n\nWhat file did you upload and what did you expect to extract?\n`}
               title="Report import problem"
               description="Import error is prefilled. Add file details and what went wrong."
               variant="outline"

@@ -43,7 +43,7 @@ const nodeLabels: Record<string, string> = {
   experience_writer: "Writing experience",
   projects_writer: "Writing projects",
   extracurricular_writer: "Writing extracurriculars",
-  assembly: "Assembling resume",
+  assembly: "Assembling résumé",
   renderer: "Rendering PDF",
   orphan_repair: "Fixing layout issues",
   content_reduction: "Optimizing fit",
@@ -222,7 +222,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
 function useDeleteRun() {
   const queryClient = useQueryClient()
   return async (id: string) => {
-    if (!window.confirm("Delete this resume from history?")) return
+    if (!window.confirm("Delete this résumé from history?")) return
     await fetch(`/api/backend/generate/${id}`, { method: "DELETE" })
     queryClient.setQueryData<HistoryRun[]>(["history"], (old) =>
       (old ?? []).filter((r) => r.id !== id)
@@ -261,7 +261,7 @@ function LiveProgressRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">
-              {run.job_title || "Tailored Resume"}
+              {run.job_title || "Tailored Résumé"}
             </span>
             {run.company && (
               <span className="text-sm text-zinc-400 dark:text-zinc-500 font-normal truncate">
@@ -355,7 +355,7 @@ function LiveProgressGridCard({
         <div className="flex items-start gap-1.5">
           <StatusDot status="in_progress" />
           <span className="text-sm font-semibold leading-snug truncate text-zinc-900 dark:text-zinc-100">
-            {run.job_title || "Tailored Resume"}
+            {run.job_title || "Tailored Résumé"}
           </span>
         </div>
         <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 truncate pl-3.5">
@@ -440,7 +440,7 @@ function FullscreenResumeOverlay({
       className="fixed inset-0 z-50 flex flex-col bg-zinc-950/95 backdrop-blur-md text-white animate-fade-in"
       role="dialog"
       aria-modal="true"
-      aria-label="Resume Preview"
+      aria-label="Résumé Preview"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -458,7 +458,7 @@ function FullscreenResumeOverlay({
           </button>
           <div className="min-w-0">
             <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-tight truncate text-white">
-              {run.job_title || "Tailored Resume"}
+              {run.job_title || "Tailored Résumé"}
             </h3>
             <p className="text-[11px] font-semibold text-zinc-400 truncate">
               {run.company ? `${run.company} • ` : ""}{date} • {run.template_id}
@@ -540,7 +540,7 @@ function FullscreenResumeOverlay({
                 >
                   <img
                     src={img}
-                    alt={`${run.job_title || "Resume"} Page ${idx + 1}`}
+                    alt={`${run.job_title || "Résumé"} Page ${idx + 1}`}
                     className="block h-auto w-full select-none"
                     draggable={false}
                   />
@@ -590,7 +590,7 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
         {completed && run.thumb_storage_key ? (
           <img
             src={`/api/backend/generate/${run.id}/thumb`}
-            alt={`${run.job_title || "Resume"} preview`}
+            alt={`${run.job_title || "Résumé"} preview`}
             className="w-full h-full object-cover object-top dark:invert dark:hue-rotate-180"
             loading="lazy"
           />
@@ -621,13 +621,13 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
         <div className="flex items-start gap-1.5">
           <StatusDot status={run.status} />
           <span className={`title-span text-sm font-semibold leading-snug truncate transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
-            {run.job_title || "Tailored Resume"}
+            {run.job_title || "Tailored Résumé"}
           </span>
           {completed && (
             <button
               onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
               className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors"
-              aria-label="Edit resume"
+              aria-label="Edit résumé"
             >
               <Pencil size={11} />
               Edit
@@ -794,7 +794,7 @@ export function HistoryClient() {
       {runs.length === 0 ? (
         <div className="px-5 py-16 text-center">
           <p className="text-sm font-semibold text-zinc-400 dark:text-zinc-500">No generations yet</p>
-          <p className="text-xs text-zinc-300 dark:text-zinc-600 mt-1">Your tailored resumes will appear here</p>
+          <p className="text-xs text-zinc-300 dark:text-zinc-600 mt-1">Your tailored résumés will appear here</p>
         </div>
       ) : view === "grid" ? (
         /* ── Grid view ── */
@@ -860,7 +860,7 @@ export function HistoryClient() {
                     <div className="min-w-0">
                       <div className="flex items-baseline gap-1.5 flex-wrap md:gap-2">
                         <span className={`title-span text-xs font-extrabold uppercase tracking-tight md:text-sm transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
-                          {run.job_title || "Tailored Resume"}
+                          {run.job_title || "Tailored Résumé"}
                         </span>
                         {run.company && (
                           <span className="at-span text-xs text-zinc-400 dark:text-zinc-500 font-semibold truncate transition-colors duration-150">
@@ -924,7 +924,7 @@ export function HistoryClient() {
                           onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
                           className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors cursor-pointer"
                           aria-label="Edit"
-                          title="Edit Resume"
+                          title="Edit Résumé"
                         >
                           <Pencil size={13} />
                           <span className="hidden sm:inline">Edit</span>

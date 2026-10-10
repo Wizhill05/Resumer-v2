@@ -228,7 +228,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
       const zeroItems = added === 0
       if (zeroItems) {
         const generalWarning = body.warnings?.find((w: { scope: string }) => w.scope === "general")
-        setImportErr(generalWarning?.message || "No data could be extracted from this resume. It may be image-based or use unusual formatting.")
+        setImportErr(generalWarning?.message || "No data could be extracted from this résumé. It may be image-based or use unusual formatting.")
       } else {
         setImportMsg(`Extracted ${added} item${added !== 1 ? "s" : ""}${skipped > 0 ? `, ${skipped} duplicate${skipped !== 1 ? "s" : ""} skipped` : ""}.`)
       }
@@ -241,7 +241,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
     <div className="space-y-5">
       <div>
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Import & Profile</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Upload old resumes to auto-fill, then patch any missing fields.</p>
+        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Upload old résumés to auto-fill, then patch any missing fields.</p>
       </div>
 
       {/* Drop zone */}
@@ -256,7 +256,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
         >
           {importing
             ? <><Loader2 size={20} className="animate-spin" /><span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{stageLabel}</span>{stageHint && <span className="text-xs text-zinc-500 dark:text-zinc-400">{stageHint}</span>}</>
-            : <><Upload size={20} className="text-[#ff4e26]" /><span className="font-bold text-zinc-800 dark:text-zinc-200">Click to upload old resumes</span><span className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">PDF only · up to 5 files · 5 MB each</span></>
+            : <><Upload size={20} className="text-[#ff4e26]" /><span className="font-bold text-zinc-800 dark:text-zinc-200">Click to upload old résumés</span><span className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">PDF only · up to 5 files · 5 MB each</span></>
           }
         </button>
         {importing && (
@@ -366,7 +366,7 @@ function ExperiencePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraf
       </div>
 
       {draft.experiences.length === 0 && (
-        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No experience added yet. Import a resume above or add manually.</p>
+        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No experience added yet. Import a résumé above or add manually.</p>
       )}
 
       <div className="space-y-2">
@@ -447,7 +447,7 @@ function ProjectsPanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft:
       </div>
 
       {draft.projects.length === 0 && (
-        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No projects added yet. Import a resume or add manually.</p>
+        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No projects added yet. Import a résumé or add manually.</p>
       )}
 
       <div className="space-y-2">
@@ -678,7 +678,7 @@ function GeneratePanel({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Generate resume</h2>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Generate résumé</h2>
         <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Choose a focus, paste the job post, and generate.</p>
       </div>
 
@@ -958,9 +958,9 @@ export function TryClient() {
                 {submitting
                   ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
                   : canGenerate
-                    ? "Generate Free Resume"
+                    ? "Generate Free Résumé"
                     : active === "generate"
-                      ? "Generate Free Resume"
+                      ? "Generate Free Résumé"
                       : "Go to Generate →"
                 }
               </Button>

@@ -22,10 +22,10 @@ export function OAuthAuthorizeClient({ clientName, callbackUrl }: OAuthAuthorize
             OAuth 2.1 Connection
           </span>
           <h1 className="mt-3 text-2xl font-black uppercase tracking-tight md:text-3xl">
-            Connect to Resumer
+            Connect to Résumer
           </h1>
           <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Sign in to grant <span className="font-bold text-[#ff4e26]">{clientName}</span> access to your tailored resumes and profile.
+            Sign in to grant <span className="font-bold text-[#ff4e26]">{clientName}</span> access to your tailored résumés and profile.
           </p>
         </div>
 
@@ -98,7 +98,7 @@ export function OAuthAuthorizeClient({ clientName, callbackUrl }: OAuthAuthorize
 
         {/* Footer */}
         <p className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-500">
-          Your credentials and resumes remain private and secure.
+          Your credentials and résumés remain private and secure.
         </p>
       </div>
     </div>

@@ -185,7 +185,7 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
           >
             <User size={16} className="shrink-0 text-zinc-400 dark:text-zinc-500" />
             <span>
-              <span className="block text-xs font-black tracking-wide uppercase">Resume profile</span>
+              <span className="block text-xs font-black tracking-wide uppercase">Résumé profile</span>
               <span className="block text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">Experience, projects, skills</span>
             </span>
           </Link>

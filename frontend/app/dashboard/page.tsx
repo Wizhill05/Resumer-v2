@@ -20,7 +20,7 @@ export default async function DashboardPage() {
             Hey, {firstName}.
           </h1>
           <p className="mt-1 text-xs font-semibold text-white/85 md:text-sm">
-            Generate tailored ATS resumes from your profile.
+            Generate tailored ATS résumés from your profile.
           </p>
         </div>
       </div>
