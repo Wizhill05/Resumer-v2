@@ -1,115 +1,97 @@
 import Link from "next/link"
-import { InlineAuthPanel } from "@/components/landing/InlineAuthPanel"
+import { ArrowUpRight } from "lucide-react"
+import { FluidField } from "@/components/landing/FluidField"
 import { LoginModal } from "@/components/LoginModal"
-import { ArrowUpRight, FileText } from "lucide-react"
+import { CalligraphyTitle } from "@/components/landing/CalligraphyTitle"
+import { HeroThemeToggle } from "@/components/landing/HeroThemeToggle"
+
+function ChatGPTMark({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.48 4.48 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-3.494 4.494M3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646M2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.677l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zM8.309 12.863l-2.02-1.159a.08.08 0 0 1-.038-.057V6.074a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.459a.795.795 0 0 0-.393.681zm1.097-2.365 2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
+    </svg>
+  )
+}
+
+const subtleButton =
+  "group inline-flex items-center justify-center gap-2 border border-[var(--fluid-ink)]/25 bg-white/40 px-4 py-2 text-sm font-semibold text-[var(--fluid-ink)] backdrop-blur-sm transition-colors hover:border-[var(--fluid-ink)]/50 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fluid-ink)] dark:border-white/25 dark:bg-white/5 dark:text-[var(--fluid-ink)] dark:hover:border-white/50 dark:hover:bg-white/10 dark:focus-visible:outline-white"
 
 export function HeroSection() {
   return (
-    <section className="relative flex w-full min-h-screen md:h-screen md:h-[100dvh] md:min-h-[100dvh] flex-col justify-between overflow-hidden px-4 py-6 md:py-4 sm:px-6 lg:px-8 bg-[#fbfbf3] dark:bg-zinc-900">
-      {/* Structural Industrial Crosshairs Corner Accents */}
-      <div className="absolute top-3 left-3 text-zinc-400 dark:text-zinc-700 font-mono text-xs select-none pointer-events-none">
-        +
-      </div>
-      <div className="absolute top-3 right-3 text-zinc-400 dark:text-zinc-700 font-mono text-xs select-none pointer-events-none">
-        +
-      </div>
-      <div className="absolute bottom-3 left-3 text-zinc-400 dark:text-zinc-700 font-mono text-xs select-none pointer-events-none">
-        +
-      </div>
-      <div className="absolute bottom-3 right-3 text-zinc-400 dark:text-zinc-700 font-mono text-xs select-none pointer-events-none">
-        +
-      </div>
+    <section className="relative flex min-h-[100dvh] flex-col overflow-hidden border-b border-black/10 bg-[var(--fluid-canvas)] dark:border-white/10">
+      <FluidField />
 
-      {/* Top Nav Bar inside Hero */}
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between border-b-2 border-black dark:border-zinc-800 pb-3">
-        <div className="flex items-center gap-3">
-          {/* Logo with sharp border and ZERO blurred shadows */}
-          <div className="resumer-mark px-3 py-1 text-base font-black">
-            <span className="text-lg font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">
-              R<span className="normal-case">é</span>sumer
-            </span>
+      {/* Glass nav — fixed to the top always even when scrolling */}
+      <header className="fixed top-0 inset-x-0 z-50 px-0 md:top-4 md:px-5 pointer-events-none">
+        <div className="pointer-events-auto mx-auto flex h-11 w-full max-w-5xl items-center justify-between border-b border-black/10 bg-white/70 px-4 backdrop-blur-xl md:border md:border-black/10 md:shadow-[0_18px_50px_-24px_rgba(74,32,4,0.55)] dark:border-white/10 dark:bg-black/60 md:dark:bg-black/60">
+          <Link
+            href="/"
+            className="text-base font-black tracking-tight text-[var(--fluid-ink)]"
+          >
+            R<span className="normal-case">é</span>SUMER
+          </Link>
+          <div className="flex items-center gap-3 text-xs font-semibold sm:gap-4">
+            <LoginModal
+              triggerClassName="rounded-none text-[var(--fluid-ink)]/80 transition-colors hover:text-[var(--fluid-ink)]"
+            >
+              Sign in
+            </LoginModal>
+            <Link
+              href="/try"
+              className="inline-flex items-center gap-1 text-[var(--fluid-ink)]/80 transition-colors hover:text-[var(--fluid-ink)]"
+            >
+              Guest Mode
+              <ArrowUpRight size={13} />
+            </Link>
+            <div className="h-3.5 w-px bg-[var(--fluid-ink)]/20" aria-hidden="true" />
+            <HeroThemeToggle />
           </div>
         </div>
+      </header>
 
-        <div className="flex items-center gap-3 sm:gap-4">
-          <LoginModal
-            callbackUrl="/dashboard"
-            triggerClassName="bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-2 border-black dark:border-zinc-700 shadow-[3px_3px_0px_#ff4e26] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_#ff4e26] active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0px_#ff4e26] transition-all text-xs font-black uppercase tracking-wider"
-          />
+      {/* Pure Center: Hero Calligraphy Title centered in the screen */}
+      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-5">
+        <div className="pointer-events-auto flex w-full max-w-5xl justify-center">
+          <CalligraphyTitle className="hero-calligraphy w-full max-w-[21rem] xs:max-w-[25rem] sm:max-w-[34rem] md:max-w-[46rem] lg:max-w-[54rem] xl:max-w-[60rem] 2xl:max-w-[64rem]" />
+        </div>
+      </div>
+
+      {/* Towards the Bottom: Login/Guest CTA buttons with ChatGPT badge below */}
+      <div className="relative z-20 mt-auto flex flex-col items-center justify-end px-5 pb-8 sm:pb-10 md:pb-14">
+        <div className="hero-sub-elements flex flex-col items-center gap-3.5 sm:gap-4">
+          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
+            <LoginModal
+              triggerClassName={subtleButton}
+              callbackUrl="/dashboard"
+            >
+              Login via Google / GitHub
+            </LoginModal>
+            <Link
+              href="/try"
+              className={subtleButton}
+            >
+              <span>Continue as Guest!</span>
+              <ArrowUpRight
+                size={14}
+                className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+              />
+            </Link>
+          </div>
+
           <Link
-            href="/try"
-            className="inline-flex items-center gap-1 text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-100 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"
+            href="/connect"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] sm:text-sm"
           >
-            Try Guest Mode <ArrowUpRight size={14} />
+            compatible with <ChatGPTMark /> through the official MCP!
           </Link>
         </div>
-      </div>
-
-      {/* Main Hero Body — Side by Side on Desktop (2 Columns) */}
-      <div className="relative mx-auto my-auto w-full max-w-7xl py-4 sm:py-6 border border-dashed border-zinc-300/60 dark:border-zinc-800/60 p-5 sm:p-6 lg:p-8">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-10 items-center">
-          {/* Left Column: Headline & Subheadline */}
-          <div className="md:col-span-7 lg:col-span-7 flex flex-col justify-center">
-            {/* Main Headline */}
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black uppercase tracking-[-0.04em] text-zinc-900 dark:text-white leading-[0.95] mb-4">
-              TAILOR YOUR <span className="text-[#ff4e26]">RESUME</span> FOR ANY JOB.
-            </h1>
-
-            {/* 1-Sentence Subtitle */}
-            <p className="text-base sm:text-lg font-bold text-zinc-600 dark:text-zinc-300 max-w-xl mb-6 leading-relaxed">
-              Paste a job posting. Résumer extracts target signals and generates a high-match ATS PDF in seconds.
-            </p>
-
-            {/* Monochromatic ATS Platform Icons Row */}
-            <div className="space-y-2">
-              <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 dark:text-zinc-400 font-bold">
-                COMPATIBLE WITH TOP ATS PARSERS
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Workday Logo Icon */}
-                <div className="flex items-center gap-1.5 border border-zinc-300 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-2.5 py-1 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
-                  <span>Workday</span>
-                </div>
-
-                {/* Greenhouse Logo Icon */}
-                <div className="flex items-center gap-1.5 border border-zinc-300 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-2.5 py-1 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                  <span>Greenhouse</span>
-                </div>
-
-                {/* Lever Logo Icon */}
-                <div className="flex items-center gap-1.5 border border-zinc-300 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-2.5 py-1 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                  <span>Lever</span>
-                </div>
-
-                {/* Ashby Logo Icon */}
-                <div className="flex items-center gap-1.5 border border-zinc-300 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-2.5 py-1 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/></svg>
-                  <span>Ashby</span>
-                </div>
-
-                {/* PDF Output Badge */}
-                <div className="flex items-center gap-1.5 border border-zinc-300 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 px-2.5 py-1 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300">
-                  <FileText size={14} />
-                  <span>1-Page PDF</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Inline Auth Panel Side-by-Side on Desktop */}
-          <div className="md:col-span-5 lg:col-span-5 flex justify-center md:justify-end">
-            <InlineAuthPanel callbackUrl="/dashboard" />
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Accent Line */}
-      <div className="mx-auto w-full max-w-7xl border-t border-dashed border-zinc-300 dark:border-zinc-800 pt-2 flex justify-between items-center text-[10px] font-mono uppercase text-zinc-500 dark:text-zinc-400">
-        <span>R<span className="normal-case">é</span>sumer v2.0</span>
-        <span>SCROLL FOR DETAILS ↓</span>
       </div>
     </section>
   )

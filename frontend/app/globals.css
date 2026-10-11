@@ -6,11 +6,34 @@
 :root {
   --brand-orange: #ff4e26;
   --brand-orange-hover: #e03d16;
+
+  /* Fluid orange field — tones of #ff4e26 (buttery-soft, seamless ambient transitions) */
+  --fluid-canvas: #fdf0e8;
+  --fluid-canvas-glow: #fedecf;
+  --fluid-canvas-deep: #fcdac8;
+  --fluid-ink: #230a04;
+  --fluid-ink-soft: #78200b;
+  --fluid-ember: #ff6640;
+  --fluid-amber: #ff7d5c;
+  --fluid-deep: #f05830;
+  --fluid-glow: #ffbba9;
+  --fluid-cream: #ffded0;
 }
 
 :is(.dark) {
   --brand-orange: #ff4e26;
   --brand-orange-hover: #e03d16;
+
+  --fluid-canvas: #361710;
+  --fluid-canvas-glow: #542014;
+  --fluid-canvas-deep: #2c120b;
+  --fluid-ink: #fff2ef;
+  --fluid-ink-soft: #f09885;
+  --fluid-ember: #f86740;
+  --fluid-amber: #ff7d59;
+  --fluid-deep: #c4401c;
+  --fluid-glow: #ff9379;
+  --fluid-cream: #d6512c;
 }
 
 @theme {
@@ -279,15 +302,250 @@
     box-shadow: 0 30px 80px #0000001f, 5px 5px 0 #18181b;
   }
 
-  .landing-noise {
-    position: fixed;
+  /* ---- Fluid orange field (high performance, GPU-accelerated) ---- */
+  .fluid-stage {
+    position: absolute;
     inset: 0;
-    z-index: 60;
+    overflow: hidden;
     pointer-events: none;
-    opacity: 0.38;
-    background-image: radial-gradient(#00000012 0.7px, transparent 0.7px);
-    background-size: 6px 6px;
+    background: radial-gradient(
+      ellipse at 50% 42%,
+      var(--fluid-canvas-glow) 0%,
+      color-mix(in srgb, var(--fluid-canvas-glow) 60%, var(--fluid-canvas)) 35%,
+      var(--fluid-canvas) 65%,
+      var(--fluid-canvas-deep) 100%
+    );
+    contain: strict;
+  }
+
+  .fluid-field {
+    position: absolute;
+    inset: -15% -10% -15% -10%;
+    contain: paint;
+  }
+
+  /* Smooth entrance and continuous ambient drift (compositor-only) */
+  .fluid-enter {
+    animation:
+      fluid-settle 4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+      fluid-ambient 24s ease-in-out 4s infinite alternate;
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+  }
+
+  .fluid-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(54px);
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+    pointer-events: none;
+  }
+
+  /* Blob 1 — primary ember sweep, top-left (bell-curve alpha falloff) */
+  .fluid-blob-1 {
+    width: 88vmax;
+    height: 78vmax;
+    top: -26%;
+    left: -20%;
+    opacity: 0.44;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      var(--fluid-glow) 0%,
+      var(--fluid-ember) 22%,
+      color-mix(in srgb, var(--fluid-ember) 60%, transparent) 46%,
+      color-mix(in srgb, var(--fluid-amber) 30%, transparent) 68%,
+      color-mix(in srgb, var(--fluid-amber) 8%, transparent) 86%,
+      transparent 100%
+    );
+    animation: fluid-drift-1 26s ease-in-out infinite alternate;
+  }
+
+  /* Blob 2 — warm amber & cream depth sweep, bottom-right (bell-curve alpha falloff) */
+  .fluid-blob-2 {
+    width: 80vmax;
+    height: 70vmax;
+    bottom: -20%;
+    right: -15%;
+    opacity: 0.4;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      var(--fluid-cream) 0%,
+      var(--fluid-amber) 24%,
+      color-mix(in srgb, var(--fluid-ember) 55%, transparent) 48%,
+      color-mix(in srgb, var(--fluid-amber) 26%, transparent) 70%,
+      color-mix(in srgb, var(--fluid-amber) 6%, transparent) 88%,
+      transparent 100%
+    );
+    animation: fluid-drift-2 30s ease-in-out infinite alternate-reverse;
+  }
+
+  /* Blob 3 — luminous mid-tone amber, center-right */
+  .fluid-blob-3 {
+    width: 52vmax;
+    height: 48vmax;
+    top: 14%;
+    right: 2%;
+    opacity: 0.3;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      var(--fluid-glow) 0%,
+      color-mix(in srgb, var(--fluid-amber) 48%, transparent) 38%,
+      color-mix(in srgb, var(--fluid-amber) 16%, transparent) 68%,
+      transparent 95%
+    );
+    animation: fluid-drift-3 22s ease-in-out infinite alternate;
+  }
+
+  /* Specular silk sheen band — subtle linear highlight */
+  .fluid-sheen {
+    position: absolute;
+    top: -30%;
+    left: -10%;
+    width: 28%;
+    height: 160%;
+    opacity: 0.07;
+    filter: blur(36px);
+    transform: rotate(-16deg);
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 215, 205, 0.4) 50%,
+      transparent 100%
+    );
+    animation: fluid-sheen-sweep 16s ease-in-out infinite alternate;
+    will-change: transform;
+    pointer-events: none;
+  }
+
+  /* Banner variant (dashboard header) — tighter, highly optimized */
+  .fluid-banner .fluid-field {
+    inset: -25% -5% -25% -5%;
+  }
+  .fluid-banner .fluid-blob {
+    filter: blur(22px);
+  }
+  .fluid-banner .fluid-blob-1 {
+    width: 58vmax;
+    height: 48vmax;
+    top: -30%;
+    left: -10%;
+    opacity: 0.46;
+  }
+  .fluid-banner .fluid-blob-2 {
+    width: 50vmax;
+    height: 42vmax;
+    bottom: -25%;
+    right: -10%;
+    opacity: 0.4;
+  }
+
+  /* Silk weave texture — fine 45° hairline cross-hatch (no grain) */
+  .silk-weave::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(140, 35, 15, 0.024) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(-45deg, rgba(140, 35, 15, 0.016) 0 1px, transparent 1px 6px);
     mix-blend-mode: multiply;
+  }
+
+  /* Hero staged reveal: script title animates immediately (0s-2.9s),
+     with login buttons and chatgpt text entering towards the bottom
+     as the text animation nears completion (~2.35s - 2.55s) */
+  .hero-sub-elements > * {
+    animation: fluid-copy-rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .hero-sub-elements > *:nth-child(1) {
+    animation-delay: 2.35s;
+  }
+  .hero-sub-elements > *:nth-child(2) {
+    animation-delay: 2.55s;
+  }
+
+  /* Hero calligraphy vector handwriting */
+  .hero-calligraphy {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .hero-calligraphy-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    color: var(--fluid-ink);
+    overflow: visible;
+  }
+
+  :is(.dark) .fluid-blob {
+    opacity: 0.52;
+  }
+  :is(.dark) .fluid-blob-1 {
+    opacity: 0.58;
+  }
+  :is(.dark) .fluid-sheen {
+    opacity: 0.1;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 120, 95, 0.45) 50%,
+      transparent 100%
+    );
+  }
+  :is(.dark) .silk-weave::after {
+    background-image:
+      repeating-linear-gradient(45deg, rgba(255, 120, 95, 0.035) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(-45deg, rgba(255, 120, 95, 0.02) 0 1px, transparent 1px 6px);
+    mix-blend-mode: screen;
+  }
+
+  /* Mobile optimization: smaller blurs, lightweight 2D drifts for max FPS and battery saving */
+  @media (max-width: 768px) {
+    .fluid-blob {
+      filter: blur(20px);
+    }
+    .fluid-blob-1 {
+      width: 90vmax;
+      height: 75vmax;
+      top: -15%;
+      left: -25%;
+    }
+    .fluid-blob-2 {
+      width: 75vmax;
+      height: 65vmax;
+      bottom: -10%;
+      right: -20%;
+    }
+    .fluid-sheen {
+      filter: blur(16px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fluid-enter,
+    .fluid-blob,
+    .fluid-sheen,
+    .fluid-copy > *,
+    .hero-sub-elements > * {
+      animation: none !important;
+    }
+    .fluid-copy > *,
+    .hero-sub-elements > * {
+      opacity: 1;
+      transform: none;
+    }
+    .hero-calligraphy-svg path {
+      stroke-dasharray: none !important;
+      stroke-dashoffset: 0 !important;
+    }
   }
 
   .landing-glow {
@@ -368,10 +626,6 @@
   }
 
   @media (max-width: 767px) {
-    .landing-noise {
-      opacity: 0.22;
-    }
-
     .landing-glow {
       width: 18rem;
       height: 18rem;
@@ -408,6 +662,81 @@
 @keyframes landing-float {
   0%, 100% { transform: translateY(0) rotate(-2deg); }
   50% { transform: translateY(-10px) rotate(1deg); }
+}
+
+/* ---- Fluid orange field keyframes (GPU Compositor Only) ---- */
+@keyframes fluid-settle {
+  0% {
+    transform: translate3d(-4%, 2%, 0) scale(1.12);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes fluid-ambient {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(1.5%, -1.2%, 0) scale(1.02);
+  }
+  100% {
+    transform: translate3d(-1.2%, 1%, 0) scale(1.01);
+  }
+}
+
+@keyframes fluid-drift-1 {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(3%, 2.5%, 0) scale(1.03) rotate(2deg);
+  }
+  100% {
+    transform: translate3d(-2.5%, -2%, 0) scale(0.98) rotate(-1.5deg);
+  }
+}
+
+@keyframes fluid-drift-2 {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(-3%, -2%, 0) scale(1.04) rotate(-2deg);
+  }
+  100% {
+    transform: translate3d(2.5%, 2%, 0) scale(0.97) rotate(1.5deg);
+  }
+}
+
+@keyframes fluid-drift-3 {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(-4%, 3%, 0) scale(1.06);
+  }
+}
+
+@keyframes fluid-sheen-sweep {
+  from {
+    transform: rotate(-16deg) translate3d(-10%, 0, 0);
+  }
+  to {
+    transform: rotate(-16deg) translate3d(70%, 0, 0);
+  }
+}
+
+@keyframes fluid-copy-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Dot-grid texture background */
@@ -593,7 +922,7 @@
 }
 
 .animate-page-enter {
-  animation: page-enter 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: page-enter 0.26s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Mobile Fullscreen Navigation Overlay Animations */
