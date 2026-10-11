@@ -15,6 +15,7 @@ node_modules/
 # Misc
 .DS_Store
 docs/
+!docs/superpowers/
 .vscode
 frontend/bun.lock
 .vercel/
@@ -24,6 +25,8 @@ omp-html/
 # Runtime artifacts
 *.log
 *.pid
+cloudflared/credentials.json
 
 # Generated imp research exports
 frontend/public/imp/
+tunnel-*.log
