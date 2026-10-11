@@ -13,7 +13,7 @@ export default async function TryPage() {
       {/* App nav */}
       <header className="flex shrink-0 items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-4 py-2.5 md:px-6">
         <Link href="/" className="resumer-mark px-2.5 py-1 text-base font-black md:text-lg">
-          Résumer
+          R<span className="normal-case">é</span>sumer
         </Link>
         <div className="flex items-center gap-3">
           <span className="hidden text-xs text-zinc-500 dark:text-zinc-400 sm:block">

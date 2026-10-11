@@ -26,7 +26,7 @@ export function HeroSection() {
           {/* Logo with sharp border and ZERO blurred shadows */}
           <div className="resumer-mark px-3 py-1 text-base font-black">
             <span className="text-lg font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">
-              RESUMER
+              R<span className="normal-case">é</span>sumer
             </span>
           </div>
         </div>
@@ -108,7 +108,7 @@ export function HeroSection() {
 
       {/* Bottom Accent Line */}
       <div className="mx-auto w-full max-w-7xl border-t border-dashed border-zinc-300 dark:border-zinc-800 pt-2 flex justify-between items-center text-[10px] font-mono uppercase text-zinc-500 dark:text-zinc-400">
-        <span>RESUMER V2.0</span>
+        <span>R<span className="normal-case">é</span>sumer v2.0</span>
         <span>SCROLL FOR DETAILS ↓</span>
       </div>
     </section>

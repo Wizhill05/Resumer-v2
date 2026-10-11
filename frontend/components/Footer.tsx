@@ -13,7 +13,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
           <div className="flex items-center gap-3">
             <div className="resumer-mark px-2.5 py-0.5 text-xs font-black">
               <span className="text-sm font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">
-                RESUMER
+                R<span className="normal-case">é</span>sumer
               </span>
             </div>
             <span className="text-xs font-mono font-semibold text-zinc-500 dark:text-zinc-400">
@@ -65,7 +65,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
           <div className="space-y-2">
             <div className="resumer-mark px-3 py-1 text-sm font-black inline-flex">
               <span className="text-base font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">
-                RESUMER
+                R<span className="normal-case">é</span>sumer
               </span>
             </div>
             <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
@@ -109,13 +109,13 @@ export function Footer({ variant = "simple" }: FooterProps) {
         {/* Giant Awwwards-Style Display Typography Statement */}
         <div className="group my-10 sm:my-14 overflow-hidden text-center select-none cursor-pointer">
           <span className="text-[15vw] sm:text-[16vw] font-black uppercase tracking-tighter text-zinc-900/10 dark:text-white/10 leading-none block transition-all duration-700 ease-out group-hover:text-[#ff4e26] group-hover:scale-105 group-hover:tracking-normal">
-            RESUMER
+            R<span className="normal-case">é</span>sumer
           </span>
         </div>
 
         {/* Bottom Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-zinc-300 dark:border-zinc-800 text-xs font-mono text-zinc-500 dark:text-zinc-400">
-          <span>© {new Date().getFullYear()} RESUMER. ALL RIGHTS RESERVED.</span>
+          <span>© {new Date().getFullYear()} RéSUMER. ALL RIGHTS RESERVED.</span>
           <span>BUILT FOR PRECISION</span>
         </div>
       </div>

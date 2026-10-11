@@ -124,7 +124,7 @@ export function Nav() {
             href="/dashboard"
             className="resumer-mark px-2.5 py-1 text-base font-black md:text-lg"
           >
-            Résumer
+            R<span className="normal-case">é</span>sumer
           </Link>
 
           {/* Desktop links */}
@@ -195,7 +195,7 @@ export function Nav() {
               onClick={() => handleNavigate("/dashboard")}
               className="resumer-mark px-2.5 py-1 text-base font-black transition-transform active:scale-95 cursor-pointer"
             >
-              Résumer
+              R<span className="normal-case">é</span>sumer
             </button>
 
             <div className="flex items-center gap-1">

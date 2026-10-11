@@ -37,7 +37,7 @@ export function FeatureGrid() {
             3-STEP ATS WORKFLOW
           </span>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black uppercase tracking-tight text-zinc-900 dark:text-white leading-none">
-            HOW RESUMER GETS YOU INTERVIEWS
+            HOW R<span className="normal-case">é</span>sumer GETS YOU INTERVIEWS
           </h2>
           <p className="mt-3 text-base sm:text-lg font-semibold text-zinc-600 dark:text-zinc-400">
             No fluff. Simple, mechanical precision designed for speed and high ATS match rates.

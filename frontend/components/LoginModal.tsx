@@ -72,7 +72,7 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
             {/* Header */}
             <div className="mb-8">
               <div className="resumer-mark px-3 py-1 text-lg font-black mb-4">
-                <span className="text-xl font-extrabold uppercase tracking-tight">Résumer</span>
+                <span className="text-xl font-extrabold uppercase tracking-tight">R<span className="normal-case">é</span>sumer</span>
               </div>
               <h2 className="text-3xl font-extrabold uppercase leading-tight tracking-[-0.03em] md:text-4xl dark:text-white">
                 Sign in to continue

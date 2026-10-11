@@ -5,7 +5,7 @@ export default function PrivacyPage() {
     <main className="min-h-screen bg-[#fbfbf3] px-5 py-8 text-black md:px-8">
       <div className="mx-auto max-w-3xl">
         <Link href="/" className="resumer-mark px-3 py-1 text-xl font-black">
-          Résumer
+          R<span className="normal-case">é</span>sumer
         </Link>
         <section className="mt-10 border border-zinc-900 bg-white p-6 shadow-[4px_4px_0_#18181b] md:p-10">
           <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#ff4e26]">Privacy Policy</p>
