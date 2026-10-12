@@ -23,51 +23,51 @@ const STEPS = [
 
 export function StoryJourney() {
   return (
-    <section className="relative overflow-hidden px-5 py-28 sm:py-36">
-      <div className="landing-reveal relative mx-auto max-w-xl">
-        <h2 className="text-center text-2xl font-black tracking-tight text-[var(--fluid-ink)] sm:text-3xl">
+    <section aria-label="How it works" className="landing-reveal relative flex h-full flex-col justify-between">
+      <div>
+        <h2 className="text-2xl font-black tracking-tight text-[var(--fluid-ink)] sm:text-3xl">
           Three steps, no busywork
         </h2>
-        <p className="mx-auto mt-4 max-w-sm text-center text-sm leading-relaxed text-[var(--fluid-ink-soft)]">
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-[var(--fluid-ink-soft)]">
           From what you&rsquo;ve done to what they asked for.
         </p>
-
-        <ol className="mt-16 space-y-14 sm:mt-20 sm:space-y-16">
-          {STEPS.map((step) => {
-            const Icon = step.icon
-            return (
-              <li key={step.n} className="flex gap-6 sm:gap-10">
-                <span
-                  aria-hidden="true"
-                  className="w-12 shrink-0 text-right font-light text-4xl leading-none text-[var(--fluid-ink)]/35 sm:w-16 sm:text-5xl"
-                >
-                  {step.n}
-                </span>
-                <div
-                  aria-hidden="true"
-                  className="w-px shrink-0 bg-gradient-to-b from-black/15 via-black/10 to-transparent dark:from-white/20 dark:via-white/10"
-                />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-3">
-                    <Icon
-                      size={17}
-                      strokeWidth={1.5}
-                      className="text-[var(--fluid-ink-soft)]"
-                      aria-hidden="true"
-                    />
-                    <h3 className="text-lg font-bold tracking-tight text-[var(--fluid-ink)] sm:text-xl">
-                      {step.title}
-                    </h3>
-                  </div>
-                  <p className="mt-2 max-w-sm text-sm leading-relaxed text-[var(--fluid-ink-soft)]">
-                    {step.body}
-                  </p>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
       </div>
+
+      <ol className="mt-10 space-y-10 sm:mt-12 sm:space-y-12">
+        {STEPS.map((step) => {
+          const Icon = step.icon
+          return (
+            <li key={step.n} className="flex gap-5 sm:gap-7">
+              <span
+                aria-hidden="true"
+                className="w-12 shrink-0 text-right font-light text-4xl leading-none text-[var(--fluid-ink)]/35 sm:w-14 sm:text-5xl"
+              >
+                {step.n}
+              </span>
+              <div
+                aria-hidden="true"
+                className="w-px shrink-0 bg-gradient-to-b from-black/15 via-black/10 to-transparent dark:from-white/20 dark:via-white/10"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <Icon
+                    size={17}
+                    strokeWidth={1.5}
+                    className="text-[var(--fluid-ink-soft)]"
+                    aria-hidden="true"
+                  />
+                  <h3 className="text-lg font-bold tracking-tight text-[var(--fluid-ink)] sm:text-xl">
+                    {step.title}
+                  </h3>
+                </div>
+                <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-[var(--fluid-ink-soft)]">
+                  {step.body}
+                </p>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
     </section>
   )
 }

@@ -17,6 +17,7 @@ test("StoryOverture exists, is a server component, and frames the problem with g
   assert.ok(/hiring software|applicant tracking|reads/i.test(content), "Explains how Resumer helps");
   assert.ok(content.includes("bg-clip-text") && content.includes("text-transparent"), "Headline uses a gradient text treatment");
   assert.ok(!content.includes("story-glow"), "No background glow — plain canvas below the hero");
+  assert.ok(!content.includes("<svg"), "Unwanted abstract line/wave SVG artifact is removed");
 });
 
 test("StoryJourney exists and tells the three-step story", () => {
@@ -79,6 +80,7 @@ test("page.tsx composes the story sections and drops the old ones", () => {
   for (const name of ["StoryOverture", "StoryJourney", "StoryTransformation", "StoryClosing"]) {
     assert.ok(content.includes(name), `page.tsx composes ${name}`);
   }
+  assert.ok(/lg:grid-cols-2/.test(content), "Composes sections side-by-side on wide screens");
   assert.ok(content.includes("HeroSection"), "page.tsx keeps the hero");
   assert.ok(content.includes("Footer"), "page.tsx keeps the footer");
   assert.ok(content.includes("bg-white"), "Page sits on a plain white surface in light mode");
