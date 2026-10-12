@@ -8,10 +8,6 @@ const subtleButton =
 export function StoryClosing() {
   return (
     <section className="relative overflow-hidden px-5 pb-32 pt-28 sm:pb-40 sm:pt-36">
-      <div
-        className="story-glow bottom-0 left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 translate-y-1/2"
-        aria-hidden="true"
-      />
       <div className="landing-reveal relative mx-auto max-w-xl text-center">
         <h2 className="text-balance text-3xl font-black leading-[1.12] tracking-tight text-[var(--fluid-ink)] sm:text-4xl">
           Private by design

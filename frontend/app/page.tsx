@@ -15,7 +15,7 @@ export default async function Home() {
   }
 
   return (
-    <main className="relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-[var(--fluid-canvas)] text-[var(--fluid-ink)]">
+    <main className="relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-white text-[var(--fluid-ink)] dark:bg-[#18181b]">
       <HeroSection />
       <StoryOverture />
       <StoryJourney />

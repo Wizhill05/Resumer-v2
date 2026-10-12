@@ -7,49 +7,64 @@ interface FooterProps {
 export function Footer({ variant = "simple" }: FooterProps) {
   if (variant === "simple") {
     return (
-      <footer className="mt-auto border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white py-5 px-4 sm:px-6 lg:px-8 font-sans">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Left: Logo & copyright */}
-          <div className="flex items-center gap-3">
-            <div className="resumer-mark px-2.5 py-0.5 text-xs font-black">
-              <span className="text-sm font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">
-                R<span className="normal-case">é</span>sumer
-              </span>
+      <footer className="mt-auto border-t border-zinc-800/80 bg-[#121214] text-white min-h-[40vh] sm:min-h-[40dvh] flex flex-col justify-between pt-12 pb-8 px-4 sm:px-6 md:px-8 font-sans">
+        <div className="mx-auto max-w-6xl w-full flex-1 flex flex-col justify-between">
+          {/* Top row: Brand & Navigation */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pb-8 border-b border-zinc-800/80">
+            <div className="space-y-1">
+              <Link
+                href="/dashboard"
+                className="text-lg font-black tracking-tight text-white hover:opacity-80 transition-opacity"
+              >
+                R<span className="normal-case">é</span>SUMER
+              </Link>
+              <p className="text-[11px] font-mono font-medium text-zinc-400 uppercase tracking-wider">
+                ATS Résumé Tailoring Engine
+              </p>
             </div>
-            <span className="text-xs font-mono font-semibold text-zinc-500 dark:text-zinc-400">
-              © {new Date().getFullYear()} Résumer
+
+            <div className="flex flex-wrap items-center gap-5 sm:gap-6 text-xs font-mono font-bold uppercase tracking-wider">
+              <Link
+                href="/connect"
+                className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
+              >
+                ChatGPT
+              </Link>
+              <Link
+                href="/support"
+                className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
+              >
+                Support
+              </Link>
+              <Link
+                href="/privacy"
+                className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
+              >
+                Privacy
+              </Link>
+              <a
+                href="https://github.com/Wizhill05/resumer-v2"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-zinc-300 hover:text-[#ff4e26] transition-colors"
+              >
+                <span>GitHub</span>
+                <ArrowUpRight size={12} />
+              </a>
+            </div>
+          </div>
+
+          {/* Middle: Subtle giant watermark display */}
+          <div className="group my-auto py-8 sm:py-10 text-center select-none cursor-pointer overflow-hidden">
+            <span className="text-[4rem] sm:text-[6rem] md:text-[7rem] font-black uppercase tracking-tighter text-white/[0.07] leading-none block transition-all duration-700 ease-out group-hover:text-[#ff4e26] group-hover:scale-105">
+              R<span className="normal-case">é</span>sumer
             </span>
           </div>
 
-          {/* Right: Links */}
-          <div className="flex items-center gap-5 text-xs font-mono font-bold text-zinc-600 dark:text-zinc-400">
-            <Link
-              href="/connect"
-              className="hover:text-zinc-900 dark:hover:text-white transition-colors"
-            >
-              ChatGPT
-            </Link>
-            <Link
-              href="/support"
-              className="hover:text-zinc-900 dark:hover:text-white transition-colors"
-            >
-              Support
-            </Link>
-            <Link
-              href="/privacy"
-              className="hover:text-zinc-900 dark:hover:text-white transition-colors"
-            >
-              Privacy
-            </Link>
-            <a
-              href="https://github.com/Wizhill05/resumer-v2"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 hover:text-zinc-900 dark:hover:text-white transition-colors"
-            >
-              <span>GitHub</span>
-              <ArrowUpRight size={12} />
-            </a>
+          {/* Bottom Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t border-zinc-800/80 text-xs font-mono text-zinc-500">
+            <span>© {new Date().getFullYear()} RéSUMER. ALL RIGHTS RESERVED.</span>
+            <span>BUILT FOR PRECISION</span>
           </div>
         </div>
       </footer>
@@ -57,40 +72,41 @@ export function Footer({ variant = "simple" }: FooterProps) {
   }
 
   return (
-    <footer className="mt-auto border-t-2 border-black dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-900 text-zinc-900 dark:text-white pt-16 pb-10 px-4 sm:px-6 lg:px-8 font-sans transition-colors">
-      <div className="mx-auto max-w-7xl">
+    <footer className="mt-auto border-t border-zinc-800/80 bg-[#121214] text-white min-h-[40vh] sm:min-h-[40dvh] flex flex-col justify-between pt-16 pb-10 px-5 sm:px-6 lg:px-8 font-sans">
+      <div className="mx-auto max-w-7xl w-full flex-1 flex flex-col justify-between">
         {/* Main Minimal Link Row */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 pb-12 border-b border-zinc-300 dark:border-zinc-800">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 pb-10 border-b border-zinc-800/80">
           {/* Left: Brand mark */}
           <div className="space-y-2">
-            <div className="resumer-mark px-3 py-1 text-sm font-black inline-flex">
-              <span className="text-base font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100">
-                R<span className="normal-case">é</span>sumer
-              </span>
-            </div>
-            <p className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+            <Link
+              href="/"
+              className="text-lg font-black tracking-tight text-white hover:opacity-80 transition-opacity"
+            >
+              R<span className="normal-case">é</span>SUMER
+            </Link>
+            <p className="text-xs font-mono font-medium text-zinc-400 uppercase tracking-wider">
               ATS Résumé Tailoring Engine
             </p>
           </div>
 
           {/* Right: Minimal Navigation */}
-          <div className="flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-mono font-black uppercase">
+          <div className="flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-mono font-bold uppercase tracking-wider">
             <Link
               href="/connect"
-              className="text-zinc-900 dark:text-zinc-200 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"
+              className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
             >
               ChatGPT
             </Link>
             <Link
               href="/try"
-              className="inline-flex items-center gap-1 text-zinc-900 dark:text-zinc-200 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"
+              className="inline-flex items-center gap-1 text-zinc-300 hover:text-[#ff4e26] transition-colors"
             >
               <span>Guest Mode</span>
               <ArrowUpRight size={14} />
             </Link>
             <Link
               href="/privacy"
-              className="text-zinc-900 dark:text-zinc-200 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"
+              className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
             >
               Privacy
             </Link>
@@ -98,7 +114,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
               href="https://github.com/Wizhill05/resumer-v2"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-zinc-900 dark:text-zinc-200 hover:text-[#ff4e26] dark:hover:text-[#ff4e26] transition-colors"
+              className="inline-flex items-center gap-1 text-zinc-300 hover:text-[#ff4e26] transition-colors"
             >
               <span>GitHub</span>
               <ArrowUpRight size={14} />
@@ -107,14 +123,14 @@ export function Footer({ variant = "simple" }: FooterProps) {
         </div>
 
         {/* Giant Awwwards-Style Display Typography Statement */}
-        <div className="group my-10 sm:my-14 overflow-hidden text-center select-none cursor-pointer">
-          <span className="text-[15vw] sm:text-[16vw] font-black uppercase tracking-tighter text-zinc-900/10 dark:text-white/10 leading-none block transition-all duration-700 ease-out group-hover:text-[#ff4e26] group-hover:scale-105 group-hover:tracking-normal">
+        <div className="group my-8 sm:my-12 overflow-hidden text-center select-none cursor-pointer">
+          <span className="text-[4rem] sm:text-[6rem] lg:text-[8rem] xl:text-[10rem] font-black uppercase tracking-tighter text-white/[0.07] leading-none block transition-all duration-700 ease-out group-hover:text-[#ff4e26] group-hover:scale-105 group-hover:tracking-normal">
             R<span className="normal-case">é</span>sumer
           </span>
         </div>
 
         {/* Bottom Bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-zinc-300 dark:border-zinc-800 text-xs font-mono text-zinc-500 dark:text-zinc-400">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-zinc-800/80 text-xs font-mono text-zinc-400">
           <span>© {new Date().getFullYear()} RéSUMER. ALL RIGHTS RESERVED.</span>
           <span>BUILT FOR PRECISION</span>
         </div>

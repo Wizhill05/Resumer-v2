@@ -24,10 +24,6 @@ const STEPS = [
 export function StoryJourney() {
   return (
     <section className="relative overflow-hidden px-5 py-28 sm:py-36">
-      <div
-        className="story-glow bottom-0 right-[-18%] h-[40rem] w-[40rem] translate-y-1/2"
-        aria-hidden="true"
-      />
       <div className="landing-reveal relative mx-auto max-w-xl">
         <h2 className="text-center text-2xl font-black tracking-tight text-[var(--fluid-ink)] sm:text-3xl">
           Three steps, no busywork
@@ -47,7 +43,11 @@ export function StoryJourney() {
                 >
                   {step.n}
                 </span>
-                <div className="border-l border-black/10 pl-6 dark:border-white/10 sm:pl-10">
+                <div
+                  aria-hidden="true"
+                  className="w-px shrink-0 bg-gradient-to-b from-black/15 via-black/10 to-transparent dark:from-white/20 dark:via-white/10"
+                />
+                <div className="min-w-0">
                   <div className="flex items-center gap-3">
                     <Icon
                       size={17}

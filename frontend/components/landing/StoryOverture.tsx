@@ -1,15 +1,11 @@
 export function StoryOverture() {
   return (
     <section className="relative overflow-hidden px-5 py-28 sm:py-36">
-      <div
-        className="story-glow left-1/2 top-0 h-[40rem] w-[40rem] -translate-x-1/2 -translate-y-1/2"
-        aria-hidden="true"
-      />
       <div className="landing-reveal relative mx-auto max-w-2xl text-center">
         <h2 className="text-balance text-2xl font-black leading-[1.14] tracking-tight text-[var(--fluid-ink)] sm:text-4xl md:text-5xl md:leading-[1.1]">
           You&rsquo;re qualified.
           <br />
-          <span className="font-light text-[var(--fluid-ink-soft)]">
+          <span className="bg-gradient-to-r from-[var(--fluid-deep)] via-[var(--fluid-ember)] to-[var(--fluid-amber)] bg-clip-text font-light text-transparent">
             The screening software
             <br />
             never finds out.
