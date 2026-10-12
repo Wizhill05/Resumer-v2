@@ -481,8 +481,12 @@
     display: block;
     width: 100%;
     height: auto;
-    color: var(--fluid-ink);
+    color: var(--brand-orange);
     overflow: visible;
+  }
+
+  :is(.dark) .hero-calligraphy-svg {
+    color: var(--fluid-ink);
   }
 
   :is(.dark) .fluid-blob {

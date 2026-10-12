@@ -17,7 +17,7 @@ export function CalligraphyTitle({ className }: CalligraphyTitleProps) {
         viewBox="20.5 49.56 918.06 127.74"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="hero-calligraphy-svg w-full select-none"
+        className="hero-calligraphy-svg w-full select-none text-[var(--brand-orange)] dark:text-[var(--fluid-ink)]"
         aria-hidden="true"
         role="img"
       >
