@@ -7,7 +7,16 @@ import { Button } from "@/components/ui/button"
 import { EmailAuthForm } from "@/components/EmailAuthForm"
 import { X } from "lucide-react"
 
-export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { triggerClassName?: string; callbackUrl?: string }) {
+export function LoginModal({
+  triggerClassName,
+  callbackUrl = "/dashboard",
+  children,
+}: {
+  triggerClassName?: string
+  callbackUrl?: string
+  /** Custom trigger; when provided, triggerClassName styles the button. */
+  children?: React.ReactNode
+}) {
   const [open, setOpen] = useState(false)
   const [showEmail, setShowEmail] = useState(false)
 
@@ -36,14 +45,24 @@ export function LoginModal({ triggerClassName, callbackUrl = "/dashboard" }: { t
 
   return (
     <>
-      <Button
-        variant="default"
-        size="sm"
-        onClick={() => setOpen(true)}
-        className={triggerClassName}
-      >
-        Sign in
-      </Button>
+      {children ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={triggerClassName}
+        >
+          {children}
+        </button>
+      ) : (
+        <Button
+          variant="default"
+          size="sm"
+          onClick={() => setOpen(true)}
+          className={triggerClassName}
+        >
+          Sign in
+        </Button>
+      )}
 
       {open && typeof document !== "undefined" && createPortal(
         <div

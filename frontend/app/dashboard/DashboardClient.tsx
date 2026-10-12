@@ -152,20 +152,20 @@ export function DashboardClient() {
   }
 
   return (
-    <div className="space-y-4 md:space-y-5 pixel-enter">
+    <div className="space-y-6 sm:space-y-8 pixel-enter">
       {importMessage && (
-        <div className="panel border-emerald-200 bg-emerald-50 p-3 text-sm font-bold text-emerald-800">
+        <div className="panel border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
           {importMessage}
         </div>
       )}
       {!profileComplete && (
-        <section className="sticky top-2 z-10 panel-strong overflow-hidden">
+        <section className="panel-strong overflow-hidden">
           <div className="h-1.5 bg-[#ff4e26]" />
-          <div className="grid gap-3 p-3.5 md:gap-4 md:grid-cols-[1fr_auto] md:items-center md:p-5">
+          <div className="grid gap-4 p-5 sm:p-6 md:gap-5 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile needed</p>
               <h2 className="text-lg font-extrabold uppercase tracking-tight md:text-xl dark:text-white">Import source material first</h2>
-              <p className="mt-1 text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
+              <p className="mt-1.5 text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
                 Missing: {missing.join(", ")}. Upload old résumés or paste GitHub project links to fill this faster.
               </p>
             </div>
@@ -179,11 +179,11 @@ export function DashboardClient() {
       {profileComplete && (
         <section className="panel-strong overflow-hidden">
           <div className="h-1.5 bg-[#ff4e26]" />
-          <div className="grid gap-3 p-3.5 md:gap-4 md:grid-cols-[1fr_auto] md:items-center md:p-6">
+          <div className="grid gap-4 p-5 sm:p-6 md:gap-5 md:grid-cols-[1fr_auto] md:items-center md:p-7">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile ready</p>
               <h2 className="text-xl font-extrabold uppercase tracking-tight md:text-4xl dark:text-white">Generate résumé now</h2>
-              <p className="mt-1 max-w-2xl text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
+              <p className="mt-2 max-w-2xl text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
                 You have source material in every profile section. Paste job post and choose focus next.
               </p>
             </div>
@@ -194,17 +194,17 @@ export function DashboardClient() {
         </section>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-5 sm:gap-6 md:grid-cols-2">
         {sections.map((section) => {
           const Icon = section.icon
           return (
             <Link key={section.key} href={section.href} className="group block">
-              <section className="compact-card h-full p-5">
-                <div className="mb-3 flex h-10 w-10 items-center justify-center border border-zinc-900 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white group-hover:bg-zinc-950 group-hover:text-white">
+              <section className="compact-card h-full p-6 sm:p-7">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center border border-zinc-900 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white group-hover:bg-zinc-950 group-hover:text-white">
                   <Icon size={18} />
                 </div>
                 <h3 className="text-base font-extrabold uppercase tracking-tight dark:text-white">{section.label}</h3>
-                <p className="mt-2 text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
+                <p className="mt-2.5 text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
                   {section.desc}
                 </p>
               </section>
@@ -213,7 +213,7 @@ export function DashboardClient() {
         })}
       </div>
 
-      <div className="panel flex flex-col gap-2 p-3 text-xs font-bold text-zinc-600 dark:text-zinc-400 md:flex-row md:items-center md:justify-between md:px-4">
+      <div className="panel flex flex-col gap-2.5 p-4 sm:p-5 text-xs font-bold text-zinc-600 dark:text-zinc-400 md:flex-row md:items-center md:justify-between md:px-5">
         <span className="uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Typical generation time</span>
         <span>5-10 minutes. Safe to close tab after starting.</span>
       </div>

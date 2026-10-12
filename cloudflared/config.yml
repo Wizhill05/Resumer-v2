@@ -1,0 +1,11 @@
+tunnel: 67aff257-a689-4db6-a9f8-ebce240c2c5d
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: resumer.aryansingh.space
+    service: http://frontend:3000
+  - hostname: www.resumer.aryansingh.space
+    service: http://frontend:3000
+  - hostname: resumer-backend.aryansingh.space
+    service: http://backend:8000
+  - service: http_status:404

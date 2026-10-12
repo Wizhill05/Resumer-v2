@@ -30,3 +30,11 @@ cloudflared/credentials.json
 # Generated imp research exports
 frontend/public/imp/
 tunnel-*.log
+backups/
+logo-options/
+frontend/public/logo-options*/
+frontend/public/logo-preview.html
+frontend/scripts/
+generate_logos.py
+generate_showcase.py
+refine_logos.py

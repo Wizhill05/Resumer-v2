@@ -1,14 +1,27 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: resumer
+      POSTGRES_PASSWORD: resumer_secure_password_2026
+      POSTGRES_DB: resumer
+    volumes:
+      - resumer_pgdata:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U resumer -d resumer"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "48000:8000"
+      - "127.0.0.1:48000:8000"
     env_file:
       - ./backend/.env
-    environment:
-      - FRONTEND_URL=http://localhost:3000
     restart: always
     mem_limit: 1536m
     memswap_limit: 1536m
@@ -18,11 +31,22 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
       - ./frontend/.env
-    environment:
-      - BACKEND_INTERNAL_URL=http://backend:8000
     depends_on:
       - backend
     restart: always
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --config /etc/cloudflared/config.yml run 67aff257-a689-4db6-a9f8-ebce240c2c5d
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: always
+
+volumes:
+  resumer_pgdata:

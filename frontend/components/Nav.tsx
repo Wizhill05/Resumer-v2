@@ -118,13 +118,13 @@ export function Nav() {
 
   return (
     <>
-      <nav className="sticky top-0 z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 px-4 py-2.5 backdrop-blur md:px-6">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
+      <nav className="sticky top-0 z-50 px-0 pointer-events-none md:top-4 md:px-6">
+        <div className="pointer-events-auto mx-auto flex h-11 max-w-6xl items-center justify-between border-b border-black/10 bg-white/70 px-4 backdrop-blur-xl md:border md:border-black/10 md:shadow-[0_18px_50px_-24px_rgba(74,32,4,0.55)] dark:border-white/10 dark:bg-black/60 md:dark:bg-black/60">
           <Link
             href="/dashboard"
-            className="resumer-mark px-2.5 py-1 text-base font-black md:text-lg"
+            className="text-base font-black tracking-tight text-[var(--fluid-ink)] hover:opacity-80 transition-opacity md:text-lg"
           >
-            R<span className="normal-case">é</span>sumer
+            R<span className="normal-case">é</span>SUMER
           </Link>
 
           {/* Desktop links */}
@@ -193,9 +193,9 @@ export function Nav() {
             <button
               type="button"
               onClick={() => handleNavigate("/dashboard")}
-              className="resumer-mark px-2.5 py-1 text-base font-black transition-transform active:scale-95 cursor-pointer"
+              className="text-base font-black tracking-tight text-[var(--fluid-ink)] transition-transform active:scale-95 cursor-pointer"
             >
-              R<span className="normal-case">é</span>sumer
+              R<span className="normal-case">é</span>SUMER
             </button>
 
             <div className="flex items-center gap-1">
