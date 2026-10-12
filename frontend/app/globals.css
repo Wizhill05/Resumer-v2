@@ -13,6 +13,7 @@
   --fluid-canvas-deep: #fcdac8;
   --fluid-ink: #230a04;
   --fluid-ink-soft: #78200b;
+  --fluid-ink-brown: #5c2c14;
   --fluid-ember: #ff6640;
   --fluid-amber: #ff7d5c;
   --fluid-deep: #f05830;
@@ -481,7 +482,7 @@
     display: block;
     width: 100%;
     height: auto;
-    color: var(--brand-orange);
+    color: var(--fluid-ink-brown, #5c2c14);
     overflow: visible;
   }
 
