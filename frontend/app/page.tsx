@@ -1,11 +1,10 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { HeroSection } from "@/components/landing/HeroSection"
-import { LandingMetricsBanner } from "@/components/landing/LandingMetricsBanner"
-import { ResumeDiffShowcase } from "@/components/landing/ResumeDiffShowcase"
-import { FeatureGrid } from "@/components/landing/FeatureGrid"
-import { AtsCompatibilityMatrix } from "@/components/landing/AtsCompatibilityMatrix"
-import { SecuritySection } from "@/components/landing/SecuritySection"
+import { StoryOverture } from "@/components/landing/StoryOverture"
+import { StoryJourney } from "@/components/landing/StoryJourney"
+import { StoryTransformation } from "@/components/landing/StoryTransformation"
+import { StoryClosing } from "@/components/landing/StoryClosing"
 import { Footer } from "@/components/Footer"
 
 export default async function Home() {
@@ -16,13 +15,12 @@ export default async function Home() {
   }
 
   return (
-    <main className="flex-1 flex flex-col min-h-screen app-bg text-zinc-950 dark:text-white relative overflow-x-clip">
+    <main className="relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-[var(--fluid-canvas)] text-[var(--fluid-ink)]">
       <HeroSection />
-      <LandingMetricsBanner />
-      <ResumeDiffShowcase />
-      <FeatureGrid />
-      <AtsCompatibilityMatrix />
-      <SecuritySection />
+      <StoryOverture />
+      <StoryJourney />
+      <StoryTransformation />
+      <StoryClosing />
       <Footer variant="landing" />
     </main>
   )

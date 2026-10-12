@@ -636,6 +636,19 @@
       top: auto !important;
     }
   }
+
+  /* ---- Landing story canvas: one continuous warm field below the hero ---- */
+  .story-glow {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(110px);
+    pointer-events: none;
+    background: radial-gradient(circle, var(--fluid-glow) 0%, transparent 70%);
+    opacity: 0.34;
+  }
+  :is(.dark) .story-glow {
+    opacity: 0.22;
+  }
 }
 
 @keyframes landing-rise {
