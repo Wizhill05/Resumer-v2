@@ -25,7 +25,7 @@ const subtleButton =
 
 export function HeroSection() {
   return (
-    <section className="relative flex h-[50dvh] min-h-[300px] flex-col overflow-hidden border-b border-black/10 bg-[var(--fluid-canvas)] md:h-auto md:min-h-[100dvh] dark:border-white/10">
+    <section className="relative flex h-[50dvh] min-h-[340px] flex-col justify-between overflow-hidden border-b border-black/10 bg-[var(--fluid-canvas)] md:h-auto md:min-h-[100dvh] dark:border-white/10">
       <FluidField />
 
       {/* Glass nav — fixed to the top always even when scrolling */}
@@ -56,15 +56,18 @@ export function HeroSection() {
         </div>
       </header>
 
-      {/* Pure Center: Hero Calligraphy Title centered in the screen */}
-      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 pt-8 sm:px-5 sm:pt-0">
+      {/* Spacer matching fixed nav height so center area is optically balanced */}
+      <div className="h-11 shrink-0" aria-hidden="true" />
+
+      {/* Center: Hero Calligraphy Title centered in the available space */}
+      <div className="relative z-10 flex flex-1 items-center justify-center px-4">
         <div className="pointer-events-auto flex w-full max-w-5xl justify-center">
-          <CalligraphyTitle className="hero-calligraphy w-full max-w-[18rem] xs:max-w-[22rem] sm:max-w-[34rem] md:max-w-[46rem] lg:max-w-[54rem] xl:max-w-[60rem] 2xl:max-w-[64rem]" />
+          <CalligraphyTitle className="hero-calligraphy w-full max-w-[17rem] xs:max-w-[21rem] sm:max-w-[34rem] md:max-w-[46rem] lg:max-w-[54rem] xl:max-w-[60rem] 2xl:max-w-[64rem]" />
         </div>
       </div>
 
       {/* Towards the Bottom: Login/Guest CTA buttons with ChatGPT badge below */}
-      <div className="relative z-20 mt-auto flex flex-col items-center justify-end px-4 pb-3 sm:px-5 sm:pb-10 md:pb-14">
+      <div className="relative z-20 flex flex-col items-center px-4 pb-4 sm:px-5 sm:pb-10 md:pb-14">
         <div className="hero-sub-elements flex flex-col items-center gap-2 sm:gap-4">
           <div className="flex flex-row flex-wrap items-center justify-center gap-2 sm:gap-4">
             <LoginModal
@@ -89,7 +92,7 @@ export function HeroSection() {
             href="/connect"
             className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] sm:text-sm"
           >
-            compatible with <ChatGPTMark /> through the official MCP!
+            compatible with <ChatGPTMark size={13} /> through the official MCP!
           </Link>
         </div>
       </div>
