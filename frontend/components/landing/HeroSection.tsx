@@ -21,11 +21,11 @@ function ChatGPTMark({ size = 14 }: { size?: number }) {
 }
 
 const subtleButton =
-  "group inline-flex items-center justify-center gap-2 border border-[var(--fluid-ink)]/25 bg-white/40 px-4 py-2 text-sm font-semibold text-[var(--fluid-ink)] backdrop-blur-sm transition-colors hover:border-[var(--fluid-ink)]/50 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fluid-ink)] dark:border-white/25 dark:bg-white/5 dark:text-[var(--fluid-ink)] dark:hover:border-white/50 dark:hover:bg-white/10 dark:focus-visible:outline-white"
+  "group inline-flex items-center justify-center gap-1.5 sm:gap-2 border border-[var(--fluid-ink)]/25 bg-white/40 px-2.5 py-1.5 text-xs font-semibold sm:px-4 sm:py-2 sm:text-sm text-[var(--fluid-ink)] backdrop-blur-sm transition-colors hover:border-[var(--fluid-ink)]/50 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fluid-ink)] dark:border-white/25 dark:bg-white/5 dark:text-[var(--fluid-ink)] dark:hover:border-white/50 dark:hover:bg-white/10 dark:focus-visible:outline-white"
 
 export function HeroSection() {
   return (
-    <section className="relative flex min-h-[100dvh] flex-col overflow-hidden border-b border-black/10 bg-[var(--fluid-canvas)] dark:border-white/10">
+    <section className="relative flex h-[50dvh] min-h-[300px] flex-col overflow-hidden border-b border-black/10 bg-[var(--fluid-canvas)] md:h-auto md:min-h-[100dvh] dark:border-white/10">
       <FluidField />
 
       {/* Glass nav — fixed to the top always even when scrolling */}
@@ -57,16 +57,16 @@ export function HeroSection() {
       </header>
 
       {/* Pure Center: Hero Calligraphy Title centered in the screen */}
-      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-5">
+      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 pt-8 sm:px-5 sm:pt-0">
         <div className="pointer-events-auto flex w-full max-w-5xl justify-center">
-          <CalligraphyTitle className="hero-calligraphy w-full max-w-[21rem] xs:max-w-[25rem] sm:max-w-[34rem] md:max-w-[46rem] lg:max-w-[54rem] xl:max-w-[60rem] 2xl:max-w-[64rem]" />
+          <CalligraphyTitle className="hero-calligraphy w-full max-w-[18rem] xs:max-w-[22rem] sm:max-w-[34rem] md:max-w-[46rem] lg:max-w-[54rem] xl:max-w-[60rem] 2xl:max-w-[64rem]" />
         </div>
       </div>
 
       {/* Towards the Bottom: Login/Guest CTA buttons with ChatGPT badge below */}
-      <div className="relative z-20 mt-auto flex flex-col items-center justify-end px-5 pb-8 sm:pb-10 md:pb-14">
-        <div className="hero-sub-elements flex flex-col items-center gap-3.5 sm:gap-4">
-          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
+      <div className="relative z-20 mt-auto flex flex-col items-center justify-end px-4 pb-3 sm:px-5 sm:pb-10 md:pb-14">
+        <div className="hero-sub-elements flex flex-col items-center gap-2 sm:gap-4">
+          <div className="flex flex-row flex-wrap items-center justify-center gap-2 sm:gap-4">
             <LoginModal
               triggerClassName={subtleButton}
               callbackUrl="/dashboard"
@@ -87,7 +87,7 @@ export function HeroSection() {
 
           <Link
             href="/connect"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] sm:text-sm"
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] sm:text-sm"
           >
             compatible with <ChatGPTMark /> through the official MCP!
           </Link>

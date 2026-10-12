@@ -72,6 +72,16 @@ test("footer watermark never scales past its container (no vw sizing)", () => {
   assert.ok(content.includes("text-[4rem]"), "Landing footer watermark uses fixed rem scale");
 });
 
+test("HeroSection is top-half screen on mobile and full viewport on desktop", () => {
+  const filePath = path.join(landingDir, "HeroSection.tsx");
+  assert.ok(fs.existsSync(filePath), "HeroSection.tsx should exist");
+
+  const content = fs.readFileSync(filePath, "utf-8");
+  assert.ok(content.includes("export function HeroSection"), "Exports HeroSection");
+  assert.ok(/h-\[50dvh\]/.test(content), "Hero is 50dvh (top half) on mobile");
+  assert.ok(/md:(min-h-\[100dvh\]|h-auto)/.test(content), "Hero expands to full height on desktop");
+});
+
 test("page.tsx composes the story sections and drops the old ones", () => {
   const filePath = path.join(process.cwd(), "app/page.tsx");
   assert.ok(fs.existsSync(filePath), "app/page.tsx should exist");
