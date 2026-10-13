@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { cn } from "@/lib/utils"
 import { AdminSidebar } from "@/components/admin/AdminSidebar"
 import { AdminHeader } from "@/components/admin/AdminHeader"
 import { AdminTabId } from "@/components/admin/types"
@@ -497,6 +498,9 @@ export function AdminClient() {
   const [storagePrefix, setStoragePrefix] = useState("")
   const [playgroundVariables, setPlaygroundVariables] = useState("{}")
   const [playgroundResult, setPlaygroundResult] = useState("")
+  const [playgroundError, setPlaygroundError] = useState<string | null>(null)
+  const [promptSearch, setPromptSearch] = useState("")
+  const [outputCopied, setOutputCopied] = useState(false)
   const [bulkCases, setBulkCases] = useState("[]")
   const [templateId, setTemplateId] = useState("personal-classic")
   const [templateContext, setTemplateContext] = useState("{}")
@@ -805,6 +809,12 @@ export function AdminClient() {
   const runPlaygroundMutation = useMutation({
     mutationFn: async () => {
       if (!selectedPrompt) throw new Error("Select a prompt first")
+      let variables: Record<string, unknown>
+      try {
+        variables = JSON.parse(playgroundVariables)
+      } catch {
+        throw new Error("Variables are not valid JSON.")
+      }
       const res = await fetch("/api/backend/admin/prompts/playground", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -812,21 +822,32 @@ export function AdminClient() {
           prompt_name: selectedPrompt.name,
           system_prompt: systemPromptVal,
           user_prompt: userPromptVal,
-          variables: JSON.parse(playgroundVariables),
+          variables,
         }),
       })
       if (!res.ok) throw new Error("Prompt playground failed")
       return res.json()
     },
     onSuccess: (data) => {
+      setPlaygroundError(null)
       setPlaygroundResult(data.output || data.error_message || "No output")
       queryClient.invalidateQueries({ queryKey: ["admin", "prompt-test-runs"] })
+    },
+    onError: (err) => {
+      setPlaygroundResult("")
+      setPlaygroundError(err instanceof Error ? err.message : "Prompt playground failed")
     },
   })
 
   const runBulkMutation = useMutation({
     mutationFn: async () => {
       if (!selectedPrompt) throw new Error("Select a prompt first")
+      let cases: unknown
+      try {
+        cases = JSON.parse(bulkCases)
+      } catch {
+        throw new Error("Bulk cases are not valid JSON.")
+      }
       const res = await fetch("/api/backend/admin/prompts/bulk-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -834,15 +855,20 @@ export function AdminClient() {
           prompt_name: selectedPrompt.name,
           system_prompt: systemPromptVal,
           user_prompt: userPromptVal,
-          cases: JSON.parse(bulkCases),
+          cases,
         }),
       })
       if (!res.ok) throw new Error("Bulk test failed")
       return res.json()
     },
     onSuccess: (data) => {
+      setPlaygroundError(null)
       setPlaygroundResult(JSON.stringify(data.results, null, 2))
       queryClient.invalidateQueries({ queryKey: ["admin", "prompt-test-runs"] })
+    },
+    onError: (err) => {
+      setPlaygroundResult("")
+      setPlaygroundError(err instanceof Error ? err.message : "Bulk test failed")
     },
   })
 
@@ -952,6 +978,31 @@ export function AdminClient() {
     },
   })
 
+  // Prompt library filter + edit state
+  const filteredPrompts = useMemo(() => {
+    const needle = promptSearch.trim().toLowerCase()
+    if (!needle) return prompts
+    return prompts.filter((p) => p.name.toLowerCase().includes(needle))
+  }, [prompts, promptSearch])
+
+  const isPromptDirty = useMemo(() => {
+    if (!selectedPrompt) return false
+    return (
+      systemPromptVal !== selectedPrompt.system_prompt ||
+      userPromptVal !== (selectedPrompt.user_prompt || "")
+    )
+  }, [selectedPrompt, systemPromptVal, userPromptVal])
+
+  // Bulk-case count is best-effort: invalid JSON simply reads as 0
+  const bulkCaseCount = useMemo(() => {
+    try {
+      const parsed = JSON.parse(bulkCases)
+      return Array.isArray(parsed) ? parsed.length : 0
+    } catch {
+      return 0
+    }
+  }, [bulkCases])
+
   // Access check
   if (analyticsErr?.message === "Access Denied" || analyticsErr?.message === "Unauthorized") {
     return (
@@ -969,6 +1020,42 @@ export function AdminClient() {
     setSelectedPrompt(p)
     setSystemPromptVal(p.system_prompt)
     setUserPromptVal(p.user_prompt || "")
+  }
+
+  const discardPromptEdits = () => {
+    if (!selectedPrompt) return
+    setSystemPromptVal(selectedPrompt.system_prompt)
+    setUserPromptVal(selectedPrompt.user_prompt || "")
+  }
+
+  const formatPlaygroundVariables = () => {
+    try {
+      setPlaygroundVariables(JSON.stringify(JSON.parse(playgroundVariables), null, 2))
+      setPlaygroundError(null)
+    } catch {
+      setPlaygroundError("Variables are not valid JSON, so they cannot be formatted.")
+    }
+  }
+
+  const copyPlaygroundOutput = async () => {
+    if (!playgroundResult) return
+    try {
+      await navigator.clipboard.writeText(playgroundResult)
+      setOutputCopied(true)
+      window.setTimeout(() => setOutputCopied(false), 1600)
+    } catch {
+      setOutputCopied(false)
+    }
+  }
+
+  const showRunOutput = (run: PromptTestRun) => {
+    if (run.error_message) {
+      setPlaygroundResult("")
+      setPlaygroundError(run.error_message)
+      return
+    }
+    setPlaygroundError(null)
+    setPlaygroundResult(run.output || "No output was recorded for this run.")
   }
 
   const exportLogs = () => {
@@ -2047,126 +2134,239 @@ export function AdminClient() {
 
       {/* PROMPT MANAGER TAB */}
       {activeTab === "prompts" && (
-        <div className="grid gap-6 md:grid-cols-[250px_1fr] pixel-enter">
-          {/* Prompt Selection List */}
-          <div className="panel-strong p-4 space-y-3">
-            <h3 className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Prompt list</h3>
-            <div className="space-y-1">
+        <div className="pixel-enter grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-6">
+          {/* Prompt library */}
+          <div className="panel-strong flex min-w-0 flex-col gap-3 p-4">
+            <div className="flex items-center justify-between gap-2 border-b border-zinc-200 pb-2 dark:border-zinc-700">
+              <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#ff4e26]">Prompt library</h3>
+              <span className="font-mono text-[10px] text-zinc-500">{filteredPrompts.length}/{prompts.length}</span>
+            </div>
+            <Input
+              value={promptSearch}
+              onChange={(e) => setPromptSearch(e.target.value)}
+              placeholder="Filter prompts"
+              className="h-8 text-xs"
+            />
+            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:mx-0 lg:max-h-[60vh] lg:flex-col lg:gap-1 lg:overflow-x-visible lg:overflow-y-auto lg:px-0">
               {loadingPrompts ? (
-                <div className="soft-skeleton h-24" />
-              ) : prompts.length === 0 ? (
-                <p className="text-xs text-zinc-500 italic">No prompts registered in database. Run a generation to seed them.</p>
+                <div className="soft-skeleton h-24 w-full lg:w-auto" />
+              ) : filteredPrompts.length === 0 ? (
+                <p className="text-xs text-zinc-500 italic">
+                  {prompts.length === 0
+                    ? "No prompts registered in database. Run a generation to seed them."
+                    : "No prompts match your filter."}
+                </p>
               ) : (
-                prompts.map((p) => (
+                filteredPrompts.map((p) => (
                   <button
                     key={p.name}
-                    className={`w-full text-left px-3 py-2 text-xs font-semibold border transition-colors ${
+                    type="button"
+                    title={p.name}
+                    className={cn(
+                      "shrink-0 border px-3 py-2 text-left transition-colors lg:w-full lg:shrink",
                       selectedPrompt?.name === p.name
-                        ? "border-[#ff4e26] bg-orange-50 text-[#ff4e26]"
-                        : "border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800"
-                    }`}
+                        ? "border-[#ff4e26] bg-orange-50 text-[#ff4e26] dark:bg-orange-950/40"
+                        : "border-zinc-200 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    )}
                     onClick={() => selectPromptForEditing(p)}
                   >
-                    {p.name}
+                    <span className="block truncate font-mono text-[11px] font-semibold">{p.name}</span>
                   </button>
                 ))
               )}
             </div>
           </div>
 
-          {/* Prompt Editor */}
-          <div className="panel-strong p-5 space-y-4">
+          {/* Editor + Playground */}
+          <div className="grid min-w-0 gap-4 lg:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
             {selectedPrompt ? (
               <>
-                <div className="flex justify-between items-center border-b pb-3">
-                  <h3 className="font-bold text-black dark:text-white uppercase text-sm">Edit Prompt: {selectedPrompt.name}</h3>
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
-                    Last updated: {selectedPrompt.updated_at ? new Date(selectedPrompt.updated_at).toLocaleString() : "Never"}
-                  </span>
-                </div>
+                {/* Prompt Editor */}
+                <div className="panel-strong flex min-w-0 flex-col space-y-4 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-zinc-200 pb-3 dark:border-zinc-700">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-extrabold uppercase tracking-wide text-black dark:text-white">Edit prompt</h3>
+                      <p className="mt-0.5 truncate font-mono text-[11px] text-[#ff4e26]" title={selectedPrompt.name}>
+                        {selectedPrompt.name}
+                      </p>
+                    </div>
+                    <span className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
+                      {selectedPrompt.updated_at
+                        ? `Updated ${new Date(selectedPrompt.updated_at).toLocaleString()}`
+                        : "Never updated"}
+                    </span>
+                  </div>
 
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="system-prompt" className="text-xs font-bold text-zinc-700">System Prompt</Label>
-                    <Textarea 
+                  <div className="flex flex-col space-y-1.5 lg:min-h-0 lg:flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Label htmlFor="system-prompt" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">System prompt</Label>
+                      <span className="font-mono text-[10px] text-zinc-400">{systemPromptVal.length} chars</span>
+                    </div>
+                    <Textarea
                       id="system-prompt"
-                      rows={12}
-                      className="font-mono text-xs leading-relaxed"
+                      rows={16}
+                      className="min-w-0 font-mono text-xs leading-relaxed lg:min-h-0 lg:flex-1"
                       value={systemPromptVal}
                       onChange={(e) => setSystemPromptVal(e.target.value)}
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="user-prompt" className="text-xs font-bold text-zinc-700">User Prompt Template (Optional)</Label>
-                    <Textarea 
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Label htmlFor="user-prompt" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">User prompt template</Label>
+                      <span className="font-mono text-[10px] text-zinc-400">{userPromptVal.length} chars</span>
+                    </div>
+                    <Textarea
                       id="user-prompt"
-                      rows={5}
-                      className="font-mono text-xs leading-relaxed"
+                      rows={9}
+                      className="min-w-0 font-mono text-xs leading-relaxed"
                       value={userPromptVal}
                       onChange={(e) => setUserPromptVal(e.target.value)}
-                      placeholder="Enter user prompt template here (use {curly_braces} for variables)"
+                      placeholder="Optional. Use {curly_braces} for variables filled in by the playground."
                     />
                   </div>
 
-                  <div className="flex gap-3 pt-2">
-                    <Button 
-                      disabled={updatePromptMutation.isPending}
+                  <div className="flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                    <Button
+                      size="sm"
+                      disabled={updatePromptMutation.isPending || !isPromptDirty}
                       onClick={() => updatePromptMutation.mutate({
                         name: selectedPrompt.name,
                         system_prompt: systemPromptVal,
                         user_prompt: userPromptVal || undefined
                       })}
                     >
-                      {updatePromptMutation.isPending ? "Saving..." : "Save Changes"}
+                      {updatePromptMutation.isPending ? "Saving..." : "Save changes"}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!isPromptDirty || updatePromptMutation.isPending}
+                      onClick={discardPromptEdits}
+                    >
+                      Discard
+                    </Button>
+                    {isPromptDirty && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Unsaved changes</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Prompt Playground */}
+                <div className="panel-strong flex min-w-0 flex-col space-y-4 p-5">
+                  <div className="flex items-center justify-between gap-2 border-b border-zinc-200 pb-2 dark:border-zinc-700">
+                    <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-[#ff4e26]">Playground</h3>
+                    <span className="truncate font-mono text-[10px] text-zinc-500" title={selectedPrompt.name}>{selectedPrompt.name}</span>
                   </div>
 
-                  <div className="border-t pt-4 space-y-3">
-                    <h4 className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Prompt Playground</h4>
+                  <div className="space-y-1.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Label htmlFor="playground-variables" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Variables</Label>
+                      <button
+                        type="button"
+                        onClick={formatPlaygroundVariables}
+                        className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-[#ff4e26] dark:text-zinc-400"
+                      >
+                        Format
+                      </button>
+                    </div>
                     <Textarea
-                      rows={5}
-                      className="font-mono text-xs"
+                      id="playground-variables"
+                      rows={6}
+                      className="min-w-0 font-mono text-xs"
                       value={playgroundVariables}
                       onChange={(e) => setPlaygroundVariables(e.target.value)}
                       placeholder='{"job_desc":"..."}'
                     />
-                    <div className="flex flex-wrap gap-2">
-                      <Button size="xs" onClick={() => runPlaygroundMutation.mutate()} disabled={runPlaygroundMutation.isPending}>
-                        Run Once
-                      </Button>
-                      <Button size="xs" variant="outline" onClick={() => runBulkMutation.mutate()} disabled={runBulkMutation.isPending}>
-                        Run Bulk Cases
-                      </Button>
+                    <p className="text-[10px] text-zinc-500">JSON object merged into the user prompt template.</p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="xs" onClick={() => runPlaygroundMutation.mutate()} disabled={runPlaygroundMutation.isPending}>
+                      {runPlaygroundMutation.isPending ? "Running..." : "Run once"}
+                    </Button>
+                    <Button size="xs" variant="outline" onClick={() => runBulkMutation.mutate()} disabled={runBulkMutation.isPending}>
+                      {runBulkMutation.isPending ? "Running..." : "Run bulk cases"}
+                    </Button>
+                  </div>
+
+                  <div className="space-y-1.5 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Label htmlFor="playground-bulk" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Bulk cases</Label>
+                      <span className="font-mono text-[10px] text-zinc-400">{bulkCaseCount} cases</span>
                     </div>
                     <Textarea
+                      id="playground-bulk"
                       rows={4}
-                      className="font-mono text-xs"
+                      className="min-w-0 font-mono text-xs"
                       value={bulkCases}
                       onChange={(e) => setBulkCases(e.target.value)}
                       placeholder='[{"job_desc":"case 1"},{"job_desc":"case 2"}]'
                     />
-                    {playgroundResult && (
-                      <pre className="max-h-60 overflow-auto bg-zinc-950 p-3 text-xs text-white whitespace-pre-wrap">{playgroundResult}</pre>
-                    )}
-                    <div className="space-y-2">
-                      <h5 className="text-[10px] font-extrabold uppercase text-zinc-500">Recent test runs</h5>
-                      {promptRuns.slice(0, 5).map((run) => (
-                        <div key={run.id} className="border border-zinc-200 dark:border-zinc-700 p-2 text-xs">
-                          <div className="flex justify-between font-bold">
-                            <span>{run.prompt_name}</span>
-                            <span>{run.status} · {Math.round(run.latency_ms || 0)}ms</span>
-                          </div>
-                          <p className="mt-1 truncate text-zinc-500">{run.output || run.error_message || "No output"}</p>
-                        </div>
-                      ))}
+                  </div>
+
+                  {playgroundError && (
+                    <p className="border border-red-300 bg-red-50 p-2 text-[11px] font-semibold text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300">
+                      {playgroundError}
+                    </p>
+                  )}
+
+                  <div className="space-y-1.5 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-500">Output</h4>
+                      {playgroundResult && (
+                        <button
+                          type="button"
+                          onClick={copyPlaygroundOutput}
+                          className="cursor-pointer font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-[#ff4e26] dark:text-zinc-400"
+                        >
+                          {outputCopied ? "Copied" : "Copy"}
+                        </button>
+                      )}
                     </div>
+                    {playgroundResult ? (
+                      <pre className="max-h-[320px] min-w-0 overflow-auto border border-zinc-200 bg-zinc-950 p-3 font-mono text-xs text-zinc-100 whitespace-pre-wrap break-words dark:border-zinc-700">{playgroundResult}</pre>
+                    ) : (
+                      <p className="border border-dashed border-zinc-300 p-3 text-xs text-zinc-500 dark:border-zinc-700">
+                        Run the prompt to see its output here.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col space-y-2 border-t border-zinc-200 pt-3 dark:border-zinc-700 lg:min-h-0 lg:flex-1">
+                    <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-500">Recent runs</h4>
+                    {promptRuns.length === 0 ? (
+                      <p className="text-xs text-zinc-500 italic">No test runs recorded yet.</p>
+                    ) : (
+                      <div className="max-h-64 space-y-1.5 overflow-y-auto pr-0.5 lg:max-h-none lg:min-h-0 lg:flex-1">
+                        {promptRuns.slice(0, 12).map((run) => (
+                          <button
+                            key={run.id}
+                            type="button"
+                            title="Load this run's output into the output panel"
+                            onClick={() => showRunOutput(run)}
+                            className="w-full cursor-pointer border border-zinc-200 p-2 text-left transition-colors hover:border-[#ff4e26] dark:border-zinc-700 dark:hover:border-[#ff4e26]"
+                          >
+                            <div className="flex items-baseline justify-between gap-2 font-mono text-[10px]">
+                              <span className="font-bold text-zinc-700 dark:text-zinc-300">{run.prompt_name}</span>
+                              <span className={run.status === "failed" ? "font-bold text-red-600 dark:text-red-400" : "text-zinc-500"}>
+                                {run.status} · {Math.round(run.latency_ms || 0)}ms
+                              </span>
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-[11px] text-zinc-500">{run.output || run.error_message || "No output"}</p>
+                            <p className="mt-1 font-mono text-[9px] text-zinc-400">{new Date(run.created_at).toLocaleString()}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
             ) : (
-              <div className="h-64 flex items-center justify-center text-zinc-400 text-sm font-semibold italic">
-                Select a prompt from the sidebar to view and edit its template.
+              <div className="panel-strong flex min-w-0 items-center justify-center p-10 text-center xl:col-span-2">
+                <p className="text-sm font-semibold italic text-zinc-400">
+                  Select a prompt from the library to view and edit its template.
+                </p>
               </div>
             )}
           </div>
