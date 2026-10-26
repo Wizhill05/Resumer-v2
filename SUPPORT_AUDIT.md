@@ -34,6 +34,8 @@ The UI retains the site's Space Grotesk font, cream background, orange accent, d
 
 Apply Alembic revision `b6e4f2a8c910` with `alembic upgrade head` before serving the new backend. It adds optional report context and the `support_messages` table. The migration has a single head; it has not been applied to a deployed database during this work.
 
+The backend Docker startup command already runs `alembic upgrade head` before Uvicorn. No separate manual migration command is needed for this container. The active GitHub deployment workflow targets the EC2 self-hosted runner. Its first deployment attempt stopped before building because `/opt/resumer` contained production-specific Compose and tunnel configuration that conflicted with `git merge`. The deployment workflow now builds backend source from the runner checkout while retaining `/opt/resumer` as its runtime configuration directory. Shell syntax and the merged Compose configuration were validated locally.
+
 Real inbox delivery and attachment storage were not exercised. Verify the deployed Resend key, sender, frontend URL, and R2 configuration, then send a controlled test reply and follow its conversation link. Replies remain readable in the issue even when email fails. There is no automatic email retry queue.
 
 Brocode could not resize its viewport, so phone rendering and the authenticated admin conversation were not browser-tested. Their responsive layout and permissions were reviewed in source; backend authorization was tested through the API. A phone check after deployment should cover submission, opening the receipt link, admin reply, user follow-up, and close/reopen.

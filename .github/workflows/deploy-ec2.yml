@@ -19,19 +19,32 @@ jobs:
     name: Deploy backend on resumer-vps
     runs-on: [self-hosted, resumer-vps]
     timeout-minutes: 30
+    permissions:
+      contents: read
 
     steps:
-      - name: Pull latest code
-        working-directory: /opt/resumer
-        run: |
-          git fetch origin main
-          git merge --ff-only origin/main
+      - name: Check out deployment source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Rebuild and restart backend
         working-directory: /opt/resumer
         run: |
-          docker compose build backend
-          docker compose up -d backend
+          set -euo pipefail
+          # Keep production Compose, environment, and tunnel files in /opt/resumer.
+          # Only the backend build source comes from the runner's clean checkout.
+          override=$(mktemp "${RUNNER_TEMP}/resumer-build.XXXXXX.yml")
+          trap 'rm -f "$override"' EXIT
+          cat > "$override" <<'YAML'
+          services:
+            backend:
+              build:
+                context: ${GITHUB_WORKSPACE}/backend
+                dockerfile: Dockerfile
+          YAML
+          docker compose -f docker-compose.yml -f "$override" build backend
+          docker compose -f docker-compose.yml -f "$override" up -d --no-build backend
 
       - name: Health check
         run: |
