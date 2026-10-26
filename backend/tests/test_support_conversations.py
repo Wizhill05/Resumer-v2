@@ -175,3 +175,42 @@ async def test_admin_inbox_finds_closed_and_legacy_resolved_issues_and_searches_
     analytics = (await client.get("/admin/feedback/analytics")).json()
     assert analytics["open_count"] == 1
     assert analytics["resolved_count"] == 2
+
+
+async def test_admin_can_close_reopen_and_recategorize_without_changing_original_report(context):
+    from src.api.admin import router as admin_router
+    from src.core.auth import get_current_admin
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.include_router(admin_router)
+    app.dependency_overrides[get_current_admin] = lambda: admin
+    endpoint = f"/admin/feedback/reports/{report.id}"
+    response = await client.patch(endpoint, json={"status": "closed"})
+    assert response.status_code == 200
+    assert report.status == "closed"
+    assert report.resolved_at is not None
+    response = await client.patch(endpoint, json={"category": "feedback", "title": "  Add another export format  "})
+    assert response.status_code == 200
+    detail = (await client.get(f"/feedback/support/{report.id}")).json()
+    assert detail["status"] == "closed"
+    assert detail["category"] == "feedback"
+    assert detail["title"] == "Add another export format"
+    assert detail["message"] == "Download fails"
+    assert detail["messages"][-1]["author_role"] == "system"
+    assert any("Category changed from Bug report to Feature request" in row["message"] for row in detail["messages"])
+    assert (await client.patch(endpoint, json={"status": "open"})).status_code == 200
+    assert report.status == "open"
+    assert report.resolved_at is None
+    assert (await client.patch(endpoint, json={"category": "made-up"})).status_code == 422
+    assert (await client.patch(endpoint, json={"title": "  "})).status_code == 422
+    assert (await client.patch(endpoint, json={})).status_code == 422
+
+
+async def test_reporter_cannot_use_admin_metadata_editor(context, monkeypatch):
+    from src.api.admin import router as admin_router
+    from src.core.config import settings
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.include_router(admin_router)
+    monkeypatch.setattr(settings, "ADMIN_EMAILS", "admin@example.com")
+    response = await client.patch(f"/admin/feedback/reports/{report.id}", json={"category": "feedback"})
+    assert response.status_code == 403
+    assert report.category == "bug"

@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select, func, delete, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from langchain_core.prompts import ChatPromptTemplate
@@ -1315,9 +1315,26 @@ async def list_prompt_test_runs(limit: int = 50, db: AsyncSession = Depends(get_
 # ── Feedback Admin Endpoints ──────────────────────────────────────────────────
 
 
-class SupportReportStatusUpdate(BaseModel):
-    status: Literal["open", "in_progress", "resolved", "closed"]
-    admin_note: str | None = None
+class SupportReportUpdate(BaseModel):
+    status: Literal["open", "in_progress", "resolved", "closed"] | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    category: Literal["bug", "generation", "import", "template", "account", "billing", "feedback", "feature", "other"] | None = None
+    admin_note: str | None = Field(default=None, max_length=10000)
+
+    @field_validator("title")
+    @classmethod
+    def trim_title(cls, value: str | None) -> str | None:
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("Enter an issue title")
+        return value
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if all(value is None for value in (self.status, self.title, self.category, self.admin_note)):
+            raise ValueError("Choose a field to update")
+        return self
 
 
 @router.get("/feedback/analytics", dependencies=[Depends(get_current_admin)])
@@ -1433,14 +1450,29 @@ async def get_support_report_detail(id: uuid.UUID, db: AsyncSession = Depends(ge
 @router.patch("/feedback/reports/{id}")
 async def update_support_report_status(
     id: uuid.UUID,
-    data: SupportReportStatusUpdate,
+    data: SupportReportUpdate,
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     from src.services.support import add_status_event, append_reply, get_report, notify_owner
+    from src.models.generation import SupportMessage
     report = await get_report(db, id)
-    changed = report.status != data.status
-    add_status_event(db, report, data.status, current_admin)
+    changed = data.status is not None and report.status != data.status
+    if data.status is not None:
+        add_status_event(db, report, data.status, current_admin)
+    events = []
+    if data.title is not None and data.title != report.title:
+        events.append(f'Title changed to "{data.title}".')
+        report.title = data.title
+    category = "feedback" if data.category == "feature" else data.category
+    if category is not None and category != report.category:
+        labels = {"bug": "Bug report", "feedback": "Feature request", "feature": "Feature request", "generation": "Generation issue", "import": "Import & extraction", "template": "Template & PDF", "account": "Account & access", "billing": "Billing", "other": "Other"}
+        events.append(f'Category changed from {labels.get(report.category, report.category or "Other")} to {labels[category]}.')
+        report.category = category
+    for event in events:
+        db.add(SupportMessage(report_id=report.id, author_id=current_admin.id, author_role="system", message=event))
+    if events:
+        report.updated_at = datetime.now(timezone.utc)
     # Legacy clients used this field as their public response. Keep it as history.
     if data.admin_note and data.admin_note.strip():
         result = await append_reply(db, report, ReplyCreate(message=data.admin_note), current_admin, True)

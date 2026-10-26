@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { getCategoryLabel } from "./supportCategories"
+import { AdminIssueEditor } from "./AdminIssueEditor"
 import {
   issueTitle,
   rememberGuestIssue,
@@ -187,6 +188,16 @@ export function IssueThread({
               <span>Opened {new Date(thread.created_at).toLocaleDateString()}</span>
             </div>
           </header>
+          {thread.viewer_is_admin && (
+            <AdminIssueEditor
+              key={`${thread.id}-${thread.title}-${thread.category}`}
+              issue={thread}
+              onSaved={async () => {
+                await load()
+                setNotice("Issue details saved.")
+              }}
+            />
+          )}
           {token && !thread.viewer_is_admin && (
             <p className="border-l-2 border-[#ff4e26] pl-3 text-xs leading-5 text-zinc-500">
               This is your private issue link. Bookmark it to return to this conversation, and keep
