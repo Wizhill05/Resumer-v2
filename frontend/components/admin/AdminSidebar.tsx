@@ -50,9 +50,27 @@ export function AdminSidebar({
   unresolvedReportsCount = 0,
 }: AdminSidebarProps) {
   return (
-    <aside className="w-full md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-900 p-3 select-none flex flex-col md:justify-center md:fixed md:left-0 md:top-[49px] md:h-[calc(100dvh-49px)] md:max-h-[calc(100dvh-49px)] md:overflow-y-auto z-20">
+    <aside className="w-full min-w-0 md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-900 p-3 select-none flex flex-col md:justify-center md:fixed md:left-0 md:top-[49px] md:h-[calc(100dvh-49px)] md:max-h-[calc(100dvh-49px)] md:overflow-y-auto z-20">
+      <label className="flex items-center gap-3 text-sm font-bold md:hidden">
+        <span>Admin</span>
+        <select
+          aria-label="Admin section"
+          value={activeTab}
+          onChange={(event) => {
+            const item = NAV_GROUPS.flatMap((group) => group.items).find((entry) => entry.id === event.target.value)
+            if (item) onSelectTab(item.id)
+          }}
+          className="h-11 min-w-0 flex-1 border border-zinc-300 bg-white px-3 text-base dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          {NAV_GROUPS.map((group) => (
+            <optgroup key={group.group} label={group.group}>
+              {group.items.map((item) => <option key={item.id} value={item.id}>{item.label}{item.id === "feedback" && unresolvedReportsCount > 0 ? ` (${unresolvedReportsCount})` : ""}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </label>
       {/* Grouped Navigation */}
-      <nav className="flex flex-row md:flex-col gap-6 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 my-auto md:my-0">
+      <nav aria-label="Admin navigation" className="hidden md:flex md:flex-col gap-6 my-0">
         {NAV_GROUPS.map((group) => (
           <div key={group.group} className="space-y-1 shrink-0 md:shrink">
             <p className="hidden md:block px-2.5 pb-1 font-mono text-[10px] font-bold uppercase tracking-widest text-zinc-500">

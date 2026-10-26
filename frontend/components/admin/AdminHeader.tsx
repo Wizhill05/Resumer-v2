@@ -22,12 +22,12 @@ export function AdminHeader({
   }
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-200 dark:border-zinc-800 pb-4 mb-6">
-      <div>
+    <div className="flex items-start justify-between gap-3 border-b border-zinc-200 dark:border-zinc-800 pb-4 mb-5">
+      <div className="min-w-0">
         <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-[#ff4e26]">
           {tabInfo.group}
         </p>
-        <h1 className="text-xl md:text-2xl font-extrabold uppercase tracking-tight text-black dark:text-white">
+        <h1 className="break-words text-xl md:text-2xl font-extrabold tracking-tight text-black dark:text-white">
           {tabInfo.title}
         </h1>
         <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
@@ -41,7 +41,7 @@ export function AdminHeader({
             type="button"
             onClick={onManualRefresh}
             disabled={isFetching}
-            className="flex items-center gap-1.5 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 hover:border-black dark:hover:border-white hover:text-black dark:hover:text-white transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
+            className="flex min-h-11 shrink-0 items-center gap-1.5 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:border-black dark:hover:border-white hover:text-black dark:hover:text-white transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
             title="Refresh Data"
           >
             <RefreshCw size={13} className={isFetching ? "animate-spin text-[#ff4e26]" : ""} />

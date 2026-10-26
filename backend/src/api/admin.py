@@ -3,7 +3,7 @@ import json
 import uuid
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response, StreamingResponse
@@ -28,6 +28,7 @@ from src.models.generation import (
     UserRateLimit,
 )
 from src.models.user import User
+from src.services.support import ReplyCreate
 from src.pipeline.nodes import invoke_with_fallback
 from src.services.llm_config import llm_config_service, TierConfig
 from src.template_registry.service import TemplateRegistryService
@@ -1315,7 +1316,7 @@ async def list_prompt_test_runs(limit: int = 50, db: AsyncSession = Depends(get_
 
 
 class SupportReportStatusUpdate(BaseModel):
-    status: str
+    status: Literal["open", "in_progress", "resolved", "closed"]
     admin_note: str | None = None
 
 
@@ -1324,8 +1325,8 @@ async def get_feedback_analytics(db: AsyncSession = Depends(get_db)):
     from src.models.generation import FeedbackRating, SupportReport
 
     total_reports = await db.scalar(select(func.count(SupportReport.id))) or 0
-    open_reports = await db.scalar(select(func.count(SupportReport.id)).where(SupportReport.status == "open")) or 0
-    resolved_reports = await db.scalar(select(func.count(SupportReport.id)).where(SupportReport.status == "resolved")) or 0
+    open_reports = await db.scalar(select(func.count(SupportReport.id)).where(SupportReport.status.in_(("open", "in_progress")))) or 0
+    resolved_reports = await db.scalar(select(func.count(SupportReport.id)).where(SupportReport.status.in_(("resolved", "closed")))) or 0
 
     total_ratings = await db.scalar(select(func.count(FeedbackRating.id))) or 0
     avg_rating = await db.scalar(select(func.avg(FeedbackRating.star_rating))) or 0.0
@@ -1372,7 +1373,9 @@ async def list_support_reports(
         .group_by(SupportReport.id, User.email, User.name)
     )
 
-    if status_filter:
+    if status_filter in ("resolved", "closed"):
+        query = query.where(SupportReport.status.in_(("resolved", "closed")))
+    elif status_filter:
         query = query.where(SupportReport.status == status_filter)
     if category_filter:
         query = query.where(SupportReport.category == category_filter)
@@ -1380,6 +1383,7 @@ async def list_support_reports(
         like = f"%{search.strip()}%"
         query = query.where(
             or_(
+                SupportReport.title.ilike(like),
                 SupportReport.message.ilike(like),
                 User.email.ilike(like),
                 SupportReport.email_override.ilike(like),
@@ -1404,6 +1408,7 @@ async def list_support_reports(
                 "user_name": user_name,
                 "email_override": report.email_override,
                 "message": report.message,
+                "title": report.title,
                 "status": report.status,
                 "category": report.category,
                 "admin_note": report.admin_note,
@@ -1421,101 +1426,36 @@ async def list_support_reports(
 
 @router.get("/feedback/reports/{id}", dependencies=[Depends(get_current_admin)])
 async def get_support_report_detail(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    from src.models.generation import ReportAttachment, SupportReport
-
-    report_res = await db.execute(select(SupportReport).where(SupportReport.id == id))
-    report = report_res.scalar_one_or_none()
-    if not report:
-        raise HTTPException(status_code=404, detail="Support report not found")
-
-    user_email = report.email_override
-    user_name = None
-    if report.user_id:
-        u_res = await db.execute(select(User).where(User.id == report.user_id))
-        user = u_res.scalar_one_or_none()
-        if user:
-            user_email = user.email
-            user_name = user.name
-
-    att_res = await db.execute(
-        select(ReportAttachment).where(ReportAttachment.report_id == id)
-    )
-    attachments = att_res.scalars().all()
-
-    storage = StorageService()
-    attachment_list = []
-    for att in attachments:
-        presigned_url = storage.get_presigned_url(att.storage_key, expires_in=3600)
-        attachment_list.append(
-            {
-                "id": att.id,
-                "attachment_type": att.attachment_type,
-                "storage_key": att.storage_key,
-                "presigned_url": presigned_url,
-                "filename": att.filename,
-                "mime_type": att.mime_type,
-                "file_size_bytes": att.file_size_bytes,
-                "transcription": att.transcription,
-                "created_at": att.created_at,
-            }
-        )
-
-    return {
-        "id": report.id,
-        "user_id": report.user_id,
-        "user_email": user_email,
-        "user_name": user_name,
-        "email_override": report.email_override,
-        "message": report.message,
-        "status": report.status,
-        "category": report.category,
-        "admin_note": report.admin_note,
-        "auto_summary": report.auto_summary,
-        "sentiment_score": report.sentiment_score,
-        "generation_id": report.generation_id,
-        "created_at": report.created_at,
-        "updated_at": report.updated_at,
-        "resolved_at": report.resolved_at,
-        "attachments": attachment_list,
-    }
+    from src.services.support import get_report, report_detail
+    return await report_detail(db, await get_report(db, id), viewer_is_admin=True)
 
 
-@router.patch("/feedback/reports/{id}", dependencies=[Depends(get_current_admin)])
+@router.patch("/feedback/reports/{id}")
 async def update_support_report_status(
     id: uuid.UUID,
     data: SupportReportStatusUpdate,
+    current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    from src.models.generation import SupportReport
+    from src.services.support import add_status_event, append_reply, get_report, notify_owner
+    report = await get_report(db, id)
+    changed = report.status != data.status
+    add_status_event(db, report, data.status, current_admin)
+    # Legacy clients used this field as their public response. Keep it as history.
+    if data.admin_note and data.admin_note.strip():
+        result = await append_reply(db, report, ReplyCreate(message=data.admin_note), current_admin, True)
+        notification = result["notification_status"]
+    else:
+        await db.commit()
+        notification = await notify_owner(db, report, f"Your request was marked {data.status.replace('_', ' ')}.") if changed else None
+    return {"status": "success", "report_status": report.status, "notification_status": notification}
 
-    report_res = await db.execute(select(SupportReport).where(SupportReport.id == id))
-    report = report_res.scalar_one_or_none()
-    if not report:
-        raise HTTPException(status_code=404, detail="Support report not found")
 
-    old_status = report.status
-    report.status = data.status
-    if data.admin_note is not None:
-        report.admin_note = data.admin_note
-
-    if data.status == "resolved" and old_status != "resolved":
-        report.resolved_at = datetime.now(timezone.utc)
-        # Trigger resolution email
-        target_email = report.email_override
-        if report.user_id:
-            u_res = await db.execute(select(User).where(User.id == report.user_id))
-            user = u_res.scalar_one_or_none()
-            if user:
-                target_email = user.email
-        if target_email:
-            try:
-                from src.core.notify import send_support_resolved_email
-                send_support_resolved_email(target_email, report.id, report.admin_note or "")
-            except Exception as e:
-                logger.error(f"Failed to send resolution email to {target_email}: {e}")
-
-    await db.commit()
-    return {"status": "success", "report_status": report.status}
+@router.post("/feedback/reports/{id}/messages")
+async def reply_to_support_report(id: uuid.UUID, data: ReplyCreate,
+                                  current_admin: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
+    from src.services.support import append_reply, get_report
+    return await append_reply(db, await get_report(db, id), data, current_admin, True)
 
 
 @router.delete("/feedback/reports/{id}", dependencies=[Depends(get_current_admin)])

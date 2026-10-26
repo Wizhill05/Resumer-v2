@@ -44,8 +44,8 @@ export const ADMIN_TAB_INFO: Record<AdminTabId, { group: string; title: string; 
   },
   feedback: {
     group: "Overview & Operations",
-    title: "Support & Feedback Triage",
-    description: "User bug reports, voice/screenshot attachments, and rating comments",
+    title: "Support & feedback",
+    description: "Read issues, reply to users, and follow each conversation.",
   },
   models: {
     group: "AI Engine & Infrastructure",

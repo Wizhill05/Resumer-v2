@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 import logging
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from src.core.database import get_db
 from src.core.storage import StorageService
 from src.models.generation import FeedbackRating, Generation, ReportAttachment, SupportReport
 from src.models.user import User
+from src.services.support import (ReplyCreate, accessible_report, add_status_event, append_reply, guest_token, is_admin, notify_submission, report_detail, report_out)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class SupportReportSubmitResponse(BaseModel):
     id: uuid.UUID
     status: str
     message: str
+    access_token: str | None = None
 
 
 class RatingCheckResponse(BaseModel):
@@ -60,7 +62,11 @@ class RatingCheckResponse(BaseModel):
 @router.post("/support", response_model=SupportReportSubmitResponse)
 async def submit_support_report(
     background_tasks: BackgroundTasks,
-    message: str = Form(...),
+    message: str = Form(..., max_length=10000),
+    title: Optional[str] = Form(None, max_length=200),
+    where_happened: Optional[str] = Form(None, max_length=2000),
+    steps_to_reproduce: Optional[str] = Form(None, max_length=10000),
+    expected_behavior: Optional[str] = Form(None, max_length=5000),
     category: Optional[str] = Form("other"),
     email_override: Optional[str] = Form(None),
     generation_id: Optional[uuid.UUID] = Form(None),
@@ -77,6 +83,17 @@ async def submit_support_report(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Message content cannot be empty",
         )
+
+    if email_override:
+        email_override = email_override.strip()
+        if len(email_override) > 254 or "@" not in email_override or any(c.isspace() for c in email_override):
+            raise HTTPException(422, "Enter a valid email address")
+    if category not in {"bug", "billing", "feedback", "feature", "generation", "import", "template", "account", "other"}:
+        raise HTTPException(422, "Choose a valid report category")
+    if generation_id:
+        generation = await db.get(Generation, generation_id)
+        if not current_user or not generation or generation.user_id != current_user.id:
+            raise HTTPException(404, "Generation not found")
 
     # Validate screenshots count and size
     if len(screenshots) > 5:
@@ -95,6 +112,8 @@ async def submit_support_report(
                     detail=f"Image {img.filename} exceeds maximum allowed size of 5 MB",
                 )
             mime = img.content_type or "image/png"
+            if mime not in ALLOWED_IMAGE_TYPES:
+                raise HTTPException(415, "Screenshots must be JPEG, PNG, WebP, or GIF images")
             validated_screenshots.append((img.filename, content, mime))
 
     # Validate voice message
@@ -107,6 +126,8 @@ async def submit_support_report(
                 detail="Voice recording exceeds maximum allowed size of 25 MB",
             )
         voice_mime = voice.content_type or "audio/webm"
+        if voice_mime.split(";", 1)[0] not in ALLOWED_VOICE_TYPES:
+            raise HTTPException(415, "Unsupported audio recording format")
         validated_voice = (voice.filename, voice_content, voice_mime)
 
     # Create SupportReport record
@@ -115,6 +136,10 @@ async def submit_support_report(
         user_id=user_id,
         email_override=email_override or (current_user.email if current_user else None),
         message=message.strip(),
+        title=title.strip() if title else None,
+        where_happened=where_happened,
+        steps_to_reproduce=steps_to_reproduce,
+        expected_behavior=expected_behavior,
         category=category or "other",
         status="open",
         generation_id=generation_id,
@@ -132,7 +157,8 @@ async def submit_support_report(
 
         uploaded_key = storage.upload_bytes(content, key, content_type=mime)
         if not uploaded_key:
-            logger.warning(f"Failed to upload screenshot {filename} to object storage")
+            await db.rollback()
+            raise HTTPException(503, "Screenshot upload failed. Please try again.")
 
         attachment = ReportAttachment(
             id=att_id,
@@ -152,7 +178,9 @@ async def submit_support_report(
         ext = "webm" if "webm" in v_mime else ("mp4" if "mp4" in v_mime else "wav")
         key = f"feedback/voice/{report.id}/{att_id}.{ext}"
 
-        storage.upload_bytes(v_content, key, content_type=v_mime)
+        if not storage.upload_bytes(v_content, key, content_type=v_mime):
+            await db.rollback()
+            raise HTTPException(503, "Voice recording upload failed. Please try again.")
         v_attachment = ReportAttachment(
             id=att_id,
             report_id=report.id,
@@ -166,7 +194,9 @@ async def submit_support_report(
 
     await db.commit()
 
-    # Import AI and notification services dynamically to trigger background processing
+    background_tasks.add_task(notify_submission, report.id)
+
+    # AI enrichment is optional and must not delay the support notification.
     try:
         from src.services.feedback_ai import process_new_support_report
         background_tasks.add_task(process_new_support_report, report.id)
@@ -177,7 +207,41 @@ async def submit_support_report(
         id=report.id,
         status=report.status,
         message="Support request submitted successfully",
+        access_token=guest_token(report.id) if not current_user else None,
     )
+
+
+@router.get("/support")
+async def list_my_support_reports(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    reports = (await db.execute(select(SupportReport).where(SupportReport.user_id == current_user.id).order_by(SupportReport.updated_at.desc()))).scalars().all()
+    return [report_out(report) for report in reports]
+
+
+@router.get("/support/{id}")
+async def get_my_support_report(id: uuid.UUID, access_token: str | None = None,
+                                current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
+    report = await accessible_report(db, id, current_user, access_token)
+    return await report_detail(db, report, is_admin(current_user))
+
+
+@router.post("/support/{id}/messages")
+async def reply_to_support_report(id: uuid.UUID, data: ReplyCreate, access_token: str | None = None,
+                                  current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
+    report = await accessible_report(db, id, current_user, access_token)
+    return await append_reply(db, report, data, current_user, is_admin(current_user))
+
+
+class OwnerStatusUpdate(BaseModel):
+    status: Literal["open", "resolved", "closed"]
+
+
+@router.patch("/support/{id}")
+async def update_my_support_report(id: uuid.UUID, data: OwnerStatusUpdate, access_token: str | None = None,
+                                   current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
+    report = await accessible_report(db, id, current_user, access_token)
+    add_status_event(db, report, data.status, current_user)
+    await db.commit()
+    return {"status": "success", "report_status": report.status}
 
 
 @router.post("/rating", response_model=FeedbackRatingOut)
@@ -197,7 +261,7 @@ async def submit_feedback_rating(
         stmt = stmt.where(FeedbackRating.generation_id == data.generation_id)
 
     result = await db.execute(stmt)
-    existing_rating = result.scalar_one_or_none()
+    existing_rating = result.scalars().first()
 
     if existing_rating:
         existing_rating.star_rating = data.star_rating
@@ -240,7 +304,7 @@ async def check_feedback_prompt(
     # 1. Check if user already has ANY rating or dismissal record
     stmt = select(FeedbackRating).where(FeedbackRating.user_id == current_user.id)
     result = await db.execute(stmt)
-    existing_rating = result.scalar_one_or_none()
+    existing_rating = result.scalars().first()
 
     if existing_rating is not None:
         return RatingCheckResponse(

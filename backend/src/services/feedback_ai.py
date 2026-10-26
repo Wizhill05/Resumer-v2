@@ -9,7 +9,6 @@ from sqlalchemy import select
 
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal
-from src.core.notify import send_admin_support_alert
 from src.core.storage import StorageService
 from src.models.generation import ReportAttachment, SupportReport
 from src.pipeline.nodes import invoke_with_fallback
@@ -39,7 +38,7 @@ async def process_new_support_report(report_id: uuid.UUID) -> None:
             )
             summary_user = f"User Message:\n{report.message}"
 
-            prompt = ChatPromptTemplate.from_messages([("system", summary_sys), ("user", summary_user)])
+            prompt = ChatPromptTemplate.from_messages([SystemMessage(content=summary_sys), HumanMessage(content=summary_user)])
             response = await invoke_with_fallback(
                 lambda llm, p: prompt | llm,
                 {},
@@ -86,23 +85,12 @@ async def process_new_support_report(report_id: uuid.UUID) -> None:
             except Exception as e:
                 logger.error(f"[feedback_ai] Transcription failed for attachment {v_att.id}: {e}")
 
-        # 3. Fire Admin Email Alert
-        try:
-            send_admin_support_alert(
-                report_id=str(report.id),
-                message=report.message,
-                category=report.category,
-                sender_email=report.email_override,
-            )
-        except Exception as e:
-            logger.error(f"[feedback_ai] Admin email alert failed: {e}")
-
         # 4. Fire Webhook Alert (Slack / Discord)
         if settings.SUPPORT_WEBHOOK_URL:
             try:
                 import httpx
                 payload = {
-                    "text": f"🚨 *New Support Report* [Category: {report.category}]\n*From:* {report.email_override or 'Anonymous'}\n*Message:* {report.message[:300]}...\n<{settings.FRONTEND_URL}/admin|Open Admin Panel>",
+                    "text": f"🚨 *New Support Report* [Category: {report.category}]\n*From:* {report.email_override or 'Anonymous'}\n*Message:* {report.message[:300]}...\n<{settings.FRONTEND_URL}/support/issues/{report.id}|Open conversation>",
                     "content": f"🚨 **New Support Report** [{report.category}]\n**From:** {report.email_override or 'Anonymous'}\n**Message:** {report.message[:300]}...",
                 }
                 async with httpx.AsyncClient(timeout=5.0) as client:

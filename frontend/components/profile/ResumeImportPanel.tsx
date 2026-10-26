@@ -4,7 +4,7 @@ import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, CheckCircle2, Loader2, Upload, X, ChevronDown, ChevronUp, FileUp } from "lucide-react"
-import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
+import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 type ImportWarning = { scope: string; message: string }
 type DuplicateCandidate = { imported_type: string; confidence: number; reason: string; suggested_action: string }
 type ResumeImportDraft = {

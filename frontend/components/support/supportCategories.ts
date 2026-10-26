@@ -62,6 +62,6 @@ export const SUPPORT_CATEGORY_MAP = new Map<SupportCategoryValue, SupportCategor
 
 export function getCategoryLabel(value: string | null | undefined): string {
   if (!value) return "Other"
-  const found = SUPPORT_CATEGORY_MAP.get(value as SupportCategoryValue)
+  const found = SUPPORT_CATEGORIES.find(category => category.value === value)
   return found ? found.label : value
 }

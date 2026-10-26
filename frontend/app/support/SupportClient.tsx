@@ -1,334 +1,379 @@
 "use client"
-
-import { useState, useRef, useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { ArrowLeft, Loader2, Paperclip, X, Mic, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { SUPPORT_CATEGORIES, type SupportCategoryValue } from "@/components/support/supportCategories"
 import {
-  Mic,
-  Square,
-  Trash2,
-  Upload,
-  Image as ImageIcon,
-  CheckCircle2,
-  AlertCircle,
-  Play,
-  Pause,
-  Loader2,
-  X,
-  Volume2,
-} from "lucide-react"
+  SUPPORT_CATEGORIES,
+  type SupportCategoryValue
+} from "@/components/support/supportCategories"
+import {
+  createdIssueSchema,
+  issueHref,
+  rememberGuestIssue,
+  supportFetch
+} from "@/components/support/supportApi"
 
-interface SupportClientProps {
+export function SupportClient({
+  userEmail,
+  signedIn = false,
+  initialCategory,
+  initialMessage = "",
+  generationId,
+  initialLocation = ""
+}: {
   userEmail?: string
-  userName?: string
-}
-
-export function SupportClient({ userEmail }: SupportClientProps) {
-  const [category, setCategory] = useState<SupportCategoryValue>("bug")
-  const [message, setMessage] = useState("")
-  const [emailOverride, setEmailOverride] = useState(userEmail || "")
-
+  signedIn?: boolean
+  initialCategory?: string
+  initialMessage?: string
+  generationId?: string
+  initialLocation?: string
+}) {
+  const router = useRouter()
+  const [category, setCategory] = useState<SupportCategoryValue>(
+    SUPPORT_CATEGORIES.find((item) => item.value === initialCategory)?.value ?? "bug"
+  )
+  const [title, setTitle] = useState("")
+  const [message, setMessage] = useState(initialMessage)
+  const [email, setEmail] = useState(userEmail || "")
+  const [location, setLocation] = useState(initialLocation)
+  const [steps, setSteps] = useState("")
+  const [expected, setExpected] = useState("")
   const [screenshots, setScreenshots] = useState<File[]>([])
-  const [screenshotPreviews, setScreenshotPreviews] = useState<string[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const [isRecording, setIsRecording] = useState(false)
-  const [recordingSeconds, setRecordingSeconds] = useState(0)
-  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null)
-  const [voiceUrl, setVoiceUrl] = useState<string | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-
-  const [isPlaying, setIsPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [voice, setVoice] = useState<{ blob: Blob; url: string } | null>(null)
+  const [recording, setRecording] = useState(false)
+  const recorder = useRef<MediaRecorder | null>(null)
+  const stream = useRef<MediaStream | null>(null)
+  const mounted = useRef(true)
   const [error, setError] = useState<string | null>(null)
-  const [submitted, setSubmitted] = useState(false)
-
+  const [submitting, setSubmitting] = useState(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (recorder.current?.state === "recording") recorder.current.stop()
+      stream.current?.getTracks().forEach((track) => track.stop())
+    }
+  }, [])
   useEffect(() => {
     return () => {
-      screenshotPreviews.forEach((url) => URL.revokeObjectURL(url))
-      if (voiceUrl) URL.revokeObjectURL(voiceUrl)
+      if (voice) URL.revokeObjectURL(voice.url)
     }
-  }, [screenshotPreviews, voiceUrl])
-
-  const handleScreenshotChange = (files: FileList | null) => {
-    if (!files) return
-    const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"))
-    if (screenshots.length + newFiles.length > 5) {
-      setError("Max 5 screenshots.")
+  }, [voice])
+  async function record() {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")
+        throw new Error(
+          "Voice recording isn't available in this browser. You can still describe the issue below."
+        )
+      const microphone = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (!mounted.current) {
+        microphone.getTracks().forEach((track) => track.stop())
+        return
+      }
+      stream.current = microphone
+      const mime = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus"].find((type) =>
+        MediaRecorder.isTypeSupported(type)
+      )
+      const next = new MediaRecorder(microphone, mime ? { mimeType: mime } : undefined)
+      recorder.current = next
+      const chunks: BlobPart[] = []
+      next.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data)
+      }
+      next.onstop = () => {
+        microphone.getTracks().forEach((track) => track.stop())
+        if (mounted.current) {
+          const blob = new Blob(chunks, { type: next.mimeType })
+          setVoice({ blob, url: URL.createObjectURL(blob) })
+          setRecording(false)
+        }
+      }
+      next.start()
+      setRecording(true)
+      setError(null)
+    } catch (err) {
+      stream.current?.getTracks().forEach((track) => track.stop())
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not access the microphone. Check your browser permissions."
+      )
+    }
+  }
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!message.trim()) {
+      setError("Describe your issue before sending.")
       return
     }
-    setError(null)
-    setScreenshots([...screenshots, ...newFiles])
-    setScreenshotPreviews([...screenshotPreviews, ...newFiles.map((f) => URL.createObjectURL(f))])
-  }
-
-  const removeScreenshot = (index: number) => {
-    const removed = screenshotPreviews[index]
-    if (removed) URL.revokeObjectURL(removed)
-    setScreenshots(screenshots.filter((_, i) => i !== index))
-    setScreenshotPreviews(screenshotPreviews.filter((_, i) => i !== index))
-  }
-
-  const startRecording = async () => {
-    try {
-      setError(null)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      let mimeType = "audio/webm"
-      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) mimeType = "audio/webm;codecs=opus"
-      else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) mimeType = "audio/ogg;codecs=opus"
-      else if (MediaRecorder.isTypeSupported("audio/mp4")) mimeType = "audio/mp4"
-      const mr = new MediaRecorder(stream, { mimeType })
-      mediaRecorderRef.current = mr
-      audioChunksRef.current = []
-      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
-      mr.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: mimeType })
-        setVoiceBlob(blob)
-        setVoiceUrl(URL.createObjectURL(blob))
-        stream.getTracks().forEach((t) => t.stop())
-      }
-      mr.start(200)
-      setIsRecording(true)
-      setRecordingSeconds(0)
-      timerRef.current = setInterval(() => setRecordingSeconds((p) => p + 1), 1000)
-    } catch {
-      setError("Microphone access denied.")
-    }
-  }
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-  }
-
-  const discardVoice = () => {
-    if (voiceUrl) URL.revokeObjectURL(voiceUrl)
-    setVoiceBlob(null)
-    setVoiceUrl(null)
-    setIsPlaying(false)
-  }
-
-  const togglePlay = () => {
-    if (!audioRef.current) return
-    if (isPlaying) { audioRef.current.pause(); setIsPlaying(false) }
-    else { audioRef.current.play(); setIsPlaying(true) }
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!message.trim()) { setError("Add a short description."); return }
-    setIsSubmitting(true)
+    setSubmitting(true)
     setError(null)
     try {
-      const fd = new FormData()
-      fd.append("message", message.trim())
-      fd.append("category", category)
-      if (emailOverride.trim()) fd.append("email_override", emailOverride.trim())
-      screenshots.forEach((f) => fd.append("screenshots", f))
-      if (voiceBlob) {
-        const ext = voiceBlob.type.includes("webm") ? "webm" : voiceBlob.type.includes("mp4") ? "mp4" : "wav"
-        fd.append("voice", voiceBlob, `recording.${ext}`)
+      const data = new FormData()
+      data.set("title", title.trim())
+      data.set("message", message.trim())
+      data.set("category", category)
+      if (email.trim()) data.set("email_override", email.trim())
+      if (generationId) data.set("generation_id", generationId)
+      if (category !== "feedback") {
+        data.set("where_happened", location.trim())
+        data.set("steps_to_reproduce", steps.trim())
+        data.set("expected_behavior", expected.trim())
       }
-      const res = await fetch("/api/backend/feedback/support", { method: "POST", body: fd })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        throw new Error(d.detail || "Failed to send.")
-      }
-      setSubmitted(true)
+      screenshots.forEach((file) => data.append("screenshots", file))
+      if (voice)
+        data.set(
+          "voice",
+          voice.blob,
+          `voice-note.${voice.blob.type.includes("mp4") ? "mp4" : voice.blob.type.includes("ogg") ? "ogg" : "webm"}`
+        )
+      const issue = createdIssueSchema.parse(
+        await supportFetch("/api/support", { method: "POST", body: data })
+      )
+      if (issue.access_token && !signedIn) rememberGuestIssue(issue.id, issue.access_token)
+      router.push(issueHref(issue.id, signedIn ? undefined : issue.access_token))
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.")
-    } finally { setIsSubmitting(false) }
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not create your issue. Your draft is still here."
+      )
+      setSubmitting(false)
+    }
   }
-
-  if (submitted) {
-    return (
-      <div className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 text-center space-y-4">
-        <div className="mx-auto flex h-11 w-11 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-[#ff4e26]/10 text-[#ff4e26]">
-          <CheckCircle2 size={24} />
-        </div>
-        <div className="space-y-1">
-          <h2 className="text-sm font-black uppercase tracking-tight">Report sent</h2>
-          <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Thanks — it is in the queue. We will email you when it is resolved if you left an address.
-          </p>
-        </div>
-        <div className="flex justify-center gap-2">
-          <Button size="sm" onClick={() => { setSubmitted(false); setMessage(""); setScreenshots([]); setScreenshotPreviews([]); discardVoice() }}>
-            Send another
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => (window.location.href = "/dashboard")}>Dashboard</Button>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 sm:p-6 space-y-5">
-      <div className="space-y-2.5">
-        <Label className="text-[11px] font-black uppercase tracking-widest text-zinc-500">Category</Label>
-        <div className="flex flex-wrap gap-2">
-          {SUPPORT_CATEGORIES.map((cat) => {
-            const Icon = cat.icon
-            const active = category === cat.value
-            return (
+    <div className="space-y-5">
+      <Link href="/support" className="inline-flex min-h-11 items-center gap-2 text-sm font-bold">
+        <ArrowLeft size={16} /> All issues
+      </Link>
+      <div>
+        <h1 className="text-3xl font-black tracking-tight">New issue</h1>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          Tell us what you need. You can add more details and follow up in your private
+          conversation.
+        </p>
+      </div>
+      <form
+        onSubmit={submit}
+        className="space-y-6 border border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900 sm:p-6"
+      >
+        <fieldset>
+          <legend className="mb-2 text-sm font-bold">What can we help with?</legend>
+          <div className="flex flex-wrap gap-2">
+            {SUPPORT_CATEGORIES.map((item) => (
               <button
-                key={cat.value}
+                key={item.value}
                 type="button"
-                onClick={() => setCategory(cat.value)}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold leading-none transition-colors ${
-                  active
-                    ? "bg-[#ff4e26] text-white border-[#ff4e26] shadow-sm"
-                    : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 text-zinc-700 dark:text-zinc-300"
-                }`}
+                aria-pressed={category === item.value}
+                onClick={() => setCategory(item.value)}
+                className={`min-h-11 border px-3 text-xs font-bold ${category === item.value ? "border-black bg-[#ff4e26] text-white dark:border-zinc-500" : "border-zinc-300 hover:border-black dark:border-zinc-700 dark:hover:border-zinc-400"}`}
               >
-                <Icon size={13} className={active ? "text-white" : "text-zinc-400"} />
-                {cat.label}
+                {item.label}
               </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="message" className="text-[11px] font-black uppercase tracking-widest text-zinc-500">
-          Message <span className="text-[#ff4e26]">*</span>
-        </Label>
-        <Textarea
-          id="message"
-          rows={5}
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="What happened? What did you expect?"
-          className="min-h-[110px] text-sm md:min-h-[128px]"
-          required
-        />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-[1.1fr_1.6fr] md:items-end">
-        <div className="space-y-1.5">
-          <Label htmlFor="email" className="text-[11px] font-black uppercase tracking-widest text-zinc-500">
-            Email <span className="font-medium normal-case tracking-normal">optional</span>
+            ))}
+          </div>
+        </fieldset>
+        <div className="space-y-2">
+          <Label htmlFor="issue-title">
+            Title <span className="font-normal text-zinc-500">optional</span>
           </Label>
           <Input
-            id="email"
-            type="email"
-            value={emailOverride}
-            onChange={(e) => setEmailOverride(e.target.value)}
-            placeholder="you@example.com"
-            className="h-9 font-mono text-sm"
+            id="issue-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={200}
+            placeholder={
+              category === "feedback"
+                ? "A short name for your idea"
+                : "A short summary of the problem"
+            }
+            className="min-h-11 text-base sm:text-sm"
           />
         </div>
-        <p className="hidden md:block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400 pb-1">
-          Only for a follow-up. Leave blank to stay anonymous.
-        </p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 border-t border-zinc-200 dark:border-zinc-800 pt-4">
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-1.5">
-            <Label className="text-[11px] font-black uppercase tracking-widest text-zinc-500 flex items-center gap-1.5">
-              <Volume2 size={12} className="text-[#ff4e26]" /> Voice
-            </Label>
-            <span className="text-[10px] font-medium text-zinc-400">optional</span>
-            {voiceBlob && <span className="ml-auto text-[10px] font-mono font-bold text-emerald-600">Attached</span>}
-          </div>
-
-          {!voiceBlob && !isRecording && (
-            <button
-              type="button"
-              onClick={startRecording}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-3 text-xs font-bold hover:border-zinc-400 dark:hover:border-zinc-600 hover:bg-white dark:hover:bg-zinc-800 transition-colors md:w-auto md:justify-start"
-            >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ff4e26]/10 text-[#ff4e26]">
-                <Mic size={12} />
-              </span>
-              Record voice
-            </button>
-          )}
-          {isRecording && (
-            <div className="flex items-center justify-between rounded-lg border border-[#ff4e26] bg-[#ff4e26]/10 px-3 py-2.5">
-              <span className="flex items-center gap-2 text-xs font-mono font-bold text-[#ff4e26]">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-[#ff4e26]" />
-                {Math.floor(recordingSeconds / 60)}:{String(recordingSeconds % 60).padStart(2, "0")}
-              </span>
-              <Button type="button" size="xs" onClick={stopRecording} className="bg-[#ff4e26] hover:bg-[#e03d16] text-white h-6 px-2.5 text-[11px]">
-                <Square size={9} className="fill-white" /> Stop
+        <div className="space-y-2">
+          <Label htmlFor="issue-message">
+            {category === "feedback" ? "What's your idea?" : "What happened?"}
+          </Label>
+          <Textarea
+            id="issue-message"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            required
+            maxLength={10000}
+            rows={5}
+            placeholder={
+              category === "feedback"
+                ? "What would you like to do, and how would it help?"
+                : "Describe the problem in your own words."
+            }
+            className="min-h-36 text-base leading-6 sm:text-sm"
+          />
+        </div>
+        {category !== "feedback" && (
+          <details className="border-y border-zinc-200 py-3 dark:border-zinc-700">
+            <summary className="cursor-pointer py-2 text-sm font-bold">
+              Add details to help us investigate{" "}
+              <span className="font-normal text-zinc-500">optional</span>
+            </summary>
+            <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="issue-location">Where did it happen?</Label>
+                <Input
+                  id="issue-location"
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  maxLength={2000}
+                  placeholder="For example, the editor on my phone"
+                  className="min-h-11 text-base sm:text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="issue-steps">How can we reproduce it?</Label>
+                <Textarea
+                  id="issue-steps"
+                  value={steps}
+                  onChange={(event) => setSteps(event.target.value)}
+                  maxLength={10000}
+                  placeholder="What were you doing just before the problem?"
+                  rows={3}
+                  className="text-base sm:text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="issue-expected">What did you expect to happen?</Label>
+                <Textarea
+                  id="issue-expected"
+                  value={expected}
+                  onChange={(event) => setExpected(event.target.value)}
+                  maxLength={5000}
+                  rows={2}
+                  className="text-base sm:text-sm"
+                />
+              </div>
+            </div>
+          </details>
+        )}
+        <div className="space-y-3">
+          <p className="text-sm font-bold">
+            Attachments <span className="font-normal text-zinc-500">optional</span>
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 border border-zinc-300 px-3 text-sm font-bold focus-within:outline-2 focus-within:outline-[#ff4e26] dark:border-zinc-600">
+              <Paperclip size={16} /> Add screenshots
+              <input
+                aria-label="Add screenshots"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                className="sr-only"
+                onChange={(event) => {
+                  const files = Array.from(event.target.files || [])
+                  event.target.value = ""
+                  if (
+                    screenshots.length + files.length > 5 ||
+                    files.some((file) => file.size > 5 * 1024 * 1024)
+                  ) {
+                    setError("Add up to 5 screenshots, no larger than 5 MB each.")
+                    return
+                  }
+                  setScreenshots((current) => [...current, ...files])
+                  setError(null)
+                }}
+              />
+            </label>
+            {!voice && (
+              <Button
+                variant="outline"
+                className="min-h-11"
+                onClick={() => (recording ? recorder.current?.stop() : void record())}
+              >
+                {recording ? <Square size={14} /> : <Mic size={14} />}
+                {recording ? "Stop recording" : "Record voice note"}
               </Button>
-            </div>
-          )}
-          {voiceUrl && !isRecording && (
-            <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-2">
-              <audio ref={audioRef} src={voiceUrl} onEnded={() => setIsPlaying(false)} className="hidden" />
-              <button type="button" onClick={togglePlay} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-                {isPlaying ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
-              </button>
-              <span className="flex-1 truncate text-xs font-medium">Voice ready</span>
-              <button type="button" onClick={discardVoice} className="rounded-full p-1.5 text-zinc-400 hover:bg-white dark:hover:bg-zinc-700 hover:text-red-500">
-                <Trash2 size={13} />
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-1.5">
-            <Label className="text-[11px] font-black uppercase tracking-widest text-zinc-500 flex items-center gap-1.5">
-              <ImageIcon size={12} className="text-[#ff4e26]" /> Screenshots
-            </Label>
-            <span className="text-[10px] font-mono text-zinc-500">{screenshots.length}/5</span>
+            )}
           </div>
-          <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleScreenshotChange(e.target.files)} />
-          {screenshotPreviews.length > 0 && (
-            <div className="grid grid-cols-5 gap-1.5">
-              {screenshotPreviews.map((url, idx) => (
-                <div key={idx} className="group relative aspect-square overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100">
-                  <img src={url} alt="" className="h-full w-full object-cover" />
-                  <button type="button" onClick={() => removeScreenshot(idx)} className="absolute right-1 top-1 rounded-full bg-zinc-900/80 p-1 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition">
-                    <X size={10} />
-                  </button>
-                </div>
-              ))}
+          <p className="text-xs text-zinc-500">
+            Up to 5 images, 5 MB each. Avoid including passwords or private documents.
+          </p>
+          {screenshots.map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className="flex min-w-0 items-center justify-between gap-2 border-b border-zinc-200 py-1 dark:border-zinc-700"
+            >
+              <span className="truncate text-sm">{file.name}</span>
+              <button
+                type="button"
+                className="flex min-h-11 min-w-11 items-center justify-center"
+                aria-label={`Remove ${file.name}`}
+                onClick={() =>
+                  setScreenshots((current) => current.filter((_, position) => index !== position))
+                }
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ))}
+          {voice && (
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <audio controls src={voice.url} className="max-w-full" />
+              <button
+                type="button"
+                className="min-h-11 px-2 text-sm font-bold underline"
+                onClick={() => {
+                  setVoice(null)
+                }}
+              >
+                Remove voice note
+              </button>
             </div>
           )}
-          {screenshots.length < 5 && (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-3 text-xs font-bold hover:border-zinc-400 dark:hover:border-zinc-600 hover:bg-white dark:hover:bg-zinc-800 transition-colors md:w-auto md:justify-start"
-            >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900">
-                <Upload size={11} />
-              </span>
-              Add images
-            </button>
-          )}
         </div>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-          <AlertCircle size={14} className="shrink-0" /> <span>{error}</span>
+        <div className="space-y-2">
+          <Label htmlFor="issue-email">
+            Email for updates <span className="font-normal text-zinc-500">optional</span>
+          </Label>
+          <Input
+            id="issue-email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            maxLength={254}
+            placeholder="you@example.com"
+            className="min-h-11 text-base sm:text-sm"
+          />
+          <p className="text-xs leading-5 text-zinc-500">
+            Replies stay in this conversation. Add an email to receive notifications too.
+            {!signedIn && " Keep your private issue link so you can return later."}
+          </p>
         </div>
-      )}
-
-      <div className="flex flex-col-reverse gap-3 border-t border-zinc-200 dark:border-zinc-800 pt-4 md:flex-row md:items-center md:justify-between">
-        <p className="text-center text-[11px] text-zinc-500 md:text-left">
-          See <a href="/privacy" className="underline decoration-zinc-300 underline-offset-2 font-bold hover:text-zinc-900 dark:hover:text-white">Privacy</a> for storage.
-        </p>
-        <Button type="submit" disabled={isSubmitting} className="h-9 px-6 text-xs md:w-auto w-full">
-          {isSubmitting ? <><Loader2 size={14} className="animate-spin" /> Sending...</> : "Send report"}
-        </Button>
-      </div>
-    </form>
+        {generationId && (
+          <p className="break-all text-xs text-zinc-500">
+            Generation context attached: {generationId}
+          </p>
+        )}
+        {error && (
+          <p
+            role="alert"
+            className="border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"
+          >
+            {error}
+          </p>
+        )}
+        <div className="flex flex-col-reverse gap-3 border-t border-zinc-200 pt-5 dark:border-zinc-700 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-zinc-500">
+            Only you and the support team can view this issue.
+          </p>
+          <Button type="submit" disabled={submitting || recording} className="min-h-11 px-5">
+            {submitting && <Loader2 size={16} className="animate-spin" />}
+            {submitting ? "Creating issue..." : "Create issue"}
+          </Button>
+        </div>
+      </form>
+    </div>
   )
 }

@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2, Bug } from "lucide-react"
 import { createPortal } from "react-dom"
 import { FeedbackModal } from "@/components/FeedbackModal"
-import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
+import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 
 type HistoryRun = {
   id: string

@@ -15,6 +15,11 @@ export function initPostHog() {
       capture_pageview: false, // We manually capture with Next.js router to ensure accurate route & search params
       capture_pageleave: true, // Enables time on page / duration measurement
       autocapture: true, // Captures clicks, form interactions, scroll
+      before_send: (event) => {
+        // Private support links grant access to a conversation.
+        if (window.location.pathname.startsWith("/support") || JSON.stringify(event).includes("access_token")) return null
+        return event
+      },
       session_recording: {
         maskAllInputs: true, // Masks sensitive inputs
         maskInputOptions: {

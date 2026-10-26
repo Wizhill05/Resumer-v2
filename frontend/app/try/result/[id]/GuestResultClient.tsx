@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LoginModal } from "@/components/LoginModal"
-import { ReportIssueButton } from "@/components/support/ReportIssueDialog"
+import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { posthog } from "@/lib/posthog"
 
 type GuestRun = {
