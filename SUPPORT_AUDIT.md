@@ -41,3 +41,11 @@ Real inbox delivery and attachment storage were not exercised. Verify the deploy
 Brocode could not resize its viewport, so phone rendering and the authenticated admin conversation were not browser-tested. Their responsive layout and permissions were reviewed in source; backend authorization was tested through the API. A phone check after deployment should cover submission, opening the receipt link, admin reply, user follow-up, and close/reopen.
 
 Guest links expire after 90 days. Anyone holding a guest link can access that issue, so the conversation page uses a no-referrer policy and warns users to keep the link private. Historical overwritten responses cannot be reconstructed; old admin notes are deliberately not published as comments.
+
+## Production follow-up
+
+The first successful EC2 deployment did not guarantee correct public routing. A stale Azure `resumer-cloudflared-1` container was still connected to the same tunnel as EC2. Read-only diagnostics confirmed the EC2 container and its local API exposed conversation routes, while requests from Azure reached the old API exposing only report submission. The obsolete Azure tunnel connector was stopped and its restart policy disabled. Its backend and database were retained. Public OpenAPI subsequently exposed the new conversation routes.
+
+Deployment health checks now require the conversation detail and reply routes in addition to the MCP authentication check. A read-only diagnostic workflow checks runtime routing and can read existing issues using an existing configured admin account without logging report contents or credentials.
+
+The mobile native admin select was replaced with an in-page button menu using the site's palette, wrapping section buttons, active state, Escape dismissal, and focus restoration. Admin issue links retain their inbox navigation when a request fails. Failed requests include HTTP status instead of always suggesting that the admin needs to sign in. The support proxy also accepts null GitHub claims for non-GitHub accounts; three frontend proxy tests cover authenticated nullable claims, guest link forwarding, and restricted paths.

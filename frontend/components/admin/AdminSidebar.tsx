@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useRef, useState } from "react"
 import {
   BarChart2,
   Cpu,
@@ -12,6 +12,7 @@ import {
   Boxes,
   Play,
   MessageSquare,
+  ChevronDown
 } from "lucide-react"
 import { AdminTabId, AdminNavGroup } from "./types"
 
@@ -29,8 +30,8 @@ const NAV_GROUPS: AdminNavGroup[] = [
       { id: "generations", label: "Generations", icon: FileText },
       { id: "timing", label: "Pipeline Timing", icon: Timer },
       { id: "users", label: "User Limits", icon: Users },
-      { id: "feedback", label: "Support & Feedback", icon: MessageSquare },
-    ],
+      { id: "feedback", label: "Support & Feedback", icon: MessageSquare }
+    ]
   },
   {
     group: "AI Engine & Infrastructure",
@@ -39,36 +40,85 @@ const NAV_GROUPS: AdminNavGroup[] = [
       { id: "prompts", label: "Prompt Manager", icon: Settings },
       { id: "metrics", label: "LLM Metrics", icon: Database },
       { id: "templates", label: "Templates", icon: Play },
-      { id: "storage", label: "Storage", icon: Boxes },
-    ],
-  },
+      { id: "storage", label: "Storage", icon: Boxes }
+    ]
+  }
 ]
 
 export function AdminSidebar({
   activeTab,
   onSelectTab,
-  unresolvedReportsCount = 0,
+  unresolvedReportsCount = 0
 }: AdminSidebarProps) {
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const mobileToggle = useRef<HTMLButtonElement>(null)
+  const currentItem = NAV_GROUPS.flatMap((group) => group.items).find(
+    (item) => item.id === activeTab
+  )
   return (
     <aside className="w-full min-w-0 md:w-56 shrink-0 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 bg-[#fbfbf3] dark:bg-zinc-900 p-3 select-none flex flex-col md:justify-center md:fixed md:left-0 md:top-[49px] md:h-[calc(100dvh-49px)] md:max-h-[calc(100dvh-49px)] md:overflow-y-auto z-20">
-      <label className="flex items-center gap-3 text-sm font-bold md:hidden">
-        <span>Admin</span>
-        <select
-          aria-label="Admin section"
-          value={activeTab}
-          onChange={(event) => {
-            const item = NAV_GROUPS.flatMap((group) => group.items).find((entry) => entry.id === event.target.value)
-            if (item) onSelectTab(item.id)
-          }}
-          className="h-11 min-w-0 flex-1 border border-zinc-300 bg-white px-3 text-base dark:border-zinc-700 dark:bg-zinc-900"
+      <div
+        className="md:hidden"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setMobileOpen(false)
+            mobileToggle.current?.focus()
+          }
+        }}
+      >
+        <button
+          ref={mobileToggle}
+          type="button"
+          aria-expanded={mobileOpen}
+          aria-controls="mobile-admin-navigation"
+          onClick={() => setMobileOpen((value) => !value)}
+          className="flex min-h-12 w-full items-center gap-3 border border-zinc-300 bg-white px-3 text-left text-sm font-bold focus-visible:outline-2 focus-visible:outline-[#ff4e26] dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <span className="text-zinc-500">Admin</span>
+          <span className="min-w-0 flex-1 break-words">{currentItem?.label}</span>
+          <ChevronDown
+            size={18}
+            aria-hidden="true"
+            className={`shrink-0 transition-transform ${mobileOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+        <nav
+          id="mobile-admin-navigation"
+          aria-label="Admin sections"
+          hidden={!mobileOpen}
+          className="border border-t-0 border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900"
         >
           {NAV_GROUPS.map((group) => (
-            <optgroup key={group.group} label={group.group}>
-              {group.items.map((item) => <option key={item.id} value={item.id}>{item.label}{item.id === "feedback" && unresolvedReportsCount > 0 ? ` (${unresolvedReportsCount})` : ""}</option>)}
-            </optgroup>
+            <div key={group.group} className="mb-4 last:mb-0">
+              <p className="mb-2 text-xs text-zinc-500">{group.group}</p>
+              <div className="grid grid-cols-2 gap-2">
+                {group.items.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      aria-current={activeTab === item.id ? "page" : undefined}
+                      onClick={() => {
+                        onSelectTab(item.id)
+                        setMobileOpen(false)
+                        mobileToggle.current?.focus()
+                      }}
+                      className={`flex min-h-12 items-center gap-2 border px-3 py-2 text-left text-xs font-bold focus-visible:outline-2 focus-visible:outline-[#ff4e26] ${activeTab === item.id ? "border-[#ff4e26] bg-[#ff4e26]/10 text-black dark:text-white" : "border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"}`}
+                    >
+                      <Icon size={16} className="shrink-0" />
+                      <span className="min-w-0 break-words">{item.label}</span>
+                      {item.id === "feedback" && unresolvedReportsCount > 0 && (
+                        <span className="ml-auto text-[#ff4e26]">{unresolvedReportsCount}</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           ))}
-        </select>
-      </label>
+        </nav>
+      </div>
       {/* Grouped Navigation */}
       <nav aria-label="Admin navigation" className="hidden md:flex md:flex-col gap-6 my-0">
         {NAV_GROUPS.map((group) => (

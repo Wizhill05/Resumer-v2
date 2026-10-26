@@ -21,7 +21,15 @@ import {
 const replySchema = z.object({
   notification_status: z.enum(["sent", "failed", "not_configured", "no_recipient"]).optional()
 })
-export function IssueThread({ id, accessToken }: { id: string; accessToken?: string }) {
+export function IssueThread({
+  id,
+  accessToken,
+  adminView = false
+}: {
+  id: string
+  accessToken?: string
+  adminView?: boolean
+}) {
   const [thread, setThread] = useState<SupportThread | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
@@ -124,10 +132,11 @@ export function IssueThread({ id, accessToken }: { id: string; accessToken?: str
   return (
     <div className="space-y-5">
       <Link
-        href={thread?.viewer_is_admin ? "/admin?tab=feedback" : "/support"}
+        href={thread?.viewer_is_admin || adminView ? "/admin?tab=feedback" : "/support"}
         className="inline-flex min-h-11 items-center gap-2 text-sm font-bold"
       >
-        <ArrowLeft size={16} /> {thread?.viewer_is_admin ? "Support inbox" : "All issues"}
+        <ArrowLeft size={16} />{" "}
+        {thread?.viewer_is_admin || adminView ? "Support inbox" : "All issues"}
       </Link>
       {loading && (
         <p className="flex items-center gap-2 py-8 text-sm text-zinc-500">
@@ -142,8 +151,9 @@ export function IssueThread({ id, accessToken }: { id: string; accessToken?: str
           <p>{error}</p>
           {!thread && (
             <p className="mt-2">
-              Use the private link from your email or the browser where you submitted this issue, or
-              sign in to the account that created it.
+              {adminView
+                ? "Return to the support inbox to open another issue, or try loading this conversation again."
+                : "Try loading the conversation again. If you opened a guest issue, use its private link."}
             </p>
           )}
           <button
@@ -227,8 +237,16 @@ export function IssueThread({ id, accessToken }: { id: string; accessToken?: str
                         <div key={attachment.id} className="min-w-0">
                           {attachment.attachment_type === "voice_recording" ? (
                             <div className="space-y-2">
-                              <audio controls src={attachment.presigned_url} className="max-w-full" />
-                              {attachment.transcription && <p className="whitespace-pre-wrap break-words text-sm leading-6">{attachment.transcription}</p>}
+                              <audio
+                                controls
+                                src={attachment.presigned_url}
+                                className="max-w-full"
+                              />
+                              {attachment.transcription && (
+                                <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                                  {attachment.transcription}
+                                </p>
+                              )}
                             </div>
                           ) : (
                             <a

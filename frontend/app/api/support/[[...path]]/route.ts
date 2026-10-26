@@ -4,14 +4,14 @@ import { signBackendToken } from "@/lib/jwt"
 import { z } from "zod"
 
 const sessionClaims = z.object({
-  provider: z.string().optional(),
-  githubUsername: z.string().optional(),
-  githubAccessToken: z.string().optional(),
+  provider: z.string().nullish(),
+  githubUsername: z.string().nullish(),
+  githubAccessToken: z.string().nullish(),
   token: z
     .object({
-      provider: z.string().optional(),
-      githubUsername: z.string().optional(),
-      githubAccessToken: z.string().optional()
+      provider: z.string().nullish(),
+      githubUsername: z.string().nullish(),
+      githubAccessToken: z.string().nullish()
     })
     .optional()
 })

@@ -54,8 +54,10 @@ jobs:
             CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:48000/mcp -H "Content-Type: application/json" -d "{}")
             echo "attempt $i -> $CODE"
             if [ "$CODE" = "401" ]; then
-              echo "backend healthy (401 = auth-guarded MCP endpoint)"
-              exit 0
+              if curl --fail --silent --show-error --max-time 10 http://127.0.0.1:48000/openapi.json | python3 -c 'import json,sys; p=json.load(sys.stdin)["paths"]; assert "get" in p["/feedback/support/{id}"]; assert "post" in p["/feedback/support/{id}/messages"]'; then
+                echo "backend healthy: MCP auth and support conversation routes verified"
+                exit 0
+              fi
             fi
           done
           echo "backend unhealthy after deploy"

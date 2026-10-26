@@ -85,14 +85,11 @@ export async function supportFetch(url: string, init?: RequestInit): Promise<unk
   const response = await fetch(url, { ...init, cache: "no-store" })
   const data: unknown = await response.json().catch(() => null)
   if (!response.ok) {
+    const fallback = `The support service could not load this request (HTTP ${response.status}). Please try again.`
     const error = z
       .object({ detail: z.string().optional(), error: z.string().optional() })
       .safeParse(data)
-    throw new Error(
-      error.success
-        ? error.data.detail || error.data.error || "Could not load support. Please try again."
-        : "Could not load support. Please try again."
-    )
+    throw new Error(error.success ? error.data.detail || error.data.error || fallback : fallback)
   }
   return data
 }

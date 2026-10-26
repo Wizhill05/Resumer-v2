@@ -23,3 +23,36 @@ jobs:
           if test -f cloudflared/config.yml; then
             grep -E 'hostname:|service:' cloudflared/config.yml
           fi
+      - name: Read existing conversations as a configured admin
+        run: |
+          docker exec -i resumer-backend-1 python - <<'PY'
+          import asyncio, json, urllib.request
+          from datetime import datetime, timedelta, timezone
+          from jose import jwt
+          from sqlalchemy import select
+          from src.core.config import settings
+          from src.core.database import AsyncSessionLocal
+          from src.models.user import User
+
+          async def admin_email():
+              async with AsyncSessionLocal() as db:
+                  query = select(User.email)
+                  if "*" not in settings.admin_emails:
+                      query = query.where(User.email.in_(settings.admin_emails))
+                  return await db.scalar(query.limit(1))
+
+          email = asyncio.run(admin_email())
+          if not email:
+              raise SystemExit("No existing configured admin account available for read-only verification")
+          token = jwt.encode({"email": email, "exp": datetime.now(timezone.utc) + timedelta(minutes=2)}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+          def read(path):
+              request = urllib.request.Request("http://127.0.0.1:8000" + path, headers={"Authorization": "Bearer " + token})
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.load(response)
+          reports = read("/admin/feedback/reports?limit=10")
+          for report in reports:
+              detail = read("/feedback/support/" + report["id"])
+              assert detail["viewer_is_admin"] is True
+              assert isinstance(detail["messages"], list)
+          print("Authenticated conversation reads passed for", len(reports), "existing issues. No report contents or credentials logged.")
+          PY
