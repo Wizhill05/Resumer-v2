@@ -1,0 +1,25 @@
+name: Diagnose backend runtime
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, resumer-vps]
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Inspect running code and routing
+        working-directory: /opt/resumer
+        run: |
+          docker ps --format '{{.Names}} {{.Ports}}'
+          docker inspect resumer-backend-1 --format '{{json .Mounts}}'
+          docker exec resumer-backend-1 python -c 'from src.api.feedback import router; print("Runtime support routes:", [(r.path, sorted(r.methods)) for r in router.routes if "support" in r.path])'
+          for base in http://127.0.0.1:48000 https://resumer-backend.aryansingh.space; do
+            echo "Route inventory for $base"
+            curl --fail --silent --show-error --max-time 20 "$base/openapi.json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print({p:list(v) for p,v in d.get("paths",{}).items() if "feedback/support" in p})'
+          done
+          if test -f cloudflared/config.yml; then
+            grep -E 'hostname:|service:' cloudflared/config.yml
+          fi
