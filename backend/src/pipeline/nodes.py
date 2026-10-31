@@ -12,9 +12,16 @@ from typing import Any
 from jinja2 import Template
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
 from langchain_openai import ChatOpenAI
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import ValidationError
+from langchain_core.exceptions import OutputParserException
+from openai import APIError
+from google.genai.errors import APIError as GoogleAPICallError
+import httpx
+from src.core.api_key_pool import ApiKeyUnavailable
 
 from src.core.config import settings  # noqa: F401 (kept for other settings usage)
 from src.core.database import AsyncSessionLocal
@@ -27,6 +34,7 @@ from src.core.skill_categories import merge_skill_categories, skill_category_dis
 from src.schemas.pipeline import (
     JobAnalysis,
     SelectedItems,
+    StrictSelectedItems,
     TailoredExperience,
     TailoredExperienceBatch,
     TailoredExtracurricularBatch,
@@ -237,19 +245,40 @@ def _extract_llm_key(llm: Any) -> str | None:
     return None
 
 
-def _quarantine_failed_key(provider_name: str, key: str | None) -> None:
-    if not key or key == "dummy-key":
-        return
-    from src.core.api_key_pool import cerebras_pool, google_pool, openrouter_pool, pro_pool
-    p = provider_name.lower()
-    if "openrouter" in p:
-        openrouter_pool.mark_failure(key, 60.0)
-    elif "cerebras" in p:
-        cerebras_pool.mark_failure(key, 60.0)
-    elif "google" in p:
-        google_pool.mark_failure(key, 60.0)
-    elif "omniroute" in p or "pro" in p:
-        pro_pool.mark_failure(key, 60.0)
+class InferenceExhausted(RuntimeError):
+    pass
+
+class InvalidSelection(ValueError):
+    pass
+
+class InvalidStructuredOutput(ValueError):
+    pass
+
+
+def _actual_provider(llm: Any) -> str:
+    if isinstance(llm, ChatGoogleGenerativeAI):
+        return "google"
+    url = str(getattr(llm, "openai_api_base", None) or "").lower()
+    for domain, name in (("openrouter.ai", "openrouter"), ("cerebras.ai", "cerebras"), ("omniroute", "omniroute")):
+        if domain in url:
+            return name
+    return "openai_compatible"
+
+
+def _status_code(exc):
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+        if isinstance(code, int):
+            return code
+        exc = exc.__cause__ or exc.__context__
+    return None
+
+
+def _finish_reason(reason):
+    reason = getattr(reason, "name", reason)
+    return str(reason or "").lower().split(".")[-1]
 
 
 async def invoke_with_fallback(
@@ -260,6 +289,7 @@ async def invoke_with_fallback(
     gen_id: str | None = None,
     max_attempts_per_provider: int = 2,
     is_pro: bool = False,
+    validate_result=None,
 ):
     """Retry each provider call with fresh per-attempt key rotation before falling back.
 
@@ -286,36 +316,77 @@ async def invoke_with_fallback(
 
     fallback_provider_name = cfg.fallback_provider or "google"
 
-    providers = [
-        (primary_name, lambda: llm_config_service.get_llm(tier=tier)),
-        (fallback_provider_name, lambda: llm_config_service.get_fallback_llm(tier=tier)),
-    ]
-    # Only append OpenRouter fallback if primary and fallback are not already OpenRouter
-    if is_pro and not is_openrouter and fallback_provider_name.lower() != "openrouter":
-        providers.append(("openrouter", lambda: llm_config_service.get_llm(tier="free")))
+    def primary_route(config):
+        return ("openai", config.base_url.rstrip("/").lower(), config.model)
 
-    last_exc: Exception | None = None
-    for index, (name, factory) in enumerate(providers):
+    fallback_url = {"openrouter": "https://openrouter.ai/api/v1", "cerebras": "https://api.cerebras.ai/v1"}.get(fallback_provider_name.lower())
+    fallback_route = (("openai", fallback_url, cfg.fallback_model or "gemma-4-31b-it") if fallback_url else ("google", "google", cfg.fallback_model or "gemma-4-31b-it"))
+    providers = [
+        (primary_name, primary_route(cfg), lambda: llm_config_service.get_llm(tier=tier)),
+        (fallback_provider_name, fallback_route, lambda: llm_config_service.get_fallback_llm(tier=tier)),
+    ]
+    if is_pro:
+        free_cfg = llm_config_service.get_tier_config("free")
+        providers.append((free_cfg.provider_name, primary_route(free_cfg), lambda: llm_config_service.get_llm(tier="free")))
+    seen_routes = set()
+    for index, (name, route, factory) in enumerate(providers):
+        if route in seen_routes:
+            continue
+        seen_routes.add(route)
         for attempt in range(1, max_attempts_per_provider + 1):
-            llm = None
             try:
                 llm = factory()
-            except Exception as exc:
-                last_exc = exc
-                print(f"[llm_fallback] {name} key acquisition/initialization failed ({exc!r}).")
+            except (ValidationError, APIError, GoogleAPICallError, httpx.HTTPError, ApiKeyUnavailable) as exc:
+                print(f"[llm_fallback] {name} initialization failed ({type(exc).__name__}).")
                 break
-
-            active_key = _extract_llm_key(llm)
+            name = _actual_provider(llm)
             chain = chain_factory(llm, name)
             started = time.perf_counter()
+            usage_result = None
             try:
                 result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
+                usage_result = result
+                if isinstance(result, dict) and {"raw", "parsed", "parsing_error"} <= result.keys():
+                    raw = result["raw"]
+                    usage_result = raw
+                    result = result["parsed"]
+                    reason = (getattr(raw, "response_metadata", None) or {}).get("finish_reason")
+                    reason = _finish_reason(reason)
+                    if reason in ("length", "content_filter", "max_tokens", "safety") or result is None:
+                        raise InvalidStructuredOutput(reason if reason in ("length", "content_filter", "max_tokens", "safety") else "parse_error")
                 if result is None:
-                    raise ValueError(
-                        "Structured output parse failed: model returned no tool call. "
-                        "Retrying with key rotation and provider fallback."
-                    )
-                prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(result)
+                    raise InvalidStructuredOutput("Structured output missing")
+                if validate_result:
+                    validate_result(result)
+            except (TimeoutError, APIError, GoogleAPICallError, ChatGoogleGenerativeAIError, httpx.HTTPError, OutputParserException, ValidationError, InvalidSelection, InvalidStructuredOutput) as exc:
+                status = _status_code(exc)
+                if isinstance(exc, ChatGoogleGenerativeAIError) and (status is None or not 400 <= status < 600):
+                    raise
+                owner = getattr(llm, "_credential_owner", None)
+                if owner and status in (401, 403, 429):
+                    owner[0].mark_failure(owner[1])
+                prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(usage_result)
+                await record_node_metric(
+                    gen_id,
+                    node_name,
+                    name,
+                    getattr(llm, "model_name", None) or getattr(llm, "model", None),
+                    "error",
+                    (time.perf_counter() - started) * 1000,
+                    fallback_used=index > 0,
+                    parse_error=isinstance(exc, (InvalidStructuredOutput, InvalidSelection, OutputParserException, ValidationError)) or _is_parse_error(exc),
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    error_message=f"attempt {attempt}/{max_attempts_per_provider}: {type(exc).__name__}" + (f" ({exc})" if isinstance(exc, InvalidStructuredOutput) and str(exc) in ("length", "content_filter", "parse_error") else ""),
+                )
+                if attempt < max_attempts_per_provider:
+                    sleep_for = min(0.5 * (2 ** (attempt - 1)), 2.0)
+                    print(f"[llm_retry] {name} attempt {attempt} failed ({type(exc).__name__}). Rotating key and retrying in {sleep_for:.2f}s...")
+                    await asyncio.sleep(sleep_for)
+
+            else:
+                prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(usage_result)
                 await record_node_metric(
                     gen_id,
                     node_name,
@@ -329,27 +400,9 @@ async def invoke_with_fallback(
                     total_tokens=total_tokens,
                 )
                 return result
-            except Exception as exc:
-                last_exc = exc
-                _quarantine_failed_key(name, active_key)
-                await record_node_metric(
-                    gen_id,
-                    node_name,
-                    name,
-                    getattr(llm, "model_name", None) or getattr(llm, "model", None),
-                    "error",
-                    (time.perf_counter() - started) * 1000,
-                    fallback_used=index > 0,
-                    parse_error=_is_parse_error(exc),
-                    error_message=f"attempt {attempt}/{max_attempts_per_provider}: {str(exc)[:1900]}",
-                )
-                if attempt < max_attempts_per_provider:
-                    sleep_for = min(0.5 * (2 ** (attempt - 1)), 2.0)
-                    print(f"[llm_retry] {name} attempt {attempt} failed ({exc!r}). Rotating key and retrying in {sleep_for:.2f}s...")
-                    await asyncio.sleep(sleep_for)
 
         print(f"[llm_fallback] {name} exhausted {max_attempts_per_provider} attempts. Falling back to next provider in chain...")
-    raise RuntimeError(f"All LLM providers failed. Last error: {last_exc!r}") from last_exc
+    raise InferenceExhausted("All LLM providers failed") from None
 
 async def get_prompt_config(db: AsyncSession, name: str, default_system: str, default_user: str | None = None) -> tuple[str, str | None]:
     try:
@@ -453,6 +506,16 @@ async def job_analysis_node(
     return {"job_analysis": result.model_dump()}
 
 
+def _validate_selection(result, experience_count, project_count, max_exp, max_proj):
+    for indices, available, requested in (
+        (result.selected_experience_indices, experience_count, max_exp),
+        (result.selected_project_indices, project_count, max_proj),
+    ):
+        if (len(indices) != min(available, requested) or len(set(indices)) != len(indices)
+                or any(type(i) is not int or i < 0 or i >= available for i in indices)):
+            raise InvalidSelection("Invalid selection indices or count")
+
+
 async def selection_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -524,64 +587,31 @@ async def selection_node(
     requirements = ", ".join(job_analysis.get("key_requirements") or [])
     skills = ", ".join(job_analysis.get("extracted_skills") or [])
 
+    def validate_selection(result):
+        _validate_selection(result, len(experiences), len(projects), max_exp, max_proj)
+
     result = await invoke_with_fallback(
-        lambda llm, p: prompt | _structured(llm, SelectedItems, p),
-        {
-            "job_title": job_analysis.get("job_title") or "Target Role",
-            "requirements": requirements,
-            "skills": skills,
-            "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
-            "projects": "\n".join(proj_list_str) if proj_list_str else "None",
-        },
-        node_name="selection",
-        gen_id=gen_id,
-        is_pro=state.get("is_pro", False),
-    )
-
-    # ── Backend enforcement: clamp to exact split limits, dedup, fill gaps ────
-    selected_experiences = []
-    seen_exp_idx = set()
-    for idx in result.selected_experience_indices:
-        if len(selected_experiences) >= max_exp:
-            break
-        if 0 <= idx < len(experiences) and idx not in seen_exp_idx:
-            selected_experiences.append(experiences[idx])
-            seen_exp_idx.add(idx)
-
-    # Fill remaining slots from pool if AI returned too few.
-    for idx, exp in enumerate(experiences):
-        if len(selected_experiences) >= max_exp:
-            break
-        if idx not in seen_exp_idx:
-            selected_experiences.append(exp)
-            seen_exp_idx.add(idx)
-
-    # Hard cap — never exceed the user-chosen limit.
-    selected_experiences = selected_experiences[:max_exp]
-
-    selected_projects = []
-    seen_proj_idx = set()
-    for idx in result.selected_project_indices:
-        if len(selected_projects) >= max_proj:
-            break
-        if 0 <= idx < len(projects) and idx not in seen_proj_idx:
-            selected_projects.append(projects[idx])
-            seen_proj_idx.add(idx)
-
-    for idx, proj in enumerate(projects):
-        if len(selected_projects) >= max_proj:
-            break
-        if idx not in seen_proj_idx:
-            selected_projects.append(proj)
-            seen_proj_idx.add(idx)
-
-    selected_projects = selected_projects[:max_proj]
+            lambda llm, p: prompt | llm.with_structured_output(StrictSelectedItems, include_raw=True, **({"method": "function_calling"} if isinstance(llm, ChatOpenAI) else {})),
+            {
+                "job_title": job_analysis.get("job_title") or "Target Role",
+                "requirements": requirements,
+                "skills": skills,
+                "experiences": "\n".join(exp_list_str) if exp_list_str else "None",
+                "projects": "\n".join(proj_list_str) if proj_list_str else "None",
+            },
+            node_name="selection",
+            gen_id=gen_id,
+            is_pro=state.get("is_pro", False),
+            validate_result=validate_selection,
+        )
+    selected_experiences = [experiences[i] for i in result.selected_experience_indices]
+    selected_projects = [projects[i] for i in result.selected_project_indices]
 
     await log_progress(
         db,
         gen_id,
         "selection",
-        f"Selected {len(selected_experiences)}/{max_exp} experience(s) and {len(selected_projects)}/{max_proj} project(s) based on relevance.",
+        f"Selected {len(selected_experiences)}/{max_exp} experience(s) and {len(selected_projects)}/{max_proj} project(s) " + "based on relevance.",
     )
 
     return {

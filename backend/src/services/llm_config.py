@@ -245,30 +245,36 @@ class LLMConfigService:
 
         is_openrouter = resolved_provider == "openrouter"
 
+        owner = None
+        def acquire(pool):
+            nonlocal owner
+            owner = pool
+            return pool.next()
+
         api_key = api_key_override
         if not api_key:
             if resolved_provider == "cerebras":
-                api_key = cerebras_pool.next() if cerebras_pool.count > 0 else "dummy-key"
+                api_key = acquire(cerebras_pool) if cerebras_pool.count > 0 else "dummy-key"
             elif resolved_provider == "omniroute":
                 if pro_pool.count > 0:
-                    api_key = pro_pool.next()
+                    api_key = acquire(pro_pool)
                 elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
                     api_key = settings.PRO_MODEL_API_KEY.strip()
                 else:
                     api_key = "dummy-key"
             elif resolved_provider == "openrouter":
-                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
+                api_key = acquire(openrouter_pool) if openrouter_pool.count > 0 else "dummy-key"
             elif cfg.tier == "pro":
                 if pro_pool.count > 0:
-                    api_key = pro_pool.next()
+                    api_key = acquire(pro_pool)
                 elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
                     api_key = settings.PRO_MODEL_API_KEY.strip()
                 elif openrouter_pool.count > 0:
-                    api_key = openrouter_pool.next()
+                    api_key = acquire(openrouter_pool)
                 else:
                     api_key = "dummy-key"
             else:
-                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
+                api_key = acquire(openrouter_pool) if openrouter_pool.count > 0 else "dummy-key"
         headers: dict[str, str] = {}
         if is_openrouter:
             headers["HTTP-Referer"] = settings.FRONTEND_URL
@@ -276,13 +282,16 @@ class LLMConfigService:
         if cfg.extra_headers:
             headers.update(cfg.extra_headers)
 
-        return ChatOpenAI(
+        llm = ChatOpenAI(
             model=cfg.model,
             temperature=cfg.temperature,
+            max_retries=0,
             base_url=cfg.base_url.rstrip("/"),
             api_key=api_key,
             default_headers=headers if headers else None,
         )
+        object.__setattr__(llm, "_credential_owner", (owner, api_key) if owner else None)
+        return llm
 
     def get_fallback_llm(
         self,
@@ -294,30 +303,43 @@ class LLMConfigService:
         fallback_provider = (cfg.fallback_provider or "google").lower()
         fallback_model = cfg.fallback_model or "gemma-4-31b-it"
 
+        owner = None
+        def acquire(pool):
+            nonlocal owner
+            owner = pool
+            return pool.next()
+
         if fallback_provider == "openrouter":
-            key = api_key_override or (openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key")
-            return ChatOpenAI(
+            key = api_key_override or (acquire(openrouter_pool) if openrouter_pool.count > 0 else "dummy-key")
+            llm = ChatOpenAI(
                 model=fallback_model,
                 temperature=cfg.temperature,
+                max_retries=0,
                 base_url="https://openrouter.ai/api/v1",
                 api_key=key,
                 default_headers={"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"},
             )
         elif fallback_provider == "cerebras":
-            key = api_key_override or (cerebras_pool.next() if cerebras_pool.count > 0 else "dummy-key")
-            return ChatOpenAI(
+            key = api_key_override or (acquire(cerebras_pool) if cerebras_pool.count > 0 else "dummy-key")
+            llm = ChatOpenAI(
                 model=fallback_model,
                 temperature=cfg.temperature,
+                max_retries=0,
                 base_url="https://api.cerebras.ai/v1",
                 api_key=key,
             )
         else:
-            api_key = api_key_override or (google_pool.next() if google_pool.count > 0 else "dummy-key")
-            return ChatGoogleGenerativeAI(
+            api_key = api_key_override or (acquire(google_pool) if google_pool.count > 0 else "dummy-key")
+            llm = ChatGoogleGenerativeAI(
                 model=fallback_model,
                 temperature=cfg.temperature,
+                max_retries=0,
                 google_api_key=api_key,
             )
+
+        key_used = api_key if fallback_provider not in ("openrouter", "cerebras") else key
+        object.__setattr__(llm, "_credential_owner", (owner, key_used) if owner else None)
+        return llm
 
 async def ensure_llm_provider_schema() -> None:
     """Idempotently ensure is_pro column on users and llm_provider_configs table exist on startup."""

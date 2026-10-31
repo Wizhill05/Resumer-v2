@@ -16,6 +16,10 @@ import time
 from src.core.config import settings
 
 
+class ApiKeyUnavailable(RuntimeError):
+    pass
+
+
 class ApiKeyPool:
     def __init__(self, keys: list[str], name: str) -> None:
         self.name = name
@@ -37,13 +41,14 @@ class ApiKeyPool:
         if not key:
             return
         with self._lock:
-            self._quarantined[key] = time.time() + cooldown_seconds
+            if key in self._keys:
+                self._quarantined[key] = time.time() + cooldown_seconds
 
     def next(self) -> str:
         """Return the next active key in the round-robin sequence. Thread-safe."""
         with self._lock:
             if not self._keys or self._cycle is None:
-                raise RuntimeError(
+                raise ApiKeyUnavailable(
                     f"No {self.name} API keys configured. "
                     f"Set {self.name.upper().replace(' ', '_')}_API_KEYS=key1,key2,... in your environment (.env file)."
                 )

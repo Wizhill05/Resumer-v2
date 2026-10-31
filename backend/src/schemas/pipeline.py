@@ -1,7 +1,7 @@
 import ast
 
 from typing import Any
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import StrictInt, BaseModel, Field, field_validator, model_validator
 
 from src.core.skill_categories import (
     merge_skill_categories,
@@ -185,3 +185,8 @@ class SelectedItems(BaseModel):
         default_factory=list,
         description="0-based valid project indices selected as most relevant, ordered strongest first, no duplicates."
     )
+
+
+class StrictSelectedItems(SelectedItems):
+    selected_experience_indices: list[StrictInt]
+    selected_project_indices: list[StrictInt]
