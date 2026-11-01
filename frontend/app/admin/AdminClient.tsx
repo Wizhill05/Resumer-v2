@@ -50,8 +50,6 @@ type AnalyticsData = {
   keys_status: {
     openrouter?: { configured_keys_count: number; model?: string; base_url?: string }
     pro?: { configured_keys_count: number; model?: string; base_url?: string }
-    cerebras?: { configured_keys_count: number; model?: string; base_url?: string }
-    google: { configured_keys_count: number; model?: string }
   }
   llm_metrics: MetricSummary
 }
@@ -200,22 +198,16 @@ type ModelSettingsResponse = {
 
 const UNIFIED_MODEL_PRESETS = [
   {
-    name: "OmniRoute — Gemini 3.7 Flash Tiered",
+    name: "OmniRoute — Gemini 3.8 Flash Tiered",
     baseUrl: "https://omniroute-latest-rmm0.onrender.com/",
-    model: "antigravity/gemini-3.7-flash-tiered",
-    fallbackModel: "gemma-4-31b-it",
+    model: "gemini-3.8-flash-tiered",
+    fallbackModel: "google/gemini-3.8-flash",
   },
   {
-    name: "OpenRouter — Poolside Laguna XS 2.1",
+    name: "OpenRouter — Gemini 3.8 Flash",
     baseUrl: "https://openrouter.ai/api/v1",
-    model: "poolside/laguna-xs-2.1:free",
-    fallbackModel: "gemma-4-31b-it",
-  },
-  {
-    name: "Cerebras — Qwen 3.8 27B / Qwen 2.5",
-    baseUrl: "https://api.cerebras.ai/v1",
-    model: "qwen-3.8-27b",
-    fallbackModel: "gemma-4-31b-it",
+    model: "google/gemini-3.8-flash",
+    fallbackModel: "google/gemini-3.8-flash",
   },
 ]
 type LogItem = {
@@ -465,12 +457,12 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
   const [proBaseUrl, setProBaseUrl] = useState("")
   const [proModel, setProModel] = useState("")
   const [proTemperature, setProTemperature] = useState(0.2)
-  const [proFallbackModel, setProFallbackModel] = useState("gemma-4-31b-it")
+  const [proFallbackModel, setProFallbackModel] = useState("google/gemini-3.8-flash")
 
   const [freeBaseUrl, setFreeBaseUrl] = useState("")
   const [freeModel, setFreeModel] = useState("")
   const [freeTemperature, setFreeTemperature] = useState(0.2)
-  const [freeFallbackModel, setFreeFallbackModel] = useState("gemma-4-31b-it")
+  const [freeFallbackModel, setFreeFallbackModel] = useState("google/gemini-3.8-flash")
 
   const [testOutput, setTestOutput] = useState<{
     tier?: string
@@ -513,15 +505,15 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
       const data = await fetchJson<ModelSettingsResponse>("/api/backend/admin/model-settings")
       if (data.pro) {
         setProBaseUrl(data.pro.base_url || "https://omniroute-latest-rmm0.onrender.com/")
-        setProModel(data.pro.model || "antigravity/gemini-3.7-flash-tiered")
+        setProModel(data.pro.model || "gemini-3.8-flash-tiered")
         setProTemperature(data.pro.temperature ?? 0.2)
-        setProFallbackModel(data.pro.fallback_model || "gemma-4-31b-it")
+        setProFallbackModel(data.pro.fallback_model || "google/gemini-3.8-flash")
       }
       if (data.free) {
         setFreeBaseUrl(data.free.base_url || "https://openrouter.ai/api/v1")
-        setFreeModel(data.free.model || "poolside/laguna-xs-2.1:free")
+        setFreeModel(data.free.model || "google/gemini-3.8-flash")
         setFreeTemperature(data.free.temperature ?? 0.2)
-        setFreeFallbackModel(data.free.fallback_model || "gemma-4-31b-it")
+        setFreeFallbackModel(data.free.fallback_model || "google/gemini-3.8-flash")
       }
       return data
     },
@@ -806,14 +798,14 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
         base_url: proBaseUrl,
         model: proModel,
         temperature: proTemperature,
-        fallback_provider: "google",
+        fallback_provider: "openrouter",
         fallback_model: proFallbackModel,
       } : {
         tier: "free",
         base_url: freeBaseUrl,
         model: freeModel,
         temperature: freeTemperature,
-        fallback_provider: "google",
+        fallback_provider: "openrouter",
         fallback_model: freeFallbackModel,
       }
 
@@ -1081,33 +1073,24 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                 {/* API Key pool Status */}
                 <div className="panel-strong p-5 space-y-4">
                   <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">LLM Provider Status</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
                       <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">
                         {analytics.keys_status.pro?.base_url?.includes("openrouter.ai") ? "OpenRouter (Pro)" : (analytics.keys_status.pro?.base_url?.includes("omniroute") ? "OmniRoute" : "Pro Endpoint")}
                       </p>
-                      <p className="text-sm font-black text-[#ff4e26] mt-1 truncate" title={analytics.keys_status.pro?.model || "antigravity/gemini-3.7-flash-tiered"}>
-                        {analytics.keys_status.pro?.model ? (analytics.keys_status.pro.model.includes("/") ? analytics.keys_status.pro.model.split("/").slice(1).join("/") : analytics.keys_status.pro.model) : "Gemini 3.7 Tiered"}
+                      <p className="text-sm font-black text-[#ff4e26] mt-1 truncate" title={analytics.keys_status.pro?.model || "gemini-3.8-flash-tiered"}>
+                        {analytics.keys_status.pro?.model ? (analytics.keys_status.pro.model.includes("/") ? analytics.keys_status.pro.model.split("/").slice(1).join("/") : analytics.keys_status.pro.model) : "Gemini 3.8 Tiered"}
                       </p>
                       <span className="text-[9px] text-green-600 font-bold uppercase">{analytics.keys_status.pro?.configured_keys_count ?? 0} Keys</span>
                     </div>
                     <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
                       <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">OpenRouter Pool</p>
-                      <p className="text-sm font-black text-black dark:text-white mt-1 truncate" title={analytics.keys_status.openrouter?.model || "poolside/laguna-xs-2.1:free"}>
-                        {analytics.keys_status.openrouter?.model ? (analytics.keys_status.openrouter.model.includes("/") ? analytics.keys_status.openrouter.model.split("/").slice(1).join("/") : analytics.keys_status.openrouter.model) : "Laguna XS"}
+                      <p className="text-sm font-black text-black dark:text-white mt-1 truncate" title={analytics.keys_status.openrouter?.model || "google/gemini-3.8-flash"}>
+                        {analytics.keys_status.openrouter?.model ? (analytics.keys_status.openrouter.model.includes("/") ? analytics.keys_status.openrouter.model.split("/").slice(1).join("/") : analytics.keys_status.openrouter.model) : "Gemini 3.8 Flash"}
                       </p>
                       <span className="text-[9px] text-zinc-500 font-bold uppercase">{analytics.keys_status.openrouter?.configured_keys_count ?? 0} Keys</span>
                     </div>
-                    <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
-                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">Cerebras Fast AI</p>
-                      <p className="text-sm font-black text-black dark:text-white mt-1">Qwen Engine</p>
-                      <span className="text-[9px] text-indigo-600 dark:text-indigo-400 font-bold uppercase">{analytics.keys_status.cerebras?.configured_keys_count ?? 0} Keys</span>
-                    </div>
-                    <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
-                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">Google Fallback</p>
-                      <p className="text-sm font-black text-black dark:text-white mt-1">Gemma / GenAI</p>
-                      <span className="text-[9px] text-amber-600 font-bold uppercase">{analytics.keys_status.google.configured_keys_count} Keys</span>
-                    </div>
+
                   </div>
                   <div className="flex justify-between items-center text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold">
                     <span>Dynamic runtime config with zero-downtime hot reload.</span>
@@ -1177,7 +1160,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                     <h4 className="text-sm font-black uppercase text-black dark:text-white">Pro Accounts (Premium Tier)</h4>
                   </div>
                   <span className="px-2 py-0.5 font-bold uppercase text-[9px] bg-red-100 dark:bg-red-950 text-[#ff4e26] border border-[#ff4e26]">
-                    {proBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (proBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : (proBaseUrl.includes("cerebras.ai") ? "Cerebras Cloud" : "Custom Gateway"))}
+                    {proBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (proBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : "Configured Gateway")}
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">
@@ -1241,7 +1224,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                     <Input
                       value={proModel}
                       onChange={(e) => setProModel(e.target.value)}
-                      placeholder="antigravity/gemini-3.7-flash-tiered"
+                      placeholder="gemini-3.8-flash-tiered"
                       className="h-8 text-xs font-mono mt-1"
                     />
                   </div>
@@ -1261,11 +1244,11 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                       />
                     </div>
                     <div>
-                      <Label className="text-xs font-bold">Fallback Model</Label>
+                      <Label className="text-xs font-bold">OpenRouter Fallback Model</Label>
                       <Input
                         value={proFallbackModel}
                         onChange={(e) => setProFallbackModel(e.target.value)}
-                        placeholder="gemma-4-31b-it"
+                        placeholder="google/gemini-3.8-flash"
                         className="h-8 text-xs font-mono mt-1"
                       />
                     </div>
@@ -1300,7 +1283,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                     <h4 className="text-sm font-black uppercase text-black dark:text-white">Free Accounts (Standard Tier)</h4>
                   </div>
                   <span className="px-2 py-0.5 font-bold uppercase text-[9px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-300 dark:border-zinc-700">
-                    {freeBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (freeBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : (freeBaseUrl.includes("cerebras.ai") ? "Cerebras Cloud" : "Custom Gateway"))}
+                    {freeBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (freeBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : "Configured Gateway")}
                   </span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400">
@@ -1363,10 +1346,10 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                     <Input
                       value={freeModel}
                       onChange={(e) => setFreeModel(e.target.value)}
-                      placeholder="poolside/laguna-xs-2.1:free"
+                      placeholder="google/gemini-3.8-flash"
                       className="h-8 text-xs font-mono mt-1"
                     />
-                    <p className="text-[10px] text-zinc-400 mt-0.5">e.g. poolside/laguna-xs-2.1:free</p>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">e.g. google/gemini-3.8-flash</p>
                   </div>
 
 
@@ -1385,11 +1368,11 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                       />
                     </div>
                     <div>
-                      <Label className="text-xs font-bold">Fallback Model</Label>
+                      <Label className="text-xs font-bold">OpenRouter Fallback Model</Label>
                       <Input
                         value={freeFallbackModel}
                         onChange={(e) => setFreeFallbackModel(e.target.value)}
-                        placeholder="gemma-4-31b-it"
+                        placeholder="google/gemini-3.8-flash"
                         className="h-8 text-xs font-mono mt-1"
                       />
                     </div>
@@ -2518,7 +2501,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
       {activeTab === "feedback" && (
         <div className="space-y-6 pixel-enter">
           {/* Metrics Header */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="panel-strong p-4 bg-white dark:bg-zinc-900 border-2 border-black">
               <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Total Reports</p>
               <p className="text-2xl font-black mt-1">{feedbackAnalytics?.total_reports ?? 0}</p>

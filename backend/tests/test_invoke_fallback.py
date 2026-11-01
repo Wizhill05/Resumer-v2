@@ -2,16 +2,24 @@ import pytest
 
 from src.pipeline.nodes import invoke_with_fallback
 from src.services.llm_config import llm_config_service
+from src.core.api_key_pool import ApiKeyPool
 
+
+@pytest.fixture(autouse=True)
+def isolated_config(monkeypatch):
+    from src.services.llm_config import TierConfig
+    cfg = TierConfig(tier="pro", provider_name="omniroute", base_url="https://omniroute.example/v1",
+                     model="gemini-3.8-flash-tiered", fallback_model="google/gemini-3.8-flash")
+    monkeypatch.setattr(llm_config_service, "get_tier_config", lambda tier: cfg)
 
 class FakeLLM:
     model_name = "fake-model"
-    openai_api_base = "https://openrouter.ai/api/v1"
+    openai_api_base = "https://omniroute.example/v1"
 
 
 class FallbackLLM:
     model_name = "fallback-model"
-    openai_api_base = "https://api.cerebras.ai/v1"
+    openai_api_base = "https://openrouter.ai/api/v1"
 
 
 class FakeRunnable:
@@ -45,7 +53,7 @@ async def test_invoke_with_fallback_recovers_via_provider_fallback(monkeypatch):
     monkeypatch.setattr(llm_config_service, "get_fallback_llm", lambda tier="free", api_key_override=None: FallbackLLM())
 
     def chain_factory(llm, provider_name):
-        if provider_name == "cerebras":
+        if provider_name == "openrouter":
             return FakeRunnable(SentinelResult())
         return FakeRunnable(None)
 
@@ -155,34 +163,22 @@ async def test_parse_failure_does_not_quarantine(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('status', [400, 429, 503])
-async def test_wrapped_google_api_error_falls_back(monkeypatch, status):
-    from google.genai.errors import APIError as GoogleError
-    from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+async def test_api_error_falls_back(monkeypatch, status):
+    from openai import APIStatusError
+    import httpx
     monkeypatch.setattr(llm_config_service, 'get_llm', lambda **kwargs: FakeLLM())
     monkeypatch.setattr(llm_config_service, 'get_fallback_llm', lambda **kwargs: FallbackLLM())
     class Broken:
         async def ainvoke(self, args):
-            try:
-                raise GoogleError(status, {'error': {'message': 'secret'}})
-            except GoogleError as exc:
-                raise ChatGoogleGenerativeAIError('secret') from exc
+            raise APIStatusError('secret', response=httpx.Response(status, request=httpx.Request('POST', 'https://example.test')), body=None)
     result = await invoke_with_fallback(lambda llm, _: Broken() if isinstance(llm, FakeLLM) else FakeRunnable(SentinelResult()), {}, max_attempts_per_provider=1)
     assert isinstance(result, SentinelResult)
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('reason', ['MAX_TOKENS', 'SAFETY', __import__('google.genai.types', fromlist=['FinishReason']).FinishReason.MAX_TOKENS, __import__('google.genai.types', fromlist=['FinishReason']).FinishReason.SAFETY])
-async def test_google_interrupted_parsed_response(monkeypatch, reason):
-    from types import SimpleNamespace
-    monkeypatch.setattr(llm_config_service, 'get_llm', lambda **kwargs: FakeLLM())
-    monkeypatch.setattr(llm_config_service, 'get_fallback_llm', lambda **kwargs: FallbackLLM())
-    raw = SimpleNamespace(response_metadata={'finish_reason': reason})
-    with pytest.raises(RuntimeError):
-        await invoke_with_fallback(lambda *_: FakeRunnable({'raw': raw, 'parsed': SentinelResult(), 'parsing_error': None}), {}, max_attempts_per_provider=1)
-
-@pytest.mark.asyncio
 async def test_quarantine_uses_actual_pool_with_shared_key(monkeypatch):
     from src.core.api_key_pool import ApiKeyPool
-    from google.genai.errors import APIError as GoogleError
+    from openai import APIStatusError
+    import httpx
     owner = ApiKeyPool(['shared', 'other'], 'owner')
     other = ApiKeyPool(['shared', 'other'], 'other')
     llm = FakeLLM()
@@ -191,7 +187,7 @@ async def test_quarantine_uses_actual_pool_with_shared_key(monkeypatch):
     monkeypatch.setattr(llm_config_service, 'get_fallback_llm', lambda **kwargs: FallbackLLM())
     class Broken:
         async def ainvoke(self, args):
-            raise GoogleError(429, {'error': {'message': 'secret'}})
+            raise APIStatusError('secret', response=httpx.Response(429, request=httpx.Request('POST', 'https://example.test')), body=None)
     await invoke_with_fallback(lambda client, _: Broken() if client is llm else FakeRunnable(SentinelResult()), {}, max_attempts_per_provider=1)
     assert owner.next() == 'other'
     assert owner.next() == 'other'
@@ -205,7 +201,7 @@ def test_client_factory_records_pool_that_supplied_shared_key(monkeypatch):
     other = ApiKeyPool(['shared'], 'openrouter')
     monkeypatch.setattr(llm_config, 'pro_pool', pool)
     monkeypatch.setattr(llm_config, 'openrouter_pool', other)
-    cfg = replace(llm_config_service.get_tier_config('pro'), base_url='https://custom.example/v1', provider_name='custom')
+    cfg = replace(llm_config_service.get_tier_config('pro'), base_url=__import__('src.core.config', fromlist=['settings']).settings.PRO_MODEL_BASE_URL, provider_name='omniroute')
     monkeypatch.setattr(llm_config_service, 'get_tier_config', lambda tier: cfg)
     client = llm_config_service.get_llm('pro')
     assert client._credential_owner == (pool, 'shared')
@@ -222,3 +218,50 @@ async def test_owned_credential_not_quarantined_on_parse_failure(monkeypatch):
         await invoke_with_fallback(lambda *_: FakeRunnable(None), {}, max_attempts_per_provider=1)
     assert pool.next() == 'second'
     assert pool.next() == 'first'
+
+
+def test_validate_selection_rejects_float_ints():
+    from types import SimpleNamespace
+    from src.pipeline.nodes import _validate_selection
+    with pytest.raises(ValueError):
+        _validate_selection(SimpleNamespace(selected_experience_indices=[0.0], selected_project_indices=[]), 1, 0, 1, 0)
+
+
+def test_validate_selection_rejects_non_int_float():
+    """Float values that are not integers (like 0.5) should be rejected."""
+    from types import SimpleNamespace
+    from src.pipeline.nodes import _validate_selection
+    with pytest.raises(ValueError):
+        _validate_selection(
+            SimpleNamespace(selected_experience_indices=[0.5], selected_project_indices=[]),
+            experience_count=3, project_count=0, max_exp=1, max_proj=0
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 402, 404, 422, 500, 502])
+async def test_hard_errors_skip_to_next_provider(monkeypatch, status):
+    """A 500 InternalServerError should immediately skip to the next provider
+    without wasting a second retry attempt on the same failing provider."""
+    from openai import APIStatusError
+    import httpx
+    monkeypatch.setattr(llm_config_service, 'get_llm', lambda **kwargs: FakeLLM())
+    monkeypatch.setattr(llm_config_service, 'get_fallback_llm', lambda **kwargs: FallbackLLM())
+
+    attempts = []
+
+    class BrokenWith500:
+        async def ainvoke(self, args):
+            attempts.append('primary')
+            # Simulate an InternalServerError (500)
+            resp = httpx.Response(status, request=httpx.Request('POST', 'https://omniroute.ai/v1'))
+            raise APIStatusError('Internal Server Error', response=resp, body=None)
+
+    result = await invoke_with_fallback(
+        lambda llm, _: BrokenWith500() if isinstance(llm, FakeLLM) else FakeRunnable(SentinelResult()),
+        {},
+        max_attempts_per_provider=2,  # would normally allow 2 attempts
+    )
+    # Should only have tried primary once (not twice) before falling back
+    assert attempts == ['primary'], f"Expected 1 primary attempt, got {attempts}"
+    assert isinstance(result, SentinelResult)

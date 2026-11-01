@@ -1,5 +1,6 @@
 import uuid
-from unittest.mock import AsyncMock
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +14,59 @@ from src.core.database import get_db
 from src.models.generation import FeedbackRating, ReportAttachment, SupportMessage, SupportReport
 from src.models.user import Base, User
 from src.services import support
+
+
+@pytest.mark.parametrize("mime", ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4",
+                                  "audio/wav", "audio/x-wav", "audio/mpeg"])
+async def test_voice_upload_preserves_recorder_mime_and_bytes(context, monkeypatch, mime):
+    from src.services import feedback_ai
+    client, db, *_ = context
+    storage = Mock()
+    storage.upload_bytes.side_effect = lambda content, key, **kw: key
+    monkeypatch.setattr("src.api.feedback.StorageService", lambda: storage)
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    enrichment = AsyncMock()
+    monkeypatch.setattr(feedback_ai, "process_new_support_report", enrichment)
+    response = await client.post("/feedback/support", data={"message": "Audio issue"},
+                                 files={"voice": ("recording", b"synthetic audio", mime)})
+    assert response.status_code == 200
+    report_id = uuid.UUID(response.json()["id"])
+    attachment = (await db.execute(select(ReportAttachment).where(ReportAttachment.report_id == report_id))).scalar_one()
+    assert attachment.mime_type == mime
+    assert attachment.file_size_bytes == len(b"synthetic audio")
+    assert storage.upload_bytes.call_args.args[0] == b"synthetic audio"
+    assert storage.upload_bytes.call_args.kwargs["content_type"] == mime
+    enrichment.assert_awaited_once_with(report_id)
+
+
+@pytest.mark.parametrize("transcript", ["The download failed.", None])
+async def test_voice_enrichment_persists_transcript_or_preserves_recording(context, monkeypatch, transcript):
+    from src.services import feedback_ai
+    _, db, _, _, _, _, report, _ = context
+    attachment = ReportAttachment(report_id=report.id, attachment_type="voice_recording",
+        storage_key="synthetic-recording.webm", filename="recording.webm",
+        mime_type="audio/webm;codecs=opus", file_size_bytes=15)
+    db.add(attachment)
+    await db.commit()
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    monkeypatch.setattr(feedback_ai, "AsyncSessionLocal", session)
+    monkeypatch.setattr(feedback_ai.settings, "SUPPORT_WEBHOOK_URL", "")
+    # A summary outage must not prevent voice processing.
+    monkeypatch.setattr(feedback_ai, "invoke_with_fallback", AsyncMock(side_effect=RuntimeError("synthetic outage")))
+    storage = Mock()
+    storage.download_bytes.return_value = b"synthetic audio"
+    monkeypatch.setattr(feedback_ai, "StorageService", lambda: storage)
+    transcribe = AsyncMock(return_value=transcript)
+    monkeypatch.setattr(feedback_ai, "transcribe_audio_bytes", transcribe)
+    await feedback_ai.process_new_support_report(report.id)
+    await db.refresh(attachment)
+    assert attachment.transcription == transcript
+    assert attachment.storage_key == "synthetic-recording.webm"
+    transcribe.assert_awaited_once_with(b"synthetic audio", "audio/webm;codecs=opus")
 
 
 @pytest.fixture

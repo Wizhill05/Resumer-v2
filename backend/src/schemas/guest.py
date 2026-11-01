@@ -15,7 +15,7 @@ class GuestGenerationCreate(BaseModel):
     job_description: str
     keywords: list[str] | None = None
     instructions: str | None = None
-    model_used: str = "poolside/laguna-xs-2.1:free"
+    model_used: str = "google/gemini-3.8-flash"
     content_split: ContentSplitRequest | None = None
     creativity_mode: CreativityMode = "larp"
     profile: ProfileUpdate = ProfileUpdate()

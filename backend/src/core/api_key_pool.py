@@ -2,8 +2,6 @@
 
 Pools:
 - openrouter_pool (OpenRouter primary/free)
-- google_pool (Google fallback / GenAI)
-- cerebras_pool (Cerebras fast inference)
 - pro_pool (OmniRoute / Pro dedicated keys)
 
 Thread-safe: atomic counter under lock so concurrent calls each get the
@@ -76,6 +74,4 @@ class ApiKeyPool:
 
 # Module-level singletons — initialised once at import time.
 openrouter_pool = ApiKeyPool(settings.openrouter_api_keys, "OpenRouter")
-google_pool = ApiKeyPool(settings.google_api_keys, "Google")
-cerebras_pool = ApiKeyPool(settings.cerebras_api_keys, "Cerebras")
 pro_pool = ApiKeyPool(settings.pro_model_api_keys, "Pro / OmniRoute")

@@ -5,15 +5,27 @@ from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda
 from sqlalchemy import select
 
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
 from src.models.generation import ReportAttachment, SupportReport
-from src.pipeline.nodes import invoke_with_fallback
+from src.pipeline.nodes import InvalidStructuredOutput, invoke_with_fallback
 
 logger = logging.getLogger(__name__)
+
+
+def _transcription_chain(llm, provider):
+    # Synthetic speech probes returned unrelated text for every tested format.
+    # Keep OmniRoute disabled for audio until its gateway passes those probes.
+    if provider == "omniroute":
+        async def unavailable(_):
+            logger.warning("[feedback_ai] OmniRoute audio transcription unavailable: synthetic speech verification failed; trying fallback")
+            raise InvalidStructuredOutput("Audio route unavailable")
+        return RunnableLambda(unavailable)
+    return llm
 
 
 async def process_new_support_report(report_id: uuid.UUID) -> None:
@@ -100,40 +112,33 @@ async def process_new_support_report(report_id: uuid.UUID) -> None:
 
 
 async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str) -> Optional[str]:
-    """Transcribe audio bytes using Google Gemma / Gemini API."""
+    """Transcribe audio through the same Gemini gateway routes as text requests."""
+    import base64
+    # Chat Completions accepts provider-specific formats, unlike the Responses
+    # API's wav/mp3-only input_audio contract. Preserve browser recorder formats.
+    formats = {
+        "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4",
+        "audio/wav": "wav", "audio/x-wav": "wav",
+        "audio/mpeg": "mp3", "audio/mp3": "mp3",
+    }
+    normalized_mime = mime_type.split(";", 1)[0].strip().lower()
+    if normalized_mime not in formats or not audio_bytes:
+        logger.warning("[feedback_ai] Audio transcription skipped: unsupported MIME type or empty recording")
+        return None
+    message = HumanMessage(content=[
+        {"type": "text", "text": "Transcribe this recording verbatim. Return only the transcription."},
+        {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio_bytes).decode(), "format": formats[normalized_mime]}},
+    ])
+    def validate_transcript(response):
+        if not isinstance(response.content, str) or not response.content.strip():
+            raise InvalidStructuredOutput("Audio transcript missing")
+
     try:
-        import base64
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        from src.core.api_key_pool import google_pool
-        if google_pool.count == 0:
-            return None
-
-        key = google_pool.next()
-        llm = ChatGoogleGenerativeAI(
-            model="gemma-4-31b-it",
-            google_api_key=key,
-            temperature=0.0,
+        response = await invoke_with_fallback(
+            _transcription_chain, [message], node_name="support_transcription",
+            validate_result=validate_transcript, max_attempts_per_provider=1,
         )
-
-        b64_data = base64.b64encode(audio_bytes).decode("utf-8")
-
-        message = HumanMessage(
-            content=[
-                {
-                    "type": "text",
-                    "text": "Transcribe the following audio recording verbatim. Provide only the text transcription, without markdown or extra commentary.",
-                },
-                {
-                    "type": "media",
-                    "mime_type": mime_type,
-                    "data": b64_data,
-                },
-            ]
-        )
-
-        response = await llm.ainvoke([message])
         return response.content.strip()
-    except Exception as e:
-        logger.warning(f"[feedback_ai] Gemini audio transcription failed: {e}")
+    except Exception as exc:
+        logger.warning("[feedback_ai] Audio transcription failed (%s)", type(exc).__name__)
         return None

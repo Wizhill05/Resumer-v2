@@ -58,8 +58,8 @@ class ModelSettingsUpdate(BaseModel):
     model: str
     temperature: float = 0.2
     provider_name: str | None = None
-    fallback_provider: str | None = "google"
-    fallback_model: str | None = "gemma-4-31b-it"
+    fallback_provider: str | None = "openrouter"
+    fallback_model: str | None = settings.OPENROUTER_FALLBACK_MODEL
     extra_headers: dict[str, str] | None = None
 
 
@@ -238,16 +238,12 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
     # 6. Keys status (round robin count). Import lazily so admin route import
     # does not crash before app startup validation can produce a clear error.
     try:
-        from src.core.api_key_pool import cerebras_pool, google_pool, openrouter_pool, pro_pool
+        from src.core.api_key_pool import openrouter_pool, pro_pool
 
         openrouter_key_count = openrouter_pool.count
-        google_key_count = google_pool.count
-        cerebras_key_count = cerebras_pool.count
         pro_key_count = pro_pool.count if pro_pool.count > 0 else (1 if settings.PRO_MODEL_API_KEY else 0)
     except RuntimeError:
         openrouter_key_count = len(settings.openrouter_api_keys)
-        google_key_count = len(settings.google_api_keys)
-        cerebras_key_count = len(settings.cerebras_api_keys)
         pro_key_count = len(settings.pro_model_api_keys) or (1 if settings.PRO_MODEL_API_KEY else 0)
 
     try:
@@ -267,13 +263,6 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
             "model": pro_cfg.model,
             "base_url": pro_cfg.base_url,
             "configured_keys_count": pro_key_count,
-        },
-        "cerebras": {
-            "configured_keys_count": cerebras_key_count,
-        },
-        "google": {
-            "configured_keys_count": google_key_count,
-            "model": free_cfg.fallback_model or "gemma-4-31b-it",
         },
     }
     total_tokens, avg_node_latency, fallback_count, parse_error_count, metric_count = 0, 0.0, 0, 0, 0
@@ -439,14 +428,7 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
     model_groups: dict[str, list[dict]] = {}
     for row in all_gens:
         raw_model = row.model_used or "unknown"
-        if "gemini-3.7" in raw_model.lower() or "antigravity" in raw_model.lower():
-            model_key = "gemini-3.7-flash-tiered (OmniRoute)"
-        elif "laguna" in raw_model.lower() or "poolside" in raw_model.lower():
-            model_key = "laguna-xs-2.1:free (OpenRouter)"
-        elif "qwen" in raw_model.lower():
-            model_key = f"{raw_model} (Cerebras)"
-        else:
-            model_key = raw_model
+        model_key = raw_model
         dur = None
         if row.completed_at and row.created_at:
             dur = max(0.0, (row.completed_at - row.created_at).total_seconds())
@@ -1092,17 +1074,20 @@ async def get_model_settings(db: AsyncSession = Depends(get_db)):
 
 @router.put("/model-settings", dependencies=[Depends(get_current_admin)])
 async def update_model_settings(data: ModelSettingsUpdate, db: AsyncSession = Depends(get_db)):
-    updated = await llm_config_service.update_tier_config(
-        db=db,
-        tier=data.tier,
-        base_url=data.base_url,
-        model=data.model,
-        temperature=data.temperature,
-        provider_name=data.provider_name,
-        fallback_provider=data.fallback_provider,
-        fallback_model=data.fallback_model,
-        extra_headers=data.extra_headers,
-    )
+    try:
+        updated = await llm_config_service.update_tier_config(
+            db=db,
+            tier=data.tier,
+            base_url=data.base_url,
+            model=data.model,
+            temperature=data.temperature,
+            provider_name=data.provider_name,
+            fallback_provider=data.fallback_provider,
+            fallback_model=data.fallback_model,
+            extra_headers=data.extra_headers,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
     return {
         "tier": updated.tier,
         "provider_name": updated.provider_name,
@@ -1125,45 +1110,10 @@ async def test_model_endpoint(data: ModelTestRequest, db: AsyncSession = Depends
         if data.base_url or data.model:
             base_url = (data.base_url or (settings.PRO_MODEL_BASE_URL if tier == "pro" else settings.FREE_MODEL_BASE_URL)).rstrip("/")
             model = data.model or (settings.PRO_MODEL_NAME if tier == "pro" else settings.FREE_MODEL_NAME)
-            url_lower = base_url.lower()
-            is_openrouter = "openrouter.ai" in url_lower
-            is_cerebras = "cerebras.ai" in url_lower
-            is_omniroute = "omniroute" in url_lower
-
-            from src.core.api_key_pool import cerebras_pool, openrouter_pool, pro_pool
-
-            if is_cerebras:
-                api_key = cerebras_pool.next() if cerebras_pool.count > 0 else "dummy-key"
-            elif is_omniroute:
-                if pro_pool.count > 0:
-                    api_key = pro_pool.next()
-                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
-                    api_key = settings.PRO_MODEL_API_KEY.strip()
-                else:
-                    api_key = "dummy-key"
-            elif is_openrouter:
-                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
-            elif tier == "pro":
-                if pro_pool.count > 0:
-                    api_key = pro_pool.next()
-                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
-                    api_key = settings.PRO_MODEL_API_KEY.strip()
-                elif openrouter_pool.count > 0:
-                    api_key = openrouter_pool.next()
-                else:
-                    api_key = "dummy-key"
-            else:
-                api_key = openrouter_pool.next() if openrouter_pool.count > 0 else "dummy-key"
-
-            from langchain_openai import ChatOpenAI
-            headers = {"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"} if is_openrouter else None
-            llm = ChatOpenAI(
-                model=model,
-                base_url=base_url,
-                api_key=api_key or "dummy-key",
-                temperature=0.0,
-                default_headers=headers,
-            )
+            from src.services.llm_config import TierConfig
+            provider = llm_config_service.resolve_provider(base_url)
+            llm = llm_config_service.create_client(TierConfig(
+                tier=tier, provider_name=provider, base_url=base_url, model=model, temperature=0))
         else:
             await llm_config_service.load_from_db(db)
             llm = llm_config_service.get_llm(tier=tier)
@@ -1186,7 +1136,7 @@ async def test_model_endpoint(data: ModelTestRequest, db: AsyncSession = Depends
         return {
             "success": False,
             "latency_ms": round(latency_ms, 2),
-            "error": str(exc),
+            "error": type(exc).__name__,
             "tier": tier,
         }
 

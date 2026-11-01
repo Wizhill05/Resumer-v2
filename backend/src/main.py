@@ -33,14 +33,13 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("JWT_SECRET is still the default 'changeme'. Rotate before running.")
     has_primary_keys = bool(
         settings.openrouter_api_keys
-        or settings.cerebras_api_keys
         or settings.pro_model_api_keys
         or settings.PRO_MODEL_API_KEY
     )
     if not has_primary_keys:
-        raise RuntimeError("No primary AI provider keys configured. Set OPENROUTER_API_KEYS, CEREBRAS_API_KEYS, or PRO_MODEL_API_KEYS in env.")
-    if not settings.google_api_keys:
-        logger.warning("[startup] GOOGLE_API_KEYS is unset. Fallback LLM execution will fail if primary provider errors.")
+        raise RuntimeError("No primary AI provider keys configured. Set OPENROUTER_API_KEYS or PRO_MODEL_API_KEYS in env.")
+    if not settings.openrouter_api_keys:
+        logger.warning("[startup] OPENROUTER_API_KEYS is unset. Independent fallback is unavailable.")
 
     # Idempotently ensure R2 bucket has a 90-day lifecycle expiry rule.
     StorageService().ensure_lifecycle_policy()

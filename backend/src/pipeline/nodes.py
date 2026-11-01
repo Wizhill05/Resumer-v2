@@ -11,15 +11,11 @@ from typing import Any
 
 from jinja2 import Template
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
-from langchain_openai import ChatOpenAI
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import ValidationError
 from langchain_core.exceptions import OutputParserException
 from openai import APIError
-from google.genai.errors import APIError as GoogleAPICallError
 import httpx
 from src.core.api_key_pool import ApiKeyUnavailable
 
@@ -33,7 +29,6 @@ from src.pipeline.state import ResumeGraphState
 from src.core.skill_categories import merge_skill_categories, skill_category_display
 from src.schemas.pipeline import (
     JobAnalysis,
-    SelectedItems,
     StrictSelectedItems,
     TailoredExperience,
     TailoredExperienceBatch,
@@ -71,10 +66,32 @@ from src.services.llm_config import llm_config_service
 
 
 def _structured(llm, schema, provider: str | None = None):
-    """Structured output with provider-appropriate method."""
-    if isinstance(llm, ChatOpenAI):
-        return llm.with_structured_output(schema, method="function_calling")
-    return llm.with_structured_output(schema)
+    """Request JSON content and validate locally, without depending on tool calls."""
+    from langchain_core.messages import SystemMessage
+    from langchain_core.runnables import RunnableLambda
+
+    async def invoke(value, config=None):
+        messages = value.to_messages() if hasattr(value, "to_messages") else value
+        contract = schema.model_json_schema()
+        options = {"extra_body": {"provider": {"require_parameters": True}}} if (provider or _actual_provider(llm)) == "openrouter" else {}
+        request = llm.bind(**options, response_format={"type": "json_schema", "json_schema": {
+            "name": schema.__name__, "schema": contract}})
+        raw = await request.ainvoke([SystemMessage(content=(
+            "Return only one JSON object matching this schema. No markdown or commentary. "
+            + json.dumps(contract))), *messages], config=config)
+        parsed, error = None, None
+        try:
+            content = raw.content
+            if isinstance(content, list):
+                content = "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+            # Accept a single fenced object, never extract JSON from arbitrary prose.
+            content = re.sub(r"^```(?:json)?\s*\n?(.*?)\n?```$", r"\1", content.strip(), flags=re.S)
+            parsed = schema.model_validate_json(content)
+        except (ValidationError, ValueError, TypeError) as exc:
+            error = type(exc).__name__
+        return {"raw": raw, "parsed": parsed, "parsing_error": error}
+
+    return RunnableLambda(invoke)
 
 def _extract_token_usage(result: Any) -> tuple[int | None, int | None, int | None]:
     metadata = getattr(result, "response_metadata", None) or {}
@@ -233,16 +250,6 @@ async def record_node_metric(
         )
         await metric_session.commit()
 
-def _extract_llm_key(llm: Any) -> str | None:
-    if not llm:
-        return None
-    key = getattr(llm, "openai_api_key", None)
-    if key:
-        return key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
-    key = getattr(llm, "google_api_key", None) or getattr(llm, "api_key", None)
-    if key:
-        return key.get_secret_value() if hasattr(key, "get_secret_value") else str(key)
-    return None
 
 
 class InferenceExhausted(RuntimeError):
@@ -256,10 +263,10 @@ class InvalidStructuredOutput(ValueError):
 
 
 def _actual_provider(llm: Any) -> str:
-    if isinstance(llm, ChatGoogleGenerativeAI):
-        return "google"
+    if getattr(llm, "_route_provider", None):
+        return llm._route_provider
     url = str(getattr(llm, "openai_api_base", None) or "").lower()
-    for domain, name in (("openrouter.ai", "openrouter"), ("cerebras.ai", "cerebras"), ("omniroute", "omniroute")):
+    for domain, name in (("openrouter.ai", "openrouter"), ("omniroute", "omniroute")):
         if domain in url:
             return name
     return "openai_compatible"
@@ -291,43 +298,15 @@ async def invoke_with_fallback(
     is_pro: bool = False,
     validate_result=None,
 ):
-    """Retry each provider call with fresh per-attempt key rotation before falling back.
-
-    chain_factory(llm, provider_name) -> a runnable chain.
-    Dynamically uses Pro or Free tier model configuration with configured fallback.
-    """
+    """Try the selected tier and its independent OpenRouter fallback, with bounded retries."""
+    if not 1 <= max_attempts_per_provider <= 2:
+        raise ValueError("Attempts per route must be one or two")
     tier = "pro" if is_pro else "free"
     cfg = llm_config_service.get_tier_config(tier)
-
-    # Dynamically determine provider name from configured endpoint
-    url_lower = cfg.base_url.lower()
-    is_openrouter = "openrouter.ai" in url_lower
-    is_cerebras = "cerebras.ai" in url_lower or cfg.provider_name == "cerebras"
-    if is_openrouter:
-        primary_name = "openrouter"
-    elif "omniroute" in url_lower or cfg.provider_name == "omniroute":
-        primary_name = "omniroute"
-    elif is_cerebras:
-        primary_name = "cerebras"
-    elif cfg.provider_name and cfg.provider_name not in ("openai_compatible", "default"):
-        primary_name = cfg.provider_name
-    else:
-        primary_name = "custom_endpoint"
-
-    fallback_provider_name = cfg.fallback_provider or "google"
-
-    def primary_route(config):
-        return ("openai", config.base_url.rstrip("/").lower(), config.model)
-
-    fallback_url = {"openrouter": "https://openrouter.ai/api/v1", "cerebras": "https://api.cerebras.ai/v1"}.get(fallback_provider_name.lower())
-    fallback_route = (("openai", fallback_url, cfg.fallback_model or "gemma-4-31b-it") if fallback_url else ("google", "google", cfg.fallback_model or "gemma-4-31b-it"))
     providers = [
-        (primary_name, primary_route(cfg), lambda: llm_config_service.get_llm(tier=tier)),
-        (fallback_provider_name, fallback_route, lambda: llm_config_service.get_fallback_llm(tier=tier)),
+        (cfg.provider_name, (cfg.base_url.rstrip("/"), cfg.model), lambda: llm_config_service.get_llm(tier=tier)),
+        ("openrouter", ("https://openrouter.ai/api/v1", cfg.fallback_model), lambda: llm_config_service.get_fallback_llm(tier=tier)),
     ]
-    if is_pro:
-        free_cfg = llm_config_service.get_tier_config("free")
-        providers.append((free_cfg.provider_name, primary_route(free_cfg), lambda: llm_config_service.get_llm(tier="free")))
     seen_routes = set()
     for index, (name, route, factory) in enumerate(providers):
         if route in seen_routes:
@@ -336,7 +315,7 @@ async def invoke_with_fallback(
         for attempt in range(1, max_attempts_per_provider + 1):
             try:
                 llm = factory()
-            except (ValidationError, APIError, GoogleAPICallError, httpx.HTTPError, ApiKeyUnavailable) as exc:
+            except (ValueError, APIError, httpx.HTTPError, ApiKeyUnavailable) as exc:
                 print(f"[llm_fallback] {name} initialization failed ({type(exc).__name__}).")
                 break
             name = _actual_provider(llm)
@@ -347,21 +326,20 @@ async def invoke_with_fallback(
                 result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
                 usage_result = result
                 if isinstance(result, dict) and {"raw", "parsed", "parsing_error"} <= result.keys():
+                    parsing_error = result["parsing_error"]
                     raw = result["raw"]
                     usage_result = raw
                     result = result["parsed"]
                     reason = (getattr(raw, "response_metadata", None) or {}).get("finish_reason")
                     reason = _finish_reason(reason)
-                    if reason in ("length", "content_filter", "max_tokens", "safety") or result is None:
+                    if reason in ("length", "content_filter", "max_tokens", "safety") or result is None or parsing_error:
                         raise InvalidStructuredOutput(reason if reason in ("length", "content_filter", "max_tokens", "safety") else "parse_error")
                 if result is None:
                     raise InvalidStructuredOutput("Structured output missing")
                 if validate_result:
                     validate_result(result)
-            except (TimeoutError, APIError, GoogleAPICallError, ChatGoogleGenerativeAIError, httpx.HTTPError, OutputParserException, ValidationError, InvalidSelection, InvalidStructuredOutput) as exc:
+            except (TimeoutError, APIError, httpx.HTTPError, OutputParserException, ValidationError, InvalidSelection, InvalidStructuredOutput) as exc:
                 status = _status_code(exc)
-                if isinstance(exc, ChatGoogleGenerativeAIError) and (status is None or not 400 <= status < 600):
-                    raise
                 owner = getattr(llm, "_credential_owner", None)
                 if owner and status in (401, 403, 429):
                     owner[0].mark_failure(owner[1])
@@ -378,8 +356,11 @@ async def invoke_with_fallback(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
-                    error_message=f"attempt {attempt}/{max_attempts_per_provider}: {type(exc).__name__}" + (f" ({exc})" if isinstance(exc, InvalidStructuredOutput) and str(exc) in ("length", "content_filter", "parse_error") else ""),
+                    error_message=f"attempt {attempt}/{max_attempts_per_provider}: {type(exc).__name__}" + (f" HTTP {status}" if status else "") + (f" ({exc})" if isinstance(exc, InvalidStructuredOutput) and str(exc) in ("length", "content_filter", "parse_error") else ""),
                 )
+                if status in (400, 402, 404, 422, 500, 502):
+                    print(f"[llm_fallback] {name} returned {status}. Trying next route.")
+                    break
                 if attempt < max_attempts_per_provider:
                     sleep_for = min(0.5 * (2 ** (attempt - 1)), 2.0)
                     print(f"[llm_retry] {name} attempt {attempt} failed ({type(exc).__name__}). Rotating key and retrying in {sleep_for:.2f}s...")
@@ -401,7 +382,7 @@ async def invoke_with_fallback(
                 )
                 return result
 
-        print(f"[llm_fallback] {name} exhausted {max_attempts_per_provider} attempts. Falling back to next provider in chain...")
+        print(f"[llm_fallback] {name} exhausted attempts. Falling back to next provider in chain...")
     raise InferenceExhausted("All LLM providers failed") from None
 
 async def get_prompt_config(db: AsyncSession, name: str, default_system: str, default_user: str | None = None) -> tuple[str, str | None]:
@@ -591,7 +572,7 @@ async def selection_node(
         _validate_selection(result, len(experiences), len(projects), max_exp, max_proj)
 
     result = await invoke_with_fallback(
-            lambda llm, p: prompt | llm.with_structured_output(StrictSelectedItems, include_raw=True, **({"method": "function_calling"} if isinstance(llm, ChatOpenAI) else {})),
+            lambda llm, p: prompt | _structured(llm, StrictSelectedItems, p),
             {
                 "job_title": job_analysis.get("job_title") or "Target Role",
                 "requirements": requirements,

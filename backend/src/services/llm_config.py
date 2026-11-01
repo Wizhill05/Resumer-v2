@@ -1,27 +1,18 @@
-"""Dynamic LLM Provider & Model Configuration Service.
-
-Manages dynamic runtime configurations for Free and Pro tiers:
-- Pro Tier: Dedicated endpoint hosting Google Gemini 3.7 Flash Tiered via OmniRoute gateway.
-- Free Tier: OpenRouter multi-key pool hosting Laguna model (poolside/laguna-xs-2.1:free).
-- Fallback: Google GenAI (gemma-4-31b-it via Gemini API).
-
-Thread-safe in-memory cache synchronized with PostgreSQL (llm_provider_configs table).
-"""
+"""Gemini-only clients through OmniRoute and independently keyed OpenRouter."""
 from __future__ import annotations
 
 import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from urllib.parse import urlsplit
+import re
 
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.api_key_pool import cerebras_pool, google_pool, openrouter_pool, pro_pool
+from src.core.api_key_pool import openrouter_pool, pro_pool, ApiKeyUnavailable
 from src.core.config import settings
 from src.models.generation import LLMProviderConfig
 
@@ -35,8 +26,8 @@ class TierConfig:
     base_url: str
     model: str
     temperature: float = 0.2
-    fallback_provider: str | None = "google"
-    fallback_model: str | None = "gemma-4-31b-it"
+    fallback_provider: str | None = "openrouter"
+    fallback_model: str | None = settings.OPENROUTER_FALLBACK_MODEL
     extra_headers: dict[str, str] = field(default_factory=dict)
     is_active: bool = True
     updated_at: datetime | None = None
@@ -55,10 +46,10 @@ class LLMConfigService:
             tier="pro",
             provider_name="omniroute",
             base_url=settings.PRO_MODEL_BASE_URL or "https://omniroute-latest-rmm0.onrender.com/",
-            model=settings.PRO_MODEL_NAME or "antigravity/gemini-3.7-flash-tiered",
+            model=settings.PRO_MODEL_NAME or "gemini-3.8-flash-tiered",
             temperature=0.2,
-            fallback_provider="google",
-            fallback_model="gemma-4-31b-it",
+            fallback_provider="openrouter",
+            fallback_model=settings.OPENROUTER_FALLBACK_MODEL,
             extra_headers={},
             is_active=True,
             updated_at=datetime.now(timezone.utc),
@@ -68,10 +59,10 @@ class LLMConfigService:
             tier="free",
             provider_name="openrouter",
             base_url=settings.FREE_MODEL_BASE_URL or "https://openrouter.ai/api/v1",
-            model=settings.FREE_MODEL_NAME or "poolside/laguna-xs-2.1:free",
+            model=settings.FREE_MODEL_NAME or "google/gemini-3.8-flash",
             temperature=0.2,
-            fallback_provider="google",
-            fallback_model="gemma-4-31b-it",
+            fallback_provider="openrouter",
+            fallback_model=settings.OPENROUTER_FALLBACK_MODEL,
             extra_headers={
                 "HTTP-Referer": settings.FRONTEND_URL,
                 "X-Title": "Resumer",
@@ -121,14 +112,27 @@ class LLMConfigService:
 
             with self._lock:
                 for row in records:
+                    try:
+                        provider = self.resolve_provider(row.base_url, row.provider_name)
+                        self.validate_model(row.model, provider)
+                    except ValueError:
+                        logger.warning("[llm_config] Ignoring unsupported persisted route for tier %s", row.tier)
+                        continue
+                    fallback_model = row.fallback_model or ""
+                    try:
+                        if row.fallback_provider != "openrouter":
+                            raise ValueError("Unsupported fallback")
+                        self.validate_model(fallback_model, "openrouter")
+                    except ValueError:
+                        fallback_model = settings.OPENROUTER_FALLBACK_MODEL
                     self._cache[row.tier] = TierConfig(
                         tier=row.tier,
                         provider_name=row.provider_name,
                         base_url=row.base_url,
                         model=row.model,
                         temperature=row.temperature,
-                        fallback_provider=row.fallback_provider,
-                        fallback_model=row.fallback_model,
+                        fallback_provider="openrouter",
+                        fallback_model=fallback_model,
                         extra_headers=row.extra_headers or {},
                         is_active=row.is_active,
                         updated_at=row.updated_at,
@@ -142,7 +146,7 @@ class LLMConfigService:
                 async with AsyncSessionLocal() as session:
                     await _load_records(session)
         except Exception as exc:
-            logger.warning("Could not load LLMProviderConfig from DB; using environment defaults: %s", exc)
+            logger.warning("Could not load LLMProviderConfig from DB (%s)", type(exc).__name__)
             if db is not None:
                 try:
                     await db.rollback()
@@ -156,27 +160,19 @@ class LLMConfigService:
         model: str,
         temperature: float = 0.2,
         provider_name: str | None = None,
-        fallback_provider: str | None = "google",
-        fallback_model: str | None = "gemma-4-31b-it",
+        fallback_provider: str | None = "openrouter",
+        fallback_model: str | None = settings.OPENROUTER_FALLBACK_MODEL,
         extra_headers: dict[str, str] | None = None,
     ) -> TierConfig:
         tier_key = "pro" if tier.lower() in ("pro", "true") else "free"
         cleaned_url = base_url.strip()
         cleaned_model = model.strip()
 
-        def _infer_provider_name(url: str) -> str:
-            u = url.lower()
-            if "openrouter.ai" in u:
-                return "openrouter"
-            if "omniroute" in u:
-                return "omniroute"
-            if "cerebras.ai" in u:
-                return "cerebras"
-            if "groq.com" in u:
-                return "groq"
-            return "openai_compatible"
-
-        resolved_provider = provider_name or _infer_provider_name(cleaned_url)
+        resolved_provider = self.resolve_provider(cleaned_url, provider_name)
+        self.validate_model(cleaned_model, resolved_provider)
+        if fallback_provider != "openrouter":
+            raise ValueError("Fallback must use OpenRouter")
+        self.validate_model(fallback_model or "", "openrouter")
 
         result = await db.execute(select(LLMProviderConfig).where(LLMProviderConfig.tier == tier_key))
         config_row = result.scalar_one_or_none()
@@ -224,122 +220,58 @@ class LLMConfigService:
 
         return updated
 
-    def get_llm(
-        self,
-        tier: str = "free",
-        api_key_override: str | None = None,
-    ) -> ChatOpenAI:
-        """Create and return a configured ChatOpenAI client for the requested tier."""
-        cfg = self.get_tier_config(tier)
-        url_lower = cfg.base_url.lower()
-        if "openrouter.ai" in url_lower:
-            resolved_provider = "openrouter"
-        elif "cerebras.ai" in url_lower:
-            resolved_provider = "cerebras"
-        elif "omniroute" in url_lower:
-            resolved_provider = "omniroute"
-        elif cfg.provider_name and cfg.provider_name not in ("openai_compatible", "default"):
-            resolved_provider = cfg.provider_name
-        else:
-            resolved_provider = "openai_compatible"
+    @staticmethod
+    def resolve_provider(base_url: str, provider_name: str | None = None) -> str:
+        url = urlsplit(base_url)
+        if url.scheme not in ("http", "https") or url.username or url.password or url.query or url.fragment:
+            raise ValueError("Invalid AI route URL")
+        if url.hostname == "openrouter.ai" and url.scheme == "https" and url.path.rstrip("/") == "/api/v1":
+            return "openrouter"
+        # OmniRoute may be self-hosted, but its endpoint must be explicitly configured.
+        configured = urlsplit(settings.PRO_MODEL_BASE_URL)
+        def api_path(path: str) -> str:
+            return path.rstrip("/") or "/v1"
+        if (url.scheme, url.netloc, api_path(url.path)) == (configured.scheme, configured.netloc, api_path(configured.path)) and provider_name in (None, "omniroute"):
+            return "omniroute"
+        raise ValueError("Only configured OmniRoute and OpenRouter routes are supported")
 
-        is_openrouter = resolved_provider == "openrouter"
+    @staticmethod
+    def validate_model(model: str, provider: str) -> None:
+        pattern = r"google/gemini-[a-z0-9.\-]+" if provider == "openrouter" else r"gemini-[a-z0-9.\-]+"
+        if not re.fullmatch(pattern, model):
+            raise ValueError("Only explicit Gemini text model IDs are supported")
+        if any(part in model for part in ("image", "nano-banana")):
+            raise ValueError("A Gemini text model is required")
 
-        owner = None
-        def acquire(pool):
-            nonlocal owner
-            owner = pool
-            return pool.next()
-
-        api_key = api_key_override
-        if not api_key:
-            if resolved_provider == "cerebras":
-                api_key = acquire(cerebras_pool) if cerebras_pool.count > 0 else "dummy-key"
-            elif resolved_provider == "omniroute":
-                if pro_pool.count > 0:
-                    api_key = acquire(pro_pool)
-                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
-                    api_key = settings.PRO_MODEL_API_KEY.strip()
-                else:
-                    api_key = "dummy-key"
-            elif resolved_provider == "openrouter":
-                api_key = acquire(openrouter_pool) if openrouter_pool.count > 0 else "dummy-key"
-            elif cfg.tier == "pro":
-                if pro_pool.count > 0:
-                    api_key = acquire(pro_pool)
-                elif settings.PRO_MODEL_API_KEY and settings.PRO_MODEL_API_KEY.strip():
-                    api_key = settings.PRO_MODEL_API_KEY.strip()
-                elif openrouter_pool.count > 0:
-                    api_key = acquire(openrouter_pool)
-                else:
-                    api_key = "dummy-key"
-            else:
-                api_key = acquire(openrouter_pool) if openrouter_pool.count > 0 else "dummy-key"
-        headers: dict[str, str] = {}
-        if is_openrouter:
-            headers["HTTP-Referer"] = settings.FRONTEND_URL
-            headers["X-Title"] = "Resumer"
-        if cfg.extra_headers:
-            headers.update(cfg.extra_headers)
-
-        llm = ChatOpenAI(
-            model=cfg.model,
-            temperature=cfg.temperature,
-            max_retries=0,
-            base_url=cfg.base_url.rstrip("/"),
-            api_key=api_key,
-            default_headers=headers if headers else None,
-        )
-        object.__setattr__(llm, "_credential_owner", (owner, api_key) if owner else None)
+    def create_client(self, cfg: TierConfig, api_key_override: str | None = None) -> ChatOpenAI:
+        provider = self.resolve_provider(cfg.base_url, cfg.provider_name)
+        self.validate_model(cfg.model, provider)
+        if not cfg.is_active:
+            raise ApiKeyUnavailable("AI route is inactive")
+        pool = openrouter_pool if provider == "openrouter" else pro_pool
+        key = api_key_override or pool.next()
+        headers = {"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"} if provider == "openrouter" else {}
+        headers.update(cfg.extra_headers)
+        if any(k.lower() in ("authorization", "host", "x-api-key") for k in headers):
+            raise ValueError("Credential headers must come from the route key pool")
+        llm = ChatOpenAI(model=cfg.model, temperature=cfg.temperature, max_retries=0,
+                         timeout=40, max_tokens=settings.LLM_MAX_OUTPUT_TOKENS,
+                         base_url=cfg.base_url.rstrip("/"), api_key=key,
+                         default_headers=headers or None)
+        object.__setattr__(llm, "_credential_owner", None if api_key_override else (pool, key))
+        object.__setattr__(llm, "_route_provider", provider)
         return llm
 
-    def get_fallback_llm(
-        self,
-        tier: str = "free",
-        api_key_override: str | None = None,
-    ) -> BaseChatModel:
-        """Create and return a configured fallback Chat model."""
+    def get_llm(self, tier: str = "free", api_key_override: str | None = None) -> ChatOpenAI:
+        return self.create_client(self.get_tier_config(tier), api_key_override)
+
+    def get_fallback_llm(self, tier: str = "free", api_key_override: str | None = None) -> ChatOpenAI:
         cfg = self.get_tier_config(tier)
-        fallback_provider = (cfg.fallback_provider or "google").lower()
-        fallback_model = cfg.fallback_model or "gemma-4-31b-it"
-
-        owner = None
-        def acquire(pool):
-            nonlocal owner
-            owner = pool
-            return pool.next()
-
-        if fallback_provider == "openrouter":
-            key = api_key_override or (acquire(openrouter_pool) if openrouter_pool.count > 0 else "dummy-key")
-            llm = ChatOpenAI(
-                model=fallback_model,
-                temperature=cfg.temperature,
-                max_retries=0,
-                base_url="https://openrouter.ai/api/v1",
-                api_key=key,
-                default_headers={"HTTP-Referer": settings.FRONTEND_URL, "X-Title": "Resumer"},
-            )
-        elif fallback_provider == "cerebras":
-            key = api_key_override or (acquire(cerebras_pool) if cerebras_pool.count > 0 else "dummy-key")
-            llm = ChatOpenAI(
-                model=fallback_model,
-                temperature=cfg.temperature,
-                max_retries=0,
-                base_url="https://api.cerebras.ai/v1",
-                api_key=key,
-            )
-        else:
-            api_key = api_key_override or (acquire(google_pool) if google_pool.count > 0 else "dummy-key")
-            llm = ChatGoogleGenerativeAI(
-                model=fallback_model,
-                temperature=cfg.temperature,
-                max_retries=0,
-                google_api_key=api_key,
-            )
-
-        key_used = api_key if fallback_provider not in ("openrouter", "cerebras") else key
-        object.__setattr__(llm, "_credential_owner", (owner, key_used) if owner else None)
-        return llm
+        if cfg.fallback_provider != "openrouter":
+            raise ValueError("Fallback must use OpenRouter")
+        return self.create_client(TierConfig(tier=cfg.tier, provider_name="openrouter",
+            base_url="https://openrouter.ai/api/v1", model=cfg.fallback_model or "",
+            temperature=cfg.temperature), api_key_override)
 
 async def ensure_llm_provider_schema() -> None:
     """Idempotently ensure is_pro column on users and llm_provider_configs table exist on startup."""
@@ -355,8 +287,8 @@ async def ensure_llm_provider_schema() -> None:
                     base_url VARCHAR NOT NULL,
                     model VARCHAR NOT NULL,
                     temperature FLOAT NOT NULL DEFAULT 0.2,
-                    fallback_provider VARCHAR DEFAULT 'google',
-                    fallback_model VARCHAR DEFAULT 'gemma-4-31b-it',
+                    fallback_provider VARCHAR DEFAULT 'openrouter',
+                    fallback_model VARCHAR DEFAULT 'google/gemini-3.8-flash',
                     extra_headers JSONB,
                     is_active BOOLEAN NOT NULL DEFAULT true,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
