@@ -170,33 +170,47 @@ async def start_generation(
                 ),
             )
         resolved_split = {"projects": data.content_split.projects, "experience": data.content_split.experience}
-        # Implicitly learn the user's preferred split for future runs.
-        current_user.preferred_projects = data.content_split.projects
-        current_user.preferred_experience = data.content_split.experience
     else:
-        # Fall back to the user's stored preference, then the template default.
         d = resolve_default_split(current_user, manifest)
         resolved_split = {"projects": d.projects, "experience": d.experience}
 
-    # ── Validate sufficient profile material exists in DB ─────────────────────
-    from sqlalchemy import func
-    from src.models.profile import UserExperience, UserProject
+    # ── Validate the same profile and content rules as readiness ──────────────
+    from src.models.profile import Profile, UserExperience, UserProject
+    from src.services.readiness import assess_profile, select_viable_split, split_availability
 
-    exp_count_stmt = select(func.count()).select_from(UserExperience).where(UserExperience.user_id == current_user.id)
-    proj_count_stmt = select(func.count()).select_from(UserProject).where(UserProject.user_id == current_user.id)
+    profile = (await db.execute(select(Profile).where(Profile.user_id == current_user.id))).scalar_one_or_none()
+    exp_rows = (
+        await db.execute(select(UserExperience).where(UserExperience.user_id == current_user.id))
+    ).scalars().all()
+    proj_rows = (
+        await db.execute(select(UserProject).where(UserProject.user_id == current_user.id))
+    ).scalars().all()
 
-    exp_count = (await db.execute(exp_count_stmt)).scalar() or 0
-    proj_count = (await db.execute(proj_count_stmt)).scalar() or 0
+    assessment = assess_profile(current_user, profile, proj_rows, exp_rows)
+    if not assessment.is_profile_ready:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[gap.message for gap in assessment.blocking_gaps])
+
+    exp_count = assessment.usable_experience_count
+    proj_count = assessment.usable_project_count
+    if data.content_split is None:
+        available = split_availability(manifest, proj_count, exp_count)
+        chosen = select_viable_split(available, d)
+        if chosen:
+            resolved_split = {"projects": chosen.projects, "experience": chosen.experience}
 
     if exp_count < resolved_split["experience"] or proj_count < resolved_split["projects"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Insufficient profile entries. You selected {resolved_split['experience']} experiences "
-                f"and {resolved_split['projects']} projects, but you only have {exp_count} experiences "
-                f"and {proj_count} projects in your profile."
+                f"Insufficient usable profile entries. You selected {resolved_split['experience']} experiences "
+                f"and {resolved_split['projects']} projects, but you only have {exp_count} usable experiences "
+                f"and {proj_count} usable projects in your profile."
             ),
         )
+
+    if data.content_split is not None:
+        current_user.preferred_projects = data.content_split.projects
+        current_user.preferred_experience = data.content_split.experience
 
     # ── Resolve creativity mode: explicit per-run choice wins, else user default ──
     if data.creativity_mode is not None and not is_valid_mode(data.creativity_mode):

@@ -54,6 +54,30 @@ def _coerce_str_to_date(v):
     return v
 
 
+class ReadinessGap(BaseModel):
+    field: str
+    message: str
+
+
+class ReadinessSplit(BaseModel):
+    template_id: str
+    projects: int
+    experiences: int
+    additional_projects: int
+    additional_experiences: int
+
+
+class GenerationReadiness(BaseModel):
+    is_ready: bool
+    next_steps: str
+    missing: list[ReadinessGap]
+    skills_count: int
+    skills_needed: int
+    usable_projects: int
+    usable_experiences: int
+    supported_splits: list[ReadinessSplit]
+
+
 # Profile
 class ProfileUpdate(BaseModel):
     full_name: str | None = None
