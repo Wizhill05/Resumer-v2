@@ -4,6 +4,8 @@ import { FluidField } from "@/components/landing/FluidField"
 import { LoginModal } from "@/components/LoginModal"
 import { CalligraphyTitle } from "@/components/landing/CalligraphyTitle"
 import { HeroThemeToggle } from "@/components/landing/HeroThemeToggle"
+import { CopyAgentPrompt } from "@/components/landing/CopyAgentPrompt"
+import { agentPrompt } from "@/lib/agent-prompt"
 
 function ChatGPTMark({ size = 14 }: { size?: number }) {
   return (
@@ -39,6 +41,8 @@ const subtleButton =
   "group inline-flex items-center justify-center gap-1.5 sm:gap-2 border border-[var(--fluid-ink)]/25 bg-white/40 px-2.5 py-1.5 text-xs font-semibold sm:px-4 sm:py-2 sm:text-sm text-[var(--fluid-ink)] backdrop-blur-sm transition-colors hover:border-[var(--fluid-ink)]/50 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fluid-ink)] dark:border-white/25 dark:bg-white/5 dark:text-[var(--fluid-ink)] dark:hover:border-white/50 dark:hover:bg-white/10 dark:focus-visible:outline-white"
 
 export function HeroSection() {
+  const mcpUrl = process.env.NEXT_PUBLIC_MCP_URL || "https://resumer-backend.aryansingh.space/mcp"
+
   return (
     <section className="relative flex h-[50dvh] min-h-[300px] flex-col overflow-hidden border-b border-black/10 bg-[var(--fluid-canvas)] md:h-auto md:min-h-[100dvh] dark:border-white/10">
       <FluidField />
@@ -79,7 +83,7 @@ export function HeroSection() {
       </div>
 
       {/* Login and guest actions with agent compatibility link */}
-      <div className="relative z-20 mt-auto flex flex-col items-center justify-end px-4 pb-3 sm:px-5 sm:pb-10 md:pb-14">
+      <div className="relative z-20 mt-auto flex flex-col items-center justify-end px-4 pb-6 sm:px-5 sm:pb-10 md:pb-14">
         <div className="hero-sub-elements flex flex-col items-center gap-2 sm:gap-4">
           <div className="flex flex-row flex-wrap items-center justify-center gap-2 sm:gap-4">
             <LoginModal
@@ -100,17 +104,21 @@ export function HeroSection() {
             </Link>
           </div>
 
-          <Link
-            href="/connect"
-            className="flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-[11px] font-medium text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--fluid-ink)] sm:text-sm"
-          >
-            <span>Connect your AI agent:</span>
-            <span className="inline-flex items-center gap-1"><AgentMark agent="opencode" /> OpenCode</span>
-            <span className="inline-flex items-center gap-1"><AgentMark agent="claude" /> Claude Code</span>
-            <span className="inline-flex items-center gap-1"><AgentMark agent="pi" /> Pi</span>
-            <span className="inline-flex items-center gap-1"><ChatGPTMark /> Codex</span>
-            <span>& more with MCP</span>
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+            <Link
+              href="/connect"
+              className="inline-flex items-center gap-2 text-[11px] font-medium text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--fluid-ink)] sm:text-sm"
+            >
+              <span>Connect your agent</span>
+              <span className="inline-flex items-center gap-1.5" aria-hidden="true">
+                <AgentMark agent="opencode" />
+                <AgentMark agent="claude" />
+                <AgentMark agent="pi" />
+                <ChatGPTMark />
+              </span>
+            </Link>
+            <CopyAgentPrompt prompt={agentPrompt(mcpUrl)} />
+          </div>
         </div>
       </div>
     </section>

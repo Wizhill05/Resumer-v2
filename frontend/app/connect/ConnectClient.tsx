@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Check, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { agentPrompt } from "@/lib/agent-prompt"
 
 interface ConnectClientProps {
   mcpUrl: string
@@ -11,7 +12,7 @@ interface ConnectClientProps {
 
 export function ConnectClient({ mcpUrl }: ConnectClientProps) {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle")
-  const prompt = `Connect to my Résumer MCP server at ${mcpUrl}, provide the sign-in link, then call check_readiness as soon as I sign in and follow its guidance.`
+  const prompt = agentPrompt(mcpUrl)
 
   const handleCopy = async () => {
     try {
