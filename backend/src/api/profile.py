@@ -7,6 +7,7 @@ from src.core.database import get_db
 from src.models.profile import Profile, UserEducation, UserExperience, UserProject, UserExtracurricular
 from src.models.user import User
 from src.schemas.profile import (
+    GenerationReadiness, ReadinessGap, ReadinessSplit,
     EducationCreate,
     EducationOut,
     EducationUpdate,
@@ -23,6 +24,8 @@ from src.schemas.profile import (
     ExtracurricularUpdate,
 )
 from src.schemas.generation import UserDefaultsOut, UserDefaultsUpdate
+from src.services.readiness import assess_profile, readiness_next_steps, split_availability
+from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -62,6 +65,58 @@ async def update_profile(
     await db.commit()
     await db.refresh(profile)
     return profile
+
+
+@router.get("/generation-ready", response_model=GenerationReadiness)
+async def generation_ready(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> GenerationReadiness:
+    """Report missing profile information and supported resume layouts."""
+    profile = (await db.execute(select(Profile).where(Profile.user_id == current_user.id))).scalar_one_or_none()
+    projects = (await db.execute(select(UserProject).where(UserProject.user_id == current_user.id))).scalars().all()
+    experiences = (await db.execute(select(UserExperience).where(UserExperience.user_id == current_user.id))).scalars().all()
+
+    assessment = assess_profile(current_user, profile, projects, experiences)
+    splits = [
+        ReadinessSplit(
+            template_id=split.template_id,
+            projects=split.projects,
+            experiences=split.experience,
+            additional_projects=split.additional_projects,
+            additional_experiences=split.additional_experiences,
+        )
+        for template in TemplateRegistryService.list_templates()
+        for split in split_availability(
+            template, assessment.usable_project_count, assessment.usable_experience_count
+        )
+    ]
+
+    missing = [ReadinessGap(field=gap.field, message=gap.message) for gap in assessment.gaps]
+    fits = any(not split.additional_projects and not split.additional_experiences for split in splits)
+    if not fits:
+        missing.append(
+            ReadinessGap(
+                field="content_split",
+                message=(
+                    "Add or complete projects and experiences to meet one of the supported splits."
+                    if splits
+                    else "No resume layouts are currently available."
+                ),
+            )
+        )
+
+    is_ready = assessment.is_profile_ready and fits
+    return GenerationReadiness(
+        is_ready=is_ready,
+        next_steps=readiness_next_steps(is_ready),
+        missing=missing,
+        skills_count=assessment.skills_count,
+        skills_needed=assessment.skills_needed,
+        usable_projects=assessment.usable_project_count,
+        usable_experiences=assessment.usable_experience_count,
+        supported_splits=splits,
+    )
 
 
 # ── Generation defaults ─────────────────────────────────────────────────────

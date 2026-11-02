@@ -225,11 +225,23 @@ async def test_readiness_gap_detection_and_steering(setup_test_env: User):
     assert len(r_empty["blocking_reasons"]) > 0
     assert r_empty["ai_steering"]["recommended_action"] == "PROMPT_USER_FOR_MISSING_DATA"
     assert "DO NOT call generate_resume yet" in r_empty["ai_steering"]["system_directive"]
+    directive = r_empty["ai_steering"]["system_directive"]
+    assert "old resumes" in directive and "/profile" in directive
+    assert "check_readiness again" in directive
     assert len(r_empty["ai_steering"]["suggested_questions"]) > 0
 
     # Populate partial profile (only 1 project when split requires 2)
-    await update_profile_handler(full_name="Alex Developer", email="alex@example.com")
-    await add_project_handler(name="Portfolio App", technologies=["Next.js"])
+    await update_profile_handler(
+        full_name="Alex Developer",
+        email="alex@example.com",
+        github_url="https://github.com/alex",
+        skills=["Python", "Rust", "Next.js"],
+    )
+    await add_project_handler(
+        name="Portfolio App",
+        description="Personal portfolio site.",
+        technologies=["Next.js"],
+    )
     await add_experience_handler(role="Engineer", organization="Acme Inc", bullet_points=["Built web app"])
     await add_experience_handler(role="Intern", organization="Beta Co", bullet_points=["Assisted team"])
 
@@ -238,8 +250,8 @@ async def test_readiness_gap_detection_and_steering(setup_test_env: User):
         content_split={"projects": 2, "experience": 2},
     )
     assert r_partial["is_ready"] is False
-    assert any("at least 2 project(s), but only 1 found" in reason for reason in r_partial["blocking_reasons"])
-    assert any("You currently have 1 project" in q for q in r_partial["ai_steering"]["suggested_questions"])
+    assert any("at least 2 usable project(s), but only 1 found" in reason for reason in r_partial["blocking_reasons"])
+    assert any("You currently have 1 usable project" in q for q in r_partial["ai_steering"]["suggested_questions"])
 
     # Add second project: profile now meets requirement -> status READY
     await add_project_handler(name="Chat Server", technologies=["Rust", "Tokio"], bullet_points=["Real-time socket server"])
@@ -257,8 +269,8 @@ async def test_readiness_gap_detection_and_steering(setup_test_env: User):
         content_split={"projects": 3, "experience": 3},
     )
     assert r_split_33["is_ready"] is False
-    assert any("at least 3 project(s)" in reason for reason in r_split_33["blocking_reasons"])
-    assert any("at least 3 experience(s)" in reason for reason in r_split_33["blocking_reasons"])
+    assert any("at least 3 usable project(s)" in reason for reason in r_split_33["blocking_reasons"])
+    assert any("at least 3 usable experience(s)" in reason for reason in r_split_33["blocking_reasons"])
 
     # Add 3rd project and 3rd experience -> 3+3 becomes READY
     await add_project_handler(name="CLI Tool", technologies=["Python", "Typer"], bullet_points=["Automation tool"])
@@ -432,6 +444,8 @@ async def test_mcp_resume_generation_lifecycle(setup_test_env: User, monkeypatch
         full_name="Alex Developer",
         email="alex@example.com",
         summary="Senior Backend Engineer",
+        github_url="https://github.com/alex",
+        skills=["Python", "Go", "SQL"],
     )
     await add_project_handler(
         name="Resumer Engine",
@@ -527,7 +541,7 @@ async def test_mcp_generation_failure_and_timeout(setup_test_env: User, monkeypa
     user = setup_test_env
 
     # Ensure profile has data
-    await update_profile_handler(full_name="Alex Dev", email="alex@dev.com", summary="Engineer")
+    await update_profile_handler(full_name="Alex Dev", email="alex@dev.com", summary="Engineer", github_url="https://github.com/alex", skills=["Python", "Go", "SQL"])
     await add_project_handler(name="Proj1", bullet_points=["A"])
     await add_project_handler(name="Proj2", bullet_points=["B"])
     await add_experience_handler(role="Role1", organization="Org1", bullet_points=["C"])

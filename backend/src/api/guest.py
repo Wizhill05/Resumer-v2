@@ -298,11 +298,14 @@ async def start_guest_generation(
         default = manifest.default_content_split
         resolved_split = {"projects": default.projects, "experience": default.experience}
 
-    if len(data.experiences) < resolved_split["experience"] or len(data.projects) < resolved_split["projects"]:
+    from src.services.readiness import usable_experiences, usable_projects
+
+    if (len(usable_experiences(data.experiences)) < resolved_split["experience"]
+            or len(usable_projects(data.projects)) < resolved_split["projects"]):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Insufficient profile entries. This focus needs {resolved_split['experience']} experiences "
+                f"Insufficient usable profile entries. This focus needs {resolved_split['experience']} experiences "
                 f"and {resolved_split['projects']} projects."
             ),
         )

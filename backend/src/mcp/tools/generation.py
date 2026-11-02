@@ -21,7 +21,6 @@ from src.models.profile import Profile, UserEducation, UserExperience, UserExtra
 from src.services.content_split import (
     is_valid_mode,
     resolve_default_mode,
-    resolve_default_split,
     save_user_split_preference,
     split_is_allowed,
 )
@@ -71,7 +70,7 @@ async def generate_resume_handler(
             "hint": "Call list_templates to view all available templates and their supported sections.",
         }
 
-    # 2. Resolve the effective split (explicit choice → stored user preference → template default)
+    # 2. Resolve the effective split (explicit choice → readiness-selected viable split)
     explicit_split: dict[str, int] | None = None
     if content_split is not None:
         projects = content_split.get("projects")
@@ -94,15 +93,13 @@ async def generate_resume_handler(
                 "hint": "Choose an allowed split from list_templates or omit content_split to use the template default.",
             }
         explicit_split = {"projects": projects, "experience": experience}
-        effective_split = explicit_split
-    else:
-        default_split = resolve_default_split(user, template)
-        effective_split = {"projects": default_split.projects, "experience": default_split.experience}
 
-    # 3. Check profile readiness against the effective split before starting
+    # 3. Check profile readiness. With no explicit split, readiness picks a
+    # viable split (preferred default when it fits, otherwise the closest one),
+    # so generation never starts with an incompatible default.
     readiness = await check_readiness_handler(
         template_id=template_id,
-        content_split=effective_split,
+        content_split=explicit_split,
         job_description=job_description,
     )
     if not readiness["is_ready"]:
@@ -115,8 +112,18 @@ async def generate_resume_handler(
             "hint": "Add your work history and projects first via add_project or add_experience.",
             "blocking_reasons": readiness["blocking_reasons"],
             "missing_sections": readiness["blocking_reasons"],
+            "required_split": readiness.get("required_split"),
+            "default_split": readiness.get("default_split"),
+            "available_splits": readiness.get("available_splits", []),
             "ai_steering": readiness["ai_steering"],
         }
+
+    required_split = readiness.get("required_split") or {}
+    effective_split = {
+        "projects": required_split.get("projects"),
+        "experience": required_split.get("experience"),
+    }
+    split_auto_selected = bool(readiness.get("split_auto_selected")) and explicit_split is None
 
     # 4. Create Generation record and trigger pipeline
     try:
@@ -167,6 +174,7 @@ async def generate_resume_handler(
             "status": "in_progress",
             "template_id": template_id,
             "content_split": effective_split,
+            "split_auto_selected": split_auto_selected,
             "creativity_mode": effective_mode,
             "estimated_duration_seconds": 20,
             "poll_tool": "get_generation_status",
@@ -241,6 +249,7 @@ async def generate_resume_handler(
             "editor_revision": render_meta.get("editor_revision", 0),
             "resume_json": tailored_resume,
             "content_split": effective_split,
+            "split_auto_selected": split_auto_selected,
             "creativity_mode": effective_mode,
             "message": (
                 f"Resume successfully generated for '{role_title}'! "
@@ -266,6 +275,7 @@ async def generate_resume_handler(
         "status": latest_gen.status,
         "template_id": template_id,
         "content_split": effective_split,
+        "split_auto_selected": split_auto_selected,
         "creativity_mode": effective_mode,
         "poll_tool": "get_generation_status",
         "message": (

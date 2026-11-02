@@ -42,6 +42,12 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest.fixture
 async def setup_test_env(monkeypatch):
+    original_processor = ARRAY.result_processor
+    def array_result_processor(self, dialect, coltype):
+        if dialect.name == "sqlite":
+            return lambda value: json.loads(value) if value is not None else None
+        return original_processor(self, dialect, coltype)
+    monkeypatch.setattr(ARRAY, "result_processor", array_result_processor)
     engine = create_async_engine(TEST_DB_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn))
@@ -107,9 +113,25 @@ def test_resolver_handles_none_user():
 # ── MCP integration tests ─────────────────────────────────────────────────────
 
 
-async def _seed_profile(session_maker, user_id, projects=2, experiences=2):
+async def _seed_profile(
+    session_maker,
+    user_id,
+    projects=2,
+    experiences=2,
+    *,
+    github_url="https://github.com/example",
+    skills=("Python", "SQL", "Git"),
+):
     async with session_maker() as db:
-        db.add(Profile(user_id=user_id, full_name="Pref User", email="pref-user@example.com"))
+        db.add(
+            Profile(
+                user_id=user_id,
+                full_name="Pref User",
+                email="pref-user@example.com",
+                github_url=github_url,
+                skills=list(skills),
+            )
+        )
         for i in range(projects):
             db.add(UserProject(user_id=user_id, name=f"Project {i}", bullet_points=[f"Built {i}"]))
         for i in range(experiences):
@@ -190,7 +212,7 @@ async def test_mcp_generate_rejects_invalid_split(setup_test_env):
 
 
 @pytest.mark.asyncio
-async def test_check_readiness_uses_stored_preference(setup_test_env):
+async def test_check_readiness_uses_viable_split_when_preference_does_not_fit(setup_test_env):
     user, session_maker = setup_test_env
     await _seed_profile(session_maker, user.id, projects=2, experiences=2)
 
@@ -198,10 +220,14 @@ async def test_check_readiness_uses_stored_preference(setup_test_env):
     user.preferred_experience = 3
 
     result = await check_readiness_handler(template_id="personal-classic")
-    assert result["is_ready"] is False
-    assert result["required_split"] == {"projects": 3, "experience": 3}
-    assert any("at least 3 project(s)" in reason for reason in result["blocking_reasons"])
-    assert any("at least 3 experience(s)" in reason for reason in result["blocking_reasons"])
+    # is_ready means "some split is available"; the incompatible stored
+    # preference must not block when another allowed split fits.
+    assert result["is_ready"] is True
+    assert result["default_split"] == {"projects": 3, "experience": 3}
+    assert result["required_split"] == {"projects": 2, "experience": 2}
+    assert result["split_auto_selected"] is True
+    assert result["ai_steering"]["recommended_action"] == "PROCEED_TO_GENERATE"
+    assert "automatically use" in result["ai_steering"]["system_directive"]
 
 
 @pytest.mark.asyncio
@@ -365,3 +391,175 @@ async def test_put_profile_defaults_persists_creativity_mode(setup_test_env):
         assert defaults_out.preferred_experience == 1
 
 
+
+
+@pytest.mark.parametrize(
+    ("projects", "experiences", "expected"),
+    [(0, 0, False), (1, 1, False), (1, 2, False), (2, 1, False),
+     (1, 3, True), (2, 2, True), (3, 1, True)],
+)
+async def test_generation_ready_endpoint(setup_test_env, projects, experiences, expected, monkeypatch):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from src.api.profile import router
+    from src.core.auth import get_current_user
+    from src.core.database import get_db
+
+    monkeypatch.setattr(ARRAY, "result_processor", lambda self, dialect, coltype: (lambda value: json.loads(value) if value is not None else None) if dialect.name == "sqlite" else None)
+    user, session_maker = setup_test_env
+    await _seed_profile(session_maker, user.id, projects=projects, experiences=experiences)
+    async with session_maker() as db:
+        profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one()
+        profile.github_url = "https://github.com/example"
+        profile.skills = ["Python", "SQL", "Git"]
+        await db.commit()
+    app = FastAPI()
+    app.include_router(router)
+
+    async def test_db():
+        async with session_maker() as db:
+            yield db
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = test_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/profile/generation-ready")
+    assert response.status_code == 200
+    assert response.json()["is_ready"] is expected
+    if not expected:
+        assert "old resumes" in response.json()["next_steps"]
+        assert "/profile" in response.json()["next_steps"]
+
+
+@pytest.mark.parametrize("missing", ["name", "email", "link", "skills", "project_details", "experience_details"])
+async def test_generation_ready_rejects_incomplete_profile(setup_test_env, missing, monkeypatch):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from src.api.profile import router
+    from src.core.auth import get_current_user
+    from src.core.database import get_db
+
+    monkeypatch.setattr(ARRAY, "result_processor", lambda self, dialect, coltype: (lambda value: json.loads(value) if value is not None else None) if dialect.name == "sqlite" else None)
+    user, session_maker = setup_test_env
+    await _seed_profile(session_maker, user.id)
+    async with session_maker() as db:
+        profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one()
+        profile.github_url = "https://github.com/example"
+        profile.skills = ["Python", "SQL", "Git"]
+        if missing == "name":
+            profile.full_name = " "
+            user.name = None
+        elif missing == "email":
+            profile.email = " "
+            user.email = ""
+        elif missing == "link":
+            profile.github_url = " "
+        elif missing == "skills":
+            profile.skills = ["Python", " python ", ""]
+        elif missing == "project_details":
+            for project in (await db.execute(select(UserProject).where(UserProject.user_id == user.id))).scalars():
+                project.bullet_points = [" "]
+        elif missing == "experience_details":
+            for experience in (await db.execute(select(UserExperience).where(UserExperience.user_id == user.id))).scalars():
+                experience.bullet_points = [" "]
+        await db.commit()
+
+    app = FastAPI()
+    app.include_router(router)
+
+    async def test_db():
+        async with session_maker() as db:
+            yield db
+
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = test_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/profile/generation-ready")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_ready"] is False
+    fields = [gap["field"] for gap in data["missing"]]
+    expected_field = {"name": "full_name", "email": "email", "link": "professional_link", "skills": "skills", "project_details": "projects.", "experience_details": "experiences."}[missing]
+    assert any(field.startswith(expected_field) for field in fields)
+    if missing == "skills":
+        assert data["skills_needed"] == 2
+
+
+async def test_generation_selects_viable_split_and_runner_filters_entries(setup_test_env, monkeypatch):
+    from src.pipeline.job_runner import _load_initial_state
+
+    user, session_maker = setup_test_env
+    await _seed_profile(session_maker, user.id, projects=2, experiences=2)
+    async with session_maker() as db:
+        profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one()
+        profile.full_name = "  "
+        profile.email = "  "
+        db.add(UserProject(user_id=user.id, name="Incomplete", bullet_points=[]))
+        db.add(UserExperience(user_id=user.id, role="Incomplete", organization="Org", bullet_points=[]))
+        saved_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        saved_user.preferred_projects = 3
+        saved_user.preferred_experience = 3
+        await db.commit()
+    user.preferred_projects = 3
+    user.preferred_experience = 3
+    await _mock_trigger_no_op(monkeypatch)
+    result = await generate_resume_handler(job_description="Engineer", wait_for_completion=False)
+    assert result["success"] is True
+    assert result["content_split"] == {"projects": 2, "experience": 2}
+    assert result["split_auto_selected"] is True
+    async with session_maker() as db:
+        generation = (await db.execute(select(Generation))).scalar_one()
+        state = await _load_initial_state(db, generation)
+        assert state["profile"]["full_name"] == user.name
+        assert state["profile"]["email"] == user.email
+        assert len(state["projects"]) == 2
+        assert len(state["experiences"]) == 2
+
+
+async def test_http_generation_picks_viable_split_and_checks_profile(setup_test_env, monkeypatch):
+    from fastapi import HTTPException
+
+    user, session_maker = setup_test_env
+    await _seed_profile(session_maker, user.id)
+    async def noop(*args, **kwargs):
+        pass
+    for name in ("reap_stuck_generations", "check_rate_limit", "trigger_pipeline"):
+        monkeypatch.setattr(f"src.api.generation.{name}", noop)
+    async with session_maker() as db:
+        current = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        current.preferred_projects = 3
+        current.preferred_experience = 3
+        request = GenerationCreate(template_id="personal-classic", job_description="Engineer")
+        generation = await start_generation(request, current, db)
+        assert generation.content_split == {"projects": 2, "experience": 2}
+        profile = (await db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one()
+        profile.github_url = None
+        await db.flush()
+        with pytest.raises(HTTPException) as error:
+            await start_generation(request, current, db)
+        assert error.value.status_code == 400
+        assert any("link" in message for message in error.value.detail)
+
+
+async def test_guest_generation_rejects_incomplete_entries(monkeypatch):
+    from fastapi import HTTPException, Response
+    from src.api.guest import start_guest_generation
+    from src.schemas.guest import GuestGenerationCreate
+    from src.schemas.profile import ExperienceCreate, ProjectCreate
+
+    async def noop(*args, **kwargs):
+        pass
+    monkeypatch.setattr("src.api.guest._guest_token", lambda *args: "guest-token")
+    monkeypatch.setattr("src.api.guest._check_guest_rate_limit", noop)
+    data = GuestGenerationCreate(
+        job_description="Engineer",
+        projects=[ProjectCreate(name="Incomplete"), ProjectCreate(name="Incomplete 2")],
+        experiences=[
+            ExperienceCreate(role="Engineer", organization="Org", bullet_points=["Built things"]),
+            ExperienceCreate(role="Engineer", organization="Org", bullet_points=["Shipped things"]),
+        ],
+    )
+    with pytest.raises(HTTPException) as error:
+        await start_guest_generation(data, Response(), db=None)
+    assert error.value.status_code == 400
+    assert "usable" in error.value.detail

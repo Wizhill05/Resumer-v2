@@ -28,6 +28,7 @@ from src.pipeline.graph import compile_graph
 from src.pipeline.nodes import log_progress
 from src.pipeline.state import ResumeGraphState
 from src.services.llm_config import llm_config_service
+from src.services.readiness import has_text, usable_experiences, usable_projects
 from src.template_registry.service import TemplateRegistryService
 
 def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState:
@@ -52,8 +53,8 @@ def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState
             "summary": profile.get("summary"),
             "skills": profile.get("skills") or [],
         },
-        projects=snapshot.get("projects") or [],
-        experiences=snapshot.get("experiences") or [],
+        projects=usable_projects(snapshot.get("projects") or []),
+        experiences=usable_experiences(snapshot.get("experiences") or []),
         education=snapshot.get("education") or [],
         extracurriculars=snapshot.get("extracurriculars") or [],
         job_description=gen.job_description,
@@ -97,6 +98,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
     if gen.is_guest and gen.guest_input_snapshot:
         return _state_from_snapshot(gen, template_manifest)
     is_pro = False
+    user: User | None = None
     if not gen.is_guest:
         user_res = await db.execute(select(User).where(User.id == gen.user_id))
         user = user_res.scalar_one_or_none()
@@ -118,7 +120,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
     projects_res = await db.execute(
         select(UserProject).where(UserProject.user_id == gen.user_id).order_by(UserProject.sort_order)
     )
-    projects = [dict(
+    projects = usable_projects([dict(
         name=p.name,
         description=p.description,
         technologies=p.technologies,
@@ -127,19 +129,19 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         live_url=p.live_url,
         start_date=p.start_date.isoformat() if p.start_date else None,
         end_date=p.end_date.isoformat() if p.end_date else None,
-    ) for p in projects_res.scalars().all()]
+    ) for p in projects_res.scalars().all()])
 
     exp_res = await db.execute(
         select(UserExperience).where(UserExperience.user_id == gen.user_id).order_by(UserExperience.sort_order)
     )
-    experiences = [dict(
+    experiences = usable_experiences([dict(
         role=e.role,
         organization=e.organization,
         location=e.location,
         bullet_points=e.bullet_points,
         start_date=e.start_date.isoformat() if e.start_date else None,
         end_date=e.end_date.isoformat() if e.end_date else None,
-    ) for e in exp_res.scalars().all()]
+    ) for e in exp_res.scalars().all()])
 
     edu_res = await db.execute(
         select(UserEducation).where(UserEducation.user_id == gen.user_id).order_by(UserEducation.sort_order)
@@ -176,8 +178,10 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
     return ResumeGraphState(
         user_id=str(gen.user_id),
         profile={
-            "full_name": profile.full_name,
-            "email": profile.email,
+            # Readiness accepts account-level identity as a fallback, so the
+            # generated resume must use the same fallback.
+            "full_name": profile.full_name if has_text(profile.full_name) else (user.name if user else None),
+            "email": profile.email if has_text(profile.email) else (user.email if user else None),
             "phone": profile.phone,
             "location": profile.location,
             "linkedin_url": profile.linkedin_url,

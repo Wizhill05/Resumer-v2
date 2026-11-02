@@ -4,9 +4,9 @@ import { Footer } from "@/components/Footer"
 import { ConnectClient } from "./ConnectClient"
 
 export const metadata: Metadata = {
-  title: "Add to ChatGPT",
+  title: "Agents Automate",
   description:
-    "Connect Résumer to ChatGPT to build, tailor, and export single-page résumés directly inside your chats.",
+    "Connect Résumer to an AI agent to build, tailor, and export résumés from your profile.",
 }
 
 export default function ConnectPage() {

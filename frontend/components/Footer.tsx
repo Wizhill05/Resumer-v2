@@ -28,7 +28,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
                 href="/connect"
                 className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
               >
-                ChatGPT
+                Agents Automate
               </Link>
               <Link
                 href="/support"
@@ -95,7 +95,7 @@ export function Footer({ variant = "simple" }: FooterProps) {
               href="/connect"
               className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
             >
-              ChatGPT
+              Agents Automate
             </Link>
             <Link
               href="/try"
