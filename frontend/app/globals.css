@@ -441,6 +441,57 @@
     opacity: 0.4;
   }
 
+  /* Rectangular pulse — soft-edged white glimmer emanating from the center
+     toward the edges. Never reads as a literal rectangle: huge blur,
+     elliptical falloff, large radius, low peak opacity. */
+  .rectangular-pulse {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(78%, 64rem);
+    aspect-ratio: 16 / 10;
+    border-radius: 3rem;
+    background: radial-gradient(
+      ellipse at 50% 50%,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(255, 255, 255, 0.55) 38%,
+      rgba(255, 255, 255, 0.12) 68%,
+      transparent 88%
+    );
+    filter: blur(42px);
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.32);
+    animation: rect-pulse 7s cubic-bezier(0.37, 0, 0.2, 1) infinite;
+    pointer-events: none;
+    will-change: transform, opacity;
+    z-index: 1;
+  }
+
+  /* Staggered second wave — same shape, delayed, so the pulse breathes
+     rather than strobes. */
+  .rectangular-pulse--delayed {
+    animation-delay: 3.5s;
+  }
+
+  /* Glitter glint — tiled micro-sparkle dots revealed by a slow drifting
+     mask; reads as light catching a surface, not as noise. */
+  .rectangular-glint {
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle, rgba(255, 255, 255, 0.9) 0 1px, transparent 1.5px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.65) 0 0.75px, transparent 1.25px),
+      radial-gradient(circle, rgba(255, 255, 255, 0.5) 0 0.5px, transparent 1px);
+    background-size: 52px 52px, 34px 34px, 22px 22px;
+    background-position: 0 0, 13px 21px, 7px 11px;
+    -webkit-mask-image: radial-gradient(ellipse 62% 58% at 50% 50%, black 0%, transparent 72%);
+    mask-image: radial-gradient(ellipse 62% 58% at 50% 50%, black 0%, transparent 72%);
+    opacity: 0;
+    animation: glint-drift 7s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 1;
+  }
+
   /* Silk weave texture — fine 45° hairline cross-hatch (no grain) */
   .silk-weave::after {
     content: "";
@@ -532,6 +583,9 @@
     .fluid-sheen {
       filter: blur(16px);
     }
+    .rectangular-pulse {
+      filter: blur(18px);
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -539,8 +593,14 @@
     .fluid-blob,
     .fluid-sheen,
     .fluid-copy > *,
-    .hero-sub-elements > * {
+    .hero-sub-elements > *,
+    .rectangular-pulse,
+    .rectangular-glint {
       animation: none !important;
+    }
+    .rectangular-pulse,
+    .rectangular-glint {
+      opacity: 0 !important;
     }
     .fluid-copy > *,
     .hero-sub-elements > * {
@@ -731,6 +791,23 @@
   to {
     transform: rotate(-16deg) translate3d(70%, 0, 0);
   }
+}
+
+/* Rectangular pulse: bloom from center, expand to the edges, fade. */
+@keyframes rect-pulse {
+  0%   { opacity: 0;    transform: translate(-50%, -50%) scale(0.32); }
+  30%  { opacity: 0.42; }
+  55%  { opacity: 0.3; }
+  100% { opacity: 0;    transform: translate(-50%, -50%) scale(1.55); }
+}
+
+/* Glitter: dots drift slowly and twinkle; mask keeps them center-weighted. */
+@keyframes glint-drift {
+  0%   { opacity: 0;    background-position: 0 0, 13px 21px, 7px 11px; }
+  25%  { opacity: 0.28; }
+  50%  { opacity: 0.1;  }
+  75%  { opacity: 0.24; }
+  100% { opacity: 0;    background-position: 60px -38px, -27px 60px, 33px -22px; }
 }
 
 @keyframes fluid-copy-rise {
