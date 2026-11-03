@@ -473,8 +473,8 @@
     animation-delay: 3.5s;
   }
 
-  /* Glitter glint — tiled micro-sparkle dots revealed by a slow drifting
-     mask; reads as light catching a surface, not as noise. */
+  /* Glitter glint — tiled micro-sparkle dots that twinkle in place under a
+     static center-weighted mask; reads as light catching a surface. */
   .rectangular-glint {
     position: absolute;
     inset: 0;
@@ -874,13 +874,13 @@
   100% { opacity: 0;    transform: translate(-50%, -50%) scale(1.55); }
 }
 
-/* Glitter: dots drift slowly and twinkle; mask keeps them center-weighted. */
+/* Glitter: dots twinkle in place; mask keeps them center-weighted. */
 @keyframes glint-drift {
-  0%   { opacity: 0;    background-position: 0 0, 17px 27px, 9px 13px; }
+  0%   { opacity: 0;    }
   25%  { opacity: 0.22; }
   50%  { opacity: 0.08; }
   75%  { opacity: 0.18; }
-  100% { opacity: 0;    background-position: 78px -49px, -35px 78px, 43px -29px; }
+  100% { opacity: 0;    }
 }
 
 @keyframes fluid-copy-rise {
