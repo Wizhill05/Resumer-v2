@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useState, useRef, useCallback } from "react"
 import { BasicInfoForm } from "@/components/profile/BasicInfoForm"
 import { DefaultsSection } from "@/components/profile/DefaultsSection"
 import { ExperienceForm } from "@/components/profile/ExperienceForm"
@@ -9,6 +9,7 @@ import { EducationForm } from "@/components/profile/EducationForm"
 import { ExtracurricularForm } from "@/components/profile/ExtracurricularForm"
 import { ResumeImportPanel } from "@/components/profile/ResumeImportPanel"
 import { UnsavedModal } from "@/components/profile/UnsavedModal"
+import { ProfileChangesProvider, useProfileWork, useProfileChanges } from "@/components/profile/ProfileChanges"
 import { User, Briefcase, FolderGit2, GraduationCap, Award } from "lucide-react"
 
 type Section = "basic" | "experience" | "projects" | "education" | "extracurricular"
@@ -22,32 +23,35 @@ const SECTION_NAMES: Record<Section, string> = {
 }
 
 export function ProfileClient() {
+  return <ProfileChangesProvider><ProfileEditor /></ProfileChangesProvider>
+}
+
+function ProfileEditor() {
+  const { confirmLeave } = useProfileChanges()
+  const [applyingImport, setApplyingImport] = useState(false)
   const [activeSection, setActiveSection] = useState<Section>("basic")
   const [pendingTargetSection, setPendingTargetSection] = useState<Section | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [importVersion, setImportVersion] = useState(0)
+  const [activeBusy, setActiveBusy] = useState(false)
 
+  const activeDiscardRef = useRef<(() => void) | null>(null)
   const activeSaveFnRef = useRef<(() => Promise<boolean>) | null>(null)
 
-  const handleDirtyChange = useCallback((dirty: boolean, saveFn?: () => Promise<boolean>) => {
+  const discardActiveDraft = useCallback(() => activeDiscardRef.current?.(), [])
+  useProfileWork("editor", isDirty, isSaving || activeBusy, discardActiveDraft)
+
+  const handleDirtyChange = useCallback((dirty: boolean, saveFn?: () => Promise<boolean>, busy = false, discardDraft?: () => void) => {
+    activeDiscardRef.current = discardDraft || null
+    setActiveBusy(busy)
     setIsDirty(dirty)
     activeSaveFnRef.current = saveFn || null
   }, [])
 
-  // Warn user on window close or refresh if there are unsaved edits
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault()
-        e.returnValue = ""
-      }
-    }
-    window.addEventListener("beforeunload", handleBeforeUnload)
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
-  }, [isDirty])
-
   const handleTabClick = async (targetSection: Section) => {
-    if (targetSection === activeSection) return
+    if (targetSection === activeSection || isSaving || activeBusy || applyingImport) return
+    if (!confirmLeave(["github-import"])) return
 
     if (!isDirty || !activeSaveFnRef.current) {
       setActiveSection(targetSection)
@@ -56,19 +60,7 @@ export function ProfileClient() {
       return
     }
 
-    // Try auto-saving dirty section first before switching tabs
-    setIsSaving(true)
-    const success = await activeSaveFnRef.current()
-    setIsSaving(false)
-
-    if (success) {
-      setActiveSection(targetSection)
-      setIsDirty(false)
-      activeSaveFnRef.current = null
-    } else {
-      // Validation error or save failed -> prompt user with modal options
-      setPendingTargetSection(targetSection)
-    }
+    setPendingTargetSection(targetSection)
   }
 
   const handleModalSaveAndContinue = async () => {
@@ -85,6 +77,7 @@ export function ProfileClient() {
   }
 
   const handleModalDiscardAndContinue = () => {
+    activeDiscardRef.current?.()
     if (pendingTargetSection) {
       setActiveSection(pendingTargetSection)
       setPendingTargetSection(null)
@@ -108,9 +101,9 @@ export function ProfileClient() {
   return (
     <div className="space-y-3 md:space-y-4">
       <DefaultsSection />
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-[13rem_1fr] md:gap-5">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-5">
       {/* Mobile Sticky Tab Bar & Desktop Sidebar */}
-      <div className="sticky top-0 z-20 -mx-3 bg-[#fbfbf3]/95 px-3 py-2 backdrop-blur-md dark:bg-zinc-900/95 md:static md:mx-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+      <div className="sticky top-11 z-20 -mx-3 bg-[#fbfbf3]/95 px-3 py-2 backdrop-blur-md dark:bg-zinc-900/95 md:static md:mx-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar md:flex-col md:gap-2 md:overflow-x-visible">
           {tabs.map((tab) => {
             const Icon = tab.icon
@@ -120,6 +113,9 @@ export function ProfileClient() {
             return (
               <button
                 key={tab.id}
+                aria-current={isActive ? "page" : undefined}
+                aria-controls="profile-section"
+                disabled={isSaving || activeBusy || applyingImport}
                 onClick={() => handleTabClick(tab.id)}
                 className={`flex shrink-0 select-none items-center gap-1.5 px-3 py-2 text-left text-xs font-extrabold uppercase tracking-wide transition-all cursor-pointer md:gap-2 md:border md:text-sm ${
                   isActive
@@ -137,14 +133,13 @@ export function ProfileClient() {
       </div>
 
       {/* Main Content Pane */}
-      <div className="mobile-flat-panel">
-        {activeSection !== "projects" && (
+      <div id="profile-section" className="mobile-flat-panel profile-content" aria-label={SECTION_NAMES[activeSection]}>
           <div className="mb-4">
-            <ResumeImportPanel />
+            <ResumeImportPanel onApplyingChange={setApplyingImport} onApplied={() => { activeDiscardRef.current?.(); setImportVersion((version) => version + 1); setIsDirty(false) }} />
           </div>
-        )}
+        <fieldset disabled={applyingImport} className="contents">
         {activeSection === "basic" && (
-          <BasicInfoForm onDirtyChange={handleDirtyChange} />
+          <BasicInfoForm key={importVersion} onDirtyChange={handleDirtyChange} />
         )}
         {activeSection === "experience" && (
           <ExperienceForm onDirtyChange={handleDirtyChange} />
@@ -158,6 +153,7 @@ export function ProfileClient() {
         {activeSection === "extracurricular" && (
           <ExtracurricularForm onDirtyChange={handleDirtyChange} />
         )}
+        </fieldset>
       </div>
       {pendingTargetSection && (
         <UnsavedModal
