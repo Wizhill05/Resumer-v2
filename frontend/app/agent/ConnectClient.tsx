@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Check, Copy } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Check } from "lucide-react"
+import { AgentMarks } from "@/components/landing/AgentMarks"
+import { FluidField } from "@/components/landing/FluidField"
 import { agentPrompt } from "@/lib/agent-prompt"
 
 interface ConnectClientProps {
@@ -14,30 +15,81 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle")
   const prompt = agentPrompt(mcpUrl)
 
-  const handleCopy = async () => {
+  const copyWithSelection = () => {
+    const previousFocus = document.activeElement
+    const selection = window.getSelection()
+    const ranges = selection
+      ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index))
+      : []
+    const textarea = document.createElement("textarea")
+    textarea.value = prompt
+    textarea.readOnly = true
+    textarea.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px"
+    document.body.appendChild(textarea)
     try {
-      await navigator.clipboard.writeText(prompt)
-      setCopyStatus("copied")
+      textarea.focus({ preventScroll: true })
+      textarea.select()
+      textarea.setSelectionRange(0, textarea.value.length)
+      return document.execCommand("copy")
+    } finally {
+      textarea.remove()
+      if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true })
+      selection?.removeAllRanges()
+      ranges.forEach((range) => selection?.addRange(range))
+    }
+  }
+
+  const handleCopy = async () => {
+    // HTTP links need the synchronous selection method inside the click gesture.
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(prompt)
+        setCopyStatus("copied")
+        return
+      } catch {
+        // A denied Clipboard API permission can still allow selection copying.
+      }
+    }
+    try {
+      setCopyStatus(copyWithSelection() ? "copied" : "error")
     } catch {
       setCopyStatus("error")
     }
   }
 
   return (
-    <div className="flex-1">
-      <section aria-labelledby="agent-heading" className="flex min-h-[calc(100svh-2.75rem)] items-center justify-center px-5 py-16 sm:px-8">
-        <h1 id="agent-heading" className="sr-only">Connect your agent</h1>
-        <div className="w-full max-w-2xl">
-          <div className="border border-zinc-900 bg-white p-6 shadow-[4px_4px_0_#18181b] dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-[4px_4px_0_#3f3f46] sm:p-10">
-            <p className="break-words text-base leading-7 text-zinc-800 selection:bg-[#ff4e26] selection:text-white dark:text-zinc-200 sm:text-lg sm:leading-8">{prompt}</p>
+    <div className="-mt-11 flex-1">
+      <section aria-labelledby="agent-heading" className="agent-hero">
+        <FluidField className="agent-field" sheen={false} />
+        <div className="agent-hero-content">
+          <h1 id="agent-heading">Connect your agent</h1>
+          <p className="agent-intro"><AgentMarks /><span className="agent-intro-text">Give your agent this prompt to get started.</span></p>
+          <div className="agent-prompt-stage">
+            <div className="agent-rectangles" aria-hidden="true"><span /><span /><span /></div>
+            <button
+              type="button"
+              onClick={handleCopy}
+              aria-label="Copy the agent prompt"
+              aria-describedby="agent-copy-status"
+              className="agent-prompt"
+              data-copied={copyStatus === "copied"}
+            >
+              <span className="agent-prompt-text"><span aria-hidden="true">“</span>{prompt}<span aria-hidden="true">”</span></span>
+            </button>
           </div>
-          <Button onClick={handleCopy} size="lg" className="mt-5 h-14 w-full gap-2 text-base font-bold sm:mt-6">
-            {copyStatus === "copied" ? <Check size={18} /> : <Copy size={18} />}
-            {copyStatus === "copied" ? "Copied" : "Copy prompt"}
-          </Button>
-          <p role="status" className="mt-2 text-center text-sm text-zinc-600 dark:text-zinc-400">
-            {copyStatus === "error" ? "Could not copy automatically. Select the prompt above and copy it manually." : copyStatus === "copied" ? "Prompt copied to clipboard." : ""}
+          <p id="agent-copy-status" role="status" aria-live="polite" className="agent-copy-status">
+            {copyStatus === "copied" && <Check size={16} aria-hidden="true" />}
+            {copyStatus === "error" ? "Copy was blocked. Select and copy the prompt below." : copyStatus === "copied" ? "Prompt copied to clipboard." : "Click the prompt to copy."}
           </p>
+          {copyStatus === "error" && (
+            <textarea
+              className="agent-manual-copy"
+              aria-label="Select the agent prompt to copy manually"
+              readOnly
+              value={prompt}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          )}
         </div>
       </section>
 

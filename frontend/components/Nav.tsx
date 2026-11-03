@@ -181,7 +181,7 @@ export function Nav() {
       {/* Fullscreen Mobile Hamburger Menu Overlay */}
       {open && mounted && createPortal(
         <div
-          className={`fixed inset-0 z-[100] flex flex-col bg-[#fbfbf3] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 md:hidden ${
+          className={`${pathname === "/agent" ? "agent-mobile-menu" : ""} fixed inset-0 z-[100] flex flex-col bg-[#fbfbf3] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 md:hidden ${
             closing ? "mobile-nav-exit" : "mobile-nav-enter"
           }`}
           role="dialog"

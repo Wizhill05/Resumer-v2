@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     "*.aryansingh.space",
     "20.219.118.144",
     "localhost",
+    "100.122.152.101",
   ],
   async rewrites() {
     return [
