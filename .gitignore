@@ -14,7 +14,7 @@ node_modules/
 
 # Misc
 .DS_Store
-docs/
+docs/*
 !docs/superpowers/
 .vscode
 frontend/bun.lock
