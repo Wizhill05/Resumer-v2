@@ -112,7 +112,6 @@ async def retailor_resume_with_project(
     manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
     max_bullets = manifest_obj.max_bullets_per_project if manifest_obj else 3
     manifest_data = manifest_obj.model_dump() if manifest_obj else {}
-    manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
 
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
@@ -309,7 +308,6 @@ async def run_background_replace_project(
                 raise ValueError(f"Template '{gen.template_id}' manifest missing.")
 
             manifest_data = manifest_obj.model_dump()
-            manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
 
             pdf_bytes, fit_res = fit_and_render_pdf(
                 template_id=gen.template_id,
