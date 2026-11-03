@@ -106,7 +106,7 @@ export function HeroSection() {
 
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
             <Link
-              href="/connect"
+              href="/agent"
               className="inline-flex items-center gap-2 text-[11px] font-medium text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--fluid-ink)] sm:text-sm"
             >
               <span>Connect your agent</span>

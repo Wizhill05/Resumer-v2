@@ -24,35 +24,24 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
   }
 
   return (
-    <div className="page-wrap flex-1 py-8 md:py-12">
-      <div className="mx-auto max-w-4xl">
-        <header className="border-b border-zinc-200 pb-8 dark:border-zinc-700">
-          <p className="mb-3 text-sm font-bold text-[#ff4e26]">Agents Automate</p>
-          <h1 className="max-w-3xl text-3xl font-black uppercase tracking-tight sm:text-4xl md:text-5xl">
-            Automate Resume Generation Through Agents
-          </h1>
-          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-300 sm:text-base">
-            Connect Résumer to your coding or AI agent, then generate tailored résumés using your saved profile and a job description.
-          </p>
-        </header>
-
-        <section aria-labelledby="prompt-heading" className="my-8 border border-zinc-900 bg-white p-5 shadow-[4px_4px_0_#18181b] dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-[4px_4px_0_#3f3f46] sm:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-zinc-200 pb-4 dark:border-zinc-700">
-            <div>
-              <h2 id="prompt-heading" className="text-xl font-black tracking-tight">Give this to your agent</h2>
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Copy the whole prompt into your agent to start setup.</p>
-            </div>
-            <Button onClick={handleCopy} className="gap-2">
-              {copyStatus === "copied" ? <Check size={16} /> : <Copy size={16} />}
-              {copyStatus === "copied" ? "Copied" : "Copy prompt"}
-            </Button>
+    <div className="flex-1">
+      <section aria-labelledby="agent-heading" className="flex min-h-[calc(100svh-2.75rem)] items-center justify-center px-5 py-16 sm:px-8">
+        <h1 id="agent-heading" className="sr-only">Connect your agent</h1>
+        <div className="w-full max-w-2xl">
+          <div className="border border-zinc-900 bg-white p-6 shadow-[4px_4px_0_#18181b] dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-[4px_4px_0_#3f3f46] sm:p-10">
+            <p className="break-words text-base leading-7 text-zinc-800 selection:bg-[#ff4e26] selection:text-white dark:text-zinc-200 sm:text-lg sm:leading-8">{prompt}</p>
           </div>
-          <p className="mt-5 break-words text-base leading-7 text-zinc-800 selection:bg-[#ff4e26] selection:text-white dark:text-zinc-200 sm:text-lg sm:leading-8">{prompt}</p>
-          <p role="status" className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+          <Button onClick={handleCopy} size="lg" className="mt-5 h-14 w-full gap-2 text-base font-bold sm:mt-6">
+            {copyStatus === "copied" ? <Check size={18} /> : <Copy size={18} />}
+            {copyStatus === "copied" ? "Copied" : "Copy prompt"}
+          </Button>
+          <p role="status" className="mt-2 text-center text-sm text-zinc-600 dark:text-zinc-400">
             {copyStatus === "error" ? "Could not copy automatically. Select the prompt above and copy it manually." : copyStatus === "copied" ? "Prompt copied to clipboard." : ""}
           </p>
-        </section>
+        </div>
+      </section>
 
+      <div className="page-wrap mx-auto max-w-4xl pb-16 pt-8 md:pb-24">
         <section aria-labelledby="steps-heading" className="py-2">
           <h2 id="steps-heading" className="text-2xl font-black tracking-tight">How to get started</h2>
           <ol className="mt-5 divide-y divide-zinc-200 border-y border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">

@@ -25,10 +25,10 @@ export function Footer({ variant = "simple" }: FooterProps) {
 
             <div className="flex flex-wrap items-center gap-5 sm:gap-6 text-xs font-mono font-bold uppercase tracking-wider">
               <Link
-                href="/connect"
+                href="/agent"
                 className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
               >
-                Agents Automate
+                Agent
               </Link>
               <Link
                 href="/support"
@@ -92,10 +92,10 @@ export function Footer({ variant = "simple" }: FooterProps) {
           {/* Right: Minimal Navigation */}
           <div className="flex flex-wrap items-center gap-6 sm:gap-8 text-xs font-mono font-bold uppercase tracking-wider">
             <Link
-              href="/connect"
+              href="/agent"
               className="text-zinc-300 hover:text-[#ff4e26] transition-colors"
             >
-              Agents Automate
+              Agent
             </Link>
             <Link
               href="/try"

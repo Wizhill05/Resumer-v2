@@ -22,8 +22,8 @@ const FAQS: { q: string; a: string }[] = [
     a: "Repos must be public and username correct. Report with the username if it still fails.",
   },
   {
-    q: "How do I use Résumer inside ChatGPT?",
-    a: "Open /connect to copy your MCP endpoint URL. In ChatGPT, go to Settings → Connectors → Create custom connector, paste the URL, and sign in to link your account.",
+    q: "How do I use Résumer with an AI agent?",
+    a: "Open /agent, copy the prompt, and give it to your AI agent. Follow the sign-in link it provides to connect your account.",
   },
 ]
 
@@ -58,11 +58,11 @@ export function SupportFaq() {
         <h3 className="text-xs font-black uppercase tracking-widest">Other ways</h3>
         <div className="mt-3 grid gap-2">
           <Link
-            href="/connect"
+            href="/agent"
             className="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-xs font-bold hover:border-zinc-900 dark:hover:border-zinc-500 transition-colors"
           >
             <span className="flex items-center gap-2">
-              <Sparkles size={14} /> ChatGPT connector
+              <Sparkles size={14} /> Connect an agent
             </span>
             <span className="text-[10px] font-mono text-zinc-400">→</span>
           </Link>
