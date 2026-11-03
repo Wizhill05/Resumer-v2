@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Check, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { FluidField } from "@/components/landing/FluidField"
 import { agentPrompt } from "@/lib/agent-prompt"
 
 interface ConnectClientProps {
@@ -25,17 +26,28 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
 
   return (
     <div className="flex-1">
-      <section aria-labelledby="agent-heading" className="flex min-h-[calc(100svh-2.75rem)] items-center justify-center px-5 py-16 sm:px-8">
+      <section
+        aria-labelledby="agent-heading"
+        className="relative flex min-h-[calc(100svh-2.75rem)] items-center justify-center overflow-hidden border-b border-black/10 px-5 py-16 sm:px-8 dark:border-white/10"
+      >
+        <FluidField />
+        <span className="rectangular-pulse" aria-hidden="true" />
+        <span className="rectangular-pulse rectangular-pulse--delayed" aria-hidden="true" />
+        <span className="rectangular-glint" aria-hidden="true" />
         <h1 id="agent-heading" className="sr-only">Connect your agent</h1>
-        <div className="w-full max-w-2xl">
-          <div className="border border-zinc-900 bg-white p-6 shadow-[4px_4px_0_#18181b] dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-[4px_4px_0_#3f3f46] sm:p-10">
-            <p className="break-words text-base leading-7 text-zinc-800 selection:bg-[#ff4e26] selection:text-white dark:text-zinc-200 sm:text-lg sm:leading-8">{prompt}</p>
-          </div>
-          <Button onClick={handleCopy} size="lg" className="mt-5 h-14 w-full gap-2 text-base font-bold sm:mt-6">
+        <div className="relative z-10 w-full max-w-2xl">
+          <figure className="glass-pane relative px-7 py-8 sm:px-12 sm:py-10">
+            <span aria-hidden="true" className="glass-quote glass-quote-open">&ldquo;</span>
+            <blockquote>
+              <p className="break-words text-center text-base italic leading-7 text-[#3a1408] selection:bg-[#ff4e26] selection:text-white dark:text-[#ffe9e2] sm:text-lg sm:leading-8">{prompt}</p>
+            </blockquote>
+            <span aria-hidden="true" className="glass-quote glass-quote-close">&rdquo;</span>
+          </figure>
+          <Button onClick={handleCopy} size="lg" className="glass-button mt-5 h-14 w-full gap-2 text-base font-bold sm:mt-6">
             {copyStatus === "copied" ? <Check size={18} /> : <Copy size={18} />}
             {copyStatus === "copied" ? "Copied" : "Copy prompt"}
           </Button>
-          <p role="status" className="mt-2 text-center text-sm text-zinc-600 dark:text-zinc-400">
+          <p role="status" className="mt-2 text-center text-sm font-medium text-[#4a1a0c] dark:text-[#ffd9cf]">
             {copyStatus === "error" ? "Could not copy automatically. Select the prompt above and copy it manually." : copyStatus === "copied" ? "Prompt copied to clipboard." : ""}
           </p>
         </div>
