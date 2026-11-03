@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useProfileWork } from "./ProfileChanges"
+import { ProfileDialog } from "./ProfileDialog"
+import { QueryError } from "./QueryError"
+import { useEffect, useState, useCallback } from "react";
+import { useProfileDraft } from "./useProfileDraft"
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, AlertCircle, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +30,8 @@ const schema = z.object({
   bullet_points: z.string().optional(), // Raw newlines string for editing
   sort_order: z.number().optional(),
 });
+
+const draftSchema = schema.extend({ name: z.string() })
 
 type FormData = z.infer<typeof schema>;
 
@@ -74,20 +79,14 @@ export function parseGitHubUsername(input: string | undefined | null): string {
 }
 
 interface ProjectFormProps {
-  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void;
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>, busy?: boolean, discardDraft?: () => void) => void;
 }
 
 export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   const queryClient = useQueryClient();
-  const [mounted, setMounted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  // Id assigned by the backend when a background auto-save creates a new entry,
-  // so subsequent auto-saves PUT instead of POSTing duplicates.
-  const [createdId, setCreatedId] = useState<string | null>(null);
-  // Only explicit user actions (Save button, tab switch) close the dialog after saving.
-  const closeAfterSaveRef = useRef(false);
-  const activeRecordId = editingId ?? createdId;
+  const activeRecordId = editingId;
   const [mobileGithubExpanded, setMobileGithubExpanded] = useState(false);
   // GitHub import state
   const [githubInputMode, setGithubInputMode] = useState<"fields" | "url">("fields");
@@ -98,9 +97,6 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   const [githubMessage, setGithubMessage] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<ImportedProject | null>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Fetch basic user profile to extract github_url automatically
   const { data: profile } = useQuery<{ github_url?: string }>({
@@ -139,26 +135,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     enabled: Boolean(effectiveUsername),
   });
 
-  // Lock scroll and listen for Escape key when modal is open
-  useEffect(() => {
-    if (!importPreview) return;
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setImportPreview(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [importPreview]);
-
-  const { data: projects = [], isLoading } = useQuery<ProjectItem[]>({
+  const { data: projects = [], isLoading, isError, refetch } = useQuery<ProjectItem[]>({
     queryKey: ["projects"],
     queryFn: async () => {
       const res = await fetch("/api/backend/profile/projects");
@@ -167,27 +144,29 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     },
   });
 
+  const form = useForm<FormData>({
+    resolver: zodResolver(schema),
+  });
   const {
     register,
     handleSubmit,
     reset,
     setValue,
-    watch,
-    getValues,
-    formState: { errors, isDirty, isValid },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  });
+    formState: { errors, isDirty },
+  } = form
+
 
   const formActive = isAdding || editingId !== null;
 
+  const { clear: clearDraft, notice: draftNotice } = useProfileDraft({ kind: "project", recordId: editingId, active: formActive, form, schema: draftSchema })
+
   const handleCancel = useCallback(() => {
+    clearDraft()
     reset();
     setEditingId(null);
     setIsAdding(false);
-    setCreatedId(null);
     setImportPreview(null);
-  }, [reset]);
+  }, [reset, clearDraft]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -224,22 +203,11 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       if (!res.ok) throw new Error("Failed to save project");
       return res.json();
     },
-    onSuccess: (saved) => {
-      try {
-        localStorage.removeItem("resumer_draft_project");
-      } catch {}
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      if (closeAfterSaveRef.current) {
-        closeAfterSaveRef.current = false;
-        handleCancel();
-      } else {
-        // Background auto-save: keep the dialog open, adopt the created id for
-        // future saves, and re-baseline dirty state so the idle timer stops.
-        if (!editingId) setCreatedId(saved.id);
-        reset(getValues());
-      }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] })
+      handleCancel()
     },
-  });
+  })
 
   const handleDirectSaveImport = useCallback(async () => {
     if (!importPreview) return;
@@ -254,13 +222,11 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       bullet_points: importPreview.bullet_points ? importPreview.bullet_points.join("\n") : "",
     };
     try {
-      closeAfterSaveRef.current = true;
       await saveMutation.mutateAsync(formData);
     } catch {}
   }, [importPreview, saveMutation]);
 
-  const performSave = useCallback(async (closeOnSuccess = false): Promise<boolean> => {
-    closeAfterSaveRef.current = closeOnSuccess;
+  const performSave = useCallback(async (): Promise<boolean> => {
     if (!formActive) return true;
     if (!isDirty) {
       handleCancel();
@@ -285,33 +251,9 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
   useEffect(() => {
     if (onDirtyChange) {
-      onDirtyChange(formActive && isDirty, performSave);
+      onDirtyChange(formActive && isDirty, performSave, saveMutation.isPending, clearDraft);
     }
-  }, [formActive, isDirty, performSave, onDirtyChange]);
-
-  // LocalStorage draft sync + 5-second inactivity DB auto-save
-  const formValues = watch();
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    if (!formActive || !isDirty) return;
-
-    try {
-      localStorage.setItem("resumer_draft_project", JSON.stringify(formValues));
-    } catch {}
-
-    clearTimeout(debounceTimerRef.current!);
-
-    debounceTimerRef.current = setTimeout(() => {
-      if (formActive && isDirty && isValid && !saveMutation.isPending) {
-        performSave();
-      }
-    }, 5000);
-
-    return () => {
-      clearTimeout(debounceTimerRef.current!);
-    };
-  }, [formValues, formActive, isDirty, isValid, saveMutation.isPending, performSave]);
+  }, [formActive, isDirty, performSave, onDirtyChange, saveMutation.isPending, clearDraft]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -342,21 +284,23 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       setIsAdding(true);
       setEditingId(null);
       setImportPreview(project);
-      setValue("name", project.name || "");
-      setValue("description", project.description || "");
+      setValue("name", project.name || "", { shouldDirty: true });
+      setValue("description", project.description || "", { shouldDirty: true });
       setValue(
         "technologies",
         project.technologies ? project.technologies.join(", ") : "",
+        { shouldDirty: true },
       );
-      setValue("github_url", project.github_url || githubUrl);
-      setValue("live_url", project.live_url || "");
-      setValue("start_date", "");
-      setValue("end_date", "");
+      setValue("github_url", project.github_url || githubUrl, { shouldDirty: true });
+      setValue("live_url", project.live_url || "", { shouldDirty: true });
+      setValue("start_date", "", { shouldDirty: true });
+      setValue("end_date", "", { shouldDirty: true });
       setValue(
         "bullet_points",
         project.bullet_points ? project.bullet_points.join("\n") : "",
+        { shouldDirty: true },
       );
-      setValue("sort_order", projects.length);
+      setValue("sort_order", projects.length, { shouldDirty: true });
       const duplicate = project.duplicate_candidates?.[0];
       setGithubMessage(
         duplicate
@@ -369,6 +313,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
         err instanceof Error ? err.message : "Failed to import GitHub project",
       ),
   });
+
+  useProfileWork("github-import", false, githubImportMutation.isPending)
 
   const handleImportSubmit = () => {
     let target = "";
@@ -394,6 +340,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   };
 
   const startEdit = (project: ProjectItem) => {
+    saveMutation.reset()
     setEditingId(project.id);
     setIsAdding(true);
     reset({
@@ -418,39 +365,46 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   else if (saveMutation.isError) status = "error";
   else if (isDirty) status = "unsaved";
 
+  const requestClose = () => {
+    if (saveMutation.isPending) return
+    if (!isDirty || window.confirm("Discard your unsaved changes?")) handleCancel()
+  }
+
   const renderForm = () => (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 p-0 backdrop-blur-xs md:static md:z-auto md:block md:bg-transparent md:p-0 md:backdrop-blur-none">
+    <ProfileDialog label={activeRecordId ? "Edit project" : "Add project"} busy={saveMutation.isPending} onRequestClose={requestClose}>
       <form
         onSubmit={handleSubmit((data) => {
-          closeAfterSaveRef.current = true;
-          saveMutation.mutate(data);
+              saveMutation.mutate(data);
         })}
-        className="max-h-[90dvh] overflow-y-auto rounded-t-xl border-t border-zinc-300 bg-white p-4 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 md:max-h-none md:rounded-none md:border md:border-zinc-200 md:bg-zinc-50 md:shadow-none md:dark:border-zinc-700 md:dark:bg-zinc-900/50 md:p-4 pixel-enter space-y-4"
+        className="profile-entry-form space-y-4"
       >
         <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
           <div className="flex items-center gap-3">
             <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
               {activeRecordId ? "Edit Project" : "Add Project"}
             </h3>
-            <SaveStatusBadge status={status} onSaveNow={isDirty ? () => performSave(false) : undefined} />
+            <SaveStatusBadge status={!activeRecordId && !isDirty && !saveMutation.isError ? "draft" : status} onSaveNow={isDirty ? () => performSave() : undefined} />
           </div>
           <Button
             type="button"
             variant="ghost"
+            aria-label="Close editor"
             size="sm"
-            onClick={handleCancel}
+            onClick={requestClose}
             className="h-9 w-9 p-0 border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
           >
             <X size={18} />
           </Button>
         </div>
 
+        {draftNotice}
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="name">Project Name</Label>
-            <Input id="name" {...register("name")} />
+            <Input id="name" aria-invalid={!!errors.name} aria-describedby={errors.name ? "name-error" : undefined} {...register("name")} />
             {errors.name && (
-              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              <p id="name-error" role="alert" className="text-red-600 dark:text-red-400 text-xs font-bold">
                 {errors.name.message}
               </p>
             )}
@@ -467,9 +421,9 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
           <div className="space-y-1.5">
             <Label htmlFor="github_url">GitHub URL</Label>
-            <Input id="github_url" {...register("github_url")} />
+            <Input id="github_url" aria-invalid={!!errors.github_url} aria-describedby={errors.github_url ? "github_url-error" : undefined} {...register("github_url")} />
             {errors.github_url && (
-              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              <p id="github_url-error" role="alert" className="text-red-600 dark:text-red-400 text-xs font-bold">
                 {errors.github_url.message}
               </p>
             )}
@@ -477,9 +431,9 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
           <div className="space-y-1.5">
             <Label htmlFor="live_url">Live URL</Label>
-            <Input id="live_url" {...register("live_url")} />
+            <Input id="live_url" aria-invalid={!!errors.live_url} aria-describedby={errors.live_url ? "live_url-error" : undefined} {...register("live_url")} />
             {errors.live_url && (
-              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              <p id="live_url-error" role="alert" className="text-red-600 dark:text-red-400 text-xs font-bold">
                 {errors.live_url.message}
               </p>
             )}
@@ -526,7 +480,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
           <Button
             type="button"
             variant="outline"
-            onClick={handleCancel}
+            onClick={requestClose}
             disabled={saveMutation.isPending}
             className="flex-1 md:flex-none"
           >
@@ -534,8 +488,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
           </Button>
         </div>
       </form>
-    </div>
+    </ProfileDialog>
   );
+
+  if (isError) return <QueryError message="Could not load projects. Your entries have not been removed." onRetry={() => { void refetch() }} />
 
   if (isLoading) {
     return (
@@ -556,7 +512,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
   return (
     <div className="space-y-3 pixel-enter md:space-y-4">
-      {!isAdding && (
+      {deleteMutation.isPending && <p role="status" className="text-sm">Deleting entry...</p>}
+      {deleteMutation.isError && <QueryError message="Could not delete the entry. Please try deleting it again." onRetry={() => { if (deleteMutation.variables) deleteMutation.mutate(deleteMutation.variables) }} />}
+
+      {(
         <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:border-zinc-950 md:bg-white md:p-4 md:shadow-[4px_4px_0px_#18181b] md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:shadow-[4px_4px_0px_#3f3f46] space-y-3">
           {/* Mobile Collapsible Header */}
           <div className="flex items-center justify-between gap-2 md:hidden">
@@ -571,6 +530,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
             </button>
             <Button
               onClick={() => {
+                saveMutation.reset();
                 setIsAdding(true);
                 setEditingId(null);
                 setGithubMessage(null);
@@ -609,6 +569,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
             </div>
             <Button
               onClick={() => {
+                saveMutation.reset();
                 setIsAdding(true);
                 setEditingId(null);
                 setGithubMessage(null);
@@ -872,17 +833,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
         </div>
       )}
 
-      {/* REACT PORTAL FOR IMPORT PREVIEW MODAL - BREAKS OUT OF CONTAINER STACKING CONTEXT */}
-      {mounted &&
-        importPreview &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/75 p-4 backdrop-blur-xs pixel-enter"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setImportPreview(null);
-            }}
-          >
-            <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-[6px_6px_0px_#18181b] dark:shadow-[6px_6px_0px_#3f3f46] text-black dark:text-white md:p-5">
+      {importPreview && <ProfileDialog label="Review imported project" busy={saveMutation.isPending} onRequestClose={() => setImportPreview(null)}>
+            <div className="profile-entry-form space-y-4">
               <div className="mb-4 flex items-start justify-between gap-3 border-b border-zinc-200 dark:border-zinc-700 pb-3">
                 <div>
                   <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
@@ -899,7 +851,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => setImportPreview(null)}
+                  onClick={() => setImportPreview(null)} aria-label="Close import preview"
                   className="border-transparent"
                 >
                   <X size={16} />
@@ -983,16 +935,14 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                 <Button type="button" variant="outline" onClick={() => setImportPreview(null)}>
                   Edit
                 </Button>
-                <Button type="button" variant="ghost" onClick={handleCancel}>
+                <Button type="button" variant="ghost" onClick={requestClose}>
                   Discard Import
                 </Button>
               </div>
             </div>
-          </div>,
-          document.body,
-        )}
+      </ProfileDialog>}
 
-      {isAdding && !editingId && renderForm()}
+      {isAdding && !editingId && !importPreview && renderForm()}
 
       <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:divide-y-0 md:space-y-3">
         {projects.map((proj) => (
@@ -1014,7 +964,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     ))}
                   </div>
                 )}
-                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1 line-clamp-2 md:line-clamp-none">
+                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1 ">
                   {proj.description}
                 </p>
                 {proj.bullet_points && proj.bullet_points.length > 0 && (
@@ -1061,9 +1011,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   size="icon-sm"
                   variant="ghost"
                   onClick={() => {
-                    if (confirm("Are you sure?"))
+                    if (confirm("Delete this entry? This cannot be undone."))
                       deleteMutation.mutate(proj.id);
                   }}
+                  disabled={deleteMutation.isPending}
                   className="h-9 w-9 p-0 border-transparent hover:border-red-500 hover:text-red-500"
                   title="Delete project"
                 >

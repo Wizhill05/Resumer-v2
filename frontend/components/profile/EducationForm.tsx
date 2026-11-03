@@ -1,6 +1,9 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { ProfileDialog } from "./ProfileDialog"
+import { QueryError } from "./QueryError"
+import { useState, useCallback, useEffect } from "react"
+import { useProfileDraft } from "./useProfileDraft"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -22,6 +25,8 @@ const schema = z.object({
   sort_order: z.number().optional(),
 })
 
+const draftSchema = schema.extend({ degree: z.string(), institution: z.string() })
+
 type FormData = z.infer<typeof schema>
 
 type EducationItem = {
@@ -37,21 +42,16 @@ type EducationItem = {
 }
 
 interface EducationFormProps {
-  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>, busy?: boolean, discardDraft?: () => void) => void
 }
 
 export function EducationForm({ onDirtyChange }: EducationFormProps) {
   const queryClient = useQueryClient()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
-  // Id assigned by the backend when a background auto-save creates a new entry,
-  // so subsequent auto-saves PUT instead of POSTing duplicates.
-  const [createdId, setCreatedId] = useState<string | null>(null)
-  // Only explicit user actions (Save button, tab switch) close the dialog after saving.
-  const closeAfterSaveRef = useRef(false)
-  const activeRecordId = editingId ?? createdId
+  const activeRecordId = editingId
 
-  const { data: educationList = [], isLoading } = useQuery<EducationItem[]>({
+  const { data: educationList = [], isLoading, isError, refetch } = useQuery<EducationItem[]>({
     queryKey: ["education"],
     queryFn: async () => {
       const res = await fetch("/api/backend/profile/education")
@@ -60,24 +60,27 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
     },
   })
 
+  const form = useForm<FormData>({
+    resolver: zodResolver(schema),
+  })
   const {
     register,
     handleSubmit,
     reset,
-    watch,
-    getValues,
-    formState: { errors, isDirty, isValid },
-  } = useForm<FormData>({
-  })
+    formState: { errors, isDirty },
+  } = form
+
 
   const formActive = isAdding || editingId !== null
 
+  const { clear: clearDraft, notice: draftNotice } = useProfileDraft({ kind: "education", recordId: editingId, active: formActive, form, schema: draftSchema })
+
   const handleCancel = useCallback(() => {
+    clearDraft()
     reset()
     setEditingId(null)
     setIsAdding(false)
-    setCreatedId(null)
-  }, [reset])
+  }, [reset, clearDraft])
 
   const saveMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -104,24 +107,13 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
       if (!res.ok) throw new Error("Failed to save education entry")
       return res.json()
     },
-    onSuccess: (saved) => {
-      try {
-        localStorage.removeItem("resumer_draft_education")
-      } catch {}
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["education"] })
-      if (closeAfterSaveRef.current) {
-        closeAfterSaveRef.current = false
-        handleCancel()
-      } else {
-        // Background auto-save: keep the dialog open, adopt the created id for
-        // future saves, and re-baseline dirty state so the idle timer stops.
-        if (!editingId) setCreatedId(saved.id)
-        reset(getValues())
-      }
+      handleCancel()
     },
   })
-  const performSave = useCallback(async (closeOnSuccess = false): Promise<boolean> => {
-    closeAfterSaveRef.current = closeOnSuccess
+
+  const performSave = useCallback(async (): Promise<boolean> => {
     if (!formActive) return true
     if (!isDirty) {
       handleCancel()
@@ -146,33 +138,10 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
 
   useEffect(() => {
     if (onDirtyChange) {
-      onDirtyChange(formActive && isDirty, performSave)
+      onDirtyChange(formActive && isDirty, performSave, saveMutation.isPending, clearDraft)
     }
-  }, [formActive, isDirty, performSave, onDirtyChange])
+  }, [formActive, isDirty, performSave, onDirtyChange, saveMutation.isPending, clearDraft])
 
-  // LocalStorage draft sync + 5-second inactivity DB auto-save
-  const formValues = watch()
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
-
-  useEffect(() => {
-    if (!formActive || !isDirty) return
-
-    try {
-      localStorage.setItem("resumer_draft_education", JSON.stringify(formValues))
-    } catch {}
-
-    clearTimeout(debounceTimerRef.current!)
-
-    debounceTimerRef.current = setTimeout(() => {
-      if (formActive && isDirty && isValid && !saveMutation.isPending) {
-        performSave()
-      }
-    }, 5000)
-
-    return () => {
-      clearTimeout(debounceTimerRef.current!)
-    }
-  }, [formValues, formActive, isDirty, isValid, saveMutation.isPending, performSave])
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/backend/profile/education/${id}`, {
@@ -187,6 +156,7 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
   })
 
   const startEdit = (edu: EducationItem) => {
+    saveMutation.reset()
     setEditingId(edu.id)
     setIsAdding(true)
     reset({
@@ -206,39 +176,46 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
   else if (saveMutation.isError) status = "error"
   else if (isDirty) status = "unsaved"
 
+  const requestClose = () => {
+    if (saveMutation.isPending) return
+    if (!isDirty || window.confirm("Discard your unsaved changes?")) handleCancel()
+  }
+
   const renderForm = () => (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 p-0 backdrop-blur-xs md:static md:z-auto md:block md:bg-transparent md:p-0 md:backdrop-blur-none">
+    <ProfileDialog label={activeRecordId ? "Edit education" : "Add education"} busy={saveMutation.isPending} onRequestClose={requestClose}>
       <form
         onSubmit={handleSubmit((data) => {
-          closeAfterSaveRef.current = true
           saveMutation.mutate(data)
         })}
-        className="max-h-[90dvh] overflow-y-auto rounded-t-xl border-t border-zinc-300 bg-white p-4 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 md:max-h-none md:rounded-none md:border md:border-zinc-200 md:bg-zinc-50 md:shadow-none md:dark:border-zinc-700 md:dark:bg-zinc-900/50 md:p-4 pixel-enter space-y-4"
+        className="profile-entry-form space-y-4"
       >
         <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
           <div className="flex items-center gap-3">
             <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
               {activeRecordId ? "Edit Education" : "Add Education"}
             </h3>
-            <SaveStatusBadge status={status} onSaveNow={isDirty ? () => performSave(false) : undefined} />
+            <SaveStatusBadge status={!activeRecordId && !isDirty && !saveMutation.isError ? "draft" : status} onSaveNow={isDirty ? () => performSave() : undefined} />
           </div>
           <Button
             type="button"
             variant="ghost"
+            aria-label="Close editor"
             size="sm"
-            onClick={handleCancel}
+            onClick={requestClose}
             className="h-9 w-9 p-0 border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
           >
             <X size={18} />
           </Button>
         </div>
 
+        {draftNotice}
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="degree">Degree / Field of Study</Label>
-            <Input id="degree" placeholder="e.g. B.S. in Computer Science" {...register("degree")} />
+            <Input id="degree" placeholder="e.g. B.S. in Computer Science" aria-invalid={!!errors.degree} aria-describedby={errors.degree ? "degree-error" : undefined} {...register("degree")} />
             {errors.degree && (
-              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              <p id="degree-error" role="alert" className="text-red-600 dark:text-red-400 text-xs font-bold">
                 {errors.degree.message}
               </p>
             )}
@@ -249,10 +226,10 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
             <Input
               id="institution"
               placeholder="e.g. Stanford University"
-              {...register("institution")}
+              aria-invalid={!!errors.institution} aria-describedby={errors.institution ? "institution-error" : undefined} {...register("institution")}
             />
             {errors.institution && (
-              <p className="text-red-600 dark:text-red-400 text-xs font-bold">
+              <p id="institution-error" role="alert" className="text-red-600 dark:text-red-400 text-xs font-bold">
                 {errors.institution.message}
               </p>
             )}
@@ -301,7 +278,7 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
           <Button
             type="button"
             variant="outline"
-            onClick={handleCancel}
+            onClick={requestClose}
             disabled={saveMutation.isPending}
             className="flex-1 md:flex-none"
           >
@@ -309,8 +286,10 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
           </Button>
         </div>
       </form>
-    </div>
+    </ProfileDialog>
   )
+
+  if (isError) return <QueryError message="Could not load education. Your entries have not been removed." onRetry={() => { void refetch() }} />
 
   if (isLoading) {
     return (
@@ -326,13 +305,17 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
 
   return (
     <div className="space-y-3 pixel-enter md:space-y-4">
-      {!isAdding && (
+      {deleteMutation.isPending && <p role="status" className="text-sm">Deleting entry...</p>}
+      {deleteMutation.isError && <QueryError message="Could not delete the entry. Please try deleting it again." onRetry={() => { if (deleteMutation.variables) deleteMutation.mutate(deleteMutation.variables) }} />}
+
+      {(
         <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-2.5 dark:border-zinc-800 md:border md:border-zinc-200 md:bg-zinc-50 md:p-3 md:dark:border-zinc-700 md:dark:bg-zinc-900/50">
           <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 sm:text-sm">
             {educationList.length} education entries
           </h3>
           <Button
             onClick={() => {
+              saveMutation.reset()
               setIsAdding(true)
               setEditingId(null)
               reset({
@@ -404,8 +387,9 @@ export function EducationForm({ onDirtyChange }: EducationFormProps) {
                   size="icon-sm"
                   variant="ghost"
                   onClick={() => {
-                    if (confirm("Are you sure?")) deleteMutation.mutate(edu.id)
+                    if (confirm("Delete this entry? This cannot be undone.")) deleteMutation.mutate(edu.id)
                   }}
+                  disabled={deleteMutation.isPending}
                   className="h-9 w-9 p-0 border-transparent hover:border-red-500 hover:text-red-500"
                   title="Delete entry"
                 >

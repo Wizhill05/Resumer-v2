@@ -1135,3 +1135,95 @@
 
 :is(.dark) .agent-page nav > div { background: rgb(65 32 24 / 50%); }
 :is(.dark) .agent-mobile-menu { background: rgb(65 32 24 / 85%); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+
+/* Keep profile editors outside animated sections, in the browser's top layer. */
+.profile-dialog {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  padding: 1rem;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+}
+.profile-dialog[open] {
+  display: grid;
+  align-items: end;
+  justify-items: center;
+}
+.profile-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(5px);
+}
+.profile-dialog-panel {
+  width: 100%;
+  max-width: 48rem;
+  min-width: 0;
+  max-height: 100%;
+}
+.profile-entry-form {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  border: 1px solid #d4d4d8;
+  background: white;
+  color: #18181b;
+  padding: 0 1rem;
+  box-shadow: 0 20px 80px #0004;
+  overflow-wrap: anywhere;
+}
+:is(.dark) .profile-entry-form {
+  background: #18181b;
+  color: #f4f4f5;
+  border-color: #52525b;
+}
+.profile-entry-form > div:first-child {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: inherit;
+  padding-block: 1rem;
+  align-items: start;
+}
+.profile-entry-form > div:first-child > div {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.profile-entry-form > div:last-child {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: inherit;
+  padding-block: 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+}
+.profile-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.profile-content :is(input, textarea, select),
+.profile-dialog :is(input, textarea, select) {
+  font-size: 1rem;
+}
+.profile-content fieldset { min-width: 0; }
+.profile-content :is(button, a):focus-visible,
+.profile-dialog :is(button, a):focus-visible {
+  outline: 2px solid #ff4e26;
+  outline-offset: 3px;
+}
+@media (min-width: 768px) {
+  .profile-dialog[open] { align-items: center; }
+}
+@media (max-width: 767px) {
+  .profile-dialog { padding: 0.5rem; }
+  .profile-entry-form { max-height: calc(100dvh - 1rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pixel-enter { animation: none; }
+}

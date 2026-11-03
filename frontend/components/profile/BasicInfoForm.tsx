@@ -1,10 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useCallback, useState } from "react"
+import { useEffect, useCallback, useRef } from "react"
+import { useProfileDraft } from "./useProfileDraft"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { Button } from "@/components/ui/button"
+import { QueryError } from "./QueryError"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,17 +36,19 @@ const schema = z.object({
   notify_on_completion: z.boolean().optional(),
 })
 
+const draftSchema = schema.extend({ full_name: z.string(), email: z.string() })
+
 type FormData = z.infer<typeof schema>
 
 interface BasicInfoFormProps {
-  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>) => void
+  onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>, busy?: boolean, discardDraft?: () => void) => void
 }
 
 export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   const queryClient = useQueryClient()
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const initialized = useRef(false)
 
-  const { data: profile, isLoading } = useQuery({
+  const { data: profile, isLoading, isError, refetch } = useQuery({
     queryKey: ["profile"],
     queryFn: async () => {
       const res = await fetch("/api/backend/profile")
@@ -52,17 +57,23 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
     },
   })
 
+  const form = useForm<FormData>({
+    resolver: zodResolver(schema),
+  })
   const {
     register,
     handleSubmit,
     control,
-    watch,
     reset,
-    formState: { errors, isDirty, isValid },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    values: profile
-      ? {
+    formState: { errors, isDirty },
+  } = form
+
+
+  const { clear: clearDraft, notice: draftNotice } = useProfileDraft({ kind: "basic", recordId: null, active: !isLoading && !!profile, form, schema: draftSchema })
+
+  useEffect(() => {
+    if (profile && !initialized.current) {
+      reset({
           full_name: profile.full_name || "",
           email: profile.email || "",
           phone: profile.phone || "",
@@ -74,9 +85,10 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           summary: profile.summary || "",
           skills: profile.skills ? profile.skills.join(", ") : "",
           notify_on_completion: profile.notify_on_completion ?? true,
-        }
-      : undefined,
-  })
+        })
+      initialized.current = true
+    }
+  }, [profile, reset])
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -99,9 +111,7 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
       return res.json()
     },
     onSuccess: (updated) => {
-      try {
-        localStorage.removeItem("resumer_draft_basic_info")
-      } catch {}
+      clearDraft()
       queryClient.invalidateQueries({ queryKey: ["profile"] })
       // Re-reset form state to updated values so isDirty resets
       reset({
@@ -141,31 +151,9 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   // Register dirty state & save handler with parent ProfileClient
   useEffect(() => {
     if (onDirtyChange) {
-      onDirtyChange(isDirty, performSave)
+      onDirtyChange(isDirty, performSave, mutation.isPending, clearDraft)
     }
-  }, [isDirty, performSave, onDirtyChange])
-
-  // LocalStorage draft sync + 5-second inactivity DB auto-save
-  const formValues = watch()
-  useEffect(() => {
-    if (!isDirty) return
-
-    try {
-      localStorage.setItem("resumer_draft_basic_info", JSON.stringify(formValues))
-    } catch {}
-
-    clearTimeout(debounceTimerRef.current!)
-
-    debounceTimerRef.current = setTimeout(() => {
-      if (isDirty && isValid && !mutation.isPending) {
-        performSave()
-      }
-    }, 5000)
-
-    return () => {
-      clearTimeout(debounceTimerRef.current!)
-    }
-  }, [formValues, isDirty, isValid, mutation.isPending, performSave])
+  }, [isDirty, performSave, onDirtyChange, mutation.isPending, clearDraft])
 
   // Save status badge status computation
   let status: SaveStatus = "saved"
@@ -176,6 +164,8 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   } else if (isDirty) {
     status = "unsaved"
   }
+
+  if (isError) return <QueryError message="Could not load your profile. Please try again." onRetry={() => { void refetch() }} />
 
   if (isLoading) {
     return (
@@ -191,10 +181,11 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
 
   return (
     <form
-      onSubmit={handleSubmit(() => performSave())}
+      onSubmit={(event) => { event.preventDefault(); void performSave() }}
       className="space-y-4 md:space-y-5 pixel-enter"
     >
-      <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-700">
+      <fieldset disabled={mutation.isPending} className="contents">
+      <div className="flex flex-wrap gap-3 items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-700">
         <h2 className="text-sm font-extrabold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
           Basic Details
         </h2>
@@ -204,12 +195,13 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
         />
       </div>
 
+      {draftNotice}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="full_name">Full Name</Label>
-          <Input id="full_name" {...register("full_name")} />
+          <Input id="full_name" aria-invalid={!!errors.full_name} aria-describedby={errors.full_name ? "full_name-error" : undefined} {...register("full_name")} />
           {errors.full_name && (
-            <p className="text-red-600 text-xs font-bold">{errors.full_name.message}</p>
+            <p id="full_name-error" role="alert" className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.full_name.message}</p>
           )}
         </div>
 
@@ -224,9 +216,9 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
 
         <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" {...register("email")} />
+          <Input id="email" type="email" aria-invalid={!!errors.email} aria-describedby={errors.email ? "email-error" : undefined} {...register("email")} />
           {errors.email && (
-            <p className="text-red-600 text-xs font-bold">{errors.email.message}</p>
+            <p id="email-error" role="alert" className="text-red-600 dark:text-red-400 text-xs font-bold">{errors.email.message}</p>
           )}
         </div>
 
@@ -292,11 +284,11 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
             <button
               type="button"
               role="switch"
+              aria-label="Receive completion emails"
               aria-checked={field.value ?? true}
               onClick={() => {
                 const newVal = !(field.value ?? true)
                 field.onChange(newVal)
-                if (isValid) performSave()
               }}
               className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border-2 border-black transition-colors ${
                 field.value ?? true ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"
@@ -311,6 +303,8 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
           )}
         />
       </div>
+      <div className="flex gap-3"><Button type="submit" disabled={mutation.isPending || !isDirty}>{mutation.isPending ? "Saving..." : "Save changes"}</Button></div>
+      </fieldset>
     </form>
   )
 }

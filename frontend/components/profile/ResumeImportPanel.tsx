@@ -2,8 +2,9 @@
 
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useProfileWork, useProfileChanges } from "./ProfileChanges"
 import { Button } from "@/components/ui/button"
-import { AlertCircle, CheckCircle2, Loader2, Upload, X, ChevronDown, ChevronUp, FileUp } from "lucide-react"
+import { AlertCircle, Loader2, Upload, X, ChevronDown, ChevronUp, FileUp } from "lucide-react"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 type ImportWarning = { scope: string; message: string }
 type DuplicateCandidate = { imported_type: string; confidence: number; reason: string; suggested_action: string }
@@ -19,8 +20,9 @@ type ResumeImportDraft = {
 
 type Stage = "idle" | "parsing" | "extracting" | "deduplicating" | "done"
 
-export function ResumeImportPanel() {
+export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?: () => void; onApplyingChange?: (busy: boolean) => void }) {
   const queryClient = useQueryClient()
+  const { confirmLeave } = useProfileChanges()
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [draft, setDraft] = useState<ResumeImportDraft | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -83,6 +85,8 @@ export function ResumeImportPanel() {
   })
 
   const applyMutation = useMutation({
+    onMutate: () => onApplyingChange?.(true),
+    onSettled: () => onApplyingChange?.(false),
     mutationFn: async () => {
       if (!draft) return
       const res = await fetch("/api/backend/profile/import/apply", {
@@ -94,17 +98,18 @@ export function ResumeImportPanel() {
       if (!res.ok) throw new Error(body.detail || "Failed to apply import")
       return body
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      await Promise.all([
+        ["profile"], ["projects"], ["experiences"], ["education"], ["extracurriculars"],
+      ].map((queryKey) => queryClient.invalidateQueries({ queryKey })))
       setDraft(null)
       setStage("idle")
-      queryClient.invalidateQueries({ queryKey: ["profile"] })
-      queryClient.invalidateQueries({ queryKey: ["projects"] })
-      queryClient.invalidateQueries({ queryKey: ["experiences"] })
-      queryClient.invalidateQueries({ queryKey: ["education"] })
-      queryClient.invalidateQueries({ queryKey: ["extracurriculars"] })
+      onApplied?.()
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Failed to apply import"),
   })
+
+  useProfileWork("pdf-import", draft !== null, importMutation.isPending || applyMutation.isPending)
 
   const counts = draft
     ? [
@@ -137,7 +142,7 @@ export function ResumeImportPanel() {
   const showExpanded = mobileExpanded || isPending || draft !== null || error !== null
 
   return (
-    <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:p-4">
+    <fieldset disabled={applyMutation.isPending} aria-busy={isPending || applyMutation.isPending} aria-label="Import résumé PDFs" className="min-w-0 border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:p-4">
       {/* Hidden file input */}
       <input
         ref={inputRef}
@@ -163,6 +168,7 @@ export function ResumeImportPanel() {
         <button
           type="button"
           onClick={() => setMobileExpanded(!mobileExpanded)}
+          aria-expanded={showExpanded}
           className="flex min-w-0 flex-1 items-center gap-2 text-left font-black uppercase tracking-tight text-zinc-800 dark:text-zinc-200"
         >
           <FileUp size={16} className="shrink-0 text-[#ff4e26]" />
@@ -240,7 +246,7 @@ export function ResumeImportPanel() {
               <p className="text-sm font-extrabold uppercase text-zinc-900 dark:text-zinc-100">Review import draft</p>
               <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">{counts.join(" • ")}</p>
             </div>
-            <Button type="button" variant="ghost" size="icon-sm" onClick={() => { setDraft(null); setStage("idle") }} className="border-transparent">
+            <Button type="button" variant="ghost" size="icon-sm" aria-label="Discard import draft" onClick={() => { if (window.confirm("Discard this import draft?")) { setDraft(null); setStage("idle") } }} className="border-transparent">
               <X size={14} />
             </Button>
           </div>
@@ -277,13 +283,13 @@ export function ResumeImportPanel() {
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => applyMutation.mutate()} disabled={applyMutation.isPending}>
+            <Button type="button" onClick={() => { if (confirmLeave(["editor"], false)) applyMutation.mutate() }} disabled={applyMutation.isPending}>
               {applyMutation.isPending ? <><Loader2 className="animate-spin" size={16} /> Saving...</> : "Apply Import"}
             </Button>
             <Button type="button" variant="outline" onClick={() => { setDraft(null); setStage("idle") }} disabled={applyMutation.isPending}>Skip</Button>
           </div>
         </div>
       )}
-    </div>
+    </fieldset>
   )
 }
