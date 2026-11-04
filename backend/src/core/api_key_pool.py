@@ -64,12 +64,10 @@ class ApiKeyPool:
                     return candidate
                 attempts += 1
 
-            # If all keys are quarantined, fallback to the one with the earliest expiration
-            if self._quarantined:
-                earliest_key = min(self._quarantined, key=self._quarantined.get)
-                return earliest_key
-
-            return next(self._cycle)
+            # If all keys are quarantined, raise so the caller can try another provider.
+            raise ApiKeyUnavailable(
+                f"All {self.name} API keys are temporarily quarantined due to failures."
+            )
 
 
 # Module-level singletons — initialised once at import time.
