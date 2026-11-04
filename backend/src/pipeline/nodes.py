@@ -46,17 +46,21 @@ async def log_progress(
 ):
     print(f"[{node_name}] {message}")
     # Use a fresh session per log insert to avoid concurrent commit conflicts.
-    async with AsyncSessionLocal() as log_session:
-        await log_session.execute(
-            insert(GenerationLog).values(
-                generation_id=uuid.UUID(gen_id),
-                level=level,
-                message=message,
-                node_name=node_name,
-                timestamp=datetime.now(timezone.utc),
+    # Best-effort: a log write failure must not stop the generation.
+    try:
+        async with AsyncSessionLocal() as log_session:
+            await log_session.execute(
+                insert(GenerationLog).values(
+                    generation_id=uuid.UUID(gen_id),
+                    level=level,
+                    message=message,
+                    node_name=node_name,
+                    timestamp=datetime.now(timezone.utc),
+                )
             )
-        )
-        await log_session.commit()
+            await log_session.commit()
+    except Exception as log_exc:  # noqa: BLE001
+        print(f"[log] Failed to persist log entry for {node_name}/{gen_id}: {log_exc}")
 
 
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
@@ -229,25 +233,30 @@ async def record_node_metric(
 ) -> None:
     if not gen_id or not node_name:
         return
-    async with AsyncSessionLocal() as metric_session:
-        await metric_session.execute(
-            insert(GenerationNodeMetric).values(
-                generation_id=uuid.UUID(gen_id),
-                node_name=node_name,
-                provider=provider,
-                model=model,
-                status=status,
-                latency_ms=latency_ms,
-                fallback_used=fallback_used,
-                parse_error=parse_error,
-                error_message=error_message,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-                created_at=datetime.now(timezone.utc),
+    try:
+        async with AsyncSessionLocal() as metric_session:
+            await metric_session.execute(
+                insert(GenerationNodeMetric).values(
+                    generation_id=uuid.UUID(gen_id),
+                    node_name=node_name,
+                    provider=provider,
+                    model=model,
+                    status=status,
+                    latency_ms=latency_ms,
+                    fallback_used=fallback_used,
+                    parse_error=parse_error,
+                    error_message=error_message,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    created_at=datetime.now(timezone.utc),
+                )
             )
-        )
-        await metric_session.commit()
+            await metric_session.commit()
+    except Exception as metric_exc:  # noqa: BLE001
+        # Metric writes are best-effort. A DB failure here must not discard
+        # a valid inference result or fail the resume generation.
+        print(f"[metric] Failed to record node metric for {node_name}/{gen_id}: {metric_exc}")
 
 
 
@@ -487,13 +496,22 @@ async def job_analysis_node(
 
 
 def _validate_selection(result, experience_count, project_count, max_exp, max_proj):
-    for indices, available, requested in (
-        (result.selected_experience_indices, experience_count, max_exp),
-        (result.selected_project_indices, project_count, max_proj),
+    for indices, available, requested, label in (
+        (result.selected_experience_indices, experience_count, max_exp, "experience"),
+        (result.selected_project_indices, project_count, max_proj, "project"),
     ):
-        if (len(indices) != min(available, requested) or len(set(indices)) != len(indices)
-                or any(type(i) is not int or i < 0 or i >= available for i in indices)):
-            raise InvalidSelection("Invalid selection indices or count")
+        expected_count = min(available, requested)
+        if len(indices) != expected_count:
+            raise InvalidSelection(
+                f"wrong_count: expected {expected_count} {label} indices, got {len(indices)}"
+            )
+        if len(set(indices)) != len(indices):
+            raise InvalidSelection(f"duplicate_index in {label} indices")
+        for i in indices:
+            if type(i) is not int:
+                raise InvalidSelection(f"non_int: {type(i).__name__!r} in {label} indices")
+            if i < 0 or i >= available:
+                raise InvalidSelection(f"out_of_bounds: {label} index {i} (available={available})")
 
 
 async def selection_node(
