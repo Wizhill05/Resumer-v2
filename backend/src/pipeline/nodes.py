@@ -270,6 +270,20 @@ class InvalidStructuredOutput(ValueError):
     pass
 
 
+def _validate_synthetic_project(project: TailoredProject) -> None:
+    """Reject an incomplete replacement while keeping the provider schema stable."""
+    if (
+        not project.name.strip()
+        or not project.description
+        or not project.description.strip()
+        or not project.technologies
+        or any(not technology.strip() for technology in project.technologies)
+        or not project.bullet_points
+        or any(not bullet.strip() for bullet in project.bullet_points)
+    ):
+        raise InvalidStructuredOutput("Incomplete synthetic project")
+
+
 def _actual_provider(llm: Any) -> str:
     if getattr(llm, "_route_provider", None):
         return llm._route_provider
@@ -899,8 +913,6 @@ async def project_node(
             "Super LARP: replacing first project with JD-hyper-focused synthetic project...",
         )
         try:
-            from src.schemas.pipeline import TailoredProject as TailoredProjectSchema
-
             synth_sys, _ = await get_prompt_config(
                 db,
                 "synthetic_project_super_larp",
@@ -927,11 +939,12 @@ async def project_node(
                 [("system", synth_sys), ("user", "INPUT: Job Analysis\n{job_analysis}")]
             )
             synth = await invoke_with_fallback(
-                lambda llm, p: synth_prompt | _structured(llm, TailoredProjectSchema, p),
+                lambda llm, p: synth_prompt | _structured(llm, TailoredProject, p),
                 {"job_analysis": job_analysis},
                 node_name="projects_writer",
                 gen_id=gen_id,
                 is_pro=state.get("is_pro", False),
+                validate_result=_validate_synthetic_project,
             )
             tailored_projs[0] = {
                 "name": synth.name,
