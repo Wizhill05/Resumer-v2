@@ -4,6 +4,7 @@ import { HeroSection } from "@/components/landing/HeroSection"
 import { StoryOverture } from "@/components/landing/StoryOverture"
 import { StoryJourney } from "@/components/landing/StoryJourney"
 import { StoryTransformation } from "@/components/landing/StoryTransformation"
+import { AgentSection } from "@/components/landing/AgentSection"
 import { StoryClosing } from "@/components/landing/StoryClosing"
 import { Footer } from "@/components/Footer"
 
@@ -28,6 +29,7 @@ export default async function Home() {
           </div>
         </div>
       </section>
+      <AgentSection />
       <StoryClosing />
       <Footer variant="landing" />
     </main>

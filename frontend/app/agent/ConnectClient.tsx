@@ -113,6 +113,18 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
             If setup fails, share the error with your agent and ask it to check the MCP connection and authentication. You can also <Link href="/profile" className="font-bold underline underline-offset-4 hover:text-[#ff4e26]">update your profile</Link> or visit <Link href="/support" className="font-bold underline underline-offset-4 hover:text-[#ff4e26]">support</Link>.
           </p>
         </section>
+
+        {/* Small print at the very end of the page — what "agent" means here. */}
+        <section aria-labelledby="agent-meaning-heading" className="border-t border-zinc-200 py-8 dark:border-zinc-800">
+          <h2 id="agent-meaning-heading" className="text-sm font-bold">What “agent” means here</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            A desktop coding agent you run locally — Claude Code, Codex,
+            Antigravity, OpenCode, Pi agent. Not the ChatGPT web app or chat
+            interface, nor the Gemini chat interface. Chat interfaces are also
+            supported: just paste the prompt and the agent walks you through
+            the whole setup, step by step.
+          </p>
+        </section>
       </div>
     </div>
   )
