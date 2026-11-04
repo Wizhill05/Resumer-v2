@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy application source code
 COPY src/ /app/src/
 COPY templates/ /app/templates/
+COPY sample-resume/ /app/sample-resume/
 COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini
 COPY main.py /app/main.py

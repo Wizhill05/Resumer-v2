@@ -30,6 +30,7 @@ class GenerationCreate(BaseModel):
     # Super LARP = LARP + invented JD-hyper-focused first project.
     # None = use the user's stored default (falls back to larp).
     creativity_mode: CreativityMode | None = None
+    section_order: list[str] | None = None
 
 
 class GenerationOut(BaseModel):
@@ -47,6 +48,7 @@ class GenerationOut(BaseModel):
     content_split: dict | None = None
     send_email: bool | None = None
     creativity_mode: CreativityMode | None = None
+    section_order: list[str] | None = None
 
     model_config = {"from_attributes": True}
 

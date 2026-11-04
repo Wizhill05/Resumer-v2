@@ -7,10 +7,17 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info } from "lucide-react"
+import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info, Eye } from "lucide-react"
 import Link from "next/link"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
+import {
+  type SectionId,
+  fetchTemplateLayout,
+  SECTION_METADATA,
+} from "@/lib/template-layout"
+import { TemplateLayoutEditor } from "@/components/generation/TemplateLayoutEditor"
+import { TemplatePreviewDialog } from "@/components/generation/TemplatePreviewDialog"
 type Step = "input" | "submitted"
 
 type ContentSplit = {
@@ -25,6 +32,7 @@ type TemplateItem = {
   content_slots: number
   allowed_content_splits: ContentSplit[]
   default_content_split: ContentSplit
+  default_section_order?: SectionId[]
 }
 
 type ProfileEntry = { id?: string }
@@ -84,6 +92,9 @@ export function GenerateClient() {
   const [livePercent, setLivePercent] = useState(10)
   const [liveStepLabel, setLiveStepLabel] = useState("Starting")
   const [isGenerationComplete, setIsGenerationComplete] = useState(false)
+  const [isLayoutEditorOpen, setIsLayoutEditorOpen] = useState(false)
+  const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
+  const [userSavedOverrides, setUserSavedOverrides] = useState<Record<string, SectionId[]>>({})
 
   const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<TemplateItem[]>({
     queryKey: ["templates"],
@@ -93,6 +104,45 @@ export function GenerateClient() {
       return res.json()
     },
   })
+
+  // Saved layout preference query per selected template
+  const {
+    data: layoutData,
+    isLoading: isLoadingLayout,
+    isError: isLayoutError,
+    refetch: refetchLayout,
+  } = useQuery({
+    queryKey: ["template-layout", selectedTemplate],
+    queryFn: ({ signal }) => fetchTemplateLayout(selectedTemplate, signal),
+    enabled: !!selectedTemplate,
+    staleTime: 1000 * 60 * 5,
+  })
+
+  const selectedTemplateObj = useMemo(
+    () => templates.find((t) => t.id === selectedTemplate),
+    [templates, selectedTemplate]
+  )
+
+  // Explicit user override saved during the current session
+  const sessionLayoutOverride = userSavedOverrides[selectedTemplate] ?? null
+
+  // Order to send in generation POST body:
+  // ONLY sent if user explicitly customized it in this session OR layout data is safely loaded.
+  // When loading or failed, omit order (undefined) so backend resolves stored DB preference without clobbering.
+  const sectionOrderToSend = useMemo(() => {
+    if (sessionLayoutOverride) return sessionLayoutOverride
+    if (layoutData?.section_order) return layoutData.section_order
+    return undefined
+  }, [sessionLayoutOverride, layoutData])
+
+  // Display order for UI preview / summary (fallback to template default only when not loading)
+  const displaySectionOrder = useMemo(() => {
+    return (
+      sessionLayoutOverride ??
+      layoutData?.section_order ??
+      (isLoadingLayout ? null : selectedTemplateObj?.default_section_order ?? null)
+    )
+  }, [sessionLayoutOverride, layoutData, isLoadingLayout, selectedTemplateObj])
 
   const { data: profileExperiences = [] } = useQuery<ProfileEntry[]>({
     queryKey: ["profile-experiences"],
@@ -213,6 +263,7 @@ export function GenerateClient() {
       experience_count: experienceCount,
       has_custom_instructions: !!instructions,
       send_email: sendEmail,
+      section_order: sectionOrderToSend ?? null,
     })
 
     try {
@@ -227,6 +278,7 @@ export function GenerateClient() {
           content_split: { projects: projectsCount, experience: experienceCount },
           creativity_mode: creativityMode,
           send_email: sendEmail,
+          section_order: sectionOrderToSend,
         }),
       })
 
@@ -298,7 +350,7 @@ export function GenerateClient() {
       active = false
       clearInterval(timer)
     }
-  }, [step, createdRunId, isGenerationComplete, queryClient])
+  }, [step, createdRunId, isGenerationComplete, queryClient, selectedTemplate])
 
   if (isLoadingTemplates) {
     return (
@@ -345,28 +397,57 @@ export function GenerateClient() {
               {templates.map((tpl) => {
                 const selected = selectedTemplate === tpl.id
                 return (
-                  <button
-                    key={tpl.id}
-                    type="button"
-                    onClick={() => setSelectedTemplate(tpl.id)}
-                    className={`flex items-center justify-between border p-3 text-left transition-all cursor-pointer ${
-                      selected
-                        ? "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-800 text-white shadow-xs"
-                        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 hover:border-zinc-400"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <FileText size={16} className={selected ? "text-[#ff4e26]" : "text-zinc-400"} />
-                      <span className="text-xs font-extrabold uppercase truncate">{tpl.name}</span>
+                  <div key={tpl.id} className={`overflow-hidden rounded-lg border transition-colors ${selected ? "border-[#ff4e26] bg-white dark:bg-zinc-900" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"}`}>
+                    <button type="button" onClick={() => setSelectedTemplate(tpl.id)} aria-pressed={selected}
+                      className="flex w-full items-center gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
+                      <FileText size={22} className={selected ? "text-[#ff4e26]" : "text-zinc-400"} aria-hidden="true" />
+                      <span className="flex-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{tpl.name}</span>
+                      <span aria-hidden="true" className={`flex h-4 w-4 items-center justify-center rounded-full border ${selected ? "border-[#ff4e26]" : "border-zinc-300 dark:border-zinc-600"}`}>{selected && <span className="h-2 w-2 rounded-full bg-[#ff4e26]" />}</span>
+                    </button>
+                    <div className="flex items-center gap-5 px-4 pb-2">
+                      <button type="button" onClick={() => { setSelectedTemplate(tpl.id); setIsLayoutEditorOpen(true) }}
+                        className="inline-flex min-h-11 items-center gap-2 px-1 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
+                        <Pencil size={16} aria-hidden="true" />Edit template
+                      </button>
+                      <button type="button" onClick={() => setPreviewTemplate(tpl)}
+                        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
+                        <Eye size={17} aria-hidden="true" />Preview
+                      </button>
                     </div>
-                    {selected && (
-                      <span className="shrink-0 text-[10px] font-mono font-bold text-[#ff4e26]">
-                        [SELECTED]
-                      </span>
-                    )}
-                  </button>
+                  </div>
                 )
               })}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {isLoadingLayout && !sessionLayoutOverride ? (
+                <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 dark:text-zinc-500">
+                  <Loader2 size={12} className="animate-spin text-[#ff4e26]" aria-hidden="true" />
+                  <span>Loading layout preference...</span>
+                </div>
+              ) : isLayoutError && !sessionLayoutOverride ? (
+                <div className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+                  <div className="flex items-center gap-1">
+                    <AlertCircle size={12} className="shrink-0 text-amber-600" aria-hidden="true" />
+                    <span>Layout preference unavailable</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => refetchLayout()}
+                    className="font-semibold underline hover:no-underline cursor-pointer text-amber-800 dark:text-amber-300"
+                    title="Retry loading template layout"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : displaySectionOrder ? (
+                <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                  <span className="text-zinc-400 dark:text-zinc-500">Order:</span>
+                  <span className="truncate max-w-[220px] sm:max-w-xs font-sans">
+                    {displaySectionOrder.map((id) => SECTION_METADATA[id]?.label || id).join(" → ")}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -753,6 +834,31 @@ export function GenerateClient() {
           </div>
         </div>
       )}
+
+      {previewTemplate && <TemplatePreviewDialog
+        templateId={previewTemplate.id}
+        templateName={previewTemplate.name}
+        sectionOrder={previewTemplate.id === selectedTemplate ? sectionOrderToSend : undefined}
+        onClose={() => setPreviewTemplate(null)}
+      />}
+
+      {/* Full-screen Template Layout Editor Dialog */}
+      <TemplateLayoutEditor
+        key={selectedTemplate}
+        isOpen={isLayoutEditorOpen}
+        onClose={() => setIsLayoutEditorOpen(false)}
+        templateId={selectedTemplate}
+        templateName={selectedTemplateObj?.name || "Personal Classic"}
+        defaultOrder={selectedTemplateObj?.default_section_order}
+        initialAppliedOrder={sectionOrderToSend ?? displaySectionOrder}
+        onSaved={(newOrder) => {
+          setUserSavedOverrides((prev) => ({
+            ...prev,
+            [selectedTemplate]: newOrder,
+          }))
+          queryClient.invalidateQueries({ queryKey: ["template-layout", selectedTemplate] })
+        }}
+      />
     </div>
   )
 }

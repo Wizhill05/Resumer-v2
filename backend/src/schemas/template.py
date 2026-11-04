@@ -1,4 +1,56 @@
-from pydantic import BaseModel
+from typing import Literal
+from pydantic import BaseModel, Field
+
+# Supported body section identifiers
+SECTION_IDS: tuple[str, ...] = (
+    "summary",
+    "education",
+    "skills",
+    "projects",
+    "experiences",
+    "extracurriculars",
+)
+
+DEFAULT_SECTION_ORDER: list[str] = [
+    "summary",
+    "education",
+    "skills",
+    "projects",
+    "experiences",
+    "extracurriculars",
+]
+
+SectionId = Literal[
+    "summary",
+    "education",
+    "skills",
+    "projects",
+    "experiences",
+    "extracurriculars",
+]
+
+
+class TemplateLayoutResponse(BaseModel):
+    template_id: str
+    default_section_order: list[str]
+    section_order: list[str]
+
+
+class TemplateLayoutUpdateRequest(BaseModel):
+    section_order: list[str]
+
+
+class TemplatePreviewRequest(BaseModel):
+    section_order: list[str] | None = None
+
+
+class TemplatePreviewResponse(BaseModel):
+    template_id: str
+    page_images: list[str]
+    page_count: int
+    font_size: float
+    fit_warning: bool
+    section_order: list[str]
 
 
 class ContentSplit(BaseModel):
@@ -20,6 +72,8 @@ class TemplateManifest(BaseModel):
     has_links: bool = True
     has_education: bool = True
     has_extracurricular: bool = False
+
+    default_section_order: list[str] = Field(default_factory=lambda: list(DEFAULT_SECTION_ORDER))
 
     # ── Content slot system ────────────────────────────────────────────────────
     # Total number of project + experience slots available in this template.

@@ -1,7 +1,6 @@
 import asyncio
 import ast
 import gc
-import io
 import json
 import re
 import time
@@ -1139,6 +1138,7 @@ async def render_node(
         "profile": state["profile"],
         "resume": state["tailored_resume"],
         "page_margin_mm": template_manifest.get("page_margin_mm", 15),
+        "section_order": state.get("section_order"),
     }
 
     # Discrete 0.05pt binary search via shared font_fit utility.
@@ -1266,6 +1266,7 @@ async def render_node(
     md_content = build_resume_markdown(
         profile=state["profile"],
         resume=state["tailored_resume"],
+        section_order=state.get("section_order"),
     )
     return {
         "pdf_bytes": best_pdf_bytes,
@@ -1392,15 +1393,8 @@ async def save_artifacts_node(
     # Generate WebP thumbnail from page 1 of the PDF (non-fatal)
     if pdf_bytes and pdf_uploaded:
         try:
-            import pypdfium2 as pdfium
-            pdf_doc = pdfium.PdfDocument(pdf_bytes)
-            page = pdf_doc[0]
-            scale = 400 / page.get_width()
-            bitmap = page.render(scale=scale, rotation=0)
-            pil_image = bitmap.to_pil()
-            buf = io.BytesIO()
-            pil_image.save(buf, format="WEBP", quality=80)
-            thumb_bytes = buf.getvalue()
+            from src.services.pdfium import render_thumbnail
+            thumb_bytes = render_thumbnail(pdf_bytes)
             thumb_uploaded = storage.upload_bytes(thumb_bytes, thumb_key, "image/webp")
             if thumb_uploaded:
                 await log_progress(db, gen_id, "saver", f"Uploaded thumbnail to: {thumb_key}")
@@ -1774,6 +1768,7 @@ async def orphan_repair_node(
                         "resume": _candidate,
                         "font_size": _verify_fs,
                         "page_margin_mm": _margin,
+                        "section_order": state.get("section_order"),
                     },
                 )
                 _verify_doc = None

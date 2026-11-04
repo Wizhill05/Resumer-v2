@@ -16,6 +16,8 @@ class ResumeGraphState(TypedDict):
     # Resolved content split: {"projects": N, "experience": M}
     # Enforced by backend before AI runs; drives exact limits in every pipeline node.
     content_split: dict
+    # Resolved section order snapshot for template body layout
+    section_order: Optional[list[str]]
     is_pro: Optional[bool]
     # Truthfulness control: "proper" | "larp" | "super_larp". Defaults to proper.
     creativity_mode: str

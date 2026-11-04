@@ -37,3 +37,4 @@ class GuestGenerationOut(BaseModel):
     content_split: dict | None = None
     creativity_mode: str | None = None
     error_message: str | None = None
+    section_order: list[str] | None = None

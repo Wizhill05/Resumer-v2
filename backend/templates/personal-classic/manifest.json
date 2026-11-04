@@ -9,6 +9,14 @@
   "has_links": true,
   "has_education": true,
   "has_extracurricular": true,
+  "default_section_order": [
+    "summary",
+    "education",
+    "skills",
+    "projects",
+    "experiences",
+    "extracurriculars"
+  ],
   "content_slots": 6,
   "allowed_content_splits": [
     { "projects": 1, "experience": 3, "label": "Experience Focused (1 Project, 3 Experiences)" },

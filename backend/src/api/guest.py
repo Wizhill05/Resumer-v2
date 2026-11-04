@@ -20,7 +20,9 @@ from src.models.generation import Generation, GenerationLog, GuestRateLimit
 from src.models.user import User
 from src.schemas.guest import GuestGenerationCreate, GuestGenerationOut
 from src.schemas.profile import ResumeImportDraft
+from src.schemas.template import DEFAULT_SECTION_ORDER
 from src.services.resume_import import MAX_FILES, extract_all_drafts, extract_resume_draft, extract_upload_text, merge_drafts
+from src.services.template_layout import get_generation_section_order, resolve_section_order
 from src.template_registry.service import TemplateRegistryService
 from src.services.import_jobs import import_jobs
 
@@ -133,6 +135,7 @@ def _out(gen: Generation) -> GuestGenerationOut:
         content_split=gen.content_split,
         creativity_mode=getattr(gen, "creativity_mode", None) or "larp",
         error_message=gen.error_message,
+        section_order=gen.section_order,
     )
 
 
@@ -320,6 +323,11 @@ async def start_guest_generation(
             "extracurriculars": data.extracurriculars,
         }
     )
+    guest_section_order = list(
+        manifest.default_section_order
+        if manifest.default_section_order
+        else DEFAULT_SECTION_ORDER
+    )
     gen = Generation(
         user_id=guest_user.id,
         template_id=data.template_id,
@@ -329,6 +337,7 @@ async def start_guest_generation(
         model_used=data.model_used,
         status="pending",
         content_split=resolved_split,
+        section_order=guest_section_order,
         is_guest=True,
         creativity_mode=data.creativity_mode or "larp",
         guest_token_hash=token_hash,
@@ -426,6 +435,9 @@ async def preview_guest_generation(
             "resume": tailored_resume,
             "font_size": font_size or template_manifest.max_font_size,
             "page_margin_mm": template_manifest.page_margin_mm,
+            "section_order": get_generation_section_order(
+                gen.section_order, gen.template_id
+            ),
         },
     )
     if not html_rendered:

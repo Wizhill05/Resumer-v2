@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
-import io
 import logging
 import re
 import time
@@ -22,7 +21,9 @@ from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
 from src.models.user import User
 from src.schemas.generation import GenerationCreate, GenerationOut
+from src.schemas.template import DEFAULT_SECTION_ORDER
 from src.services.content_split import resolve_default_split, resolve_default_mode, is_valid_mode
+from src.services.template_layout import get_generation_section_order, resolve_section_order
 from src.schemas.generation import (
     EditorManifest,
     EditorPayload,
@@ -221,6 +222,13 @@ async def start_generation(
     # Per-run override only; the stored default changes via /profile/defaults.
     resolved_mode = data.creativity_mode or resolve_default_mode(current_user)
 
+    resolved_order = resolve_section_order(
+        explicit_order=data.section_order,
+        user=current_user,
+        template_id=data.template_id,
+        manifest=manifest,
+    )
+
     gen = Generation(
         user_id=current_user.id,
         template_id=data.template_id,
@@ -232,6 +240,7 @@ async def start_generation(
         model_used=data.model_used,
         status="pending",
         content_split=resolved_split,
+        section_order=resolved_order,
         send_email=data.send_email,
         creativity_mode=resolved_mode,
     )
@@ -382,6 +391,9 @@ async def preview_generation(
             "resume": tailored_resume,
             "font_size": font_size or template_manifest.max_font_size,
             "page_margin_mm": template_manifest.page_margin_mm,
+            "section_order": get_generation_section_order(
+                gen.section_order, gen.template_id
+            ),
         },
     )
     if not html_rendered:
@@ -467,6 +479,9 @@ async def get_generation_html(
         resume=tailored_resume,
         font_size=font_size or manifest_obj.max_font_size,
         page_margin_mm=manifest_obj.page_margin_mm,
+        section_order=get_generation_section_order(
+            gen.section_order, gen.template_id
+        ),
     )
     if html is None:
         raise HTTPException(status_code=500, detail="Template rendering failed.")
@@ -561,25 +576,17 @@ async def get_generation_pdf_pages(
                 profile=profile_data,
                 resume=tailored_resume,
                 manifest=manifest_obj.model_dump(),
+                section_order=get_generation_section_order(
+                    gen.section_order, gen.template_id
+                ),
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"PDF rendering failed: {e}")
 
-    # Convert PDF bytes to page WebP images
-    import base64
-    import pypdfium2 as pdfium  # type: ignore[import-untyped]
+    from src.services.pdfium import render_page_images
 
     try:
-        pdf = pdfium.PdfDocument(pdf_bytes)
-        page_images: list[str] = []
-        for page_index in range(len(pdf)):
-            page = pdf[page_index]
-            bitmap = page.render(scale=1.5, rotation=0)
-            image = bitmap.to_pil()
-            buffer = io.BytesIO()
-            image.save(buffer, format="WEBP", quality=85, method=4)
-            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-            page_images.append(f"data:image/webp;base64,{encoded}")
+        page_images = render_page_images(pdf_bytes, scale=1.5, quality=85)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF page rasterization failed: {e}")
 
@@ -719,6 +726,9 @@ async def download_generation(
             "resume": tailored_resume,
             "font_size": font_size or template_manifest.max_font_size,
             "page_margin_mm": template_manifest.page_margin_mm,
+            "section_order": get_generation_section_order(
+                gen.section_order, gen.template_id
+            ),
         },
     )
     if not html_rendered:
@@ -882,6 +892,9 @@ async def render_html_for_editor(
         resume=data.resume,
         font_size=font_size,
         page_margin_mm=manifest_obj.page_margin_mm,
+        section_order=get_generation_section_order(
+            gen.section_order, gen.template_id
+        ),
     )
     if html is None:
         raise HTTPException(status_code=500, detail="Template rendering failed.")
@@ -949,22 +962,13 @@ async def render_pdf_preview_for_editor(
             profile=profile_data,
             resume=data.resume,
             manifest=manifest_data,
+            section_order=get_generation_section_order(
+                gen.section_order, gen.template_id
+            ),
         )
 
-        import base64
-        import pypdfium2 as pdfium  # type: ignore[import-untyped]
-
-        pdf = pdfium.PdfDocument(pdf_bytes)
-        page_images: list[str] = []
-        for page_index in range(len(pdf)):
-            # 1.25x A4 keeps type legible without making every debounced response huge.
-            page = pdf[page_index]
-            bitmap = page.render(scale=1.25, rotation=0)
-            image = bitmap.to_pil()
-            buffer = io.BytesIO()
-            image.save(buffer, format="WEBP", quality=82, method=4)
-            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-            page_images.append(f"data:image/webp;base64,{encoded}")
+        from src.services.pdfium import render_page_images
+        page_images = render_page_images(pdf_bytes)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Preview render failed: {exc}") from exc
 
@@ -1028,6 +1032,9 @@ async def detect_orphans_for_editor(
         resume=candidate_resume,
         manifest=manifest_data,
         font_size=font_size,
+        section_order=get_generation_section_order(
+            gen.section_order, gen.template_id
+        ),
     )
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Orphan detection failed."))
@@ -1095,26 +1102,27 @@ async def save_editor(
             profile=profile_data,
             resume=data.resume,
             manifest=manifest_data,
+            section_order=get_generation_section_order(
+                gen.section_order, gen.template_id
+            ),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF render failed: {e}")
 
     # Markdown
-    md_text = build_resume_markdown(profile=profile_data, resume=data.resume)
+    md_text = build_resume_markdown(
+        profile=profile_data,
+        resume=data.resume,
+        section_order=get_generation_section_order(
+            gen.section_order, gen.template_id
+        ),
+    )
 
     # Thumbnail
     thumb_bytes: bytes | None = None
     try:
-        import pypdfium2 as pdfium  # type: ignore[import-untyped]
-
-        pdf_doc = pdfium.PdfDocument(pdf_bytes)
-        page = pdf_doc[0]
-        scale = 400 / page.get_width()
-        bitmap = page.render(scale=scale, rotation=0)
-        pil_image = bitmap.to_pil()
-        buf = io.BytesIO()
-        pil_image.save(buf, format="WEBP", quality=80)
-        thumb_bytes = buf.getvalue()
+        from src.services.pdfium import render_thumbnail
+        thumb_bytes = render_thumbnail(pdf_bytes)
     except Exception as thumb_err:
         print(f"[editor/save] Thumbnail generation skipped: {thumb_err}")
 
