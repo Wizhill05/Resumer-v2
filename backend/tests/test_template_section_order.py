@@ -588,5 +588,3 @@ async def test_pdf_pages_fallback_legacy_null_order_uses_default(db_env, monkeyp
         assert res.status_code == 200
         assert len(captured_kwargs) == 1
         assert captured_kwargs[0].get("section_order") == DEFAULT_SECTION_ORDER
-
-

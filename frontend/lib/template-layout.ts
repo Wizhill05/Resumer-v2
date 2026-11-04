@@ -255,4 +255,3 @@ export async function fetchTemplatePreview(
 
   return parsed.data
 }
-
