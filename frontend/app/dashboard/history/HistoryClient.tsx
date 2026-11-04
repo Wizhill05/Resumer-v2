@@ -4,22 +4,12 @@ import { captureDownload } from "@/lib/posthog"
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef, useMemo } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2, Bug } from "lucide-react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2, Bug, Search } from "lucide-react"
+import { filterHistoryRuns, type HistoryRun, HISTORY_PAGE_SIZE as PAGE_SIZE } from "@/lib/history"
 import { createPortal } from "react-dom"
 import { FeedbackModal } from "@/components/FeedbackModal"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 
-type HistoryRun = {
-  id: string
-  job_title?: string
-  company?: string
-  status: string
-  created_at: string
-  template_id: string
-  model_used: string
-  job_description: string
-  thumb_storage_key?: string
-}
 
 const nodeProgressMap: Record<string, number> = {
   job_analysis: 10,
@@ -665,12 +655,12 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
     </div>
   )
 }
-const PAGE_SIZE = 12
 
 export function HistoryClient() {
   const queryClient = useQueryClient()
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
 
   const { data: runs = [], isLoading, isFetching, error, refetch } = useQuery<HistoryRun[]>({
     queryKey: ["history"],
@@ -684,23 +674,39 @@ export function HistoryClient() {
   const [activeGenForFeedback, setActiveGenForFeedback] = useState<string | null>(null)
   const [fullscreenRun, setFullscreenRun] = useState<HistoryRun | null>(null)
   const deleteRun = useDeleteRun()
+  const [searchQuery, setSearchQuery] = useState("")
+  const trimmedQuery = searchQuery.trim()
+  const clearSearch = () => {
+    setSearchQuery("")
+    setVisibleCount(PAGE_SIZE)
+    searchRef.current?.focus()
+  }
+
+  const filteredRuns = useMemo(() => {
+    return filterHistoryRuns(runs, searchQuery)
+  }, [runs, searchQuery])
+
   // Lazy loading infinite scroll observer
   useEffect(() => {
     const el = sentinelRef.current
-    if (!el || visibleCount >= runs.length) return
+    if (!el || visibleCount >= filteredRuns.length) return
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisibleCount((prev) => Math.min(runs.length, prev + PAGE_SIZE))
+          setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))
         }
       },
       { rootMargin: "350px" }
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [runs.length, visibleCount])
-  const visibleRuns = useMemo(() => runs.slice(0, visibleCount), [runs, visibleCount])
+  }, [filteredRuns.length, visibleCount, view])
+
+  const visibleRuns = useMemo(
+    () => filteredRuns.slice(0, visibleCount),
+    [filteredRuns, visibleCount]
+  )
 
   const hasActive = runs.some((r) => r.status === "pending" || r.status === "in_progress")
   useEffect(() => {
@@ -759,8 +765,10 @@ export function HistoryClient() {
     <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 pixel-enter">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-zinc-800">
-        <span className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-          {runs.length} {runs.length === 1 ? "generation" : "generations"}
+        <span role="status" className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+          {trimmedQuery
+            ? `${filteredRuns.length} of ${runs.length} ${runs.length === 1 ? "generation" : "generations"}`
+            : `${runs.length} ${runs.length === 1 ? "generation" : "generations"}`}
         </span>
         <div className="flex items-center gap-2">
           {/* View toggle — desktop only */}
@@ -794,10 +802,68 @@ export function HistoryClient() {
         </div>
       </div>
 
-      {runs.length === 0 ? (
+      {/* Search Bar */}
+      <div className="p-3 sm:px-5 sm:py-2.5 border-b border-gray-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20">
+        <div className="relative">
+          <Search
+            size={15}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500"
+          />
+          <input
+            ref={searchRef}
+            type="text"
+            role="searchbox"
+            aria-label="Search generations by company or job role"
+            placeholder="Search by company or job role..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value)
+              setVisibleCount(PAGE_SIZE)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && searchQuery) {
+                setSearchQuery("")
+                setVisibleCount(PAGE_SIZE)
+              }
+            }}
+            className="h-9 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 pl-9 pr-9 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-zinc-900 dark:focus:border-zinc-400 transition-colors rounded"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer rounded"
+            >
+              <X size={14} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {runs.length === 0 && !trimmedQuery ? (
         <div className="px-5 py-16 text-center">
           <p className="text-sm font-semibold text-zinc-400 dark:text-zinc-500">No generations yet</p>
           <p className="text-xs text-zinc-300 dark:text-zinc-600 mt-1">Your tailored résumés will appear here</p>
+        </div>
+      ) : filteredRuns.length === 0 ? (
+        <div className="px-5 py-16 text-center space-y-3">
+          <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+            No generations match &ldquo;{trimmedQuery}&rdquo;
+          </p>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">
+            Try searching for a different company name or job role
+          </p>
+          <div>
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#ff4e26] hover:text-[#e03d16] border border-[#ff4e26]/30 hover:border-[#ff4e26] rounded transition-colors cursor-pointer bg-white dark:bg-zinc-800"
+            >
+              Clear search
+            </button>
+          </div>
         </div>
       ) : view === "grid" ? (
         /* ── Grid view ── */
@@ -811,13 +877,13 @@ export function HistoryClient() {
               )
             ))}
           </div>
-          {visibleCount < runs.length && (
+          {visibleCount < filteredRuns.length && (
             <div ref={sentinelRef} className="p-4 text-center border-t border-gray-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
               <button
-                onClick={() => setVisibleCount((prev) => Math.min(runs.length, prev + PAGE_SIZE))}
+                onClick={() => setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))}
                 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2 rounded cursor-pointer transition-colors"
               >
-                Load more ({runs.length - visibleCount} remaining)
+                Load more ({filteredRuns.length - visibleCount} remaining)
               </button>
             </div>
           )}
@@ -946,13 +1012,13 @@ export function HistoryClient() {
               )
             })}
           </div>
-          {visibleCount < runs.length && (
+          {visibleCount < filteredRuns.length && (
             <div ref={sentinelRef} className="p-4 text-center border-t border-gray-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
               <button
-                onClick={() => setVisibleCount((prev) => Math.min(runs.length, prev + PAGE_SIZE))}
+                onClick={() => setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))}
                 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2 rounded cursor-pointer transition-colors"
               >
-                Load more ({runs.length - visibleCount} remaining)
+                Load more ({filteredRuns.length - visibleCount} remaining)
               </button>
             </div>
           )}
