@@ -17,6 +17,7 @@ from src.core.file_links import format_resume_filename, resolve_resume_username,
 from src.core.storage import StorageService
 from src.models.generation import Generation
 from src.models.profile import Profile
+from src.services.template_layout import get_generation_section_order
 from src.template_registry.service import TemplateRegistryService
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,9 @@ async def get_resume_pdf(
             "resume": tailored_resume,
             "font_size": font_size or template_manifest.max_font_size,
             "page_margin_mm": template_manifest.page_margin_mm,
+            "section_order": get_generation_section_order(
+                gen.section_order, gen.template_id
+            ),
         },
     )
     if not html_rendered:

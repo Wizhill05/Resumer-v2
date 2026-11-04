@@ -1,7 +1,8 @@
+from contextlib import closing
 import asyncio
 import re
 
-import pypdfium2 as pdfium
+from src.services.pdfium import open_pdf
 from fastapi import HTTPException, UploadFile, status
 from langchain_core.prompts import ChatPromptTemplate
 from sqlalchemy import select
@@ -36,24 +37,19 @@ def _clean_text(text: str) -> str:
 def _extract_pdf_text(data: bytes) -> str:
     if not data.startswith(b"%PDF"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PDF file")
-    try:
-        doc = pdfium.PdfDocument(data)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not read this PDF") from exc
-
-    if len(doc) > MAX_PAGES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"PDF must be {MAX_PAGES} pages or fewer")
-
     chunks: list[str] = []
     try:
-        for index in range(len(doc)):
-            page = doc[index]
-            textpage = page.get_textpage()
-            chunks.append(textpage.get_text_range())
-            textpage.close()
-            page.close()
-    finally:
-        doc.close()
+        with open_pdf(data) as doc:
+            if len(doc) > MAX_PAGES:
+                raise HTTPException(status_code=400, detail=f"PDF must be {MAX_PAGES} pages or fewer")
+            for index in range(len(doc)):
+                with closing(doc[index]) as page:
+                    with closing(page.get_textpage()) as textpage:
+                        chunks.append(textpage.get_text_range())
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not read this PDF") from exc
 
     text = _clean_text("\n".join(chunks))
     if len(text) < MIN_RESUME_TEXT_CHARS:

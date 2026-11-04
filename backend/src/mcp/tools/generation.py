@@ -24,6 +24,7 @@ from src.services.content_split import (
     save_user_split_preference,
     split_is_allowed,
 )
+from src.services.template_layout import resolve_section_order
 from src.template_registry.service import TemplateRegistryService
 
 async def generate_resume_handler(
@@ -136,6 +137,13 @@ async def generate_resume_handler(
                     db, user.id, explicit_split["projects"], explicit_split["experience"]
                 )
 
+            resolved_order = resolve_section_order(
+                explicit_order=None,
+                user=user,
+                template_id=template_id,
+                manifest=template,
+            )
+
             gen = Generation(
                 user_id=user.id,
                 template_id=template_id,
@@ -144,6 +152,7 @@ async def generate_resume_handler(
                 company=company,
                 instructions=instructions,
                 content_split=effective_split,
+                section_order=resolved_order,
                 creativity_mode=effective_mode,
                 status="pending",
                 is_guest=False,

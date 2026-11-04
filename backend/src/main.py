@@ -16,7 +16,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
-from src.core.storage import StorageService
 from src.api import profile, generation, system, imports, guest, admin, feedback, oauth, files, auth
 from src.core.oauth import ensure_oauth_schema
 from src.services.llm_config import ensure_llm_provider_schema, llm_config_service
@@ -40,9 +39,6 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("No primary AI provider keys configured. Set OPENROUTER_API_KEYS or PRO_MODEL_API_KEYS in env.")
     if not settings.openrouter_api_keys:
         logger.warning("[startup] OPENROUTER_API_KEYS is unset. Independent fallback is unavailable.")
-
-    # Idempotently ensure R2 bucket has a 90-day lifecycle expiry rule.
-    StorageService().ensure_lifecycle_policy()
 
     # Idempotently ensure OAuth tables and columns exist in PostgreSQL.
     await ensure_oauth_schema()

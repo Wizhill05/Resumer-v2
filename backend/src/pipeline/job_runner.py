@@ -62,6 +62,9 @@ def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState
         instructions=gen.instructions or "",
         template_manifest=template_manifest.model_dump(),
         content_split=content_split,
+        section_order=list(gen.section_order) if gen.section_order else (
+            list(template_manifest.default_section_order) if template_manifest.default_section_order else None
+        ),
         is_pro=False,
         creativity_mode=getattr(gen, "creativity_mode", None) or "larp",
         job_analysis=None,
@@ -200,6 +203,9 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         instructions=gen.instructions or "",
         template_manifest=template_manifest.model_dump(),
         content_split=content_split,
+        section_order=list(gen.section_order) if gen.section_order else (
+            list(template_manifest.default_section_order) if template_manifest.default_section_order else None
+        ),
         is_pro=is_pro,
         creativity_mode=getattr(gen, "creativity_mode", None) or "larp",
         job_analysis=None,

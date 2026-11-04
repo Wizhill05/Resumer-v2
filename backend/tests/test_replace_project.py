@@ -65,6 +65,7 @@ async def test_retailor_resume_success(monkeypatch):
     mock_gen = MagicMock()
     mock_gen.id = uuid4()
     mock_gen.template_id = "personal-classic"
+    mock_gen.section_order = ["experiences", "projects", "skills", "summary", "education", "extracurriculars"]
     mock_gen.job_title = "Backend Engineer"
     mock_gen.company = "Acme"
     mock_gen.job_description = "Write Python APIs."
@@ -118,6 +119,7 @@ async def test_retailor_resume_success(monkeypatch):
 
     # Mock detect_resume_orphans
     def mock_detect(*args, **kwargs):
+        assert kwargs["section_order"] == mock_gen.section_order
         return {
             "success": True,
             "orphans": [],

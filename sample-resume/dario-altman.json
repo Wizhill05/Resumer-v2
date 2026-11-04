@@ -1,0 +1,106 @@
+{
+  "profile": {
+    "full_name": "Dario Altman",
+    "subtitle": "AI Infrastructure Engineer",
+    "email": "dario.altman@example.com",
+    "phone": "+1 (202) 555-0148",
+    "linkedin_url": "https://example.com/dario-altman",
+    "github_url": "https://example.com/dario-code"
+  },
+  "resume": {
+    "summary": "AI infrastructure engineer building reliable, efficient model-serving systems from prototype through production. Experienced in inference optimization, distributed platforms, and practical evaluation, with a focus on making machine learning services observable and easy for product teams to operate.",
+    "education": [
+      {
+        "degree": "B.S. in Computer Engineering",
+        "institution": "Lakehurst University",
+        "location": "",
+        "start_date": "2014-09-01",
+        "end_date": "2018-05-01",
+        "gpa": "3.8/4.0"
+      }
+    ],
+    "skills": {
+      "Languages": [
+        "Python",
+        "Go",
+        "SQL",
+        "Bash",
+        "TypeScript"
+      ],
+      "AI & Inference": [
+        "PyTorch",
+        "ONNX Runtime",
+        "vLLM",
+        "model evaluation",
+        "quantization"
+      ],
+      "Infrastructure": [
+        "Kubernetes",
+        "Docker",
+        "Terraform",
+        "gRPC",
+        "Linux"
+      ],
+      "Observability": [
+        "Prometheus",
+        "Grafana",
+        "OpenTelemetry",
+        "load testing",
+        "incident response"
+      ]
+    },
+    "projects": [
+      {
+        "name": "Inference Bench",
+        "project_summary": "Reproducible model-serving benchmark suite",
+        "github_url": "https://example.com/bench",
+        "bullet_points": [
+          "Built a configurable harness to compare throughput, tail latency, and memory use across inference backends, with realistic request shapes and repeatable traffic patterns under load.",
+          "Added repeatable workload fixtures and reports that make performance changes easy to review before deployment and help teams compare results across different hardware configurations.",
+          "Documented setup, interpretation, and trade-offs so engineers can reproduce benchmarks on a single GPU or a shared cluster and select a suitable backend for each workload in production."
+        ]
+      },
+      {
+        "name": "Signal Canvas",
+        "project_summary": "Model-serving observability dashboard",
+        "github_url": "https://example.com/signal-canvas",
+        "bullet_points": [
+          "Created a dashboard linking request traces, queue depth, GPU utilization, and error rates for deployed models, making it easier to trace slow responses to resource constraints during incidents.",
+          "Implemented alert examples and a lightweight replay tool to help teams investigate latency regressions, reproduce failed requests, and compare behavior across releases and production environments.",
+          "Published a sample deployment with synthetic traffic and practical runbooks for local exploration, onboarding, and common troubleshooting exercises across serving environments with teammates."
+        ]
+      }
+    ],
+    "experiences": [
+      {
+        "role": "AI Platform Engineer",
+        "organization": "Lattice Harbor",
+        "location": "Remote",
+        "start_date": "2021-06-01",
+        "end_date": null,
+        "bullet_points": [
+          "Designed a shared inference platform for language and embedding models, giving product teams a consistent API, deployment templates, and a safer path from prototype to production.",
+          "Introduced dynamic batching and autoscaling based on queue pressure, reducing median serving cost by 31% across representative workloads while maintaining latency targets for customers.",
+          "Established latency budgets, tracing, and release checks that cut high-severity serving incidents by 40% over twelve months and made investigations faster for on-call engineers across teams."
+        ]
+      },
+      {
+        "role": "Software Engineer",
+        "organization": "Emberfield Cloud",
+        "location": "Seattle, WA",
+        "start_date": "2018-07-01",
+        "end_date": "2021-05-01",
+        "bullet_points": [
+          "Developed containerized services and deployment tooling for internal data products, improving release consistency across four engineering teams and simplifying operational handoffs for each release.",
+          "Built a load-testing pipeline and capacity reports that revealed bottlenecks before launches, reduced manual performance checks, and gave teams a shared baseline for planning and scaling.",
+          "Partnered with data scientists to package prediction models as monitored services, with documented ownership, deployment procedures, and tested rollback paths for each release in production."
+        ]
+      }
+    ],
+    "extracurriculars": [
+      {
+        "description": "Maintain an open-source model evaluation toolkit and mentor engineers through a local machine learning reading group, organizing practical sessions on serving and reliability for practitioners."
+      }
+    ]
+  }
+}

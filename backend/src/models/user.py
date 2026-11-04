@@ -3,8 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Integer, Boolean, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, String, Integer, Boolean, JSON, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -27,4 +27,5 @@ class User(Base):
     preferred_projects: Mapped[int | None] = mapped_column(Integer)
     preferred_experience: Mapped[int | None] = mapped_column(Integer)
     preferred_creativity_mode: Mapped[str | None] = mapped_column(String, default="larp", server_default="larp")
+    preferred_section_orders: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

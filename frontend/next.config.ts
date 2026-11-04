@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   allowedDevOrigins: [
     "*.trycloudflare.com",
     "lanes-advisor-claims-purple.trycloudflare.com",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import io
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -176,12 +175,16 @@ async def retailor_resume_with_project(
     updated_resume = copy.deepcopy(current_resume)
     updated_resume["projects"] = tailored_projs
 
+    from src.services.template_layout import get_generation_section_order
+    section_order = get_generation_section_order(gen.section_order, gen.template_id)
+
     # 5. Run orphan detection pass
     first_detect = detect_resume_orphans(
         template_id=gen.template_id,
         profile=profile_data,
         resume=updated_resume,
         manifest=manifest_data,
+        section_order=section_order,
     )
 
     initial_orphans = first_detect.get("orphans") or []
@@ -208,6 +211,7 @@ async def retailor_resume_with_project(
             "orphans": initial_orphans,
             "repair_attempts": 0,
             "repair_history": {},
+            "section_order": section_order,
         }
 
         repair_result = await orphan_repair_node(repair_state, db, gen_id_str)
@@ -225,6 +229,7 @@ async def retailor_resume_with_project(
                 profile=profile_data,
                 resume=updated_resume,
                 manifest=manifest_data,
+                section_order=section_order,
             )
             remaining_orphans = second_detect.get("orphans") or []
             orphans_repaired_count = max(0, orphans_detected_count - len(remaining_orphans))
@@ -311,26 +316,27 @@ async def run_background_replace_project(
             manifest_data = manifest_obj.model_dump()
             manifest_data["min_font_size"] = min(8.5, float(manifest_data.get("min_font_size", 9.0)))
 
+            from src.services.template_layout import get_generation_section_order
+            gen_section_order = get_generation_section_order(gen.section_order, gen.template_id)
+
             pdf_bytes, fit_res = fit_and_render_pdf(
                 template_id=gen.template_id,
                 profile=profile_data,
                 resume=tailored_resume,
                 manifest=manifest_data,
+                section_order=gen_section_order,
             )
 
-            md_text = build_resume_markdown(profile=profile_data, resume=tailored_resume)
+            md_text = build_resume_markdown(
+                profile=profile_data,
+                resume=tailored_resume,
+                section_order=gen_section_order,
+            )
 
             thumb_bytes: bytes | None = None
             try:
-                import pypdfium2 as pdfium  # type: ignore[import-untyped]
-                pdf_doc = pdfium.PdfDocument(pdf_bytes)
-                page = pdf_doc[0]
-                scale = 400 / page.get_width()
-                bitmap = page.render(scale=scale, rotation=0)
-                pil_image = bitmap.to_pil()
-                buf = io.BytesIO()
-                pil_image.save(buf, format="WEBP", quality=80)
-                thumb_bytes = buf.getvalue()
+                from src.services.pdfium import render_thumbnail
+                thumb_bytes = render_thumbnail(pdf_bytes)
             except Exception as thumb_err:
                 logger.warning(f"Thumbnail generation failed: {thumb_err}")
 

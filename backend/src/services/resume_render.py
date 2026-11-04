@@ -28,20 +28,22 @@ def render_resume_html(
     resume: dict[str, Any],
     font_size: float,
     page_margin_mm: float,
+    section_order: list[str] | None = None,
 ) -> str | None:
     """Render Jinja template to HTML string. No WeasyPrint involved.
 
     Returns None if the template is not found or render fails.
     """
-    return TemplateRegistryService.render_template(
-        template_id,
-        {
-            "profile": profile,
-            "resume": resume,
-            "font_size": font_size,
-            "page_margin_mm": page_margin_mm,
-        },
-    )
+    context: dict[str, Any] = {
+        "profile": profile,
+        "resume": resume,
+        "font_size": font_size,
+        "page_margin_mm": page_margin_mm,
+    }
+    if section_order is not None:
+        context["section_order"] = section_order
+
+    return TemplateRegistryService.render_template(template_id, context)
 
 
 def render_resume_pdf(
@@ -51,6 +53,7 @@ def render_resume_pdf(
     resume: dict[str, Any],
     font_size: float,
     page_margin_mm: float,
+    section_order: list[str] | None = None,
 ) -> tuple[bytes, int]:
     """Render to PDF at a fixed font size. Returns (pdf_bytes, page_count).
 
@@ -65,6 +68,7 @@ def render_resume_pdf(
         resume=resume,
         font_size=font_size,
         page_margin_mm=page_margin_mm,
+        section_order=section_order,
     )
     if html is None:
         raise ValueError(f"Template '{template_id}' not found or render failed.")
@@ -84,6 +88,7 @@ def fit_and_render_pdf(
     profile: dict[str, Any],
     resume: dict[str, Any],
     manifest: dict[str, Any],
+    section_order: list[str] | None = None,
 ) -> tuple[bytes, FontFitResult]:
     """Run discrete binary search then render PDF at best font size.
 
@@ -107,6 +112,7 @@ def fit_and_render_pdf(
             resume=resume,
             font_size=font_size,
             page_margin_mm=page_margin_mm,
+            section_order=section_order,
         )
         if html is None:
             raise ValueError(f"Template '{template_id}' render failed at {font_size}pt.")
@@ -137,6 +143,7 @@ def fit_and_render_pdf(
             resume=resume,
             font_size=fit_result.font_size,
             page_margin_mm=page_margin_mm,
+            section_order=section_order,
         )
 
     gc.collect()
@@ -289,6 +296,7 @@ def detect_resume_orphans(
     resume: dict[str, Any],
     manifest: dict[str, Any] | None = None,
     font_size: float | None = None,
+    section_order: list[str] | None = None,
 ) -> dict[str, Any]:
     """Compile WeasyPrint layout and run orphan line detection on candidate or current resume.
 
@@ -321,6 +329,7 @@ def detect_resume_orphans(
                 resume=resume,
                 font_size=font_size,
                 page_margin_mm=page_margin_mm,
+                section_order=section_order,
             )
             if html is None:
                 return {"success": False, "error": f"Template '{template_id}' render failed at {font_size}pt."}
@@ -339,6 +348,7 @@ def detect_resume_orphans(
                     resume=resume,
                     font_size=fs,
                     page_margin_mm=page_margin_mm,
+                    section_order=section_order,
                 )
                 if h is None:
                     raise ValueError(f"Template '{template_id}' render failed at {fs}pt.")
@@ -369,6 +379,7 @@ def detect_resume_orphans(
                     resume=resume,
                     font_size=effective_font_size,
                     page_margin_mm=page_margin_mm,
+                    section_order=section_order,
                 )
                 if h is not None:
                     doc = HTML(string=h, base_url=font_base_url).render()
@@ -428,10 +439,12 @@ def build_resume_markdown(
     *,
     profile: dict[str, Any],
     resume: dict[str, Any],
+    section_order: list[str] | None = None,
 ) -> str:
     """Build plain-text Markdown from profile + tailored resume dict.
 
-    Mirrors the markdown generation block in pipeline/nodes.py render_node.
+    Follows section_order for body sections, preserving top candidate header
+    and omitting empty sections.
     """
     md_lines: list[str] = [f"# {profile.get('full_name', '')}"]
 
@@ -457,55 +470,57 @@ def build_resume_markdown(
 
     md_lines.append("")
 
-    if resume.get("summary"):
-        md_lines += ["## Professional Summary", resume["summary"], ""]
+    effective_order = (
+        section_order
+        if section_order
+        else ["summary", "education", "skills", "projects", "experiences", "extracurriculars"]
+    )
 
-    if resume.get("skills"):
-        md_lines.append("## Skills")
-        for category, items in resume["skills"].items():
-            skill_list = ", ".join(items) if isinstance(items, list) else str(items)
-            md_lines.append(f"**{category}:** {skill_list}")
-        md_lines.append("")
-
-    if resume.get("experiences"):
-        md_lines.append("## Experience")
-        for exp in resume["experiences"]:
-            date_range = f"{exp.get('start_date', '')} – {exp.get('end_date') or 'Present'}"
-            md_lines.append(f"### {exp.get('role')} — {exp.get('organization')}")
-            if exp.get("location"):
-                md_lines.append(f"_{exp['location']} | {date_range}_")
-            else:
+    for sec in effective_order:
+        if sec == "summary" and resume.get("summary"):
+            md_lines += ["## Professional Summary", resume["summary"], ""]
+        elif sec == "education" and resume.get("education"):
+            md_lines.append("## Education")
+            for edu in resume["education"]:
+                date_range = f"{edu.get('start_date', '')} – {edu.get('end_date', '')}"
+                md_lines.append(f"### {edu.get('degree')} — {edu.get('institution')}")
                 md_lines.append(f"_{date_range}_")
-            for bullet in exp.get("bullet_points") or []:
-                md_lines.append(f"- {bullet}")
+                if edu.get("gpa"):
+                    md_lines.append(f"GPA: {edu['gpa']}")
+                md_lines.append("")
+        elif sec == "skills" and resume.get("skills"):
+            md_lines.append("## Skills")
+            for category, items in resume["skills"].items():
+                skill_list = ", ".join(items) if isinstance(items, list) else str(items)
+                md_lines.append(f"**{category}:** {skill_list}")
             md_lines.append("")
-
-    if resume.get("projects"):
-        md_lines.append("## Projects")
-        for proj in resume["projects"]:
-            md_lines.append(f"### {proj.get('name')}")
-            if proj.get("technologies"):
-                md_lines.append(f"_Technologies: {', '.join(proj['technologies'])}_")
-            if proj.get("description"):
-                md_lines.append(proj["description"])
-            for bullet in proj.get("bullet_points") or []:
-                md_lines.append(f"- {bullet}")
+        elif sec == "projects" and resume.get("projects"):
+            md_lines.append("## Projects")
+            for proj in resume["projects"]:
+                md_lines.append(f"### {proj.get('name')}")
+                if proj.get("technologies"):
+                    md_lines.append(f"_Technologies: {', '.join(proj['technologies'])}_")
+                if proj.get("description"):
+                    md_lines.append(proj["description"])
+                for bullet in proj.get("bullet_points") or []:
+                    md_lines.append(f"- {bullet}")
+                md_lines.append("")
+        elif sec == "experiences" and resume.get("experiences"):
+            md_lines.append("## Experience")
+            for exp in resume["experiences"]:
+                date_range = f"{exp.get('start_date', '')} – {exp.get('end_date') or 'Present'}"
+                md_lines.append(f"### {exp.get('role')} — {exp.get('organization')}")
+                if exp.get("location"):
+                    md_lines.append(f"_{exp['location']} | {date_range}_")
+                else:
+                    md_lines.append(f"_{date_range}_")
+                for bullet in exp.get("bullet_points") or []:
+                    md_lines.append(f"- {bullet}")
+                md_lines.append("")
+        elif sec == "extracurriculars" and resume.get("extracurriculars"):
+            md_lines.append("## Extra-Curricular Activities & Achievements")
+            for ex in resume["extracurriculars"]:
+                md_lines.append(f"- {ex.get('description', '')}")
             md_lines.append("")
-
-    if resume.get("education"):
-        md_lines.append("## Education")
-        for edu in resume["education"]:
-            date_range = f"{edu.get('start_date', '')} – {edu.get('end_date', '')}"
-            md_lines.append(f"### {edu.get('degree')} — {edu.get('institution')}")
-            md_lines.append(f"_{date_range}_")
-            if edu.get("gpa"):
-                md_lines.append(f"GPA: {edu['gpa']}")
-            md_lines.append("")
-
-    if resume.get("extracurriculars"):
-        md_lines.append("## Extra-Curricular Activities & Achievements")
-        for ex in resume["extracurriculars"]:
-            md_lines.append(f"- {ex.get('description', '')}")
-        md_lines.append("")
 
     return "\n".join(md_lines)

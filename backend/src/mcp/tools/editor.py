@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import re
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +13,7 @@ from src.core.storage import StorageService
 from src.mcp.context import get_current_mcp_user, get_mcp_db
 from src.models.generation import Generation
 from src.models.profile import Profile
+from src.services.template_layout import get_generation_section_order
 from src.services.resume_render import (
     build_resume_markdown,
     detect_resume_orphans,
@@ -264,6 +264,9 @@ async def preview_resume_handler(generation_id: str) -> dict[str, Any]:
             profile=profile_data,
             resume=tailored,
             manifest=manifest_obj.model_dump(),
+            section_order=get_generation_section_order(
+                gen.section_order, gen.template_id
+            ),
         )
     except Exception as e:
         return {
@@ -373,6 +376,9 @@ async def render_resume_handler(
         }
 
     # 1. WeasyPrint compile
+    gen_section_order = get_generation_section_order(
+        gen.section_order, gen.template_id
+    )
     try:
         if font_size is not None:
             from src.services.resume_render import render_resume_pdf
@@ -383,6 +389,7 @@ async def render_resume_handler(
                 resume=tailored,
                 font_size=font_size,
                 page_margin_mm=manifest_obj.page_margin_mm,
+                section_order=gen_section_order,
             )
             fits_target = page_count <= manifest_obj.target_pages
             effective_font_size = font_size
@@ -392,6 +399,7 @@ async def render_resume_handler(
                 profile=profile_data,
                 resume=tailored,
                 manifest=manifest_obj.model_dump(),
+                section_order=gen_section_order,
             )
             page_count = fit_result.page_count
             fits_target = fit_result.fits_target
@@ -404,22 +412,17 @@ async def render_resume_handler(
         }
 
     # 2. Markdown
-    md_text = build_resume_markdown(profile=profile_data, resume=tailored)
+    md_text = build_resume_markdown(
+        profile=profile_data,
+        resume=tailored,
+        section_order=gen_section_order,
+    )
 
     # 3. Thumbnail
     thumb_bytes: bytes | None = None
     try:
-        import pypdfium2 as pdfium  # type: ignore[import-untyped]
-        from PIL import Image
-
-        pdf_doc = pdfium.PdfDocument(pdf_bytes)
-        page = pdf_doc[0]
-        scale = 400 / page.get_width()
-        bitmap = page.render(scale=scale, rotation=0)
-        pil_image = bitmap.to_pil()
-        buf = io.BytesIO()
-        pil_image.save(buf, format="WEBP", quality=80)
-        thumb_bytes = buf.getvalue()
+        from src.services.pdfium import render_thumbnail
+        thumb_bytes = render_thumbnail(pdf_bytes)
     except Exception:
         pass
 
@@ -555,6 +558,9 @@ async def detect_orphans_handler(
         profile=profile_data,
         resume=target_resume,
         font_size=font_size,
+        section_order=get_generation_section_order(
+            gen.section_order, gen.template_id
+        ),
     )
     if result.get("success"):
         result["generation_id"] = str(gen.id)
