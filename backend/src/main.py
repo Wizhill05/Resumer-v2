@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
+from src.core.analytics import shutdown_analytics
 from src.api import profile, generation, system, imports, guest, admin, feedback, oauth, files, auth
 from src.core.oauth import ensure_oauth_schema
 from src.services.llm_config import ensure_llm_provider_schema, llm_config_service
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
             yield
     finally:
         mcp_server.session_manager._has_started = False
+        await asyncio.to_thread(shutdown_analytics)
 
     cleanup_task.cancel()
     try:

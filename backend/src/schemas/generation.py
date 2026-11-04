@@ -14,7 +14,13 @@ class ContentSplitRequest(BaseModel):
     experience: int
 
 
+class AnalyticsContext(BaseModel):
+    distinct_id: str = Field(min_length=1, max_length=200)
+    session_id: str | None = Field(default=None, max_length=200)
+
+
 class GenerationCreate(BaseModel):
+    analytics_context: AnalyticsContext | None = None
     template_id: str
     job_description: str
     job_title: str | None = None
@@ -28,7 +34,7 @@ class GenerationCreate(BaseModel):
     # Truthfulness/creativity control. Proper = only profile facts.
     # LARP = embellish existing entries + prioritize JD skills.
     # Super LARP = LARP + invented JD-hyper-focused first project.
-    # None = use the user's stored default (falls back to larp).
+    # None = use the user's stored default (falls back to proper).
     creativity_mode: CreativityMode | None = None
     section_order: list[str] | None = None
 

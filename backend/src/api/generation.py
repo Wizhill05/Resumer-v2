@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import get_current_user
 from src.core.config import settings
+from src.core.analytics import capture_generation
 from src.core.database import get_db
 from src.core.executor import trigger_pipeline
 from src.core.file_links import format_resume_filename, resolve_resume_username
@@ -127,10 +128,12 @@ async def reap_stuck_generations(db: AsyncSession) -> None:
     stuck = result.scalars().all()
     for gen in stuck:
         gen.status = "failed"
+        gen.completed_at = datetime.now(timezone.utc)
         gen.error_message = "Pipeline interrupted (job did not complete within timeout)"
     if stuck:
         await db.commit()
         for gen in stuck:
+            capture_generation(gen, "failed")
             # Best-effort notification; non-fatal.
             email = await _user_email(db, gen.user_id)
             send_completion_email(email, gen)
@@ -243,20 +246,24 @@ async def start_generation(
         section_order=resolved_order,
         send_email=data.send_email,
         creativity_mode=resolved_mode,
+        render_metadata={"_analytics": data.analytics_context.model_dump() if data.analytics_context else None},
     )
     db.add(gen)
     await db.commit()
     await db.refresh(gen)
 
-    # Trigger the pipeline (in-process asyncio task on Railway). If the trigger
+    # Trigger the pipeline (in-process asyncio task on EC2). If the trigger
     # itself fails, surface a 502 and mark the run failed so it isn't stuck pending.
+    capture_generation(gen, "accepted")
     try:
         await trigger_pipeline(str(gen.id))
     except Exception as e:
         gen.status = "failed"
+        gen.completed_at = datetime.now(timezone.utc)
         gen.error_message = f"Failed to start pipeline: {e}"
         await db.commit()
         await db.refresh(gen)
+        capture_generation(gen, "failed")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to start pipeline: {e}",

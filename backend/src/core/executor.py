@@ -1,7 +1,7 @@
 """Pipeline trigger.
 
 POST /generate calls trigger_pipeline(gen_id) which runs the graph
-in-process via a detached asyncio task. On Railway the service process
+in-process via a detached asyncio task. On EC2 the service process
 is always alive (no CPU throttling outside requests), so this is safe
 for both local dev and production.
 """

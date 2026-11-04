@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+const posthogAssets = posthogHost.replace("://us.i.", "://us-assets.i.").replace("://eu.i.", "://eu-assets.i.");
 
 const nextConfig: NextConfig = {
   devIndicators: false,
@@ -16,15 +17,15 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/ingest/static/:path*",
-        destination: "https://us-assets.i.posthog.com/static/:path*",
+        destination: `${posthogAssets}/static/:path*`,
+      },
+      {
+        source: "/ingest/array/:path*",
+        destination: `${posthogAssets}/array/:path*`,
       },
       {
         source: "/ingest/:path*",
         destination: `${posthogHost}/:path*`,
-      },
-      {
-        source: "/ingest/decide",
-        destination: `${posthogHost}/decide`,
       },
     ];
   },

@@ -1,5 +1,7 @@
 "use client"
 
+import { captureDownload } from "@/lib/posthog"
+
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef, useMemo } from "react"
 import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2, Bug } from "lucide-react"
@@ -504,6 +506,7 @@ function FullscreenResumeOverlay({
           {/* Download button */}
           <a
             href={`/api/backend/generate/${run.id}/download`}
+            onClick={() => captureDownload(run.id, "history")}
             target="_blank"
             rel="noreferrer"
             download

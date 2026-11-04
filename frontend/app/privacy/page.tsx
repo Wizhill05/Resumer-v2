@@ -13,6 +13,8 @@ export default function PrivacyPage() {
           <div className="mt-8 space-y-5 text-sm font-semibold leading-relaxed text-zinc-600">
             <p>Résumer stores account, profile, job description, generation history, and résumé output data needed to provide résumé generation features.</p>
             <p>We use this data to authenticate you, build résumés, show past generations, and improve reliability. We do not sell personal data.</p>
+            <p>We use PostHog to understand visits, page navigation, résumé generation results, and PDF download clicks. Analytics can link signed-in activity using your account email. We do not intentionally send résumé contents, job descriptions, or custom instructions as analytics event properties.</p>
+            <p>Session replay is disabled on the trial, dashboard, profile, onboarding, account, authorization, and support pages. On public pages, replay masks text, inputs, and element attributes. Private support pages are excluded from analytics events.</p>
             <p>No-login trial uses essential cookies to keep an anonymous guest session, enforce the 5-résumé daily limit, and protect access to guest downloads. These cookies do not store your full résumé content.</p>
             <p>Guest draft details imported or typed in the trial are stored in your browser device storage. They are sent to the server only when you import résumés for parsing or generate a résumé.</p>
             <p>Guest generation inputs and artifacts may be stored temporarily so the pipeline can finish and you can download the PDF. Guest artifacts are intended to expire and are not account history.</p>

@@ -175,8 +175,8 @@ VALID_CREATIVITY_MODES = ("proper", "larp", "super_larp")
 
 
 def _creativity_mode(state: dict[str, Any]) -> str:
-    mode = (state.get("creativity_mode") or "larp").lower().strip()
-    return mode if mode in VALID_CREATIVITY_MODES else "larp"
+    mode = (state.get("creativity_mode") or "proper").lower().strip()
+    return mode if mode in VALID_CREATIVITY_MODES else "proper"
 
 
 def _prompt_name(base: str, mode: str) -> str:

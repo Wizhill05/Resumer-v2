@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from src.schemas.generation import ContentSplitRequest, CreativityMode
+from src.schemas.generation import AnalyticsContext, ContentSplitRequest, CreativityMode
 from src.schemas.profile import (
     EducationCreate,
     ExperienceCreate,
@@ -11,13 +11,14 @@ from src.schemas.profile import (
 
 
 class GuestGenerationCreate(BaseModel):
+    analytics_context: AnalyticsContext | None = None
     template_id: str = "personal-classic"
     job_description: str
     keywords: list[str] | None = None
     instructions: str | None = None
     model_used: str = "google/gemini-3.8-flash"
     content_split: ContentSplitRequest | None = None
-    creativity_mode: CreativityMode = "larp"
+    creativity_mode: CreativityMode = "proper"
     profile: ProfileUpdate = ProfileUpdate()
     experiences: list[ExperienceCreate] = Field(default_factory=list)
     projects: list[ProjectCreate] = Field(default_factory=list)

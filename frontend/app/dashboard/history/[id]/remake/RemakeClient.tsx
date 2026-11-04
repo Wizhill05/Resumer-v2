@@ -1,5 +1,7 @@
 "use client"
 
+import { captureDownload } from "@/lib/posthog"
+
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {
@@ -218,6 +220,7 @@ export function RemakeClient({ runId }: Props) {
               {/* 2. Download the new PDF */}
               <a
                 href={`/api/backend/generate/${runId}/download`}
+            onClick={() => captureDownload(runId, "remake")}
                 download
                 className="inline-flex items-center justify-center gap-2 h-10 px-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-extrabold uppercase text-xs tracking-wider rounded-md shadow-xs transition-colors"
               >

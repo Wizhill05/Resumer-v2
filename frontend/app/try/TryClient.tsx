@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { emptyGuestDraft, loadGuestDraft, mergeGuestDraft, saveGuestDraft } from "@/lib/guest-storage"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
-import { posthog } from "@/lib/posthog"
+import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
 import type {
   GuestDraft, GuestEducation, GuestExperience,
   GuestExtracurricular, GuestProject
@@ -797,7 +797,7 @@ export function TryClient() {
   const [jobDescription, setJobDescription] = useState("")
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
-  const [creativityMode, setCreativityMode] = useState<CreativityMode>("larp")
+  const [creativityMode, setCreativityMode] = useState<CreativityMode>("proper")
 
   useEffect(() => {
     startTransition(() => {
@@ -830,7 +830,8 @@ export function TryClient() {
     if (draft.experiences.length < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
     if (draft.projects.length < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
     setError(null); setSubmitting(true)
-    posthog.capture("guest_generation_started", {
+    if (ANALYTICS_ENABLED) posthog.capture("resume_generation_requested", {
+      is_guest: true,
       projects_count: activeFocus.projects,
       experience_count: activeFocus.experience,
       has_custom_instructions: !!instructions,
@@ -841,6 +842,7 @@ export function TryClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           template_id: "personal-classic",
+          analytics_context: generationAnalyticsContext(),
           job_description: jobDescription,
           keywords: splitCommas(keywords),
           instructions: instructions || null,

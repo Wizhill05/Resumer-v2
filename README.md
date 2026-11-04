@@ -59,7 +59,7 @@ Most resume tools either make you manually fight layout or produce generic AI te
 | Generation history | Track previous resumes, status, logs, artifacts, and downloads. |
 | Auth | GitHub and Google login through NextAuth. |
 | Object storage | Generated artifacts are stored through S3-compatible Cloudflare R2. |
-| Docker deploy | Frontend and backend ship as containerized services. |
+| Docker deploy | Backend runs in a Docker container; frontend is hosted on Vercel. |
 
 ## Tech Stack
 
@@ -73,7 +73,7 @@ Most resume tools either make you manually fight layout or produce generic AI te
 | Rendering | Jinja2 templates, WeasyPrint PDF renderer |
 | Database | PostgreSQL |
 | Storage | Cloudflare R2 or any S3-compatible bucket |
-| Deployment | Docker, Railway, custom domain |
+| Deployment | Vercel, AWS EC2, Docker, custom domain |
 
 ## Architecture
 
@@ -203,15 +203,15 @@ docker compose up --build
 
 ## Deployment
 
-Current production deployment uses **Railway + Docker** with the live domain at **resumer.aryansingh.space**.
+Current production deployment uses **Vercel for the frontend and AWS EC2 with Docker for the backend** with the live domain at **resumer.aryansingh.space**.
 
 | Service | Deployment role |
 | --- | --- |
-| Frontend container | Serves Next.js production app. |
-| Backend container | Serves FastAPI API and generation pipeline. |
+| Vercel | Serves the Next.js production app. |
+| EC2 backend container | Serves the FastAPI API and generation pipeline. |
 | PostgreSQL | Stores users, profiles, generations, logs, and artifact metadata. |
 | Cloudflare R2 | Stores generated PDFs and related files. |
-| Custom domain | Points public traffic to the deployed Railway service. |
+| Custom domain | Routes public traffic to the deployed application. |
 
 ## Key Environment Variables
 
@@ -220,7 +220,7 @@ Current production deployment uses **Railway + Docker** with the live domain at 
 | `NEXTAUTH_SECRET` | Frontend | Signs NextAuth JWTs. |
 | `NEXTAUTH_URL` | Frontend | Public app URL. |
 | `NEXT_PUBLIC_API_URL` | Frontend | Public backend URL for browser calls. |
-| `BACKEND_INTERNAL_URL` | Frontend | Internal service URL for Docker/Railway networking. |
+| `BACKEND_INTERNAL_URL` | Frontend | Backend URL used for server-side requests. |
 | `DATABASE_URL` | Backend | PostgreSQL connection string. |
 | `JWT_SECRET` | Backend | Verifies frontend auth tokens. |
 | `GOOGLE_API_KEY` | Backend | LLM API key for generation. |

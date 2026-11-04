@@ -66,7 +66,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        # Sanitize alembic_version table to prevent overlapping/duplicate heads in Railway DB
+        # Sanitize alembic_version table to prevent overlapping/duplicate heads in the database
         try:
             from sqlalchemy import text
             res = connection.execute(text("SELECT version_num FROM alembic_version")).fetchall()

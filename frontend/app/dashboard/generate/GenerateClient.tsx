@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { posthog } from "@/lib/posthog"
+import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -81,7 +81,7 @@ export function GenerateClient() {
   const [jobDescription, setJobDescription] = useState("")
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
-  const [creativityMode, setCreativityMode] = useState<CreativityMode>("larp")
+  const [creativityMode, setCreativityMode] = useState<CreativityMode>("proper")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showErrorModal, setShowErrorModal] = useState(false)
@@ -257,7 +257,8 @@ export function GenerateClient() {
     setError(null)
     setIsSubmitting(true)
 
-    posthog.capture("resume_generation_started", {
+    if (ANALYTICS_ENABLED) posthog.capture("resume_generation_requested", {
+      is_guest: false,
       template_id: selectedTemplate,
       projects_count: projectsCount,
       experience_count: experienceCount,
@@ -272,6 +273,7 @@ export function GenerateClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           template_id: selectedTemplate,
+          analytics_context: generationAnalyticsContext(),
           job_description: jobDescription,
           keywords: keywords ? keywords.split(",").map((k) => k.trim()) : [],
           instructions: instructions || null,
@@ -321,10 +323,6 @@ export function GenerateClient() {
             setLivePercent(100)
             setLiveStepLabel(log.message === "completed" ? "Résumé complete" : "Generation failed")
             setIsGenerationComplete(true)
-            posthog.capture(log.message === "completed" ? "resume_generation_completed" : "resume_generation_failed", {
-              run_id: createdRunId,
-              template_id: selectedTemplate,
-            })
             queryClient.invalidateQueries({ queryKey: ["history"] })
             return
           }

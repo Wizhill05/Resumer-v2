@@ -338,8 +338,8 @@ async def test_oauth_authorize_with_signed_token(client: AsyncClient, async_db: 
     assert "code=" in post_res.headers["location"]
 
 @pytest.mark.asyncio
-async def test_railway_proxy_header_forces_https(client: AsyncClient):
-    # Even if Railway internal proxy sends proto=http, production domains MUST return https
+async def test_proxy_header_forces_https(client: AsyncClient):
+    # Even if an internal proxy sends proto=http, production domains MUST return https
     headers = {
         "x-forwarded-proto": "http",
         "x-forwarded-host": "resumer-backend.aryansingh.space",

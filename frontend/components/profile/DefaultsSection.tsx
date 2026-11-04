@@ -67,7 +67,7 @@ export function DefaultsSection() {
     },
   })
   const current = draft ?? data
-  const mode = current?.creativity_mode ?? "larp"
+  const mode = current?.creativity_mode ?? "proper"
   const projects = current?.preferred_projects ?? 2
   const experience = current?.preferred_experience ?? 2
   const save = useMutation({

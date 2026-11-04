@@ -26,6 +26,6 @@ class User(Base):
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default="false")
     preferred_projects: Mapped[int | None] = mapped_column(Integer)
     preferred_experience: Mapped[int | None] = mapped_column(Integer)
-    preferred_creativity_mode: Mapped[str | None] = mapped_column(String, default="larp", server_default="larp")
     preferred_section_orders: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    preferred_creativity_mode: Mapped[str | None] = mapped_column(String, default="proper", server_default="proper")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

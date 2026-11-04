@@ -13,6 +13,7 @@ from sqlalchemy import case, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.analytics import capture_generation
 from src.core.database import get_db
 from src.core.executor import trigger_pipeline
 from src.core.storage import StorageService
@@ -133,7 +134,7 @@ def _out(gen: Generation) -> GuestGenerationOut:
         created_at=gen.created_at.isoformat(),
         completed_at=gen.completed_at.isoformat() if gen.completed_at else None,
         content_split=gen.content_split,
-        creativity_mode=getattr(gen, "creativity_mode", None) or "larp",
+        creativity_mode=getattr(gen, "creativity_mode", None) or "proper",
         error_message=gen.error_message,
         section_order=gen.section_order,
     )
@@ -339,22 +340,26 @@ async def start_guest_generation(
         content_split=resolved_split,
         section_order=guest_section_order,
         is_guest=True,
-        creativity_mode=data.creativity_mode or "larp",
+        creativity_mode=data.creativity_mode or "proper",
         guest_token_hash=token_hash,
         guest_input_snapshot=snapshot,
+        render_metadata={"_analytics": data.analytics_context.model_dump() if data.analytics_context else None},
         expires_at=datetime.now(timezone.utc) + timedelta(days=GUEST_ARTIFACT_DAYS),
     )
     db.add(gen)
     await db.commit()
     await db.refresh(gen)
 
+    capture_generation(gen, "accepted")
     try:
         await trigger_pipeline(str(gen.id))
     except Exception as e:
         gen.status = "failed"
+        gen.completed_at = datetime.now(timezone.utc)
         gen.error_message = f"Failed to start pipeline: {e}"
         await db.commit()
         await db.refresh(gen)
+        capture_generation(gen, "failed")
         raise HTTPException(status_code=502, detail=f"Failed to start pipeline: {e}")
     return _out(gen)
 

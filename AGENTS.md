@@ -14,7 +14,7 @@ Resumer-v2 is an AI-powered resume builder designed to generate tailored, ATS-aw
 ## 2. Deployment & Hosting
 
 - **Frontend:** Hosted on **Vercel**.
-- **Backend:** Hosted on **Railway** using a Docker container.
+- **Backend:** Hosted on **AWS EC2** using a Docker container.
 - **Database & Storage:** PostgreSQL database and Cloudflare R2 bucket.
 
 ## 3. Critical Constraints for AI Agents

@@ -34,7 +34,7 @@ class Generation(Base):
     render_metadata: Mapped[dict | None] = mapped_column(JSONB)
     content_split: Mapped[dict | None] = mapped_column(JSONB)
     section_order: Mapped[list[str] | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
-    creativity_mode: Mapped[str] = mapped_column(String, default="larp", server_default="larp")
+    creativity_mode: Mapped[str] = mapped_column(String, default="proper", server_default="proper")
     is_guest: Mapped[bool] = mapped_column(Boolean, default=False)
     send_email: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     guest_token_hash: Mapped[str | None] = mapped_column(String)

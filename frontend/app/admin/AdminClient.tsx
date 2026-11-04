@@ -1014,6 +1014,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
       {/* ANALYTICS TAB */}
       {activeTab === "analytics" && (
         <div className="space-y-6 pixel-enter">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">All-time totals. Generation timing includes completed builds only. Failure rate is failed builds divided by all builds.</p>
           {loadingAnalytics ? (
             <div className="soft-skeleton h-48" />
           ) : analytics ? (
@@ -1037,7 +1038,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                   </p>
                 </div>
                 <div className="panel-strong p-4">
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">LLM Failure Rate</p>
+                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">Generation Failure Rate</p>
                   <p className="text-3xl font-black mt-1 text-red-600">{analytics.failure_rate_percent}%</p>
                 </div>
               </div>
@@ -1046,7 +1047,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
               <div className="grid gap-6 md:grid-cols-2">
                 {/* Generation Queue Breakdown */}
                 <div className="panel-strong p-5 space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">Generation Queue</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">Generations by Status</h3>
                   <div className="space-y-3">
                     {Object.entries(analytics.generations_by_status).map(([status, count]) => {
                       const percent = analytics.total_generations > 0 ? (count / analytics.total_generations * 100) : 0
@@ -1072,7 +1073,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
 
                 {/* API Key pool Status */}
                 <div className="panel-strong p-5 space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">LLM Provider Status</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">Configured LLM Providers</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
                       <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">

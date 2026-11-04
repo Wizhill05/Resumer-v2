@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     SUPPORT_WEBHOOK_URL: str = ""
 
     EXECUTION_MODE: str = "local"
+    POSTHOG_PROJECT_TOKEN: str = ""
+    POSTHOG_HOST: str = "https://us.i.posthog.com"
+    POSTHOG_ENVIRONMENT: str = "development"
 
     # Feature flags
     ENABLE_RESUME_EDITOR: bool = True

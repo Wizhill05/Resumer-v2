@@ -2,6 +2,7 @@ import NextAuth from "next-auth"
 import GitHub from "next-auth/providers/github"
 import Google from "next-auth/providers/google"
 import Credentials from "next-auth/providers/credentials"
+import { captureSignIn } from "@/lib/posthog-server"
 
 const BACKEND_INTERNAL_URL =
   process.env.BACKEND_INTERNAL_URL ||
@@ -59,6 +60,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   session: { strategy: "jwt" },
+  events: {
+    async signIn({ user, account }) {
+      await captureSignIn(user.email, account?.provider)
+    },
+  },
   callbacks: {
     async redirect({ url, baseUrl }) {
       // Allow relative callback URLs

@@ -298,7 +298,7 @@ async def test_rest_generate_without_split_uses_stored_preference(setup_test_env
         )
         gen = await start_generation(req, current_user, db)
         assert gen.content_split == {"projects": 3, "experience": 2}
-        assert gen.creativity_mode == "larp"
+        assert gen.creativity_mode == "proper"
 
 
 async def test_rest_generate_respects_custom_default_mode(setup_test_env, monkeypatch):
@@ -366,7 +366,7 @@ async def test_put_profile_defaults_persists_creativity_mode(setup_test_env):
 
     async with session_maker() as db:
         current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
-        assert current_user.preferred_creativity_mode == "larp"
+        assert current_user.preferred_creativity_mode == "proper"
 
         # Update to super_larp
         updated = await update_defaults(

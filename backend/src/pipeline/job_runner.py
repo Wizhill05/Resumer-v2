@@ -2,7 +2,7 @@
 
 Runs a single generation to completion: loads state from DB, invokes the
 LangGraph pipeline, persists artifact keys + metadata, and fires the
-completion email. Runs as a detached asyncio task on Railway — the service
+completion email. Runs as a detached asyncio task on EC2 — the service
 process stays alive so the task completes even if the user navigates away.
 """
 import asyncio
@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
+from src.core.analytics import capture_generation, shutdown_analytics
 from src.core.database import AsyncSessionLocal
 from src.core.notify import send_completion_email
 from src.models.generation import Generation
@@ -66,7 +67,7 @@ def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState
             list(template_manifest.default_section_order) if template_manifest.default_section_order else None
         ),
         is_pro=False,
-        creativity_mode=getattr(gen, "creativity_mode", None) or "larp",
+        creativity_mode=getattr(gen, "creativity_mode", None) or "proper",
         job_analysis=None,
         summary_draft=None,
         projects_draft=None,
@@ -207,7 +208,7 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
             list(template_manifest.default_section_order) if template_manifest.default_section_order else None
         ),
         is_pro=is_pro,
-        creativity_mode=getattr(gen, "creativity_mode", None) or "larp",
+        creativity_mode=getattr(gen, "creativity_mode", None) or "proper",
         job_analysis=None,
         experience_draft=None,
         extracurriculars_draft=None,
@@ -260,8 +261,10 @@ async def run_generation(gen_id: str) -> None:
                     g = await fail_db.get(Generation, gen_uuid)
                     if g:
                         g.status = "failed"
+                        g.completed_at = datetime.now(timezone.utc)
                         g.error_message = "Profile not found; complete onboarding first."
                         await fail_db.commit()
+                        capture_generation(g, "failed")
                         email = await _fetch_user_email(gen.user_id)
                         send_completion_email(email, g)
                 return
@@ -299,6 +302,7 @@ async def run_generation(gen_id: str) -> None:
                 g.thumb_storage_key = result.get("thumb_storage_key")
                 g.completed_at = datetime.now(timezone.utc)
                 g.render_metadata = {
+                    **previous_metadata,
                     "tailored_resume": result.get("tailored_resume"),
                     "font_size": result.get("font_size"),
                     "page_count": result.get("page_count"),
@@ -326,6 +330,7 @@ async def run_generation(gen_id: str) -> None:
                         should_notify = profile.notify_on_completion if profile else True
 
                 await update_db.commit()
+                capture_generation(g, "completed")
                 if should_notify:
                     send_completion_email(user_email, g, result.get("pdf_bytes"))
 
@@ -340,6 +345,7 @@ async def run_generation(gen_id: str) -> None:
                     g.error_message = str(e)
                     g.completed_at = datetime.now(timezone.utc)
                     await fail_db.commit()
+                    capture_generation(g, "failed")
                     send_completion_email(user_email, g)
         except Exception as inner:
             print(f"[job_runner] could not persist failure for {gen_id}: {inner!r}")
@@ -355,7 +361,10 @@ def main() -> None:
     gen_id = os.environ.get("GEN_ID")
     if not gen_id:
         raise SystemExit("GEN_ID env var is required for the pipeline job")
-    asyncio.run(run_generation(gen_id))
+    try:
+        asyncio.run(run_generation(gen_id))
+    finally:
+        shutdown_analytics()
 
 
 if __name__ == "__main__":

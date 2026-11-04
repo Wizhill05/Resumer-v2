@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 from src.api.generation import check_rate_limit, reap_stuck_generations
 from src.core.config import settings
+from src.core.analytics import capture_generation
 from src.core.executor import trigger_pipeline
 from src.core.file_links import build_resume_file_link
 from src.core.storage import StorageService
@@ -157,11 +158,13 @@ async def generate_resume_handler(
                 status="pending",
                 is_guest=False,
                 send_email=False,
+                render_metadata={"_analytics": {"distinct_id": user.email.strip().lower(), "source": "mcp"}},
             )
             db.add(gen)
             await db.commit()
             await db.refresh(gen)
             gen_id = gen.id
+            capture_generation(gen, "accepted")
     except HTTPException as e:
         detail_msg = e.detail if isinstance(e.detail, str) else "Rate limit reached."
         return {

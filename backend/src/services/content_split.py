@@ -36,11 +36,11 @@ def split_is_allowed(projects: int, experience: int, manifest: TemplateManifest)
 
 
 VALID_CREATIVITY_MODES = ("proper", "larp", "super_larp")
-DEFAULT_CREATIVITY_MODE = "larp"
+DEFAULT_CREATIVITY_MODE = "proper"
 
 
 def resolve_default_mode(user: User | None) -> str:
-    """Return this user's default creativity mode (stored pref, else larp)."""
+    """Return this user's default creativity mode (stored pref, else proper)."""
     if user is not None and (user.preferred_creativity_mode or "") in VALID_CREATIVITY_MODES:
         return user.preferred_creativity_mode  # type: ignore[return-value]
     return DEFAULT_CREATIVITY_MODE
