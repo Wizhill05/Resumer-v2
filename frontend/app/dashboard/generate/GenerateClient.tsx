@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Pencil, RotateCcw, Plus, Minus, Info, Eye } from "lucide-react"
+import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info, Eye } from "lucide-react"
 import Link from "next/link"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
@@ -357,8 +357,20 @@ export function GenerateClient() {
     }
   }, [step, createdRunId, isGenerationComplete, queryClient, selectedTemplate])
 
+  const pageHeader = (
+    <div className="page-header space-y-0.5 max-md:border-l-0 max-md:p-0">
+      <h1 className="text-xl font-extrabold uppercase tracking-tight md:text-2xl">Generate Résumé</h1>
+      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 md:text-sm">
+        <span className="md:hidden">{step === "input" ? "Start with the job. Your saved defaults are ready." : "Target any job description in seconds."}</span>
+        <span className="hidden md:inline">Target any job description in seconds.</span>
+      </p>
+    </div>
+  )
+
   if (isLoadingTemplates) {
     return (
+      <>
+      {pageHeader}
       <div className="panel flex justify-center py-12">
         <div className="flex gap-2">
           <span className="loading-dot bg-[#ff4e26]" />
@@ -366,12 +378,15 @@ export function GenerateClient() {
           <span className="loading-dot bg-[#ff4e26]" />
         </div>
       </div>
+      </>
     )
   }
 
   // Initial load failure: block screen with retry when no cached templates exist
   if (isTemplatesError && templates.length === 0) {
     return (
+      <>
+      {pageHeader}
       <div className="panel border-amber-200 bg-amber-50 p-6 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -394,11 +409,13 @@ export function GenerateClient() {
           </Button>
         </div>
       </div>
+      </>
     )
   }
 
   return (
     <div className="space-y-4 md:space-y-5 pixel-enter">
+      {pageHeader}
       {/* Background template query error with cached data: retain screen & unsaved state, show retry notice */}
       {isTemplatesError && templates.length > 0 && (
         <div role="alert" className="panel flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
@@ -804,95 +821,134 @@ export function GenerateClient() {
         </>
       )}
 
+      {/* Waiting Screen with Live Animated Progress Bar */}
       {step === "submitted" && (
-        <div className="panel space-y-6 py-8">
-          <div className="text-center space-y-2">
-            <h2 className="text-lg font-bold">Generating Your Tailored Résumé</h2>
-            <p className="text-xs text-zinc-500 font-mono">Run ID: {createdRunId}</p>
-          </div>
-
-          <div className="space-y-2 max-w-md mx-auto">
-            <div className="flex justify-between text-xs font-mono">
-              <span className="font-semibold">{liveStepLabel}</span>
-              <span>{livePercent}%</span>
+        <div className="mx-auto max-w-xl space-y-5 py-6 md:py-8 pixel-enter">
+          <div className="border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 md:p-7">
+            <div className="mb-4 text-center">
+              <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
+                {isGenerationComplete ? liveStepLabel === "Generation failed" ? "Failed" : "Complete" : "Processing"}
+              </p>
+              <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white md:text-2xl">
+                {isGenerationComplete ? liveStepLabel === "Generation failed" ? "Generation failed" : "Your Résumé is Ready" : "Tailoring Your Résumé"}
+              </h3>
+              <p className="mt-1 text-xs font-medium text-amber-500 dark:text-amber-400 md:text-sm">
+                {liveStepLabel} ({livePercent}%)
+              </p>
             </div>
-            <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2.5 overflow-hidden">
-              <div
-                className="bg-[#ff4e26] h-2.5 rounded-full transition-all duration-500 ease-out"
-                style={{ width: `${livePercent}%` }}
-              />
-            </div>
-          </div>
 
-          {/* Safe to close & Notification note */}
-          {!isGenerationComplete && (
-            <p className="mt-4 text-center text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
-              It is safe to close this window as this might take some time.{" "}
-              {sendEmail === true || (sendEmail === null && (profileData?.notify_on_completion ?? true)) ? (
-                profileData?.email ? (
-                  <>
-                    You&apos;ll get an email at{" "}
-                    <strong className="text-zinc-800 dark:text-zinc-200">
-                      {profileData.email}
-                    </strong>{" "}
-                    when done.
-                  </>
-                ) : (
-                  <>You&apos;ll receive an email notification when done.</>
-                )
-              ) : (
-                <>You can check the progress in the history page.</>
-              )}
-            </p>
-          )}
-
-          {isGenerationComplete ? (
-            <div className="text-center space-y-4 pt-4">
-              <div className="inline-flex items-center gap-2 text-green-600 dark:text-green-400 font-bold text-sm">
-                <span>Generation Finished</span>
+            {/* Live Progress Bar */}
+            <div className="space-y-2">
+              <div className="flex justify-between font-mono text-xs font-bold text-zinc-600 dark:text-zinc-400">
+                <span>Progress</span>
+                <span>{livePercent}%</span>
               </div>
-              <div className="flex justify-center gap-3">
-                <Link href={`/dashboard/history`}>
-                  <Button variant="outline" size="sm">
-                    View in History
+              <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                <div
+                  className="h-full bg-[#ff4e26] transition-all duration-500 ease-out"
+                  style={{ width: `${livePercent}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Safe to close & Notification note */}
+            {!isGenerationComplete && (
+              <p className="mt-4 text-center text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
+                It is safe to close this window as this might take some time.{" "}
+                {sendEmail === true || (sendEmail === null && (profileData?.notify_on_completion ?? true)) ? (
+                  profileData?.email ? (
+                    <>
+                      You&apos;ll get an email at{" "}
+                      <strong className="text-zinc-800 dark:text-zinc-200">
+                        {profileData.email}
+                      </strong>{" "}
+                      when done.
+                    </>
+                  ) : (
+                    <>You&apos;ll receive an email notification when done.</>
+                  )
+                ) : (
+                  <>You can check the progress in the history page.</>
+                )}
+              </p>
+            )}
+            {/* Actions once complete or failed */}
+            {isGenerationComplete && createdRunId && liveStepLabel === "Generation failed" && (
+              <div className="mt-6 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                <div className="flex items-start gap-2 border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600" />
+                  <p className="text-xs font-bold leading-relaxed text-red-800 dark:text-red-300">
+                    Generation failed. Your input is saved — you can report this and we will check logs for run {createdRunId.slice(0, 8)}.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <ReportIssueButton
+                    defaultCategory="generation"
+                    defaultMessage={`[Generation failed]\nRun ID: ${createdRunId}\nStep: ${liveStepLabel}\nTemplate: ${selectedTemplate}\nContent split: ${projectsCount} projects / ${experienceCount} experiences\n\nWhat did you expect? Describe your job description length and any custom instructions:\n`}
+                    generationId={createdRunId}
+                    userEmail={profileData?.email}
+                    title="Report failed generation"
+                    description="Run ID and context are prefilled. Add a sentence about the job description and expected result."
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 font-black uppercase tracking-wider"
+                  >
+                    Report this failure
+                  </ReportIssueButton>
+                  <Link href="/support" className="flex-1">
+                    <Button variant="outline" className="w-full font-bold uppercase tracking-wider text-xs">
+                      Open support
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+            {isGenerationComplete && createdRunId && liveStepLabel !== "Generation failed" && (
+              <div className="mt-6 flex flex-col gap-2.5 sm:flex-row pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                <a
+                  href={`/api/backend/generate/${createdRunId}/download`}
+                  className="flex-1"
+                >
+                  <Button className="w-full">
+                    <Download size={16} /> Download PDF
+                  </Button>
+                </a>
+                <Link
+                  href={`/dashboard/history/${createdRunId}/edit`}
+                  className="flex-1"
+                >
+                  <Button variant="outline" className="w-full">
+                    <Pencil size={16} /> Open Editor
                   </Button>
                 </Link>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setStep("input")
-                    setCreatedRunId(null)
-                    setIsGenerationComplete(false)
-                    setLivePercent(10)
-                  }}
-                  className="bg-[#ff4e26] hover:bg-[#e0431f] text-white"
-                >
-                  Create Another
-                </Button>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center gap-2 text-zinc-400 text-xs py-4">
-              <Loader2 className="animate-spin text-[#ff4e26]" size={20} />
-              <span>Tailoring bullets and assembling ATS-compliant layout...</span>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Issue report button during or after generation */}
-          <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-center">
-            <ReportIssueButton
-              defaultCategory="generation"
-              defaultMessage={`[Generation issue]\nRun ID: ${createdRunId}\nStep: ${liveStepLabel}\nTemplate: ${selectedTemplate}\nContent split: ${projectsCount} projects / ${experienceCount} experiences\n\nDescribe what happened:\n`}
-              userEmail={profileData?.email}
-              title="Report an issue with this run"
-              description="Prefilled with run ID and step details. Let us know what went wrong."
-              variant="outline"
-              size="sm"
-              className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-            />
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+            <Link href="/dashboard/history" className="w-full sm:w-auto">
+              <Button variant="outline" className="w-full">
+                View All History
+              </Button>
+            </Link>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setJobDescription("")
+                setKeywords("")
+                setInstructions("")
+                setCreatedRunId(null)
+                setIsGenerationComplete(false)
+                setStep("input")
+              }}
+              className="w-full sm:w-auto"
+            >
+              <RotateCcw size={14} /> Generate Another
+            </Button>
           </div>
         </div>
       )}
+
 
       {/* Insufficient Profile Material Modal */}
       {showErrorModal && (
