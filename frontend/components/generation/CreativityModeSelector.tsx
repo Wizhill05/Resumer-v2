@@ -5,13 +5,13 @@ import { Info, X } from "lucide-react"
 
 export type CreativityMode = "proper" | "larp" | "super_larp"
 
-const MODE_LABELS: { val: CreativityMode; label: string }[] = [
+export const MODE_LABELS: { val: CreativityMode; label: string }[] = [
   { val: "proper", label: "Proper" },
   { val: "larp", label: "LARP" },
   { val: "super_larp", label: "Super LARP" },
 ]
 
-const MODE_INFO: { title: string; body: string }[] = [
+export const MODE_INFO: { title: string; body: string }[] = [
   {
     title: "Proper — strictly your profile",
     body: "Writes only what your profile supports. Skills come from your profile; a job skill is included only if you plausibly demonstrate it. No invented tools, metrics, or features.",

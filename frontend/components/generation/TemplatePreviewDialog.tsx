@@ -46,10 +46,12 @@ export function TemplatePreviewDialog({
           className="absolute right-0 top-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900/80 text-white shadow-sm hover:bg-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
           <X size={20} aria-hidden="true" />
         </button>
-        <div className="max-h-[calc(92dvh-3rem)] overflow-y-auto overscroll-contain rounded-lg bg-white">
+        <div className="max-h-[calc(92dvh-3rem)] overflow-y-auto overscroll-contain bg-white">
           {data ? data.page_images.map((src, index) => (
-            <Image key={index} unoptimized src={src} width={827} height={1170}
-              alt={`${templateName} sample resume, page ${index + 1}`} className="block h-auto w-full" draggable={false} />
+            <div key={index} className="relative aspect-[210/297] w-full bg-white">
+              <Image unoptimized src={src} fill sizes="(max-width: 768px) 92vw, 672px"
+                alt={`${templateName} sample resume, page ${index + 1}`} className="object-contain" draggable={false} />
+            </div>
           )) : <div className="flex min-h-80 items-center justify-center px-8 text-center text-sm text-zinc-500">
             {isError ? <div role="alert"><p>Could not load the preview.</p><button type="button" onClick={() => refetch()} className="mt-3 min-h-11 px-3 font-medium text-[#ff4e26] underline">Retry</button></div> : <p role="status">Preparing preview…</p>}
           </div>}

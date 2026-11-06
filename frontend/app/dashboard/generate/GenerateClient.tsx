@@ -20,6 +20,8 @@ import {
 } from "@/lib/template-layout"
 import { TemplateLayoutEditor } from "@/components/generation/TemplateLayoutEditor"
 import { TemplatePreviewDialog } from "@/components/generation/TemplatePreviewDialog"
+import { MobileGenerationBrief } from "@/components/generation/MobileGenerationBrief"
+
 type Step = "input" | "submitted"
 
 type ProfileEntry = { id?: string }
@@ -438,7 +440,27 @@ export function GenerateClient() {
       )}
 
       {step === "input" && (
-        <form onSubmit={handleGenerate} className="space-y-4 pixel-enter">
+        <>
+        <MobileGenerationBrief
+          templates={templates}
+          preferences={{ templateId: selectedTemplate, split: { projects: projectsCount, experience: experienceCount }, mode: creativityMode, keywords, instructions, sendEmail }}
+          onPreferencesChange={(value) => {
+            setSelectedTemplate(value.templateId)
+            setSplitOverride(value.split)
+            setCreativityMode(value.mode)
+            setKeywords(value.keywords)
+            setInstructions(value.instructions)
+            setSendEmail(value.sendEmail)
+          }}
+          jobDescription={jobDescription}
+          onJobDescriptionChange={setJobDescription}
+          onGenerate={handleGenerate}
+          isSubmitting={isSubmitting}
+          profileProjects={numProfileProjects}
+          profileExperiences={numProfileExperiences}
+          sectionOrder={sectionOrderToSend}
+        />
+        <form onSubmit={handleGenerate} className="hidden space-y-4 pixel-enter md:block">
           {/* 1. Template Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -779,6 +801,7 @@ export function GenerateClient() {
             )}
           </Button>
         </form>
+        </>
       )}
 
       {step === "submitted" && (
