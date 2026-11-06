@@ -3,9 +3,16 @@
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { ZoomIn, ZoomOut, RefreshCw, AlertCircle, Eye } from "lucide-react"
-import { fetchTemplatePreview, type SectionId, type TemplatePreviewResponse } from "@/lib/template-layout"
+import {
+  fetchTemplatePreview,
+  type SectionId,
+  type TemplatePreviewResponse,
+  getCachedOutlinePreview,
+  setCachedOutlinePreview,
+  clearPreviewCache,
+} from "@/lib/template-layout"
 
-const previews = new Map<string, TemplatePreviewResponse>()
+export { clearPreviewCache }
 
 type Props = {
   sectionOrder: SectionId[]
@@ -13,9 +20,16 @@ type Props = {
   templateName?: string
   activeHoverSection?: SectionId | null
   className?: string
+  expectedSections?: readonly SectionId[]
 }
 
-export function TemplateLayoutOutline({ sectionOrder, templateId = "personal-classic", templateName = "Personal Classic", className = "" }: Props) {
+export function TemplateLayoutOutline({
+  sectionOrder,
+  templateId = "personal-classic",
+  templateName = "Personal Classic",
+  className = "",
+  expectedSections,
+}: Props) {
   const [zoom, setZoom] = useState(1)
   const [width, setWidth] = useState(600)
   const canvas = useRef<HTMLDivElement>(null)
@@ -34,23 +48,23 @@ export function TemplateLayoutOutline({ sectionOrder, templateId = "personal-cla
 
   useEffect(() => {
     const controller = new AbortController()
-    const key = `${templateId}:${orderKey}`
-    const cached = previews.get(key)
+    const expectedKey = expectedSections ? expectedSections.join(",") : ""
+    const key = `${templateId}:${orderKey}:${expectedKey}`
+    const cached = getCachedOutlinePreview(key)
     const timer = setTimeout(async () => {
       setError(false)
       if (cached) { setPreview(cached); return }
       try {
-        const data = await fetchTemplatePreview(templateId, sectionOrder, controller.signal)
+        const data = await fetchTemplatePreview(templateId, sectionOrder, controller.signal, expectedSections)
         if (controller.signal.aborted) return
-        if (previews.size >= 12) previews.clear()
-        previews.set(key, data)
+        setCachedOutlinePreview(key, data)
         setPreview(data)
       } catch {
         if (!controller.signal.aborted) setError(true)
       }
     }, cached ? 0 : 250)
     return () => { clearTimeout(timer); controller.abort() }
-  }, [templateId, orderKey, sectionOrder, retry])
+  }, [templateId, orderKey, sectionOrder, expectedSections, retry])
 
   const stale = preview && (preview.template_id !== templateId || preview.section_order.join(",") !== orderKey)
   const pageWidth = Math.round(width * zoom)

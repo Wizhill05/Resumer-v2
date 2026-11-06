@@ -588,3 +588,236 @@ async def test_pdf_pages_fallback_legacy_null_order_uses_default(db_env, monkeyp
         assert res.status_code == 200
         assert len(captured_kwargs) == 1
         assert captured_kwargs[0].get("section_order") == DEFAULT_SECTION_ORDER
+
+# ── 7. Professional Sans Integration & Isolation Tests ─────────────────────────
+
+
+def test_professional_sans_manifest_default_order():
+    manifest = TemplateRegistryService.get_template_manifest("professional-sans")
+    assert manifest is not None
+    assert manifest.id == "professional-sans"
+    assert manifest.name == "Professional Sans"
+    assert manifest.default_section_order == [
+        "summary",
+        "experiences",
+        "projects",
+        "skills",
+        "education",
+        "extracurriculars",
+    ]
+
+
+def test_list_templates_order_classic_first_sans_second():
+    templates = TemplateRegistryService.list_templates()
+    assert len(templates) >= 2
+    assert templates[0].id == "personal-classic"
+    assert templates[1].id == "professional-sans"
+
+
+def test_resolve_section_order_independent_for_classic_and_sans():
+    custom_classic = [
+        "skills",
+        "education",
+        "summary",
+        "projects",
+        "experiences",
+        "extracurriculars",
+    ]
+    custom_sans = [
+        "experiences",
+        "projects",
+        "summary",
+        "skills",
+        "education",
+        "extracurriculars",
+    ]
+    user = User(
+        email="multi@example.com",
+        preferred_section_orders={
+            "personal-classic": custom_classic,
+            "professional-sans": custom_sans,
+        },
+    )
+
+    resolved_classic = resolve_section_order(None, user, "personal-classic")
+    assert resolved_classic == custom_classic
+
+    resolved_sans = resolve_section_order(None, user, "professional-sans")
+    assert resolved_sans == custom_sans
+
+
+def test_resolve_section_order_sans_default_fallback_preserves_classic():
+    custom_classic = [
+        "skills",
+        "education",
+        "summary",
+        "projects",
+        "experiences",
+        "extracurriculars",
+    ]
+    user = User(
+        email="classic_only@example.com",
+        preferred_section_orders={"personal-classic": custom_classic},
+    )
+
+    # Professional sans has no user preference, must resolve to its own default order
+    resolved_sans = resolve_section_order(None, user, "professional-sans")
+    manifest = TemplateRegistryService.get_template_manifest("professional-sans")
+    assert resolved_sans == list(manifest.default_section_order)
+    assert resolved_sans != custom_classic
+
+
+def test_save_user_template_layout_preserves_both_templates():
+    user = User(email="saver@example.com", preferred_section_orders=None)
+    order_classic = [
+        "education",
+        "summary",
+        "skills",
+        "projects",
+        "experiences",
+        "extracurriculars",
+    ]
+    order_sans = [
+        "projects",
+        "experiences",
+        "summary",
+        "skills",
+        "education",
+        "extracurriculars",
+    ]
+
+    save_user_template_layout(user, "professional-sans", order_sans)
+    assert user.preferred_section_orders == {"professional-sans": order_sans}
+
+    save_user_template_layout(user, "personal-classic", order_classic)
+    assert user.preferred_section_orders["professional-sans"] == order_sans
+    assert user.preferred_section_orders["personal-classic"] == order_classic
+
+
+@pytest.mark.asyncio
+async def test_get_and_put_professional_sans_layout_api(db_env):
+    user, token, session_maker = db_env
+    headers = {"Authorization": f"Bearer {token}"}
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # GET default
+        get_res = await client.get("/templates/professional-sans/layout", headers=headers)
+        assert get_res.status_code == 200
+        data = get_res.json()
+        assert data["template_id"] == "professional-sans"
+        manifest = TemplateRegistryService.get_template_manifest("professional-sans")
+        assert data["default_section_order"] == list(manifest.default_section_order)
+        assert data["section_order"] == list(manifest.default_section_order)
+
+        # PUT valid permutation
+        custom_sans = [
+            "experiences",
+            "skills",
+            "projects",
+            "education",
+            "summary",
+            "extracurriculars",
+        ]
+        put_res = await client.put(
+            "/templates/professional-sans/layout",
+            json={"section_order": custom_sans},
+            headers=headers,
+        )
+        assert put_res.status_code == 200
+        put_data = put_res.json()
+        assert put_data["template_id"] == "professional-sans"
+        assert put_data["section_order"] == custom_sans
+
+        # Verify personal-classic remains default (isolated)
+        classic_res = await client.get("/templates/personal-classic/layout", headers=headers)
+        assert classic_res.status_code == 200
+        assert classic_res.json()["section_order"] == DEFAULT_SECTION_ORDER
+
+        # PUT invalid permutation (duplicate)
+        bad_put = await client.put(
+            "/templates/professional-sans/layout",
+            json={"section_order": ["experiences", "experiences", "projects", "skills", "education", "extracurriculars"]},
+            headers=headers,
+        )
+        assert bad_put.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_professional_sans_generation_snapshot(db_env, monkeypatch):
+    user, token, session_maker = db_env
+    headers = {"Authorization": f"Bearer {token}"}
+    transport = ASGITransport(app=app)
+
+    custom_sans_order = [
+        "experiences",
+        "projects",
+        "skills",
+        "education",
+        "summary",
+        "extracurriculars",
+    ]
+    resume_data = {
+        "summary": "Experienced engineer.",
+        "skills": {"Languages": ["Rust", "Python"]},
+        "education": [{"institution": "MIT", "degree": "B.S. CS"}],
+        "projects": [{"name": "Project Alpha", "bullet_points": ["Built cool system"]}],
+        "experiences": [{"role": "Senior Engineer", "organization": "Acme Inc", "bullet_points": ["Scaled infra"]}],
+        "extracurriculars": [{"description": "Open source contributor"}],
+    }
+    profile_data = {"full_name": "Jane Doe", "email": "jane@example.com"}
+
+    async with session_maker() as db:
+        # 1. Generation with explicit custom section order
+        gen_custom = Generation(
+            user_id=user.id,
+            template_id="professional-sans",
+            job_title="Software Engineer",
+            job_description="Job description text...",
+            status="completed",
+            section_order=custom_sans_order,
+            pdf_storage_key=None,
+            render_metadata={"tailored_resume": resume_data, "profile": profile_data, "font_size": 10.0},
+        )
+        # 2. Generation with None section order (fallback to sans default)
+        gen_default = Generation(
+            user_id=user.id,
+            template_id="professional-sans",
+            job_title="Software Engineer",
+            job_description="Job description text...",
+            status="completed",
+            section_order=None,
+            pdf_storage_key=None,
+            render_metadata={"tailored_resume": resume_data, "profile": profile_data, "font_size": 10.0},
+        )
+        db.add(gen_custom)
+        db.add(gen_default)
+        await db.commit()
+        await db.refresh(gen_custom)
+        await db.refresh(gen_default)
+        custom_id = str(gen_custom.id)
+        default_id = str(gen_default.id)
+
+    import src.services.resume_render as rr_module
+    captured_kwargs = []
+    real_fit_and_render = rr_module.fit_and_render_pdf
+
+    def spy_fit_and_render(*args, **kwargs):
+        captured_kwargs.append(kwargs)
+        return real_fit_and_render(*args, **kwargs)
+
+    monkeypatch.setattr("src.services.resume_render.fit_and_render_pdf", spy_fit_and_render)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Request custom order gen
+        res1 = await client.get(f"/generate/{custom_id}/pdf-pages", headers=headers)
+        assert res1.status_code == 200
+        assert captured_kwargs[-1].get("section_order") == custom_sans_order
+        assert captured_kwargs[-1].get("template_id") == "professional-sans"
+
+        # Request default order gen
+        res2 = await client.get(f"/generate/{default_id}/pdf-pages", headers=headers)
+        assert res2.status_code == 200
+        manifest = TemplateRegistryService.get_template_manifest("professional-sans")
+        assert captured_kwargs[-1].get("section_order") == list(manifest.default_section_order)
+        assert captured_kwargs[-1].get("template_id") == "professional-sans"

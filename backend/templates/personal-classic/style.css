@@ -137,7 +137,7 @@ dl dd {
     white-space: nowrap;
 }
 
-dl + ul {
+dl + ul, dl + p {
     margin-top: 0.06em;
 }
 

@@ -269,3 +269,114 @@ async def test_preview_render_does_not_block_event_loop(monkeypatch):
     finally:
         release.set()
     assert (await task).page_count == 1
+
+
+# ── Professional Sans Preview Tests ──────────────────────────────────────────
+
+
+def test_render_professional_sans_preview_pages_direct():
+    manifest = TemplateRegistryService.get_template_manifest("professional-sans")
+    assert manifest is not None
+
+    page_images, fit_result, effective_order = render_template_preview_pages(
+        template_id="professional-sans",
+        manifest=manifest,
+        section_order=None,
+    )
+    assert len(page_images) == 1
+    assert page_images[0].startswith("data:image/")
+    assert fit_result.page_count == 1
+    assert fit_result.fits_target is True
+    assert fit_result.font_size >= manifest.min_font_size
+    assert effective_order == list(manifest.default_section_order)
+
+
+@pytest.mark.asyncio
+async def test_preview_professional_sans_authenticated_default(db_env):
+    user, token, session_maker = db_env
+    headers = {"Authorization": f"Bearer {token}"}
+    transport = ASGITransport(app=app)
+    manifest = TemplateRegistryService.get_template_manifest("professional-sans")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/templates/professional-sans/preview",
+            json={},
+            headers=headers,
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["template_id"] == "professional-sans"
+        assert len(data["page_images"]) == 1
+        assert data["page_images"][0].startswith("data:image/")
+        assert data["page_count"] == 1
+        assert data["font_size"] >= manifest.min_font_size
+        assert data["fit_warning"] is False
+        assert data["section_order"] == list(manifest.default_section_order)
+
+    # Verify no Generation records created and no LLM credits used
+    async with session_maker() as db:
+        gens = (await db.execute(select(Generation))).scalars().all()
+        assert len(gens) == 0
+
+
+@pytest.mark.asyncio
+async def test_preview_professional_sans_authenticated_custom_order(db_env):
+    user, token, _ = db_env
+    headers = {"Authorization": f"Bearer {token}"}
+    custom_order = [
+        "experiences",
+        "projects",
+        "skills",
+        "education",
+        "summary",
+        "extracurriculars",
+    ]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/templates/professional-sans/preview",
+            json={"section_order": custom_order},
+            headers=headers,
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["template_id"] == "professional-sans"
+        assert data["section_order"] == custom_order
+        assert len(data["page_images"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_preview_independent_template_isolation(db_env):
+    user, token, session_maker = db_env
+    headers = {"Authorization": f"Bearer {token}"}
+    transport = ASGITransport(app=app)
+
+    # User sets custom layout for personal-classic
+    custom_classic = [
+        "skills",
+        "experiences",
+        "projects",
+        "education",
+        "summary",
+        "extracurriculars",
+    ]
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        put_res = await client.put(
+            "/templates/personal-classic/layout",
+            json={"section_order": custom_classic},
+            headers=headers,
+        )
+        assert put_res.status_code == 200
+
+        # Previewing professional sans without explicit order resolves to sans default
+        sans_manifest = TemplateRegistryService.get_template_manifest("professional-sans")
+        res = await client.post("/templates/professional-sans/preview", json={}, headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["template_id"] == "professional-sans"
+        assert data["section_order"] == list(sans_manifest.default_section_order)
+        assert data["section_order"] != custom_classic
+
+        # Verify personal-classic layout in DB is still untouched
+        classic_layout = await client.get("/templates/personal-classic/layout", headers=headers)
+        assert classic_layout.json()["section_order"] == custom_classic

@@ -10,15 +10,22 @@ type Props = {
   templateId: string
   templateName: string
   sectionOrder?: SectionId[]
+  expectedSections?: readonly SectionId[]
   onClose: () => void
 }
 
-export function TemplatePreviewDialog({ templateId, templateName, sectionOrder, onClose }: Props) {
+export function TemplatePreviewDialog({
+  templateId,
+  templateName,
+  sectionOrder,
+  expectedSections,
+  onClose,
+}: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const { data, isError, refetch } = useQuery({
-    queryKey: ["template-preview", templateId, sectionOrder],
-    queryFn: ({ signal }) => fetchTemplatePreview(templateId, sectionOrder, signal),
+    queryKey: ["template-preview", templateId, sectionOrder, expectedSections],
+    queryFn: ({ signal }) => fetchTemplatePreview(templateId, sectionOrder, signal, expectedSections),
     staleTime: 5 * 60 * 1000,
     retry: false,
   })

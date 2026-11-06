@@ -1,39 +1,26 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info, Eye } from "lucide-react"
+import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Pencil, RotateCcw, Plus, Minus, Info, Eye } from "lucide-react"
 import Link from "next/link"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
 import {
-  type SectionId,
+  type TemplateItem,
+  type TemplateLayoutResponse,
   fetchTemplateLayout,
+  fetchTemplates,
   SECTION_METADATA,
 } from "@/lib/template-layout"
 import { TemplateLayoutEditor } from "@/components/generation/TemplateLayoutEditor"
 import { TemplatePreviewDialog } from "@/components/generation/TemplatePreviewDialog"
 type Step = "input" | "submitted"
-
-type ContentSplit = {
-  projects: number
-  experience: number
-  label: string
-}
-type TemplateItem = {
-  id: string
-  name: string
-  description: string
-  content_slots: number
-  allowed_content_splits: ContentSplit[]
-  default_content_split: ContentSplit
-  default_section_order?: SectionId[]
-}
 
 type ProfileEntry = { id?: string }
 const nodeProgressMap: Record<string, number> = {
@@ -77,7 +64,7 @@ const nodeLabels: Record<string, string> = {
 export function GenerateClient() {
   const queryClient = useQueryClient()
   const [step, setStep] = useState<Step>("input")
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("personal-classic")
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("personal-classic")
   const [jobDescription, setJobDescription] = useState("")
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
@@ -93,17 +80,32 @@ export function GenerateClient() {
   const [liveStepLabel, setLiveStepLabel] = useState("Starting")
   const [isGenerationComplete, setIsGenerationComplete] = useState(false)
   const [isLayoutEditorOpen, setIsLayoutEditorOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<TemplateItem | null>(null)
   const [previewTemplate, setPreviewTemplate] = useState<TemplateItem | null>(null)
-  const [userSavedOverrides, setUserSavedOverrides] = useState<Record<string, SectionId[]>>({})
 
-  const { data: templates = [], isLoading: isLoadingTemplates } = useQuery<TemplateItem[]>({
+  const {
+    data: templates = [],
+    isLoading: isLoadingTemplates,
+    isError: isTemplatesError,
+    error: templatesError,
+    refetch: refetchTemplates,
+  } = useQuery<TemplateItem[]>({
     queryKey: ["templates"],
-    queryFn: async () => {
-      const res = await fetch("/api/backend/templates")
-      if (!res.ok) throw new Error("Failed to load templates")
-      return res.json()
-    },
+    queryFn: ({ signal }) => fetchTemplates(signal),
   })
+
+  // Derive effective selection idiomatically without calling setState in an effect
+  const selectedTemplate = useMemo(() => {
+    if (templates.length === 0) return selectedTemplateId
+    if (templates.some((t) => t.id === selectedTemplateId)) {
+      return selectedTemplateId
+    }
+    return templates[0].id
+  }, [templates, selectedTemplateId])
+
+  const setSelectedTemplate = useCallback((id: string) => {
+    setSelectedTemplateId(id)
+  }, [])
 
   // Saved layout preference query per selected template
   const {
@@ -123,26 +125,29 @@ export function GenerateClient() {
     [templates, selectedTemplate]
   )
 
-  // Explicit user override saved during the current session
-  const sessionLayoutOverride = userSavedOverrides[selectedTemplate] ?? null
+  // Ensure layoutData matches the current selectedTemplate to prevent race conditions or stale updates
+  const verifiedLayoutOrder = useMemo(() => {
+    if (layoutData && layoutData.template_id === selectedTemplate) {
+      return layoutData.section_order
+    }
+    return undefined
+  }, [layoutData, selectedTemplate])
 
   // Order to send in generation POST body:
-  // ONLY sent if user explicitly customized it in this session OR layout data is safely loaded.
+  // Sent if layout data is safely loaded and verified for selectedTemplate.
   // When loading or failed, omit order (undefined) so backend resolves stored DB preference without clobbering.
   const sectionOrderToSend = useMemo(() => {
-    if (sessionLayoutOverride) return sessionLayoutOverride
-    if (layoutData?.section_order) return layoutData.section_order
+    if (verifiedLayoutOrder) return verifiedLayoutOrder
     return undefined
-  }, [sessionLayoutOverride, layoutData])
+  }, [verifiedLayoutOrder])
 
   // Display order for UI preview / summary (fallback to template default only when not loading)
   const displaySectionOrder = useMemo(() => {
     return (
-      sessionLayoutOverride ??
-      layoutData?.section_order ??
+      verifiedLayoutOrder ??
       (isLoadingLayout ? null : selectedTemplateObj?.default_section_order ?? null)
     )
-  }, [sessionLayoutOverride, layoutData, isLoadingLayout, selectedTemplateObj])
+  }, [verifiedLayoutOrder, isLoadingLayout, selectedTemplateObj])
 
   const { data: profileExperiences = [] } = useQuery<ProfileEntry[]>({
     queryKey: ["profile-experiences"],
@@ -198,8 +203,8 @@ export function GenerateClient() {
   // preference; derive the counters during render so their choice survives
   // template refetches while any manual adjustment takes precedence.
   const baseTemplate = activeTemplate ?? templates[0]
-  const projectsCount = splitOverride?.projects ?? baseTemplate?.default_content_split.projects ?? 2
-  const experienceCount = splitOverride?.experience ?? baseTemplate?.default_content_split.experience ?? 2
+  const projectsCount = splitOverride?.projects ?? baseTemplate?.default_content_split?.projects ?? 2
+  const experienceCount = splitOverride?.experience ?? baseTemplate?.default_content_split?.experience ?? 2
 
   const numProfileProjects = profileProjects.length
   const numProfileExperiences = profileExperiences.length
@@ -362,8 +367,57 @@ export function GenerateClient() {
     )
   }
 
+  // Initial load failure: block screen with retry when no cached templates exist
+  if (isTemplatesError && templates.length === 0) {
+    return (
+      <div className="panel border-amber-200 bg-amber-50 p-6 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle size={20} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <div>
+              <h3 className="text-sm font-bold">Failed to load templates</h3>
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                {templatesError instanceof Error ? templatesError.message : "Could not retrieve available templates."}
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => refetchTemplates()}
+            className="shrink-0 border-amber-300 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900"
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4 md:space-y-5 pixel-enter">
+      {/* Background template query error with cached data: retain screen & unsaved state, show retry notice */}
+      {isTemplatesError && templates.length > 0 && (
+        <div role="alert" className="panel flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+          <div className="flex items-center gap-2 text-xs">
+            <AlertCircle size={16} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <span>
+              Failed to refresh templates in background ({templatesError instanceof Error ? templatesError.message : "network error"}). Working with cached templates.
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => refetchTemplates()}
+            className="shrink-0 h-8 border-amber-300 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-100 dark:hover:bg-amber-900"
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       {error && (
         <div className="panel flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-red-200 bg-red-50 p-3 text-red-700">
           <div className="flex items-center gap-3 min-w-0">
@@ -391,25 +445,73 @@ export function GenerateClient() {
               <Label className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">1. Select Template</Label>
               <span className="text-[11px] font-mono text-zinc-400">ATS Optimized</span>
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {templates.map((tpl) => {
                 const selected = selectedTemplate === tpl.id
                 return (
-                  <div key={tpl.id} className={`overflow-hidden rounded-lg border transition-colors ${selected ? "border-[#ff4e26] bg-white dark:bg-zinc-900" : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900"}`}>
-                    <button type="button" onClick={() => setSelectedTemplate(tpl.id)} aria-pressed={selected}
-                      className="flex w-full items-center gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
-                      <FileText size={22} className={selected ? "text-[#ff4e26]" : "text-zinc-400"} aria-hidden="true" />
-                      <span className="flex-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{tpl.name}</span>
-                      <span aria-hidden="true" className={`flex h-4 w-4 items-center justify-center rounded-full border ${selected ? "border-[#ff4e26]" : "border-zinc-300 dark:border-zinc-600"}`}>{selected && <span className="h-2 w-2 rounded-full bg-[#ff4e26]" />}</span>
+                  <div
+                    key={tpl.id}
+                    className={`flex flex-col justify-between overflow-hidden rounded-lg border transition-colors ${
+                      selected
+                        ? "border-[#ff4e26] bg-white shadow-sm dark:bg-zinc-900"
+                        : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTemplate(tpl.id)}
+                      aria-pressed={selected}
+                      className="flex w-full items-start gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-[#ff4e26]"
+                    >
+                      <FileText
+                        size={22}
+                        className={`mt-0.5 shrink-0 ${selected ? "text-[#ff4e26]" : "text-zinc-400"}`}
+                        aria-hidden="true"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                            {tpl.name}
+                          </span>
+                        </div>
+                        {tpl.description ? (
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                            {tpl.description}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span
+                        aria-hidden="true"
+                        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                          selected
+                            ? "border-[#ff4e26]"
+                            : "border-zinc-300 dark:border-zinc-600"
+                        }`}
+                      >
+                        {selected && <span className="h-2 w-2 rounded-full bg-[#ff4e26]" />}
+                      </span>
                     </button>
-                    <div className="flex items-center gap-5 px-4 pb-2">
-                      <button type="button" onClick={() => { setSelectedTemplate(tpl.id); setIsLayoutEditorOpen(true) }}
-                        className="inline-flex min-h-11 items-center gap-2 px-1 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
-                        <Pencil size={16} aria-hidden="true" />Edit template
+                    <div className="flex items-center gap-5 px-4 pb-3 pt-1 border-t border-zinc-100 dark:border-zinc-800/60 mt-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingTemplate(tpl)
+                          setIsLayoutEditorOpen(true)
+                        }}
+                        aria-label={`Edit ${tpl.name} layout`}
+                        className="inline-flex min-h-11 items-center gap-2 px-1 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]"
+                      >
+                        <Pencil size={16} aria-hidden="true" />
+                        <span>Edit template</span>
                       </button>
-                      <button type="button" onClick={() => setPreviewTemplate(tpl)}
-                        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
-                        <Eye size={17} aria-hidden="true" />Preview
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTemplate(tpl)}
+                        aria-label={`Preview ${tpl.name}`}
+                        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]"
+                      >
+                        <Eye size={17} aria-hidden="true" />
+                        <span>Preview</span>
                       </button>
                     </div>
                   </div>
@@ -418,12 +520,12 @@ export function GenerateClient() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              {isLoadingLayout && !sessionLayoutOverride ? (
+              {isLoadingLayout && !verifiedLayoutOrder ? (
                 <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 dark:text-zinc-500">
                   <Loader2 size={12} className="animate-spin text-[#ff4e26]" aria-hidden="true" />
                   <span>Loading layout preference...</span>
                 </div>
-              ) : isLayoutError && !sessionLayoutOverride ? (
+              ) : isLayoutError && !verifiedLayoutOrder ? (
                 <div className="flex items-center gap-2 text-[11px] text-amber-700 dark:text-amber-400">
                   <div className="flex items-center gap-1">
                     <AlertCircle size={12} className="shrink-0 text-amber-600" aria-hidden="true" />
@@ -449,180 +551,176 @@ export function GenerateClient() {
             </div>
           </div>
 
-          {/* 2. Job Description Textarea (Primary Action) */}
+          {/* 2. Job Description */}
           <div className="space-y-2">
-            <Label htmlFor="job" className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
-              2. Target Job Description *
+            <Label htmlFor="jobDescription" className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
+              2. Job Description <span className="text-red-500">*</span>
             </Label>
             <Textarea
-              id="job"
+              id="jobDescription"
               required
               rows={6}
-              placeholder="Paste the full job posting here (responsibilities, requirements, tech stack)..."
               value={jobDescription}
               onChange={(e) => setJobDescription(e.target.value)}
-              className="min-h-36 font-sans text-sm leading-relaxed"
+              placeholder="Paste full job description..."
+              className="font-mono text-xs"
             />
           </div>
 
-          {/* 3. Content Split (Projects & Experience Counters) */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
-                3. Content Split
-              </Label>
-              <span className="text-[11px] font-mono text-zinc-400">
-                {projectsCount} Proj &bull; {experienceCount} Exp
-              </span>
-            </div>
+          {/* 3. Creativity Mode */}
+          <CreativityModeSelector
+            value={creativityMode}
+            onChange={(mode) => setCreativityMode(mode)}
+          />
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {/* Projects Counter */}
-              <div className="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <FolderGit2 size={16} className="text-[#ff4e26] shrink-0" />
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-extrabold uppercase truncate text-zinc-900 dark:text-zinc-100">
-                      Projects
-                    </span>
-                    <span className="text-[10px] font-mono text-zinc-400">
-                      {numProfileProjects} in profile
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    disabled={projectsCount <= 1}
-                    onClick={() => handleProjectsChange(-1)}
-                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
-                    aria-label="Decrease projects"
-                  >
-                    <Minus size={13} />
-                  </button>
-                  <span className="w-5 text-center font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
-                    {projectsCount}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={projectsCount >= 3}
-                    onClick={() => handleProjectsChange(1)}
-                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
-                    aria-label="Increase projects"
-                  >
-                    <Plus size={13} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Experience Counter */}
-              <div className="flex items-center justify-between border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Briefcase size={16} className="text-[#ff4e26] shrink-0" />
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-extrabold uppercase truncate text-zinc-900 dark:text-zinc-100">
-                      Experience
-                    </span>
-                    <span className="text-[10px] font-mono text-zinc-400">
-                      {numProfileExperiences} in profile
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    disabled={experienceCount <= 1}
-                    onClick={() => handleExperienceChange(-1)}
-                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
-                    aria-label="Decrease experience"
-                  >
-                    <Minus size={13} />
-                  </button>
-                  <span className="w-5 text-center font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
-                    {experienceCount}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={experienceCount >= 3}
-                    onClick={() => handleExperienceChange(1)}
-                    className="flex h-7 w-7 items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors"
-                    aria-label="Increase experience"
-                  >
-                    <Plus size={13} />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Auto-shift notice if triggered */}
-            {adjustmentNotice && (
-              <p className="text-[11px] font-mono text-[#ff4e26] flex items-center gap-1.5 pt-0.5">
-                <Info size={12} className="shrink-0" />
-                <span>{adjustmentNotice}</span>
-              </p>
-            )}
-
-            {/* Missing profile material warning */}
-            {isMissingMaterial && (
-              <p className="text-[11px] font-mono text-amber-600 dark:text-amber-400 flex items-center justify-between gap-1 pt-0.5">
-                <span className="flex items-center gap-1.5">
-                  <AlertTriangle size={12} className="shrink-0" />
-                  <span>
-                    Need {!hasEnoughProjects ? `${projectsCount - numProfileProjects} more project(s)` : ""}
-                    {!hasEnoughProjects && !hasEnoughExperiences ? " & " : ""}
-                    {!hasEnoughExperiences ? `${experienceCount - numProfileExperiences} more experience(s)` : ""} in profile
-                  </span>
-                </span>
-                <Link href="/profile" className="underline font-bold hover:text-amber-500">
-                  Add &rarr;
-                </Link>
-              </p>
-            )}
-          </div>
-
-          {/* 4. Optional Collapsible Advanced Options Accordion (Keywords, Instructions, Email) */}
-          <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:p-4">
+          {/* Advanced Options Accordion */}
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden bg-white dark:bg-zinc-900">
             <button
               type="button"
-              onClick={() => setAdvancedExpanded(!advancedExpanded)}
-              className="flex w-full items-center justify-between text-left font-black text-xs uppercase tracking-wider text-zinc-800 dark:text-zinc-200 cursor-pointer"
+              onClick={() => setAdvancedExpanded((prev) => !prev)}
+              aria-expanded={advancedExpanded}
+              aria-controls="generation-advanced-options"
+              className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
             >
-              <span className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <SlidersHorizontal size={14} className="text-[#ff4e26]" />
-                4. Additional Customization &amp; Keywords (Optional)
-              </span>
-              {advancedExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                <span>Advanced Tailoring Controls</span>
+              </div>
+              {advancedExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
 
             {advancedExpanded && (
-              <div className="mt-3.5 space-y-4 border-t border-zinc-200 pt-3.5 dark:border-zinc-800">
+              <div id="generation-advanced-options" className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4 bg-zinc-50/50 dark:bg-zinc-950/50">
+                {/* Content Distribution (Split) Override */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                        Content Slot Distribution
+                      </Label>
+                      <p className="text-[11px] text-zinc-500">
+                        Total items targeted for the 1-page layout. Minimum 1 per category.
+                      </p>
+                    </div>
+                    {splitOverride && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSplitOverride(null)
+                          setAdjustmentNotice(null)
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] text-[#ff4e26] hover:underline"
+                      >
+                        <RotateCcw size={12} />
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="flex items-center justify-between p-2.5 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                      <div className="flex items-center gap-2">
+                        <FolderGit2 size={16} className="text-zinc-500" />
+                        <div>
+                          <p className="text-xs font-semibold">Projects</p>
+                          <p className="text-[10px] text-zinc-400">1 – 3</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleProjectsChange(-1)}
+                          disabled={projectsCount <= 1}
+                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          aria-label="Decrease projects"
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span className="w-5 text-center text-xs font-mono font-bold">{projectsCount}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleProjectsChange(1)}
+                          disabled={projectsCount >= 3}
+                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          aria-label="Increase projects"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2.5 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                      <div className="flex items-center gap-2">
+                        <Briefcase size={16} className="text-zinc-500" />
+                        <div>
+                          <p className="text-xs font-semibold">Experience</p>
+                          <p className="text-[10px] text-zinc-400">1 – 3</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleExperienceChange(-1)}
+                          disabled={experienceCount <= 1}
+                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          aria-label="Decrease experience"
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span className="w-5 text-center text-xs font-mono font-bold">{experienceCount}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleExperienceChange(1)}
+                          disabled={experienceCount >= 3}
+                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          aria-label="Increase experience"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {adjustmentNotice && (
+                    <div className="flex items-start gap-1.5 p-2 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-[11px]">
+                      <Info size={13} className="shrink-0 mt-0.5" />
+                      <span>{adjustmentNotice}</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Keywords & Instructions */}
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="keywords" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Focus Keywords</Label>
+                <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                  <div className="space-y-1">
+                    <Label htmlFor="keywords" className="text-xs font-semibold">
+                      Target Keywords (comma-separated)
+                    </Label>
                     <Input
                       id="keywords"
-                      placeholder="e.g. AWS, React, Python"
                       value={keywords}
                       onChange={(e) => setKeywords(e.target.value)}
+                      placeholder="e.g. Next.js, Kubernetes, Distributed Systems"
+                      className="text-xs"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="instructions" className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Custom Instructions</Label>
-                    <Input
+
+                  <div className="space-y-1">
+                    <Label htmlFor="instructions" className="text-xs font-semibold">
+                      Custom Pipeline Instructions
+                    </Label>
+                    <Textarea
                       id="instructions"
-                      placeholder="e.g. Emphasize distributed systems"
+                      rows={2}
                       value={instructions}
                       onChange={(e) => setInstructions(e.target.value)}
+                      placeholder="e.g. Focus on technical contributions rather than team leadership"
+                      className="text-xs font-mono"
                     />
                   </div>
                 </div>
 
-                <CreativityModeSelector value={creativityMode} onChange={setCreativityMode} />
                 {/* Email toggle */}
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 pt-2 border-t border-zinc-200 dark:border-zinc-800">
                   <Label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Email notification</Label>
                   <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
                     {[
@@ -634,6 +732,7 @@ export function GenerateClient() {
                         key={opt.label}
                         type="button"
                         onClick={() => setSendEmail(opt.val)}
+                        aria-pressed={sendEmail === opt.val}
                         className={`border py-1.5 text-center transition-colors cursor-pointer ${
                           sendEmail === opt.val
                             ? "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-700 text-white"
@@ -649,174 +748,150 @@ export function GenerateClient() {
             )}
           </div>
 
-          {/* 4. Action & Discreet Beta Limit Note */}
-          <div className="space-y-2 pt-2">
-            <Button type="submit" size="lg" className="w-full" disabled={isSubmitting || !jobDescription.trim()}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="animate-spin" size={18} /> Generating...
-                </>
-              ) : (
-                "Generate Tailored Résumé"
-              )}
-            </Button>
-            <p className="text-center font-mono text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-              Free beta limit: 5 builds / day &bull; Resets in 24 hours
-            </p>
-          </div>
+          {/* Missing Material Warning Banner */}
+          {isMissingMaterial && (
+            <div className="flex items-start gap-2.5 p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-900 dark:text-amber-200 text-xs">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <div className="flex-1">
+                <span className="font-semibold">Profile material is below requested split.</span>{" "}
+                You requested {projectsCount} projects and {experienceCount} experiences, but your profile currently has {numProfileProjects} and {numProfileExperiences}.{" "}
+                <Link href="/profile" className="underline font-bold hover:text-amber-700 dark:hover:text-amber-100">
+                  Update your profile
+                </Link>{" "}
+                to avoid generation failure.
+              </div>
+            </div>
+          )}
+
+          {/* Submit Button */}
+          <Button
+            type="submit"
+            disabled={isSubmitting || !jobDescription.trim()}
+            className="w-full bg-[#ff4e26] hover:bg-[#e0431f] text-white py-6 text-sm font-extrabold uppercase tracking-wider shadow-md hover:shadow-lg transition-all"
+          >
+            {isSubmitting ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                Initializing Pipeline...
+              </span>
+            ) : (
+              "Generate Tailored Résumé"
+            )}
+          </Button>
         </form>
       )}
 
-      {/* Waiting Screen with Live Animated Progress Bar */}
       {step === "submitted" && (
-        <div className="mx-auto max-w-xl space-y-5 py-6 md:py-8 pixel-enter">
-          <div className="border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 md:p-7">
-            <div className="mb-4 text-center">
-              <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
-                {isGenerationComplete ? "Complete" : "Processing"}
-              </p>
-              <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white md:text-2xl">
-                {isGenerationComplete ? "Your Résumé is Ready" : "Tailoring Your Résumé"}
-              </h3>
-              <p className="mt-1 text-xs font-medium text-amber-500 dark:text-amber-400 md:text-sm">
-                {liveStepLabel} ({livePercent}%)
-              </p>
-            </div>
-
-            {/* Live Progress Bar */}
-            <div className="space-y-2">
-              <div className="flex justify-between font-mono text-xs font-bold text-zinc-600 dark:text-zinc-400">
-                <span>Progress</span>
-                <span>{livePercent}%</span>
-              </div>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                <div
-                  className="h-full bg-[#ff4e26] transition-all duration-500 ease-out"
-                  style={{ width: `${livePercent}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Safe to close & Notification note */}
-            {!isGenerationComplete && (
-              <p className="mt-4 text-center text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
-                It is safe to close this window as this might take some time.{" "}
-                {sendEmail === true || (sendEmail === null && (profileData?.notify_on_completion ?? true)) ? (
-                  profileData?.email ? (
-                    <>
-                      You&apos;ll get an email at{" "}
-                      <strong className="text-zinc-800 dark:text-zinc-200">
-                        {profileData.email}
-                      </strong>{" "}
-                      when done.
-                    </>
-                  ) : (
-                    <>You&apos;ll receive an email notification when done.</>
-                  )
-                ) : (
-                  <>You can check the progress in the history page.</>
-                )}
-              </p>
-            )}
-            {/* Actions once complete or failed */}
-            {isGenerationComplete && createdRunId && liveStepLabel === "Generation failed" && (
-              <div className="mt-6 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                <div className="flex items-start gap-2 border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3">
-                  <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600" />
-                  <p className="text-xs font-bold leading-relaxed text-red-800 dark:text-red-300">
-                    Generation failed. Your input is saved — you can report this and we will check logs for run {createdRunId.slice(0, 8)}.
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <ReportIssueButton
-                    defaultCategory="generation"
-                    defaultMessage={`[Generation failed]\nRun ID: ${createdRunId}\nStep: ${liveStepLabel}\nTemplate: ${selectedTemplate}\nContent split: ${projectsCount} projects / ${experienceCount} experiences\n\nWhat did you expect? Describe your job description length and any custom instructions:\n`}
-                    generationId={createdRunId}
-                    userEmail={profileData?.email}
-                    title="Report failed generation"
-                    description="Run ID and context are prefilled. Add a sentence about the job description and expected result."
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 font-black uppercase tracking-wider"
-                  >
-                    Report this failure
-                  </ReportIssueButton>
-                  <Link href="/support" className="flex-1">
-                    <Button variant="outline" className="w-full font-bold uppercase tracking-wider text-xs">
-                      Open support
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            )}
-            {isGenerationComplete && createdRunId && liveStepLabel !== "Generation failed" && (
-              <div className="mt-6 flex flex-col gap-2.5 sm:flex-row pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                <a
-                  href={`/api/backend/generate/${createdRunId}/download`}
-                  className="flex-1"
-                >
-                  <Button className="w-full">
-                    <Download size={16} /> Download PDF
-                  </Button>
-                </a>
-                <Link
-                  href={`/dashboard/history/${createdRunId}/edit`}
-                  className="flex-1"
-                >
-                  <Button variant="outline" className="w-full">
-                    <Pencil size={16} /> Open Editor
-                  </Button>
-                </Link>
-              </div>
-            )}
+        <div className="panel space-y-6 py-8">
+          <div className="text-center space-y-2">
+            <h2 className="text-lg font-bold">Generating Your Tailored Résumé</h2>
+            <p className="text-xs text-zinc-500 font-mono">Run ID: {createdRunId}</p>
           </div>
 
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-            <Link href="/dashboard/history" className="w-full sm:w-auto">
-              <Button variant="outline" className="w-full">
-                View All History
-              </Button>
-            </Link>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setJobDescription("")
-                setKeywords("")
-                setInstructions("")
-                setCreatedRunId(null)
-                setIsGenerationComplete(false)
-                setStep("input")
-              }}
-              className="w-full sm:w-auto"
-            >
-              <RotateCcw size={14} /> Generate Another
-            </Button>
+          <div className="space-y-2 max-w-md mx-auto">
+            <div className="flex justify-between text-xs font-mono">
+              <span className="font-semibold">{liveStepLabel}</span>
+              <span>{livePercent}%</span>
+            </div>
+            <div className="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2.5 overflow-hidden">
+              <div
+                className="bg-[#ff4e26] h-2.5 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${livePercent}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Safe to close & Notification note */}
+          {!isGenerationComplete && (
+            <p className="mt-4 text-center text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
+              It is safe to close this window as this might take some time.{" "}
+              {sendEmail === true || (sendEmail === null && (profileData?.notify_on_completion ?? true)) ? (
+                profileData?.email ? (
+                  <>
+                    You&apos;ll get an email at{" "}
+                    <strong className="text-zinc-800 dark:text-zinc-200">
+                      {profileData.email}
+                    </strong>{" "}
+                    when done.
+                  </>
+                ) : (
+                  <>You&apos;ll receive an email notification when done.</>
+                )
+              ) : (
+                <>You can check the progress in the history page.</>
+              )}
+            </p>
+          )}
+
+          {isGenerationComplete ? (
+            <div className="text-center space-y-4 pt-4">
+              <div className="inline-flex items-center gap-2 text-green-600 dark:text-green-400 font-bold text-sm">
+                <span>Generation Finished</span>
+              </div>
+              <div className="flex justify-center gap-3">
+                <Link href={`/dashboard/history`}>
+                  <Button variant="outline" size="sm">
+                    View in History
+                  </Button>
+                </Link>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setStep("input")
+                    setCreatedRunId(null)
+                    setIsGenerationComplete(false)
+                    setLivePercent(10)
+                  }}
+                  className="bg-[#ff4e26] hover:bg-[#e0431f] text-white"
+                >
+                  Create Another
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-2 text-zinc-400 text-xs py-4">
+              <Loader2 className="animate-spin text-[#ff4e26]" size={20} />
+              <span>Tailoring bullets and assembling ATS-compliant layout...</span>
+            </div>
+          )}
+
+          {/* Issue report button during or after generation */}
+          <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-center">
+            <ReportIssueButton
+              defaultCategory="generation"
+              defaultMessage={`[Generation issue]\nRun ID: ${createdRunId}\nStep: ${liveStepLabel}\nTemplate: ${selectedTemplate}\nContent split: ${projectsCount} projects / ${experienceCount} experiences\n\nDescribe what happened:\n`}
+              userEmail={profileData?.email}
+              title="Report an issue with this run"
+              description="Prefilled with run ID and step details. Let us know what went wrong."
+              variant="outline"
+              size="sm"
+              className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+            />
           </div>
         </div>
       )}
 
+      {/* Insufficient Profile Material Modal */}
       {showErrorModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 md:items-center md:p-4">
-          <div className="w-full max-w-md border-t border-zinc-900 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 shadow-2xl md:border md:p-6">
-            <div className="flex gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-red-50 dark:bg-red-950/40 text-red-600">
-                <AlertCircle size={20} />
-              </div>
-              <div>
-                <h3 className="text-lg font-extrabold uppercase tracking-tight dark:text-white">Need More Profile Material</h3>
-                <p className="mt-1 text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">
-                  This focus needs more saved projects or experience before generation can start.
-                </p>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="panel max-w-md w-full bg-white dark:bg-zinc-900 border-red-200 dark:border-red-900 p-6 space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <AlertCircle size={24} />
+              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                Insufficient Profile Data
+              </h3>
             </div>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              Your requested split targets <span className="font-bold text-zinc-900 dark:text-zinc-100">{projectsCount} projects</span> and <span className="font-bold text-zinc-900 dark:text-zinc-100">{experienceCount} experiences</span>, but your profile does not have enough entries to satisfy this layout.
+            </p>
 
-            <div className="mt-4 grid gap-2 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 text-sm font-bold">
-              <div className="flex justify-between gap-3">
-                <span className="text-zinc-500 dark:text-zinc-400">Projects</span>
+            <div className="space-y-1 text-xs font-mono bg-zinc-100 dark:bg-zinc-800 p-3 rounded">
+              <div className="flex justify-between">
+                <span>Projects:</span>
                 <span>{profileProjects.length} available / {projectsCount} needed</span>
               </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-zinc-500 dark:text-zinc-400">Experience</span>
+              <div className="flex justify-between">
+                <span>Experiences:</span>
                 <span>{profileExperiences.length} available / {experienceCount} needed</span>
               </div>
             </div>
@@ -833,30 +908,49 @@ export function GenerateClient() {
         </div>
       )}
 
-      {previewTemplate && <TemplatePreviewDialog
-        templateId={previewTemplate.id}
-        templateName={previewTemplate.name}
-        sectionOrder={previewTemplate.id === selectedTemplate ? sectionOrderToSend : undefined}
-        onClose={() => setPreviewTemplate(null)}
-      />}
+      {previewTemplate && (
+        <TemplatePreviewDialog
+          templateId={previewTemplate.id}
+          templateName={previewTemplate.name}
+          expectedSections={previewTemplate.default_section_order}
+          sectionOrder={
+            previewTemplate.id === selectedTemplate
+              ? sectionOrderToSend
+              : queryClient.getQueryData<TemplateLayoutResponse>(["template-layout", previewTemplate.id])?.section_order
+          }
+          onClose={() => setPreviewTemplate(null)}
+        />
+      )}
 
       {/* Full-screen Template Layout Editor Dialog */}
-      <TemplateLayoutEditor
-        key={selectedTemplate}
-        isOpen={isLayoutEditorOpen}
-        onClose={() => setIsLayoutEditorOpen(false)}
-        templateId={selectedTemplate}
-        templateName={selectedTemplateObj?.name || "Personal Classic"}
-        defaultOrder={selectedTemplateObj?.default_section_order}
-        initialAppliedOrder={sectionOrderToSend ?? displaySectionOrder}
-        onSaved={(newOrder) => {
-          setUserSavedOverrides((prev) => ({
-            ...prev,
-            [selectedTemplate]: newOrder,
-          }))
-          queryClient.invalidateQueries({ queryKey: ["template-layout", selectedTemplate] })
-        }}
-      />
+      {editingTemplate && (
+        <TemplateLayoutEditor
+          key={editingTemplate.id}
+          isOpen={isLayoutEditorOpen}
+          onClose={() => {
+            setIsLayoutEditorOpen(false)
+            setEditingTemplate(null)
+          }}
+          templateId={editingTemplate.id}
+          templateName={editingTemplate.name}
+          defaultOrder={editingTemplate.default_section_order}
+          initialAppliedOrder={
+            queryClient.getQueryData<TemplateLayoutResponse>(["template-layout", editingTemplate.id])?.section_order ??
+            (editingTemplate.id === selectedTemplate && layoutData?.template_id === selectedTemplate
+              ? layoutData.section_order
+              : undefined)
+          }
+          onSaved={async (newOrder, savedResponse) => {
+            // Cancel pending GET query to protect against stale in-flight responses
+            await queryClient.cancelQueries({ queryKey: ["template-layout", editingTemplate.id] })
+            // Populate query cache with verified actual save response
+            if (savedResponse) {
+              queryClient.setQueryData(["template-layout", editingTemplate.id], savedResponse)
+            }
+            queryClient.invalidateQueries({ queryKey: ["template-preview", editingTemplate.id] })
+          }}
+        />
+      )}
     </div>
   )
 }

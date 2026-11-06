@@ -2,12 +2,15 @@
 
 import { useEffect, useState, useRef, useId, useCallback } from "react"
 import { createPortal } from "react-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { X, RotateCcw, Check, LayoutList, Eye, AlertCircle } from "lucide-react"
 import {
   DEFAULT_SECTION_ORDER,
   type SectionId,
+  type TemplateLayoutResponse,
   fetchTemplateLayout,
   saveTemplateLayout,
+  clearPreviewCache,
 } from "@/lib/template-layout"
 import { SectionOrderList } from "./SectionOrderList"
 import { TemplateLayoutOutline } from "./TemplateLayoutOutline"
@@ -19,7 +22,7 @@ type TemplateLayoutEditorProps = {
   templateName?: string
   initialAppliedOrder?: SectionId[] | null
   defaultOrder?: SectionId[]
-  onSaved: (newOrder: SectionId[]) => void
+  onSaved: (newOrder: SectionId[], savedResponse?: TemplateLayoutResponse) => void
 }
 
 function isElementVisible(el: HTMLElement): boolean {
@@ -40,6 +43,14 @@ function isElementVisible(el: HTMLElement): boolean {
   )
 }
 
+function areOrdersEqual(a: readonly SectionId[], b: readonly SectionId[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
 export function TemplateLayoutEditor({
   isOpen,
   onClose,
@@ -49,6 +60,7 @@ export function TemplateLayoutEditor({
   defaultOrder = [...DEFAULT_SECTION_ORDER],
   onSaved,
 }: TemplateLayoutEditorProps) {
+  const queryClient = useQueryClient()
   const dialogId = useId()
   const titleId = useId()
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -63,6 +75,22 @@ export function TemplateLayoutEditor({
     initialAppliedOrder ? [...initialAppliedOrder] : [...defaultOrder]
   )
 
+  // Track latest state across async operations without mutating refs in render
+  const draftOrderRef = useRef<SectionId[]>(draftOrder)
+  const appliedOrderRef = useRef<SectionId[]>(appliedOrder)
+
+  useEffect(() => {
+    draftOrderRef.current = draftOrder
+  }, [draftOrder])
+
+  useEffect(() => {
+    appliedOrderRef.current = appliedOrder
+  }, [appliedOrder])
+
+  const hasUserEditsRef = useRef(false)
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false)
+  const activeRequestIdRef = useRef(0)
+
   // Hover sync between controls and preview
   const [hoveredSection, setHoveredSection] = useState<SectionId | null>(null)
 
@@ -75,33 +103,60 @@ export function TemplateLayoutEditor({
   const [mobileTab, setMobileTab] = useState<"sections" | "preview">("sections")
 
   // Check if draft order has changed from currently applied order
-  const isDirty = draftOrder.some((id, idx) => id !== appliedOrder[idx])
+  const isDirty = !areOrdersEqual(draftOrder, appliedOrder)
 
-  // Load saved preference from backend on open or template switch
+  // Load saved preference from backend on open or retry
   useEffect(() => {
     if (!isOpen || !templateId) return
 
     let isMounted = true
     const abortController = new AbortController()
+    const requestId = ++activeRequestIdRef.current
 
     async function loadLayout() {
       setIsLoading(true)
       setLoadError(null)
       try {
         const data = await fetchTemplateLayout(templateId, abortController.signal)
-        if (!isMounted) return
+        if (!isMounted || activeRequestIdRef.current !== requestId) return
 
+        setHasAttemptedLoad(true)
+
+        // Always update default section order so reset knows the latest manifest defaults
         setTemplateDefault(data.default_section_order)
-        setAppliedOrder(data.section_order)
-        setDraftOrder([...data.section_order])
+
+        // Determine if user has made unsaved edits or if draft is currently dirty
+        const isCurrentlyDirty = !areOrdersEqual(draftOrderRef.current, appliedOrderRef.current)
+        const hasUnsavedEdits = hasUserEditsRef.current || isCurrentlyDirty
+
+        if (hasUnsavedEdits) {
+          // DO NOT overwrite unsaved edits! Preserve draftOrder as-is.
+          // Update baseline appliedOrder to match what is on the server.
+          appliedOrderRef.current = data.section_order
+          setAppliedOrder(data.section_order)
+          if (areOrdersEqual(draftOrderRef.current, data.section_order)) {
+            hasUserEditsRef.current = false
+          }
+        } else {
+          // Initial successful load or clean retry: initialize both baseline and draft
+          appliedOrderRef.current = data.section_order
+          draftOrderRef.current = [...data.section_order]
+          setAppliedOrder(data.section_order)
+          setDraftOrder([...data.section_order])
+          hasUserEditsRef.current = false
+        }
+
+        // Cache update
+        queryClient.setQueryData(["template-layout", templateId], data)
       } catch (err) {
-        if (!isMounted || abortController.signal.aborted) return
-        // Do not overwrite existing draft or applied order if fetch fails
+        if (!isMounted || abortController.signal.aborted || activeRequestIdRef.current !== requestId) return
+        setHasAttemptedLoad(true)
+        // Do not overwrite existing draft or applied order if fetch fails; retain working editor state
         setLoadError(
           err instanceof Error ? err.message : "Failed to load template layout"
         )
       } finally {
-        if (isMounted) {
+        if (isMounted && activeRequestIdRef.current === requestId) {
           setIsLoading(false)
         }
       }
@@ -113,7 +168,13 @@ export function TemplateLayoutEditor({
       isMounted = false
       abortController.abort()
     }
-  }, [isOpen, templateId, loadRetry])
+  }, [isOpen, templateId, loadRetry, queryClient])
+
+  const handleDraftChange = useCallback((newOrder: SectionId[]) => {
+    draftOrderRef.current = newOrder
+    hasUserEditsRef.current = true
+    setDraftOrder(newOrder)
+  }, [])
 
   const handleClose = useCallback(() => {
     if (isSaving) return
@@ -123,6 +184,8 @@ export function TemplateLayoutEditor({
       }
     }
     // Discard draft changes and close
+    hasUserEditsRef.current = false
+    draftOrderRef.current = [...appliedOrder]
     setDraftOrder([...appliedOrder])
     setSaveError(null)
     onClose()
@@ -136,20 +199,32 @@ export function TemplateLayoutEditor({
 
   const handleResetToDefault = useCallback(() => {
     if (isSaving) return
+    draftOrderRef.current = [...templateDefault]
+    hasUserEditsRef.current = true
     setDraftOrder([...templateDefault])
     setSaveError(null)
   }, [isSaving, templateDefault])
 
   const handleSave = useCallback(async () => {
-    if (isSaving || isLoading || loadError || !templateId) return
+    if (isSaving || (isLoading && !hasAttemptedLoad) || !templateId) return
     setIsSaving(true)
     setSaveError(null)
 
     try {
-      const res = await saveTemplateLayout(templateId, draftOrder)
+      const res = await saveTemplateLayout(templateId, draftOrder, undefined, templateDefault)
+      // Cancel pending GET query to protect against stale in-flight responses
+      await queryClient.cancelQueries({ queryKey: ["template-layout", templateId] })
+      // Populate query cache with verified actual save response
+      queryClient.setQueryData(["template-layout", templateId], res)
+
+      hasUserEditsRef.current = false
+      appliedOrderRef.current = res.section_order
+      draftOrderRef.current = [...res.section_order]
       setAppliedOrder(res.section_order)
       setDraftOrder([...res.section_order])
-      onSaved(res.section_order)
+      clearPreviewCache(templateId)
+      queryClient.invalidateQueries({ queryKey: ["template-preview", templateId] })
+      onSaved(res.section_order, res)
       onClose()
     } catch (err) {
       setSaveError(
@@ -158,7 +233,7 @@ export function TemplateLayoutEditor({
     } finally {
       setIsSaving(false)
     }
-  }, [isSaving, isLoading, loadError, templateId, draftOrder, onSaved, onClose])
+  }, [isSaving, isLoading, hasAttemptedLoad, templateId, draftOrder, templateDefault, queryClient, onSaved, onClose])
 
   // Background inert, body scroll lock, and opener focus restoration
   useEffect(() => {
@@ -294,8 +369,15 @@ export function TemplateLayoutEditor({
       {(loadError || saveError) && (
         <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
           <AlertCircle size={18} className="shrink-0" aria-hidden="true" />
-          <span className="flex-1">{loadError ? "Could not load your saved layout." : "Could not save your layout. Your changes are still here."}</span>
-          <button type="button" disabled={isSaving} onClick={() => loadError ? setLoadRetry((v) => v + 1) : handleSave()} className="min-h-11 px-2 font-semibold underline">Retry</button>
+          <span className="flex-1">{saveError ? "Could not save your layout. Your changes are still here." : "Could not refresh your saved layout. Working with cached layout."}</span>
+          <button
+            type="button"
+            disabled={isSaving || (isLoading && !saveError)}
+            onClick={() => saveError ? handleSave() : setLoadRetry((v) => v + 1)}
+            className="min-h-11 px-2 font-semibold underline disabled:opacity-50"
+          >
+            {isLoading && !saveError ? "Retrying…" : "Retry"}
+          </button>
         </div>
       )}
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -303,22 +385,30 @@ export function TemplateLayoutEditor({
           className={`min-h-0 w-full overflow-y-auto overscroll-contain px-4 py-5 md:w-[42%] md:max-w-lg md:border-r md:px-6 md:py-6 dark:border-zinc-800 ${mobileTab === "preview" ? "hidden md:block" : "block"}`}>
           <h3 className="hidden md:block text-base font-semibold">Make it your order</h3>
           <p className="mb-4 text-sm leading-relaxed text-zinc-500 md:mt-1 dark:text-zinc-400">Drag the left grip to move a section, or use the arrows.</p>
-          {isLoading ? <p className="py-8 text-sm text-zinc-500" role="status">Loading your layout…</p> :
-            <SectionOrderList items={draftOrder} onChange={setDraftOrder} onHoverSection={setHoveredSection} disabled={isSaving || !!loadError} />}
+          {isLoading && !hasAttemptedLoad ? <p className="py-8 text-sm text-zinc-500" role="status">Loading your layout…</p> :
+            <SectionOrderList items={draftOrder} onChange={handleDraftChange} onHoverSection={setHoveredSection} disabled={isSaving} />}
           <p className="mt-5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">Empty sections are skipped. This layout applies to future resumes; existing resumes keep their order.</p>
         </section>
         <section id={`${dialogId}-preview`} aria-label="Template preview" className={`min-h-0 min-w-0 flex-1 ${mobileTab === "sections" ? "hidden md:block" : "block"}`}>
-          {!isLoading && !loadError && <TemplateLayoutOutline templateId={templateId} sectionOrder={draftOrder} templateName={templateName} activeHoverSection={hoveredSection} />}
+          {(!isLoading || hasAttemptedLoad) && (
+            <TemplateLayoutOutline
+              templateId={templateId}
+              sectionOrder={draftOrder}
+              templateName={templateName}
+              activeHoverSection={hoveredSection}
+              expectedSections={templateDefault}
+            />
+          )}
         </section>
       </div>
       <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 dark:border-zinc-800 dark:bg-zinc-950">
-        <button type="button" onClick={handleResetToDefault} disabled={isSaving || isLoading || !!loadError}
+        <button type="button" onClick={handleResetToDefault} disabled={isSaving || (isLoading && !hasAttemptedLoad)}
           className="flex min-h-11 items-center gap-2 rounded-lg px-1 sm:px-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800">
           <RotateCcw size={16} aria-hidden="true" />Reset
         </button>
         <div className="flex items-center gap-2">
           <button type="button" onClick={handleClose} disabled={isSaving} className="min-h-11 rounded-lg border border-zinc-200 px-2.5 sm:px-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900">Cancel</button>
-          <button type="button" onClick={handleSave} disabled={isSaving || isLoading || !!loadError || !isDirty}
+          <button type="button" onClick={handleSave} disabled={isSaving || (isLoading && !hasAttemptedLoad) || !isDirty}
             className="flex min-h-11 items-center gap-2 rounded-lg bg-[#ff4e26] px-3 sm:px-4 whitespace-nowrap text-sm font-semibold text-white hover:bg-[#e6411e] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
             <Check size={17} aria-hidden="true" />{isSaving ? "Saving…" : "Save layout"}
           </button>
