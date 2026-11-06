@@ -124,9 +124,11 @@ def compile_graph():
     def route_after_render(state: ResumeGraphState) -> str:
         target_pages = state.get("template_manifest", {}).get("target_pages", 1)
         page_count = state.get("page_count", 1)
+        fits_target = state.get("fits_target", True)
+        has_h_overflow = bool(state.get("has_horizontal_overflow"))
 
-        # Priority 1: page overflow — reduce content
-        if page_count > target_pages:
+        # Priority 1: page overflow or horizontal overflow — reduce content
+        if page_count > target_pages or not fits_target or has_h_overflow:
             if state.get("content_reduction_step", 0) < 2:
                 return "content_reduction"
             # Exhausted reductions, save with whatever we have

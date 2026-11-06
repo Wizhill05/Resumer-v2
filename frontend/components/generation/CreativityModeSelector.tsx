@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import { Info, X } from "lucide-react"
 
 export type CreativityMode = "proper" | "larp" | "super_larp"

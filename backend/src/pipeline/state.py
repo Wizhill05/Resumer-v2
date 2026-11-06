@@ -36,6 +36,12 @@ class ResumeGraphState(TypedDict):
     markdown: Optional[str]
     page_count: int
     font_size: float
+    fits_target: Optional[bool]
+    has_horizontal_overflow: Optional[bool]
+
+    # Fallback status flags
+    experience_fallback: Optional[bool]
+    projects_fallback: Optional[bool]
 
     # Artifact storage keys (set by save_artifacts_node; None = upload skipped/failed)
     pdf_storage_key: Optional[str]

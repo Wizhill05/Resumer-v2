@@ -1,7 +1,9 @@
 import json
 import re
 from pathlib import Path
+from typing import Any
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import Markup, escape
 from src.core.config import settings
 from src.schemas.template import TemplateManifest
 
@@ -24,6 +26,8 @@ class TemplateRegistryService:
                             templates.append(TemplateManifest(**data))
                     except Exception as e:
                         print(f"Error loading template manifest for {item.name}: {e}")
+        order_priority = {"personal-classic": 0, "professional-sans": 1}
+        templates.sort(key=lambda t: (order_priority.get(t.id, 99), t.name))
         return templates
 
     @staticmethod
@@ -72,16 +76,17 @@ class TemplateRegistryService:
             except Exception:
                 return str(value)
 
-        def markdown_filter(value: str) -> str:
+        def markdown_filter(value: Any) -> Markup:
             if not value:
-                return ""
+                return Markup("")
+            escaped = escape(value)
             # Replace **text** with <strong>text</strong>
-            value = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", value)
+            res = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", str(escaped))
             # Replace *text* with <em>text</em>
-            value = re.sub(r"\*(.*?)\*", r"<em>\1</em>", value)
+            res = re.sub(r"\*(.*?)\*", r"<em>\1</em>", res)
             # Replace `text` with <code>text</code>
-            value = re.sub(r"`([^`]*)`", r"<code>\1</code>", value)
-            return value
+            res = re.sub(r"`([^`]*)`", r"<code>\1</code>", res)
+            return Markup(res)
 
         env.filters["format_date"] = format_date
         env.filters["markdown"] = markdown_filter

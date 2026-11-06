@@ -1,0 +1,131 @@
+{% autoescape true %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ profile.full_name or "Resume" }}</title>
+  <style>
+    {% include 'professional-sans/style.css' %}
+    body { font-size: {{ font_size }}pt; }
+    h1 { font-size: {{ font_size * 2.1 }}pt; }
+    h2 { font-size: {{ font_size }}pt; }
+    @page { size: A4; margin: {{ page_margin_mm }}mm; }
+    @media screen { body { padding: {{ page_margin_mm }}mm; } }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>{{ (profile.full_name or '') | e }}</h1>
+  <div class="contact">
+    {%- set contacts = joiner(' | ') -%}
+    {%- if profile.phone %}{{ contacts() }}{{ profile.phone | e }}{% endif -%}
+    {%- if profile.email %}{{ contacts() }}<a href="mailto:{{ profile.email | e }}">{{ profile.email | e }}</a>{% endif -%}
+    {%- if profile.linkedin_url %}{{ contacts() }}<a href="{{ profile.linkedin_url | e }}">LinkedIn</a>{% endif -%}
+    {%- if profile.github_url %}{{ contacts() }}<a href="{{ profile.github_url | e }}">GitHub</a>{% endif -%}
+  </div>
+</header>
+
+<!-- Body Sections dispatched dynamically by section_order -->
+{% set effective_sections = section_order if section_order is defined and section_order else ['summary', 'experiences', 'projects', 'skills', 'education', 'extracurriculars'] %}
+{% for section_id in effective_sections %}
+  {% if section_id == 'summary' and resume.summary %}
+  <!-- Summary -->
+  <h2>PROFESSIONAL SUMMARY</h2>
+  <p class="body-indent">{{ resume.summary | e | markdown | safe }}</p>
+  {% elif section_id == 'education' and resume.education %}
+  <!-- Education -->
+  <h2>EDUCATION</h2>
+  {% for edu in resume.education %}
+  <div class="resume-entry">
+  <dl>
+    <dt><strong>{{ edu.degree }}</strong> | {{ edu.institution }}{% if edu.location %}, {{ edu.location }}{% endif %}</dt>
+    <dd>
+      {% if edu.start_date and edu.end_date %}{{ edu.start_date | format_date }} – {{ edu.end_date | format_date }}
+      {% elif edu.end_date %}{{ edu.end_date | format_date }}
+      {% elif edu.start_date %}{{ edu.start_date | format_date }}{% endif %}
+      {% if edu.gpa %} | GPA: {{ edu.gpa }}{% endif %}
+    </dd>
+  </dl>
+  </div>
+  {% endfor %}
+  {% elif section_id == 'skills' and resume.skills %}
+  <!-- Skills -->
+  <h2>SKILLS</h2>
+  <table class="skills-table">
+  {% for category, items in resume.skills.items() %}
+    <tr>
+      <td>{{ category }}</td>
+      <td>{{ items | join(', ') }}</td>
+    </tr>
+  {% endfor %}
+  </table>
+  {% elif section_id == 'projects' and resume.projects %}
+  <!-- Projects -->
+  <h2>PROJECTS</h2>
+  {% for project in resume.projects %}
+  {% set project_idx = loop.index0 %}
+  <div class="resume-entry">
+  {% set project_link = (project.github_url or project.live_url or '') | trim %}
+  {% set project_summary = (project.project_summary or '') | trim %}
+  <dl>
+    <dt>
+      <strong>{{ project.name }}
+      {%- if project_summary %} | {{ project_summary | e | markdown | safe }}{% endif %}
+      {%- if project_link %} | <a href="{{ project_link if project_link.startswith('http') else 'https://' + project_link }}">{{ 'GitHub' if 'github.com' in project_link else 'Project' }}</a>{% endif %}
+      </strong>
+    </dt>
+    <dd></dd>
+  </dl>
+  {% set non_empty_bullets = (project.bullet_points or []) | select | map("trim") | select | list %}
+  {% if non_empty_bullets %}
+  <ul>
+  {% for bullet in (project.bullet_points or []) %}
+  {% if bullet and bullet | trim %}
+    <li data-section="projects" data-entry-idx="{{ project_idx }}" data-bullet-idx="{{ loop.index0 }}">{{ bullet | e | markdown | safe }}</li>
+  {% endif %}
+  {% endfor %}
+  </ul>
+  {% elif project.description %}
+  <p class="body-indent">{{ project.description | e | markdown | safe }}</p>
+  {% endif %}
+  </div>
+  {% endfor %}
+  {% elif section_id == 'experiences' and resume.experiences %}
+  <!-- Experience -->
+  <h2>EXPERIENCE</h2>
+  {% for exp in resume.experiences %}
+  {% set exp_idx = loop.index0 %}
+  <div class="resume-entry">
+  <dl>
+    <dt><strong>{{ exp.role }}</strong></dt>
+    <dd>
+      {% if exp.start_date %}{{ exp.start_date | format_date }}{% endif %}
+      {% if exp.start_date %} – {% endif %}
+      {% if exp.end_date %}{{ exp.end_date | format_date }}{% else %}Present{% endif %}
+    </dd>
+  </dl>
+  <div class="organization"><em>{{ exp.organization }}{% if exp.location %} | {{ exp.location }}{% endif %}</em></div>
+  <ul>
+  {% for bullet in exp.bullet_points %}
+    <li data-section="experience" data-entry-idx="{{ exp_idx }}" data-bullet-idx="{{ loop.index0 }}">{{ bullet | e | markdown | safe }}</li>
+  {% endfor %}
+  </ul>
+  </div>
+  {% endfor %}
+  {% elif section_id == 'extracurriculars' and resume.extracurriculars %}
+  <!-- Extra-Curricular Activities & Achievements -->
+  <h2>EXTRA-CURRICULAR ACTIVITIES & ACHIEVEMENTS</h2>
+  <div class="extracurriculars-section">
+    <ul>
+    {% for ex in resume.extracurriculars %}
+      <li data-section="extracurriculars" data-entry-idx="{{ loop.index0 }}" data-bullet-idx="0">{{ ex.description | e | markdown | safe }}</li>
+    {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+{% endfor %}
+
+</body>
+</html>
+{% endautoescape %}

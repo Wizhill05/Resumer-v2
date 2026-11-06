@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Union
 
 
 @dataclass
@@ -19,6 +19,7 @@ class FontFitResult:
     font_size: float
     page_count: int
     fits_target: bool  # False → even min_font_size overflows; multi-page at min
+    has_horizontal_overflow: bool = False
 
 
 def quantize_font_range(
@@ -41,7 +42,7 @@ def quantize_font_range(
 
 def find_best_font_size(
     *,
-    render_page_count: Callable[[float], int],
+    render_page_count: Callable[[float], Union[int, tuple[int, bool]]],
     min_font_size: float,
     max_font_size: float,
     target_pages: int = 1,
@@ -50,27 +51,36 @@ def find_best_font_size(
     """
     Discrete binary search over quantize_font_range.
 
-    Returns the largest font size where page_count <= target_pages.
-    If even min_font_size overflows, returns min with fits_target=False.
+    Returns the largest font size where page_count <= target_pages and no horizontal overflow.
+    If even min_font_size overflows, returns min with fits_target=False and real page_count.
 
     Args:
-        render_page_count: Callable(font_size) -> int. Called once per probe.
-            For WeasyPrint: lambda fs: len(HTML(..., font_size=fs).render().pages)
-            For unit tests: any monotone oracle.
+        render_page_count: Callable(font_size) -> int or tuple[int, bool]. Called once per probe.
+            Returns page_count or (page_count, has_horizontal_overflow).
         min_font_size: Lower bound (inclusive).
         max_font_size: Upper bound (inclusive).
         target_pages: Maximum acceptable page count (usually 1).
         step: Quantization step in pt (default 0.05).
     """
     steps = quantize_font_range(min_font_size, max_font_size, step)
+    cache: dict[float, tuple[int, bool]] = {}
+
+    def _probe(fs: float) -> tuple[int, bool]:
+        if fs not in cache:
+            res = render_page_count(fs)
+            if isinstance(res, tuple):
+                cache[fs] = (int(res[0]), bool(res[1]))
+            else:
+                cache[fs] = (int(res), False)
+        return cache[fs]
 
     lo, hi = 0, len(steps) - 1
     best_idx: int | None = None
 
     while lo <= hi:
         mid = (lo + hi) // 2
-        pages = render_page_count(steps[mid])
-        if pages <= target_pages:
+        pages, has_h = _probe(steps[mid])
+        if pages <= target_pages and not has_h:
             best_idx = mid
             lo = mid + 1  # try larger
         else:
@@ -78,16 +88,20 @@ def find_best_font_size(
 
     if best_idx is None:
         # Even min overflowed
+        pages, has_h = _probe(steps[0])
         return FontFitResult(
             font_size=steps[0],
-            page_count=render_page_count(steps[0]),
+            page_count=pages,
             fits_target=False,
+            has_horizontal_overflow=has_h,
         )
 
+    best_pages, best_has_h = _probe(steps[best_idx])
     return FontFitResult(
         font_size=steps[best_idx],
-        page_count=render_page_count(steps[best_idx]),
+        page_count=best_pages,
         fits_target=True,
+        has_horizontal_overflow=best_has_h,
     )
 
 

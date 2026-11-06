@@ -11,6 +11,7 @@ Keeps Jinja template logic in one place so changes propagate to both paths.
 from __future__ import annotations
 
 import gc
+import re
 from typing import Any
 
 from src.core.config import settings
@@ -82,6 +83,23 @@ def render_resume_pdf(
     return pdf_bytes, page_count
 
 
+def check_horizontal_overflow(doc: Any, page_margin_mm: float = 14.0) -> bool:
+    """Check if any text or element box overflows horizontally past the page content margins."""
+    if not doc or not getattr(doc, "pages", None):
+        return False
+    margin_px = page_margin_mm * 96 / 25.4
+    for page in doc.pages:
+        page_box = getattr(page, "_page_box", None)
+        if not page_box:
+            continue
+        right_bound = page.width - margin_px + 1.0  # 1px tolerance
+        for b in page_box.descendants():
+            if type(b).__name__ == "TextBox":
+                if b.position_x + b.width > right_bound or b.position_x < margin_px - 1.0:
+                    return True
+    return False
+
+
 def fit_and_render_pdf(
     *,
     template_id: str,
@@ -105,7 +123,7 @@ def fit_and_render_pdf(
 
     _last_fit_doc: list = [None]
 
-    def _page_count(font_size: float) -> int:
+    def _page_count(font_size: float) -> tuple[int, bool]:
         html = render_resume_html(
             template_id=template_id,
             profile=profile,
@@ -118,11 +136,12 @@ def fit_and_render_pdf(
             raise ValueError(f"Template '{template_id}' render failed at {font_size}pt.")
         doc = HTML(string=html, base_url=font_base_url).render()
         pages = len(doc.pages)
-        if pages <= target_pages:
+        has_h_overflow = check_horizontal_overflow(doc, page_margin_mm)
+        if pages <= target_pages and not has_h_overflow:
             _last_fit_doc[0] = doc  # replaces previous; old doc freed by refcount
         else:
             del doc
-        return pages
+        return pages, has_h_overflow
 
     fit_result = find_best_font_size(
         render_page_count=_page_count,
@@ -154,69 +173,176 @@ def fit_and_render_pdf(
 
 
 def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
-    """Walks the WeasyPrint document layout tree and finds orphan/oversize bullets."""
+    """Inspect WeasyPrint formatted line boxes to detect awkward single-word terminal line breaks.
+
+    Identifies 2-line bullets where the second line has < 75% width of the first line,
+    indicating an 'orphan' word or short fragment that wastes vertical space.
+    """
+    if not doc or not getattr(doc, "pages", None):
+        return []
+
     orphan_data: list[dict[str, Any]] = []
 
-    def get_text(box: Any) -> str:
-        if hasattr(box, "text") and box.text:
-            return box.text
-        texts = []
+    def is_marker_box(box: Any) -> bool:
+        tag = getattr(box, "element_tag", "") or ""
+        if "marker" in tag.lower():
+            return True
+        if "marker" in type(box).__name__.lower():
+            return True
+        if getattr(box, "is_marker", False):
+            return True
+        return False
+
+    def get_line_text(box: Any) -> str:
+        if is_marker_box(box):
+            return ""
+        if hasattr(box, "text"):
+            return box.text or ""
+        return "".join(get_line_text(c) for c in getattr(box, "children", []))
+
+    def find_line_boxes(box: Any) -> list[Any]:
+        if is_marker_box(box):
+            return []
+        if type(box).__name__ == "LineBox":
+            return [box]
+        lines: list[Any] = []
         for child in getattr(box, "children", []):
-            texts.append(get_text(child))
-        return "".join(texts)
+            lines.extend(find_line_boxes(child))
+        return lines
+
+    seen_elements: set[Any] = set()
+    seen_blocks: set[int] = set()
+
+    elem_section: dict[Any, str] = {}
+    elem_entry_idx: dict[Any, int] = {}
+    parent_map: dict[Any, Any] = {}
+    try:
+        root = getattr(getattr(doc, "_html", None), "etree_element", None)
+        if root is not None:
+            body = root.find("body")
+            walk_root = body if body is not None else root
+            parent_map = {c: p for p in walk_root.iter() for c in p}
+            current_sec = "experience"
+            sec_entry_count: dict[str, int] = {}
+            for el in walk_root.iter():
+                if el.tag in ("h1", "h2", "h3"):
+                    txt = "".join(el.itertext()).strip().upper()
+                    if "EXPERIENCE" in txt:
+                        current_sec = "experience"
+                    elif "PROJECT" in txt:
+                        current_sec = "projects"
+                    elif "EXTRA" in txt or "ACHIEVEMENT" in txt:
+                        current_sec = "extracurriculars"
+                    elif "EDUCATION" in txt:
+                        current_sec = "education"
+                    elif "SKILL" in txt:
+                        current_sec = "skills"
+                    elif "SUMMARY" in txt:
+                        current_sec = "summary"
+                elem_section[el] = current_sec
+                classes = (el.get("class") or "").split() if hasattr(el, "get") else []
+                if "resume-entry" in classes:
+                    idx = sec_entry_count.get(current_sec, 0)
+                    elem_entry_idx[el] = idx
+                    sec_entry_count[current_sec] = idx + 1
+    except Exception:
+        pass
 
     try:
-        if not doc or not getattr(doc, "pages", None):
-            return []
-
         for page in doc.pages:
-            li_lines: dict[Any, dict[str, Any]] = {}
-            current_section = ["unknown"]
+            page_box = getattr(page, "_page_box", None)
+            if not page_box:
+                continue
 
-            def walk_tree(box: Any, current_li_element: Any = None, current_li_box: Any = None) -> None:
-                if type(box).__name__ == "MarkerBox" or getattr(box, "pseudo_type", None) == "marker":
-                    return
-
-                tag = getattr(box, "element_tag", None)
-                dom_element = getattr(box, "element", None)
-
-                if dom_element is not None and tag == "h2":
-                    h2_text = "".join(dom_element.itertext()).strip().lower()
-                    if "project" in h2_text:
-                        current_section[0] = "projects"
-                    elif "experience" in h2_text:
-                        current_section[0] = "experience"
-                    elif "activit" in h2_text or "achievement" in h2_text:
-                        current_section[0] = "activities"
-
-                next_li_element = current_li_element
-                next_li_box = current_li_box
-
-                if dom_element is not None and tag == "li":
-                    next_li_element = dom_element
-                    next_li_box = box
-
-                if type(box).__name__ == "LineBox":
-                    if current_li_element is not None and tag != "li::marker":
-                        if current_li_element not in li_lines:
-                            li_lines[current_li_element] = {"lines": [], "section": current_section[0]}
-                        li_lines[current_li_element]["lines"].append((box, current_li_box))
-
-                for child in getattr(box, "children", []):
-                    walk_tree(child, next_li_element, next_li_box)
-
-            walk_tree(page._page_box)
-
-            for el, data in li_lines.items():
-                lines = data["lines"]
-                section = data["section"]
-                text = "".join(el.itertext()).strip()
-                if not text:
+            for block in page_box.descendants():
+                if is_marker_box(block):
                     continue
+                if type(block).__name__ not in ("BlockBox", "BlockReplacedBox"):
+                    continue
+
+                elem = getattr(block, "element", None)
+                elem_tag = getattr(elem, "tag", None) or getattr(block, "element_tag", "") or ""
+                classes = (elem.get("class") or "").split() if elem is not None and hasattr(elem, "get") else []
+                is_target = elem_tag == "li" or any("bullet" in c for c in classes)
+
+                if not is_target:
+                    continue
+
+                if elem is not None:
+                    if elem in seen_elements:
+                        continue
+                    # Inspect each bullet only once: mark this element and its non-li DOM descendants seen
+                    for sub in elem.iter():
+                        if sub is elem or getattr(sub, "tag", None) != "li":
+                            seen_elements.add(sub)
+                else:
+                    if id(block) in seen_blocks:
+                        continue
+                    seen_blocks.add(id(block))
+
+                raw_lines = find_line_boxes(block)
+                # Keep only lines that contain non-empty text (filters marker boxes / padding)
+                lines = []
+                for line in raw_lines:
+                    txt = get_line_text(line).strip()
+                    if txt:
+                        lines.append((line, txt))
 
                 line_count = len(lines)
                 if line_count <= 1:
                     continue
+
+                # Extract canonical DOM text excluding markers, preserving word spaces between wrapped lines
+                if elem is not None:
+                    dom_text = re.sub(r"\s+", " ", "".join(elem.itertext())).strip()
+                    text = dom_text if dom_text else " ".join(txt for _, txt in lines)
+                else:
+                    text = " ".join(txt for _, txt in lines)
+
+                if not text or len(text) < 40:
+                    continue
+
+                # Derive section classification and stable identity
+                curr_el = elem
+                section = None
+                entry_idx = None
+                bullet_idx = None
+
+                if elem is not None:
+                    attr_sec = elem.get("data-section") if hasattr(elem, "get") else None
+                    attr_entry = elem.get("data-entry-idx") if hasattr(elem, "get") else None
+                    attr_bullet = elem.get("data-bullet-idx") if hasattr(elem, "get") else None
+                    if attr_sec:
+                        section = attr_sec
+                    if attr_entry is not None and str(attr_entry).isdigit():
+                        entry_idx = int(attr_entry)
+                    if attr_bullet is not None and str(attr_bullet).isdigit():
+                        bullet_idx = int(attr_bullet)
+
+                if not section:
+                    while curr_el is not None:
+                        if curr_el in elem_section:
+                            section = elem_section[curr_el]
+                            break
+                        curr_el = parent_map.get(curr_el)
+
+                if not section:
+                    section = "experience"
+
+                if entry_idx is None and elem is not None:
+                    curr_el = elem
+                    while curr_el is not None:
+                        if curr_el in elem_entry_idx:
+                            entry_idx = elem_entry_idx[curr_el]
+                            break
+                        curr_el = parent_map.get(curr_el)
+
+                if bullet_idx is None and elem is not None:
+                    parent = parent_map.get(elem)
+                    if parent is not None:
+                        li_siblings = [c for c in parent if getattr(c, "tag", None) == "li"]
+                        if elem in li_siblings:
+                            bullet_idx = li_siblings.index(elem)
 
                 widths = [line.width for line, _ in lines]
                 first_line_width = widths[0]
@@ -229,7 +355,7 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                 last_line_fill = last_line_width / full_width
 
                 # Derive chars-per-line from the first (full) line
-                first_line_text = get_text(lines[0][0]).strip()
+                first_line_text = lines[0][1]
                 if first_line_text and full_width > 0:
                     chars_per_line = len(first_line_text)
                 else:
@@ -248,6 +374,8 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                     orphan_data.append({
                         "fix_type": "expand",
                         "section": section,
+                        "entry_idx": entry_idx,
+                        "bullet_idx": bullet_idx,
                         "text": text,
                         "currentChars": len(text),
                         "renderedLines": line_count,
@@ -270,6 +398,8 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                     orphan_data.append({
                         "fix_type": "oversize",
                         "section": section,
+                        "entry_idx": entry_idx,
+                        "bullet_idx": bullet_idx,
                         "text": text,
                         "currentChars": len(text),
                         "renderedLines": line_count,
@@ -320,6 +450,7 @@ def detect_resume_orphans(
 
     doc = None
     effective_font_size: float = font_size or manifest.get("max_font_size", 10.0)
+    has_horizontal_overflow = False
 
     try:
         if font_size is not None:
@@ -335,13 +466,14 @@ def detect_resume_orphans(
                 return {"success": False, "error": f"Template '{template_id}' render failed at {font_size}pt."}
             doc = HTML(string=html, base_url=font_base_url).render()
             page_count = len(doc.pages)
-            fits_target = page_count <= target_pages
+            has_horizontal_overflow = check_horizontal_overflow(doc, page_margin_mm)
+            fits_target = page_count <= target_pages and not has_horizontal_overflow
         else:
             _last_fit_doc: list = [None]
             min_fs: float = manifest.get("min_font_size", 8.0)
             max_fs: float = manifest.get("max_font_size", 12.0)
 
-            def _page_count(fs: float) -> int:
+            def _page_count(fs: float) -> tuple[int, bool]:
                 h = render_resume_html(
                     template_id=template_id,
                     profile=profile,
@@ -354,11 +486,12 @@ def detect_resume_orphans(
                     raise ValueError(f"Template '{template_id}' render failed at {fs}pt.")
                 d = HTML(string=h, base_url=font_base_url).render()
                 p = len(d.pages)
-                if p <= target_pages:
+                has_h = check_horizontal_overflow(d, page_margin_mm)
+                if p <= target_pages and not has_h:
                     _last_fit_doc[0] = d
                 else:
                     del d
-                return p
+                return p, has_h
 
             fit_result = find_best_font_size(
                 render_page_count=_page_count,
@@ -369,6 +502,7 @@ def detect_resume_orphans(
             effective_font_size = fit_result.font_size
             page_count = fit_result.page_count
             fits_target = fit_result.fits_target
+            has_horizontal_overflow = fit_result.has_horizontal_overflow
             doc = _last_fit_doc[0]
 
             if doc is None:
@@ -383,6 +517,9 @@ def detect_resume_orphans(
                 )
                 if h is not None:
                     doc = HTML(string=h, base_url=font_base_url).render()
+                    has_horizontal_overflow = check_horizontal_overflow(doc, page_margin_mm)
+                    if has_horizontal_overflow:
+                        fits_target = False
 
         orphans = detect_orphans_in_weasyprint(doc) if doc else []
     except Exception as e:
@@ -425,6 +562,7 @@ def detect_resume_orphans(
         "page_count": page_count,
         "target_pages": target_pages,
         "fits_target": fits_target,
+        "has_horizontal_overflow": has_horizontal_overflow,
         "has_orphans": len(orphans) > 0,
         "orphan_count": len(orphans),
         "orphans": orphans,

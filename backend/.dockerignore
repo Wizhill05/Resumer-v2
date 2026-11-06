@@ -9,3 +9,6 @@ htmlcov/
 .env
 .env.local
 .git/
+
+# Fonts are extracted from the original installer in the image build.
+templates/professional-sans/fonts/Arial*.TTF

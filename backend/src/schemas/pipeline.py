@@ -45,7 +45,7 @@ class TailoredSummaryAndSkills(BaseModel):
     summary: str = Field(description="Exactly 1-2 sentences, maximum 30 words, no first person, targeted to the job and supported by candidate evidence.")
     categories: list[SkillCategory] = Field(
         default_factory=list,
-        description="3-6 categorized skill groups, including Soft Skills.",
+        description="Categorized skill groups as instructed by template policy (typically 3-6 groups, or up to 4 if specified).",
     )
     skills: dict[str, list[str]] = Field(
         default_factory=dict,
@@ -99,10 +99,10 @@ class TailoredProject(BaseModel):
     name: str = Field(description="Project name, preserved from input except minor cleanup.")
     project_summary: str | None = Field(default=None, description="2-4 word project category, e.g. 'API Automation Platform'.")
     description: str | None = Field(default=None, description="One concise sentence explaining what the project does and why it matters.")
-    technologies: list[str] = Field(default_factory=list, description="Normalized, supported technologies used in the project.")
+    technologies: list[str] = Field(default_factory=list, description="Normalized technologies used in the project.")
     bullet_points: list[str] = Field(
         default_factory=list,
-        description="2-3 job-tailored achievement bullets using action verbs, supported claims only, with numbers/metrics/key technologies bolded in markdown."
+        description="Job-tailored achievement bullets using action verbs, following template length/bullet count rules, with numbers/metrics/key technologies bolded in markdown."
     )
 
 
@@ -115,7 +115,7 @@ class TailoredExperience(BaseModel):
     end_date: str | None = Field(default=None, description="End date from input, e.g. YYYY-MM-DD, Month YYYY, or Present.")
     bullet_points: list[str] = Field(
         default_factory=list,
-        description="2-3 job-tailored achievement bullets using action verbs, supported claims only, with numbers/metrics/key technologies bolded in markdown."
+        description="Job-tailored achievement bullets using action verbs, following template length/bullet count rules, with numbers/metrics/key technologies bolded in markdown."
     )
 
 

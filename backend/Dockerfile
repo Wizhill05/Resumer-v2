@@ -34,11 +34,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-open-sans \
     fonts-dejavu \
     fonts-liberation \
+    cabextract \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy application source code
 COPY src/ /app/src/
 COPY templates/ /app/templates/
+RUN cabextract -q -d /app/templates/professional-sans/fonts /app/templates/professional-sans/arial32.exe
 COPY sample-resume/ /app/sample-resume/
 COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini

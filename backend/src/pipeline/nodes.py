@@ -1,3 +1,4 @@
+import copy
 import asyncio
 import ast
 import gc
@@ -23,7 +24,11 @@ from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
 from src.models.generation import Generation, GenerationLog, GenerationNodeMetric, PromptConfig
 from src.services.font_fit import find_best_font_size
-from src.services.resume_render import build_resume_markdown, detect_orphans_in_weasyprint
+from src.services.resume_render import (
+    build_resume_markdown,
+    check_horizontal_overflow,
+    detect_orphans_in_weasyprint,
+)
 from src.pipeline.state import ResumeGraphState
 from src.core.skill_categories import merge_skill_categories, skill_category_display
 from src.schemas.pipeline import (
@@ -184,15 +189,62 @@ def _prompt_name(base: str, mode: str) -> str:
     return f"{base}_{mode}" if mode in ("larp", "super_larp") else base
 
 
+def _apply_professional_sans_skill_budget(skills: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Enforce professional-sans generation-only skill budget:
+    max 4 categories, max 20 skills, and approximately 300/320 characters across all skill values.
+    """
+    capped_categories = list(skills.items())[:4]
+    budgeted: dict[str, list[str]] = {}
+    current_count = 0
+    current_chars = 0
+
+    for cat, items in capped_categories:
+        cat_items = []
+        for item in items:
+            s = (item or "").strip()
+            if not s:
+                continue
+            if len(s) > 320:
+                s = s[:320].strip()
+            if current_count >= 20:
+                break
+            if current_chars + len(s) > 320:
+                if current_count == 0:
+                    s = s[:320 - current_chars].strip()
+                    if s:
+                        cat_items.append(s)
+                        current_count += 1
+                        current_chars += len(s)
+                break
+            cat_items.append(s)
+            current_count += 1
+            current_chars += len(s)
+        if cat_items:
+            budgeted[cat] = cat_items
+        if current_count >= 20 or current_chars >= 320:
+            break
+
+    return budgeted
+
+
 def _ensure_jd_skill_coverage(
-    skills: dict[str, list[str]], jd_skills: list[str], mode: str
+    skills: dict[str, list[str]],
+    jd_skills: list[str],
+    mode: str,
+    template_id: str | None = None,
 ) -> dict[str, list[str]]:
     """In LARP modes guarantee JD skills appear in the skills section.
 
-    Proper mode returns skills untouched. LARP/Super-LARP append any missing
-    JD extracted_skills (case-insensitive) to the first non-soft category,
-    creating one if needed. Caps injected skills to avoid unbounded stuffing.
+    Proper mode returns skills untouched (or budgeted if professional-sans).
+    LARP/Super-LARP append any missing JD extracted_skills (case-insensitive)
+    to the first non-soft category, creating one if needed.
+    Caps injected skills to avoid unbounded stuffing.
+    When template_id is 'professional-sans', respects the layout budget:
+    at most 4 categories and roughly 20 skills/320 chars total.
     """
+    if template_id == "professional-sans":
+        skills = _apply_professional_sans_skill_budget(skills)
+
     if mode not in ("larp", "super_larp") or not jd_skills:
         return skills
     existing_lower = {s.lower() for items in skills.values() for s in items}
@@ -204,16 +256,33 @@ def _ensure_jd_skill_coverage(
             existing_lower.add(name.lower())
     if not missing:
         return skills
-    missing = missing[:15]
+
     target_key = None
     for key in skills:
         if "soft" not in key.lower():
             target_key = key
             break
     if target_key is None:
-        target_key = next(iter(skills), "Tools & Technologies")
-        skills.setdefault(target_key, [])
-    skills[target_key] = [*skills.get(target_key, []), *missing]
+        if template_id == "professional-sans" and len(skills) >= 4:
+            target_key = next(iter(skills))
+        else:
+            target_key = next(iter(skills), "Tools & Technologies")
+            skills.setdefault(target_key, [])
+
+    if template_id == "professional-sans":
+        for s in missing:
+            s_clean = s.strip()
+            if len(s_clean) > 320:
+                s_clean = s_clean[:320].strip()
+            current_count = sum(len(items) for items in skills.values())
+            current_chars = sum(len(item) for items in skills.values() for item in items)
+            if current_count >= 20 or current_chars + len(s_clean) > 320:
+                break
+            skills[target_key].append(s_clean)
+    else:
+        missing = missing[:15]
+        skills[target_key] = [*skills.get(target_key, []), *missing]
+
     return skills
 
 
@@ -412,37 +481,6 @@ async def get_prompt_config(db: AsyncSession, name: str, default_system: str, de
         result = await db.execute(select(PromptConfig).where(PromptConfig.name == name))
         cfg = result.scalar_one_or_none()
         if cfg:
-            # Refresh stale saved contracts. The orphan repair node currently
-            # expects one `replacement` per bullet; older saved prompts may
-            # still request the abandoned multi-variant schema.
-            prompt_text = f"{cfg.system_prompt or ''}\n{cfg.user_prompt or ''}"
-            orphan_contract_ready = (
-                name != "orphan_repair"
-                or (
-                    '"replacement"' in prompt_text
-                    and "one replacement" in prompt_text.lower()
-                    and "small" not in prompt_text.lower()
-                )
-            )
-            # Experience/projects writers previously allowed 2-4 bullets; hard limit is now 2-3.
-            # Refresh stale DB prompts so the 4-bullet instruction can't persist.
-            # NOTE: project_summary legitimately uses "2-4 words" — only match bullet rules.
-            bullet_ready = True
-            if name.startswith("experience_writer") or name.startswith("projects_writer"):
-                _sys = cfg.system_prompt or ""
-                _sys_low = _sys.lower()
-                bullet_ready = (
-                    "2-4 bullet" not in _sys
-                    and "2–4 bullet" not in _sys
-                    and "never more than 4" not in _sys_low
-                    and "max 4 bullet" not in _sys_low
-                    and "up to 4 bullet" not in _sys_low
-                )
-            if "OUTPUT CONTRACT:" not in (cfg.system_prompt or "") or not orphan_contract_ready or not bullet_ready:
-                cfg.system_prompt = default_system
-                cfg.user_prompt = default_user
-                await db.commit()
-                return default_system, default_user
             return cfg.system_prompt, cfg.user_prompt
         
         cfg = PromptConfig(name=name, system_prompt=default_system, user_prompt=default_user)
@@ -632,6 +670,113 @@ async def selection_node(
     }
 
 
+PROFESSIONAL_SANS_POLICY_VERSION = "v1"
+
+
+def _professional_sans_policy(state_or_id: Any, section: str) -> str:
+    """Apply the measured layout budget after stored prompts are loaded."""
+    template_id = None
+    mode = "proper"
+    if isinstance(state_or_id, str):
+        template_id = state_or_id
+    elif isinstance(state_or_id, dict):
+        manifest = state_or_id.get("template_manifest")
+        if isinstance(manifest, dict) and manifest.get("id"):
+            template_id = manifest.get("id")
+        elif hasattr(manifest, "id"):
+            template_id = manifest.id
+        elif state_or_id.get("template_id"):
+            template_id = state_or_id.get("template_id")
+        mode = state_or_id.get("creativity_mode") or "proper"
+
+    if template_id != "professional-sans":
+        return ""
+
+    is_larp = mode in ("larp", "super_larp")
+
+    if is_larp:
+        budgets = {
+            "summary": (
+                "Keep the summary to at most 30 words. Organize skills into at most 4 categories "
+                "with roughly 20 concise skills total (approximately 300 characters across all skill values); "
+                "prioritize job-relevant skills."
+            ),
+            "experience": (
+                "Write exactly two distinct achievement bullets per entry (at most two bullets). "
+                "Aim for 18–23 words and at most 185 characters per bullet. Use restrained bold emphasis only on key metrics/technologies. "
+                "Overrides conflicting bullet counts (do not write 3 bullets), line-fill, or bolding instructions above. "
+                "Preserves active LARP/Super-LARP mode rules above without restricting embellishment."
+            ),
+            "project": (
+                "Write exactly two distinct achievement bullets per entry (at most two bullets). "
+                "Aim for 18–23 words and at most 185 characters per bullet. Keep project summaries under 35 characters. Use restrained bold emphasis "
+                "only on key metrics/technologies. Overrides conflicting bullet counts (do not write 3 bullets), "
+                "line-fill, or bolding instructions above. Preserves active LARP/Super-LARP mode rules above without restricting embellishment."
+            ),
+            "synthetic_project": (
+                "Write exactly two distinct achievement bullets per entry (at most two bullets). Aim for 18–23 words "
+                "and at most 185 characters per bullet. Keep project summaries under 35 characters. Use restrained bold emphasis "
+                "only on key metrics/technologies. Overrides conflicting bullet counts (do not write 3 bullets), "
+                "line-fill, or bolding instructions above."
+            ),
+            "orphan_repair": (
+                "Render target is Arial A4 layout with 1.4 line-height. Aim for 18–23 words and at most 185 characters "
+                "per bullet. Keep each repaired bullet within exactly 2 lines maximum without creating short orphan "
+                "lines; never exceed 185 characters. Use restrained bold emphasis rather than bolding every entity. "
+                "Overrides conflicting font, line-fill, or bolding instructions above. "
+                "Preserves active LARP/Super-LARP mode rules above without restricting embellishment."
+            ),
+            "extracurricular": (
+                "Provide at most one concise extracurricular entry. Keep each description to approximately "
+                "20 words or fewer."
+            ),
+        }
+    else:
+        budgets = {
+            "summary": (
+                "Keep the summary to at most 30 words. Organize skills into at most 4 categories "
+                "with roughly 20 concise skills total (approximately 300 characters across all skill values); "
+                "prioritize job-relevant skills without inventing keywords."
+            ),
+            "experience": (
+                "Write exactly two distinct supported achievement bullets per entry when evidence is available "
+                "(or fewer if evidence is limited, at most two bullets; never invent or pad). Aim for 18–23 words "
+                "and at most 185 characters per bullet. Use restrained bold emphasis only on key metrics/technologies. "
+                "Overrides conflicting bullet counts (do not write 3 bullets), line-fill, or bolding instructions above."
+            ),
+            "project": (
+                "Write exactly two distinct supported achievement bullets per entry when evidence is available "
+                "(or fewer if evidence is limited, at most two bullets; never invent or pad). Aim for 18–23 words "
+                "and at most 185 characters per bullet. Keep project summaries under 35 characters. Use restrained bold emphasis "
+                "only on key metrics/technologies. Overrides conflicting bullet counts (do not write 3 bullets), "
+                "line-fill, or bolding instructions above."
+            ),
+            "synthetic_project": (
+                "Write exactly two distinct supported achievement bullets per entry when evidence is available "
+                "(or fewer if evidence is limited, at most two bullets; never invent or pad). Aim for 18–23 words "
+                "and at most 185 characters per bullet. Keep project summaries under 35 characters. Use restrained bold emphasis "
+                "only on key metrics/technologies. Overrides conflicting bullet counts (do not write 3 bullets), "
+                "line-fill, or bolding instructions above."
+            ),
+            "orphan_repair": (
+                "Render target is Arial A4 layout with 1.4 line-height. Aim for 18–23 words and at most 185 characters "
+                "per bullet. Keep each repaired bullet within exactly 2 lines maximum without creating short orphan "
+                "lines; never exceed 185 characters. Use restrained bold emphasis rather than bolding every entity. "
+                "Never invent facts or drop factual claims. Overrides conflicting font, line-fill, or bolding instructions above."
+            ),
+            "extracurricular": (
+                "Provide at most one concise supported extracurricular entry. Keep each description to approximately "
+                "20 words or fewer without losing important facts; never invent or pad."
+            ),
+        }
+
+    instruction = budgets.get(section, "")
+    if not instruction:
+        return ""
+    prefix = chr(10) + chr(10) + f"PROFESSIONAL SANS LAYOUT POLICY {PROFESSIONAL_SANS_POLICY_VERSION} (overrides conflicting length, bullet count, line-fit, and bolding instructions above): "
+    return prefix + instruction
+
+
 async def summary_skills_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -681,6 +826,7 @@ async def summary_skills_node(
             "INPUT: Candidate Existing Summary\n{candidate_summary}"
         )
     )
+    sys_prompt += _professional_sans_policy(state, "summary")
     prompt = ChatPromptTemplate.from_messages([("system", sys_prompt), ("user", usr_prompt)])
 
     result = await invoke_with_fallback(
@@ -711,7 +857,10 @@ async def summary_skills_node(
         }
     summary_draft["skills"] = _normalize_skills(skills_dict)
     jd_skills = (state.get("job_analysis") or {}).get("extracted_skills") or []
-    summary_draft["skills"] = _ensure_jd_skill_coverage(summary_draft["skills"], jd_skills, mode)
+    tmpl_id = (state.get("template_manifest") or {}).get("id") or state.get("template_id")
+    if tmpl_id == "professional-sans":
+        summary_draft["skills"] = _apply_professional_sans_skill_budget(summary_draft["skills"])
+    summary_draft["skills"] = _ensure_jd_skill_coverage(summary_draft["skills"], jd_skills, mode, template_id=tmpl_id)
     return {"summary_draft": summary_draft}
 
 
@@ -777,6 +926,7 @@ async def experience_node(
             "INPUT: Experience Entries To Rewrite\n{entries}"
         )
     )
+    sys_prompt += _professional_sans_policy(state, "experience")
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", sys_prompt.format(batch_len=len(batch))),
@@ -784,26 +934,61 @@ async def experience_node(
         ]
     )
 
+    def _validate_exp_batch(res: Any):
+        entries = getattr(res, "entries", None)
+        if not entries or len(entries) < len(batch):
+            raise InvalidStructuredOutput(
+                f"Expected at least {len(batch)} experience entries in batch response, got {len(entries) if entries else 0}"
+            )
+        for i, original in enumerate(batch):
+            orig_bullets = [str(b).strip() for b in original.get("bullet_points") or [] if b and str(b).strip()]
+            has_evidence = bool(orig_bullets) or bool((original.get("description") or "").strip())
+            if has_evidence and i < len(entries):
+                raw_retained = getattr(entries[i], "bullet_points", [])[:max_bullets]
+                retained_bullets = [str(b).strip() for b in raw_retained]
+                if not retained_bullets or any(not b for b in retained_bullets):
+                    raise InvalidStructuredOutput(
+                        f"Experience entry {i + 1} ('{original.get('role', '')}') has empty/blank retained bullets despite source having evidence."
+                    )
+
     await log_progress(db, gen_id, "experience_writer", f"Tailoring {len(batch)} experience entries in one batch...")
-    result = await invoke_with_fallback(
-        lambda llm, p: prompt | _structured(llm, TailoredExperienceBatch, p),
-        {"job_analysis": job_analysis, "entries": entries_text},
-        node_name="experience_writer",
-        gen_id=gen_id,
-        is_pro=state.get("is_pro", False),
-    )
+    try:
+        result = await invoke_with_fallback(
+            lambda llm, p: prompt | _structured(llm, TailoredExperienceBatch, p),
+            {"job_analysis": job_analysis, "entries": entries_text},
+            node_name="experience_writer",
+            gen_id=gen_id,
+            is_pro=state.get("is_pro", False),
+            validate_result=_validate_exp_batch,
+        )
+    except InferenceExhausted:
+        await log_progress(
+            db,
+            gen_id,
+            "experience_writer",
+            "Experience tailoring exhausted; falling back to original experience entries with all source bullets preserved.",
+            "warning",
+        )
+        return {
+            "experience_draft": copy.deepcopy(batch),
+            "experience_fallback": True,
+        }
 
     tailored_exps = []
-    for i, tailored in enumerate(result.entries[:max_exp]):
-        original = batch[i]
-        tailored_exps.append({
-            "role": tailored.role,
-            "organization": tailored.organization,
-            "location": original.get("location") or tailored.location,
-            "start_date": original.get("start_date") or tailored.start_date,
-            "end_date": original.get("end_date") or tailored.end_date,
-            "bullet_points": tailored.bullet_points[:max_bullets],
-        })
+    for i, original in enumerate(batch):
+        if i < len(result.entries):
+            tailored = result.entries[i]
+            clean_retained = [str(b).strip() for b in tailored.bullet_points[:max_bullets] if b and str(b).strip()]
+            tailored_exps.append({
+                "role": original.get("role") or tailored.role,
+                "organization": original.get("organization") or tailored.organization,
+                "location": original.get("location") or tailored.location,
+                "start_date": original.get("start_date"),
+                "end_date": original.get("end_date"),
+                "bullet_points": clean_retained,
+            })
+        else:
+            tailored_exps.append(copy.deepcopy(original))
 
     await log_progress(db, gen_id, "experience_writer", "Finished tailoring all experience entries.")
     return {"experience_draft": tailored_exps}
@@ -876,6 +1061,7 @@ async def project_node(
             "INPUT: Project Entries To Rewrite\n{entries}"
         )
     )
+    sys_prompt += _professional_sans_policy(state, "project")
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", sys_prompt.format(batch_len=len(batch))),
@@ -883,28 +1069,63 @@ async def project_node(
         ]
     )
 
-    result = await invoke_with_fallback(
-        lambda llm, p: prompt | _structured(llm, TailoredProjectBatch, p),
-        {"job_analysis": job_analysis, "entries": entries_text},
-        node_name="projects_writer",
-        gen_id=gen_id,
-        is_pro=state.get("is_pro", False),
-    )
+    def _validate_proj_batch(res: Any):
+        entries = getattr(res, "entries", None)
+        if not entries or len(entries) < len(batch):
+            raise InvalidStructuredOutput(
+                f"Expected at least {len(batch)} project entries in batch response, got {len(entries) if entries else 0}"
+            )
+        for i, original in enumerate(batch):
+            orig_bullets = [str(b).strip() for b in original.get("bullet_points") or [] if b and str(b).strip()]
+            has_evidence = bool(orig_bullets) or bool((original.get("description") or "").strip())
+            if has_evidence and i < len(entries):
+                raw_retained = getattr(entries[i], "bullet_points", [])[:max_bullets]
+                retained_bullets = [str(b).strip() for b in raw_retained]
+                if not retained_bullets or any(not b for b in retained_bullets):
+                    raise InvalidStructuredOutput(
+                        f"Project entry {i + 1} ('{original.get('name', '')}') has empty/blank retained bullets despite source having evidence."
+                    )
+
+    try:
+        result = await invoke_with_fallback(
+            lambda llm, p: prompt | _structured(llm, TailoredProjectBatch, p),
+            {"job_analysis": job_analysis, "entries": entries_text},
+            node_name="projects_writer",
+            gen_id=gen_id,
+            is_pro=state.get("is_pro", False),
+            validate_result=_validate_proj_batch,
+        )
+    except InferenceExhausted:
+        await log_progress(
+            db,
+            gen_id,
+            "projects_writer",
+            "Project tailoring exhausted; falling back to original project entries with all source bullets preserved.",
+            "warning",
+        )
+        return {
+            "projects_draft": copy.deepcopy(batch),
+            "projects_fallback": True,
+        }
 
     tailored_projs = []
-    for i, tailored in enumerate(result.entries[:max_proj]):
-        original = batch[i]
-        tailored_projs.append({
-            "name": tailored.name,
-            "project_summary": tailored.project_summary,
-            "description": tailored.description,
-            "technologies": tailored.technologies,
-            "bullet_points": tailored.bullet_points[:max_bullets],
-            "github_url": original.get("github_url"),
-            "live_url": original.get("live_url"),
-            "start_date": original.get("start_date"),
-            "end_date": original.get("end_date"),
-        })
+    for i, original in enumerate(batch):
+        if i < len(result.entries):
+            tailored = result.entries[i]
+            clean_retained = [str(b).strip() for b in tailored.bullet_points[:max_bullets] if b and str(b).strip()]
+            tailored_projs.append({
+                "name": original.get("name") or tailored.name,
+                "project_summary": tailored.project_summary or original.get("project_summary"),
+                "description": tailored.description or original.get("description"),
+                "technologies": tailored.technologies or original.get("technologies", []),
+                "bullet_points": clean_retained,
+                "github_url": original.get("github_url"),
+                "live_url": original.get("live_url"),
+                "start_date": original.get("start_date"),
+                "end_date": original.get("end_date"),
+            })
+        else:
+            tailored_projs.append(copy.deepcopy(original))
 
     await log_progress(db, gen_id, "projects_writer", "Finished tailoring all project entries.")
     if mode == "super_larp" and tailored_projs:
@@ -935,6 +1156,7 @@ async def project_node(
                     "Invent the single most job-aligned project for this role."
                 ),
             )
+            synth_sys += _professional_sans_policy(state, "synthetic_project")
             synth_prompt = ChatPromptTemplate.from_messages(
                 [("system", synth_sys), ("user", "INPUT: Job Analysis\n{job_analysis}")]
             )
@@ -995,7 +1217,8 @@ async def extracurricular_node(
         await log_progress(db, gen_id, "extracurricular_writer", "No valid extracurriculars after filtering headers.")
         return {"extracurriculars_draft": []}
 
-    batch = valid_entries[:3]
+    tmpl_id = (state.get("template_manifest") or {}).get("id") or state.get("template_id")
+    batch = valid_entries[:1] if tmpl_id == "professional-sans" else valid_entries[:3]
     job_analysis = str(state["job_analysis"])
 
     entries_text = ""
@@ -1033,6 +1256,7 @@ async def extracurricular_node(
             "INPUT: Extracurricular Entries To Rewrite\n{entries}"
         )
     )
+    sys_prompt += _professional_sans_policy(state, "extracurricular")
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", sys_prompt.format(batch_len=len(batch))),
@@ -1046,9 +1270,10 @@ async def extracurricular_node(
         gen_id=gen_id,
         is_pro=state.get("is_pro", False),
     )
+    max_extra = 1 if tmpl_id == "professional-sans" else 3
     tailored = [
         {"description": entry.description}
-        for entry in result.entries[:3]
+        for entry in result.entries[:max_extra]
     ]
 
     await log_progress(db, gen_id, "extracurricular_writer", "Finished tailoring extracurricular entries.")
@@ -1078,11 +1303,15 @@ async def assembly_node(
     manifest = state.get("template_manifest") or {}
     max_exp_bullets = manifest.get("max_bullets_per_experience", 3)
     max_proj_bullets = manifest.get("max_bullets_per_project", 3)
+    exp_fallback = bool(state.get("experience_fallback"))
+    proj_fallback = bool(state.get("projects_fallback"))
     for exp in experiences:
-        if isinstance(exp.get("bullet_points"), list):
+        is_fb = exp_fallback or bool(exp.get("_is_fallback"))
+        if not is_fb and isinstance(exp.get("bullet_points"), list):
             exp["bullet_points"] = exp["bullet_points"][:max_exp_bullets]
     for proj in projects:
-        if isinstance(proj.get("bullet_points"), list):
+        is_fb = proj_fallback or bool(proj.get("_is_fallback"))
+        if not is_fb and isinstance(proj.get("bullet_points"), list):
             proj["bullet_points"] = proj["bullet_points"][:max_proj_bullets]
 
     # Map education directly
@@ -1103,9 +1332,22 @@ async def assembly_node(
     # Map extracurriculars — use LLM-tailored descriptive sentences.
     extracurriculars = state.get("extracurriculars_draft") or []
 
+    manifest = state.get("template_manifest") or {}
+    max_skills_cat = manifest.get("max_skills_categories")
+    skills_assembled = _normalize_skills(summary_draft.get("skills"))
+    if max_skills_cat and len(skills_assembled) > max_skills_cat:
+        skills_assembled = {k: v for k, v in list(skills_assembled.items())[:max_skills_cat]}
+    if manifest.get("id") == "professional-sans":
+        total_items = sum(len(v) for v in skills_assembled.values())
+        if total_items > 22:
+            capped_skills: dict[str, list[str]] = {}
+            for cat, items in skills_assembled.items():
+                capped_skills[cat] = items[:max(1, 20 // len(skills_assembled))]
+            skills_assembled = capped_skills
+
     tailored_resume = {
         "summary": summary_draft.get("summary"),
-        "skills": _normalize_skills(summary_draft.get("skills")),
+        "skills": skills_assembled,
         "experiences": experiences,
         "projects": projects,
         "education": education,
@@ -1172,13 +1414,15 @@ async def render_node(
         )
         doc = HTML(string=html_rendered, base_url=font_base_url).render()
         pages = len(doc.pages)
-        if pages <= target_pages:
+        margin_mm = float(template_manifest.get("page_margin_mm", 15.0))
+        has_h_overflow = check_horizontal_overflow(doc, margin_mm)
+        if pages <= target_pages and not has_h_overflow:
             # Fits — replace cached doc; old doc freed by reference drop
             _last_fit_doc[0] = doc
         else:
             # Overflow — discard immediately
             del doc
-        return pages
+        return pages, has_h_overflow
 
     fit_result = find_best_font_size(
         render_page_count=_render_page_count,
@@ -1287,24 +1531,53 @@ async def render_node(
         "page_count": best_page_count,
         "font_size": best_font_size,
         "orphans": orphans if orphans else None,
+        "fits_target": fit_result.fits_target,
+        "has_horizontal_overflow": fit_result.has_horizontal_overflow,
     }
 
 
 async def content_reduction_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
-    """Remove bullet points to fit resume within target page count.
+    """Fit resume within target page count.
 
-    Step 0: Remove last bullet from 2nd experience entry.
-    Step 1: Remove last bullet from 2nd project entry.
-    Step 2+: No more reductions possible — caller should treat as error.
+    For professional-sans:
+      Avoids destructive bullet deletion. Safely preserves original complete PDF
+      and warns on overflow; compression is disabled to prevent accepting fabricated facts.
+
+    For other templates:
+      Step 0: Remove last bullet from 2nd experience entry.
+      Step 1: Remove last bullet from 2nd project entry.
+      Step 2+: Exhausted reductions.
     """
+    tmpl_id = (state.get("template_manifest") or {}).get("id") or state.get("template_id")
+    is_prof_sans = tmpl_id == "professional-sans"
+    has_fallback = bool(state.get("experience_fallback")) or bool(state.get("projects_fallback"))
     step = state.get("content_reduction_step", 0)
+
+    if is_prof_sans or has_fallback:
+        msg = (
+            "Professional Sans overflow: preserving complete content without bullet deletion or compression; setting fit warning."
+            if is_prof_sans else
+            "Fallback content overflow: preserving complete source content without bullet deletion; setting fit warning."
+        )
+        await log_progress(
+            db,
+            gen_id,
+            "content_reduction",
+            msg,
+            "warning",
+        )
+        return {
+            "experience_draft": state.get("experience_draft"),
+            "projects_draft": state.get("projects_draft"),
+            "content_reduction_step": 2,
+        }
+
     experiences = list(state.get("experience_draft") or [])
     projects = list(state.get("projects_draft") or [])
 
     if step == 0:
-        # Try removing 1 bullet from 2nd experience
         if len(experiences) > 1 and len(experiences[1].get("bullet_points", [])) > 1:
             removed = experiences[1]["bullet_points"].pop()
             await log_progress(
@@ -1330,7 +1603,6 @@ async def content_reduction_node(
         }
 
     elif step == 1:
-        # Try removing 1 bullet from 2nd project
         if len(projects) > 1 and len(projects[1].get("bullet_points", [])) > 1:
             removed = projects[1]["bullet_points"].pop()
             await log_progress(
@@ -1355,7 +1627,6 @@ async def content_reduction_node(
             "content_reduction_step": 2,
         }
 
-    # Step 2+: exhausted all reductions
     await log_progress(
         db,
         gen_id,
@@ -1449,8 +1720,9 @@ async def orphan_repair_node(
     # Keys: "section:item_idx:bullet_idx" → original text before first repair.
     repair_history = dict(state.get("repair_history") or {})
 
-    def clean_text(s):
-        return re.sub(r"\*\*", "", s).strip()
+    def clean_text(s: str) -> str:
+        s = re.sub(r"[*_`]", "", s)
+        return re.sub(r"\s+", " ", s).strip()
 
     def history_key(section, item_idx, bullet_idx):
         return f"{section}:{item_idx}:{bullet_idx}"
@@ -1463,14 +1735,59 @@ async def orphan_repair_node(
         orphan_clean = clean_text(orphan["text"])
         match = None
 
-        # Try to find in experience_draft
-        for exp_idx, exp in enumerate(experiences):
-            for bullet_idx, bullet in enumerate(exp.get("bullet_points") or []):
-                if clean_text(bullet) == orphan_clean:
-                    match = ("experience", exp_idx, bullet_idx, bullet)
+        orphan_sec = orphan.get("section")
+        orphan_entry_idx = orphan.get("entry_idx")
+        orphan_bullet_idx = orphan.get("bullet_idx")
+
+        # 1. Stable identity match
+        if orphan_sec and orphan_entry_idx is not None and orphan_bullet_idx is not None:
+            if orphan_sec in ("experience", "experiences") and 0 <= orphan_entry_idx < len(experiences):
+                exp_bullets = experiences[orphan_entry_idx].get("bullet_points") or []
+                if 0 <= orphan_bullet_idx < len(exp_bullets):
+                    match = ("experience", orphan_entry_idx, orphan_bullet_idx, exp_bullets[orphan_bullet_idx])
+            elif orphan_sec in ("project", "projects") and 0 <= orphan_entry_idx < len(projects):
+                proj_bullets = projects[orphan_entry_idx].get("bullet_points") or []
+                if 0 <= orphan_bullet_idx < len(proj_bullets):
+                    match = ("projects", orphan_entry_idx, orphan_bullet_idx, proj_bullets[orphan_bullet_idx])
+            elif orphan_sec in ("extracurricular", "extracurriculars") and 0 <= orphan_entry_idx < len(extracurriculars_draft):
+                desc = extracurriculars_draft[orphan_entry_idx].get("description", "")
+                match = ("extracurriculars", orphan_entry_idx, 0, desc)
+
+        # 2. Section-scoped text match if section is known
+        if not match and orphan_sec:
+            if orphan_sec in ("project", "projects"):
+                for proj_idx, proj in enumerate(projects):
+                    for bullet_idx, bullet in enumerate(proj.get("bullet_points") or []):
+                        if clean_text(bullet) == orphan_clean:
+                            match = ("projects", proj_idx, bullet_idx, bullet)
+                            break
+                    if match:
+                        break
+            elif orphan_sec in ("experience", "experiences"):
+                for exp_idx, exp in enumerate(experiences):
+                    for bullet_idx, bullet in enumerate(exp.get("bullet_points") or []):
+                        if clean_text(bullet) == orphan_clean:
+                            match = ("experience", exp_idx, bullet_idx, bullet)
+                            break
+                    if match:
+                        break
+            elif orphan_sec in ("extracurricular", "extracurriculars"):
+                for ex_idx, ex in enumerate(extracurriculars_draft):
+                    desc = ex.get("description", "")
+                    if desc and clean_text(desc) == orphan_clean:
+                        match = ("extracurriculars", ex_idx, 0, desc)
+                        break
+
+        # 3. Fallback across all sections
+        if not match:
+            # Try to find in experience_draft
+            for exp_idx, exp in enumerate(experiences):
+                for bullet_idx, bullet in enumerate(exp.get("bullet_points") or []):
+                    if clean_text(bullet) == orphan_clean:
+                        match = ("experience", exp_idx, bullet_idx, bullet)
+                        break
+                if match:
                     break
-            if match:
-                break
 
         # Try to find in projects_draft
         if not match:
@@ -1542,12 +1859,22 @@ async def orphan_repair_node(
 
         min_fill = int(orphan.get("minimumLastLineFill", 75))
         current_fill = int(orphan.get("lastLineFillPercent", 0))
-        instruction = (
-            "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
-            f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
-            f"  Add truthful, job-relevant detail until the final rendered line is at least {min_fill}% full.\n"
-            "  The renderer will measure the result, so do not estimate character counts or line length."
-        )
+        mode = _creativity_mode(state)
+        is_larp = mode in ("larp", "super_larp")
+        if is_larp:
+            instruction = (
+                "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
+                f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
+                f"  Add plausible, job-relevant detail or embellishment until the final rendered line is at least {min_fill}% full.\n"
+                "  The renderer will measure the result, so do not estimate character counts or line length."
+            )
+        else:
+            instruction = (
+                "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
+                f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
+                f"  Add truthful, job-relevant detail until the final rendered line is at least {min_fill}% full.\n"
+                "  The renderer will measure the result, so do not estimate character counts or line length."
+            )
 
         block = (
             f"Bullet {idx}:\n"
@@ -1586,39 +1913,68 @@ async def orphan_repair_node(
     except Exception:
         kw_text = "N/A"
 
-    sys_prompt, usr_prompt = await get_prompt_config(
-        db,
-        "orphan_repair",
-        default_system=(
+    pre_repair_experiences = copy.deepcopy(experiences)
+    pre_repair_projects = copy.deepcopy(projects)
+    pre_repair_extracurriculars = copy.deepcopy(extracurriculars_draft)
+    pre_repair_history = copy.deepcopy(repair_history)
+
+    mode = _creativity_mode(state)
+    is_larp = mode in ("larp", "super_larp")
+    prompt_name = _prompt_name("orphan_repair", mode)
+
+    if is_larp:
+        default_system = (
+            "ROLE: Precise resume line-wrap repair editor.\n"
+            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
+            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
+            "QUALITY BAR: Embellish creatively to fit layout constraints while preserving role, company, and JD alignment."
+        )
+        truth_rule = (
+            "- LARP MODE: you may embellish freely with plausible JD-aligned technical detail, tools, and metrics to fill the line; never shorten or compress a bullet.\n"
+            "- Expand by adding plausible features, stack tools, or scale that prove the job requirements, without creating new employers or roles."
+        )
+    else:
+        default_system = (
             "ROLE: Precise resume line-wrap repair editor.\n"
             "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
             "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
             "QUALITY BAR: Preserve meaning and truth while meeting layout constraints."
-        ),
-        default_user=(
-            "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
-            "{\n"
-            '  "bullets": [\n'
-            '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
-            '    {"index": 2, "replacement": "..."}\n'
-            "  ]\n"
-            "}\n\n"
-            "INPUT: Rendering Context\n"
-            "Font: Computer Modern Serif (proportional). Each bullet has exact visible-character target range.\n\n"
-            "RULES:\n"
-            "- Return one replacement for every Bullet listed below, using same index values.\n"
-            "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
-            "- Start every bullet with a strong action verb.\n"
-            "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
-            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet.\n"
-            "- Keep the core meaning and factual claims of the original.\n"
-            "- The renderer, not character count, determines whether the replacement fits.\n"
-            "- No emojis, no trailing explanations, no omitted bullets.\n\n"
-            "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
-            "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
-            "Return only the raw JSON object."
         )
+        truth_rule = (
+            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet.\n"
+            "- Keep the core meaning and factual claims of the original; do not invent unsupported metrics or facts."
+        )
+
+    default_user = (
+        "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
+        "{\n"
+        '  "bullets": [\n'
+        '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
+        '    {"index": 2, "replacement": "..."}\n'
+        "  ]\n"
+        "}\n\n"
+        "INPUT: Rendering Context\n"
+        "Font: Proportional font. Each bullet has exact visible-character target range.\n\n"
+        "RULES:\n"
+        "- Return one replacement for every Bullet listed below, using same index values.\n"
+        "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
+        "- Start every bullet with a strong action verb.\n"
+        "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
+        f"{truth_rule}\n"
+        "- The renderer, not character count, determines whether the replacement fits.\n"
+        "- No emojis, no trailing explanations, no omitted bullets.\n\n"
+        "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
+        "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
+        "Return only the raw JSON object."
     )
+
+    sys_prompt, usr_prompt = await get_prompt_config(
+        db,
+        prompt_name,
+        default_system=default_system,
+        default_user=default_user,
+    )
+    sys_prompt += _professional_sans_policy(state, "orphan_repair")
 
     formatted_usr_prompt = _replace_prompt_vars(
         usr_prompt,
@@ -1739,6 +2095,11 @@ async def orphan_repair_node(
             f"Error parsing LLM repair response: {e}. Raw response:\n{raw_response}",
             "error",
         )
+        experiences = pre_repair_experiences
+        projects = pre_repair_projects
+        extracurriculars_draft = pre_repair_extracurriculars
+        repair_history = pre_repair_history
+        applied_entries = []
 
     # ── Fallback verification: never let an expansion grow lines or break page fit ──
     # The expand repair adds text, so it can overshoot (2 lines → 3) or push a tight
@@ -1752,8 +2113,21 @@ async def orphan_repair_node(
         try:
             _manifest = state.get("template_manifest") or {}
             _profile = state.get("profile") or {}
-            _template_id = _manifest.get("id")
-            if _template_id and _profile:
+            _template_id = _manifest.get("id") or state.get("template_id")
+            if not (_template_id and _profile):
+                await log_progress(
+                    db,
+                    gen_id,
+                    "orphan_repair",
+                    "Verification cannot be performed (missing template or profile); rolling back repairs to pre-repair originals.",
+                    "warning",
+                )
+                experiences = pre_repair_experiences
+                projects = pre_repair_projects
+                extracurriculars_draft = pre_repair_extracurriculars
+                repair_history = pre_repair_history
+                applied = 0
+            else:
                 from weasyprint import HTML as _VerifyHTML  # type: ignore[import-untyped]
 
                 _target_pages = _manifest.get("target_pages", 1)
@@ -1788,6 +2162,21 @@ async def orphan_repair_node(
                 if _html:
                     _font_base = str(settings.TEMPLATES_DIR / _template_id)
                     _verify_doc = _VerifyHTML(string=_html, base_url=_font_base).render()
+
+                if _verify_doc is None:
+                    await log_progress(
+                        db,
+                        gen_id,
+                        "orphan_repair",
+                        "Verification render is None; rolling back repairs to pre-repair originals.",
+                        "warning",
+                    )
+                    experiences = pre_repair_experiences
+                    projects = pre_repair_projects
+                    extracurriculars_draft = pre_repair_extracurriculars
+                    repair_history = pre_repair_history
+                    applied = 0
+                else:
                     _new_pages = len(_verify_doc.pages)
                     _new_orphans = detect_orphans_in_weasyprint(_verify_doc)
 
@@ -1817,8 +2206,10 @@ async def orphan_repair_node(
 
                     # Guard 1: expansion broke page fit — revert everything.
                     if _new_pages > _target_pages and _pre_repair_pages <= _target_pages:
-                        for _entry in applied_entries:
-                            _revert(_entry)
+                        experiences = pre_repair_experiences
+                        projects = pre_repair_projects
+                        extracurriculars_draft = pre_repair_extracurriculars
+                        repair_history = pre_repair_history
                         applied = 0
                         await log_progress(
                             db,
@@ -1831,14 +2222,33 @@ async def orphan_repair_node(
                         )
                     else:
                         # Guard 2: per-bullet line growth — revert only grown bullets.
-                        _oversize = {
-                            clean_text(_o.get("text", ""))
-                            for _o in _new_orphans
-                            if _o.get("renderedLines", 0) > 2
-                        }
+                        def _is_entry_oversize(entry):
+                            sec = entry["section_key"]
+                            item_idx = entry["item_idx"]
+                            bullet_idx = entry["bullet_idx"]
+                            txt = clean_text(_current_text(entry))
+                            for _o in _new_orphans:
+                                if _o.get("renderedLines", 0) > 2:
+                                    if (
+                                        _o.get("section") is not None
+                                        and _o.get("entry_idx") is not None
+                                        and _o.get("bullet_idx") is not None
+                                    ):
+                                        o_sec = _o["section"]
+                                        matched_sec = (
+                                            (sec == "experience" and o_sec in ("experience", "experiences"))
+                                            or (sec == "projects" and o_sec in ("project", "projects"))
+                                            or (sec == "extracurriculars" and o_sec in ("extracurricular", "extracurriculars"))
+                                        )
+                                        if matched_sec and _o["entry_idx"] == item_idx and _o["bullet_idx"] == bullet_idx:
+                                            return True
+                                    elif clean_text(_o.get("text", "")) == txt:
+                                        return True
+                            return False
+
                         _grown_reverts = 0
                         for _entry in applied_entries:
-                            if clean_text(_current_text(_entry)) in _oversize:
+                            if _is_entry_oversize(_entry):
                                 _revert(_entry)
                                 _grown_reverts += 1
                         if _grown_reverts:
@@ -1858,9 +2268,14 @@ async def orphan_repair_node(
                 db,
                 gen_id,
                 "orphan_repair",
-                f"Verification render skipped ({ve}); keeping applied repairs.",
+                f"Verification error ({ve}); rolling back repairs to pre-repair originals.",
                 "warning",
             )
+            experiences = pre_repair_experiences
+            projects = pre_repair_projects
+            extracurriculars_draft = pre_repair_extracurriculars
+            repair_history = pre_repair_history
+            applied = 0
 
     return {
         "experience_draft": experiences,

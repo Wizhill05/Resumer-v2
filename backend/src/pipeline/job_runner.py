@@ -79,6 +79,10 @@ def _state_from_snapshot(gen: Generation, template_manifest) -> ResumeGraphState
         markdown=None,
         page_count=0,
         font_size=0.0,
+        fits_target=None,
+        has_horizontal_overflow=None,
+        experience_fallback=None,
+        projects_fallback=None,
         pdf_storage_key=None,
         md_storage_key=None,
         thumb_storage_key=None,
@@ -99,8 +103,9 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         )
         return None
 
-    if gen.is_guest and gen.guest_input_snapshot:
+    if gen.is_guest:
         return _state_from_snapshot(gen, template_manifest)
+
     is_pro = False
     user: User | None = None
     if not gen.is_guest:
@@ -112,12 +117,13 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
                 or (user.email and (user.email in settings.admin_emails or "*" in settings.admin_emails))
             )
 
+    # Fetch profile
     profile_res = await db.execute(select(Profile).where(Profile.user_id == gen.user_id))
     profile = profile_res.scalar_one_or_none()
     if not profile:
         await log_progress(
-            None, str(gen.id), "system",
-            "Profile not found. Please complete basic onboarding.", "error",
+            db, str(gen.id), "system",
+            "Profile not found; complete onboarding first.", "error",
         )
         return None
 
@@ -210,6 +216,8 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         is_pro=is_pro,
         creativity_mode=getattr(gen, "creativity_mode", None) or "proper",
         job_analysis=None,
+        summary_draft=None,
+        projects_draft=None,
         experience_draft=None,
         extracurriculars_draft=None,
         tailored_resume=None,
@@ -218,6 +226,10 @@ async def _load_initial_state(db: AsyncSession, gen: Generation) -> ResumeGraphS
         markdown=None,
         page_count=0,
         font_size=0.0,
+        fits_target=None,
+        has_horizontal_overflow=None,
+        experience_fallback=None,
+        projects_fallback=None,
         pdf_storage_key=None,
         md_storage_key=None,
         thumb_storage_key=None,
@@ -301,14 +313,20 @@ async def run_generation(gen_id: str) -> None:
                 g.md_storage_key = result.get("md_storage_key")
                 g.thumb_storage_key = result.get("thumb_storage_key")
                 g.completed_at = datetime.now(timezone.utc)
+                fits_target = result.get("fits_target")
+                has_h_overflow = result.get("has_horizontal_overflow", False)
+                page_count = result.get("page_count") or 1
+                font_size = result.get("font_size")
+                fit_warning = (not fits_target) if fits_target is not None else (page_count > 1 and font_size is not None)
+                if has_h_overflow:
+                    fit_warning = True
                 g.render_metadata = {
                     **previous_metadata,
                     "tailored_resume": result.get("tailored_resume"),
-                    "font_size": result.get("font_size"),
-                    "page_count": result.get("page_count"),
-                    # fit_warning=True when pipeline used min_font_size and page_count > target_pages
-                    "fit_warning": (result.get("page_count") or 1) > 1
-                        and result.get("font_size") is not None,
+                    "font_size": font_size,
+                    "page_count": page_count,
+                    "fit_warning": fit_warning,
+                    "has_horizontal_overflow": has_h_overflow,
                     "editor_revision": 0,
                     "intermediate_resumes": previous_metadata.get("intermediate_resumes") or [],
                 }

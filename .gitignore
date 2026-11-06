@@ -38,3 +38,6 @@ frontend/scripts/
 generate_logos.py
 generate_showcase.py
 refine_logos.py
+
+# Extracted from the unmodified Microsoft core-font installer during setup
+backend/templates/professional-sans/fonts/Arial*.TTF

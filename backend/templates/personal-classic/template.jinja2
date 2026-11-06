@@ -54,7 +54,7 @@
   {% if section_id == 'summary' and resume.summary %}
   <!-- Summary -->
   <h2>PROFESSIONAL SUMMARY</h2>
-  <p class="body-indent">{{ resume.summary | markdown }}</p>
+  <p class="body-indent">{{ resume.summary | e | markdown }}</p>
   {% elif section_id == 'education' and resume.education %}
   <!-- Education -->
   <h2>EDUCATION</h2>
@@ -86,6 +86,7 @@
   <!-- Projects -->
   <h2>PROJECTS</h2>
   {% for project in resume.projects %}
+  {% set project_idx = loop.index0 %}
   <div class="resume-entry">
   {% set project_link = (project.github_url or project.live_url or '') | trim %}
   {% set project_summary = (project.project_summary or '') | trim %}
@@ -93,23 +94,31 @@
   <dl>
     <dt>
       <strong>{{ project.name }}
-      {%- if project_summary %} | {{ project_summary | markdown }}{% endif %}
+      {%- if project_summary %} | {{ project_summary | e | markdown }}{% endif %}
       {%- if project_link %} | <a href="{{ project_link if project_link.startswith('http') else 'https://' + project_link }}">{{ link_label }}</a>{% endif %}
       </strong>
     </dt>
     <dd></dd>
   </dl>
+  {% set non_empty_bullets = (project.bullet_points or []) | select | map("trim") | select | list %}
+  {% if non_empty_bullets %}
   <ul>
-  {% for bullet in project.bullet_points %}
-    <li>{{ bullet | markdown }}</li>
+  {% for bullet in (project.bullet_points or []) %}
+  {% if bullet and bullet | trim %}
+    <li data-section="projects" data-entry-idx="{{ project_idx }}" data-bullet-idx="{{ loop.index0 }}">{{ bullet | e | markdown }}</li>
+  {% endif %}
   {% endfor %}
   </ul>
+  {% elif project.description %}
+  <p class="body-indent">{{ project.description | e | markdown }}</p>
+  {% endif %}
   </div>
   {% endfor %}
   {% elif section_id == 'experiences' and resume.experiences %}
   <!-- Experience -->
   <h2>EXPERIENCE</h2>
   {% for exp in resume.experiences %}
+  {% set exp_idx = loop.index0 %}
   <div class="resume-entry">
   <dl>
     <dt><strong>{{ exp.role }} | {{ exp.organization }}{% if exp.location %} | {{ exp.location }}{% endif %}</strong></dt>
@@ -121,7 +130,7 @@
   </dl>
   <ul>
   {% for bullet in exp.bullet_points %}
-    <li>{{ bullet | markdown }}</li>
+    <li data-section="experience" data-entry-idx="{{ exp_idx }}" data-bullet-idx="{{ loop.index0 }}">{{ bullet | e | markdown }}</li>
   {% endfor %}
   </ul>
   </div>
@@ -132,7 +141,7 @@
   <div class="extracurriculars-section">
     <ul>
     {% for ex in resume.extracurriculars %}
-      <li>{{ ex.description | markdown }}</li>
+      <li data-section="extracurriculars" data-entry-idx="{{ loop.index0 }}" data-bullet-idx="0">{{ ex.description | e | markdown }}</li>
     {% endfor %}
     </ul>
   </div>
