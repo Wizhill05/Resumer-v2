@@ -74,16 +74,57 @@ from src.services.llm_config import llm_config_service, InferenceExhausted, LLMN
 
 
 
+def _is_free_form_map(node: Any) -> bool:
+    return isinstance(node, dict) and node.get("type") == "object" and "properties" not in node
+
+
+def _strict_json_schema(schema) -> dict[str, Any]:
+    """Wire contract for a Pydantic model that strict structured-output providers honour.
+
+    Gemini omits optional properties (it dropped bullet_points and description), and OpenAI
+    strict mode rejects objects without ``additionalProperties: false``. So every property is
+    required (nullable fields stay nullable), every object is closed, and defaults are dropped.
+    Optional free-form maps cannot be expressed in strict mode, so they are left out; Pydantic
+    still fills their defaults when the response is validated against the real model.
+    """
+    contract = copy.deepcopy(schema.model_json_schema())
+
+    def close(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                close(item)
+            return
+        if not isinstance(node, dict):
+            return
+        node.pop("default", None)
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            required = set(node.get("required") or [])
+            for name in [n for n, p in properties.items() if n not in required and _is_free_form_map(p)]:
+                del properties[name]
+            for child in properties.values():
+                close(child)
+            node["required"] = list(properties)
+            node["additionalProperties"] = False
+        for key in ("items", "anyOf", "allOf", "oneOf", "prefixItems", "additionalProperties"):
+            close(node.get(key))
+        for child in (node.get("$defs") or {}).values():
+            close(child)
+
+    close(contract)
+    return contract
+
+
 def _structured(llm, schema, provider: str | None = None):
     """Request JSON content and validate locally, without depending on tool calls."""
     from langchain_core.messages import SystemMessage
     from langchain_core.runnables import RunnableLambda
 
     mode = getattr(llm, "_structured_mode", "json_schema") or "json_schema"
+    contract = _strict_json_schema(schema)
 
     async def invoke(value, config=None):
         messages = value.to_messages() if hasattr(value, "to_messages") else value
-        contract = schema.model_json_schema()
         if mode == "prompt_only":
             request = llm
         elif mode == "json_object":
