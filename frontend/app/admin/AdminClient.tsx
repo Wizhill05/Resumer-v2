@@ -11,6 +11,8 @@ import { AdminSidebar } from "@/components/admin/AdminSidebar"
 import { AdminHeader } from "@/components/admin/AdminHeader"
 import { AdminIssueInbox } from "@/components/admin/AdminIssueInbox"
 import { AdminTabId } from "@/components/admin/types"
+import { LlmSettingsPanel } from "@/components/admin/llm/LlmSettingsPanel"
+import type { LlmStatusSummary } from "@/components/admin/llm/types"
 import { 
   RefreshCw, 
   Trash2, 
@@ -47,10 +49,7 @@ type AnalyticsData = {
     over_5m: number
   }
   failure_rate_percent: number
-  keys_status: {
-    openrouter?: { configured_keys_count: number; model?: string; base_url?: string }
-    pro?: { configured_keys_count: number; model?: string; base_url?: string }
-  }
+  llm_status?: LlmStatusSummary | null
   llm_metrics: MetricSummary
 }
 type MetricSummary = {
@@ -178,38 +177,6 @@ type UserItem = {
   admin_note?: string
 }
 
-type ModelTierConfig = {
-  tier: string
-  provider_name: string
-  base_url: string
-  model: string
-  temperature: number
-  fallback_provider?: string
-  fallback_model?: string
-  extra_headers?: Record<string, string>
-  is_active: boolean
-  updated_at?: string
-}
-
-type ModelSettingsResponse = {
-  free?: ModelTierConfig
-  pro?: ModelTierConfig
-}
-
-const UNIFIED_MODEL_PRESETS = [
-  {
-    name: "OmniRoute — Gemini 3.8 Flash Tiered",
-    baseUrl: "https://omniroute-latest-rmm0.onrender.com/",
-    model: "gemini-3.8-flash-tiered",
-    fallbackModel: "google/gemini-3.8-flash",
-  },
-  {
-    name: "OpenRouter — Gemini 3.8 Flash",
-    baseUrl: "https://openrouter.ai/api/v1",
-    model: "google/gemini-3.8-flash",
-    fallbackModel: "google/gemini-3.8-flash",
-  },
-]
 type LogItem = {
   id: number
   timestamp: string
@@ -453,26 +420,6 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
   const [templateId, setTemplateId] = useState("personal-classic")
   const [templateContext, setTemplateContext] = useState("{}")
   const [templateHtml, setTemplateHtml] = useState("")
-  // Model Settings States
-  const [proBaseUrl, setProBaseUrl] = useState("")
-  const [proModel, setProModel] = useState("")
-  const [proTemperature, setProTemperature] = useState(0.2)
-  const [proFallbackModel, setProFallbackModel] = useState("google/gemini-3.8-flash")
-
-  const [freeBaseUrl, setFreeBaseUrl] = useState("")
-  const [freeModel, setFreeModel] = useState("")
-  const [freeTemperature, setFreeTemperature] = useState(0.2)
-  const [freeFallbackModel, setFreeFallbackModel] = useState("google/gemini-3.8-flash")
-
-  const [testOutput, setTestOutput] = useState<{
-    tier?: string
-    success?: boolean
-    latency_ms?: number
-    output?: string
-    model_used?: string
-    error?: string
-  } | null>(null)
-  const [saveStatus, setSaveStatus] = useState<string | null>(null)
   // Feedback Tab States
   const [feedbackSubTab, setFeedbackSubTab] = useState<"reports" | "ratings">("reports")
   // States for Prompt editor
@@ -496,28 +443,6 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
   const { data: analytics, error: analyticsErr, isLoading: loadingAnalytics } = useQuery<AnalyticsData>({
     queryKey: ["admin", "analytics"],
     queryFn: () => fetchJson<AnalyticsData>("/api/backend/admin/analytics"),
-  })
-
-  // Model Settings Query
-  const { isLoading: loadingModelSettings } = useQuery<ModelSettingsResponse>({
-    queryKey: ["admin", "model-settings"],
-    queryFn: async () => {
-      const data = await fetchJson<ModelSettingsResponse>("/api/backend/admin/model-settings")
-      if (data.pro) {
-        setProBaseUrl(data.pro.base_url || "https://omniroute-latest-rmm0.onrender.com/")
-        setProModel(data.pro.model || "gemini-3.8-flash-tiered")
-        setProTemperature(data.pro.temperature ?? 0.2)
-        setProFallbackModel(data.pro.fallback_model || "google/gemini-3.8-flash")
-      }
-      if (data.free) {
-        setFreeBaseUrl(data.free.base_url || "https://openrouter.ai/api/v1")
-        setFreeModel(data.free.model || "google/gemini-3.8-flash")
-        setFreeTemperature(data.free.temperature ?? 0.2)
-        setFreeFallbackModel(data.free.fallback_model || "google/gemini-3.8-flash")
-      }
-      return data
-    },
-    enabled: activeTab === "models" || activeTab === "analytics",
   })
 
   // 2. Fetch Prompts
@@ -790,71 +715,6 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
     onSuccess: (data) => setTemplateHtml(data.html || ""),
   })
 
-  const updateModelSettingsMutation = useMutation({
-    mutationFn: async (tier: "free" | "pro") => {
-      setSaveStatus(null)
-      const payload = tier === "pro" ? {
-        tier: "pro",
-        base_url: proBaseUrl,
-        model: proModel,
-        temperature: proTemperature,
-        fallback_provider: "openrouter",
-        fallback_model: proFallbackModel,
-      } : {
-        tier: "free",
-        base_url: freeBaseUrl,
-        model: freeModel,
-        temperature: freeTemperature,
-        fallback_provider: "openrouter",
-        fallback_model: freeFallbackModel,
-      }
-
-      const res = await fetch("/api/backend/admin/model-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) throw new Error("Failed to update model settings")
-      return res.json()
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "model-settings"] })
-      queryClient.invalidateQueries({ queryKey: ["admin", "analytics"] })
-      setSaveStatus(`Saved ${variables.toUpperCase()} tier settings successfully!`)
-      setTimeout(() => setSaveStatus(null), 4000)
-    },
-  })
-
-  const testModelMutation = useMutation({
-    mutationFn: async (tier: "free" | "pro") => {
-      setTestOutput(null)
-      const payload = tier === "pro" ? {
-        tier: "pro",
-        base_url: proBaseUrl || undefined,
-        model: proModel || undefined,
-      } : {
-        tier: "free",
-        base_url: freeBaseUrl || undefined,
-        model: freeModel || undefined,
-      }
-
-      const res = await fetch("/api/backend/admin/model-settings/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
-      return res.json()
-    },
-    onSuccess: (data) => {
-      setTestOutput(data)
-    },
-    onError: (err: unknown) => {
-      const msg = err instanceof Error ? err.message : "Test failed"
-      setTestOutput({ success: false, error: msg })
-    },
-  })
-
-
   const toggleUserTierMutation = useMutation({
     mutationFn: async ({ userId, is_pro }: { userId: string; is_pro: boolean }) => {
       const res = await fetch(`/api/backend/admin/users/${userId}/tier`, {
@@ -1007,7 +867,7 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
         <div className="px-3 py-4 sm:p-6 mx-auto w-full max-w-6xl">
           <AdminHeader
             activeTab={activeTab}
-            isFetching={loadingAnalytics || loadingTiming || loadingModelSettings || loadingGenerations || loadingUsers}
+            isFetching={loadingAnalytics || loadingTiming || loadingGenerations || loadingUsers}
             onManualRefresh={handleManualRefresh}
           />
 
@@ -1071,32 +931,52 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
                   </div>
                 </div>
 
-                {/* API Key pool Status */}
+                {/* LLM routing status */}
                 <div className="panel-strong p-5 space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wide border-b dark:border-zinc-700 pb-2 text-zinc-800 dark:text-zinc-200">Configured LLM Providers</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
-                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">
-                        {analytics.keys_status.pro?.base_url?.includes("openrouter.ai") ? "OpenRouter (Pro)" : (analytics.keys_status.pro?.base_url?.includes("omniroute") ? "OmniRoute" : "Pro Endpoint")}
-                      </p>
-                      <p className="text-sm font-black text-[#ff4e26] mt-1 truncate" title={analytics.keys_status.pro?.model || "gemini-3.8-flash-tiered"}>
-                        {analytics.keys_status.pro?.model ? (analytics.keys_status.pro.model.includes("/") ? analytics.keys_status.pro.model.split("/").slice(1).join("/") : analytics.keys_status.pro.model) : "Gemini 3.8 Tiered"}
-                      </p>
-                      <span className="text-[9px] text-green-600 font-bold uppercase">{analytics.keys_status.pro?.configured_keys_count ?? 0} Keys</span>
-                    </div>
-                    <div className="border border-zinc-200 dark:border-zinc-700 p-3 text-center bg-zinc-50 dark:bg-zinc-800">
-                      <p className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">OpenRouter Pool</p>
-                      <p className="text-sm font-black text-black dark:text-white mt-1 truncate" title={analytics.keys_status.openrouter?.model || "google/gemini-3.8-flash"}>
-                        {analytics.keys_status.openrouter?.model ? (analytics.keys_status.openrouter.model.includes("/") ? analytics.keys_status.openrouter.model.split("/").slice(1).join("/") : analytics.keys_status.openrouter.model) : "Gemini 3.8 Flash"}
-                      </p>
-                      <span className="text-[9px] text-zinc-500 font-bold uppercase">{analytics.keys_status.openrouter?.configured_keys_count ?? 0} Keys</span>
-                    </div>
-
+                  <div className="flex items-center justify-between gap-2 border-b dark:border-zinc-700 pb-2">
+                    <h3 className="text-sm font-bold uppercase tracking-wide text-zinc-800 dark:text-zinc-200">LLM Routing</h3>
+                    {analytics.llm_status ? (
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1.5 border px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase",
+                          analytics.llm_status.ready
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
+                        )}
+                      >
+                        <span className={cn("h-1.5 w-1.5 rounded-full", analytics.llm_status.ready ? "bg-emerald-500" : "bg-red-500")} />
+                        {analytics.llm_status.ready ? "Ready" : "Not configured"}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[10px] text-zinc-400">status unavailable</span>
+                    )}
                   </div>
-                  <div className="flex justify-between items-center text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold">
-                    <span>Dynamic runtime config with zero-downtime hot reload.</span>
+                  <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {([
+                      ["Resume generation", analytics.llm_status?.default_primary],
+                      ["Pro", analytics.llm_status?.pro_primary],
+                    ] as const).map(([label, primary]) => (
+                      <div key={label} className="min-w-0 border border-zinc-200 dark:border-zinc-700 p-3 bg-zinc-50 dark:bg-zinc-800">
+                        <dt className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase">{label}</dt>
+                        {primary ? (
+                          <dd className="mt-1 min-w-0">
+                            <p className="truncate text-sm font-black text-black dark:text-white" title={primary.endpoint_name}>{primary.endpoint_name}</p>
+                            <p className="truncate font-mono text-[11px] text-[#ff4e26]" title={primary.model}>{primary.model}</p>
+                          </dd>
+                        ) : (
+                          <dd className="mt-1 text-sm font-bold text-zinc-400">Not routed</dd>
+                        )}
+                      </div>
+                    ))}
+                  </dl>
+                  <div className="flex justify-between items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400 font-semibold">
+                    <span className="font-mono">
+                      {analytics.llm_status
+                        ? `${analytics.llm_status.endpoints_enabled}/${analytics.llm_status.endpoints_total} endpoints enabled`
+                        : "—"}
+                    </span>
                     <Button size="xs" variant="outline" onClick={() => setActiveTab("models")}>
-                      Manage Providers &rarr;
+                      Manage endpoints &rarr;
                     </Button>
                   </div>
                 </div>
@@ -1133,309 +1013,9 @@ export function AdminClient({ initialTab = "analytics" }: { initialTab?: AdminTa
         </div>
       )}
 
-      {/* MODEL PROVIDERS TAB */}
-      {activeTab === "models" && (
-        <div className="space-y-6 pixel-enter">
-          <div className="flex flex-wrap justify-between items-center gap-2 border-b dark:border-zinc-700 pb-3">
-            <div>
-              <h3 className="text-sm font-bold uppercase tracking-wide">Dynamic LLM & Model Provider Settings</h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Configure endpoints, models, and fallback routing for Pro and Free accounts. All API keys are securely managed via server environment variables.
-              </p>
-            </div>
-            {saveStatus && (
-              <span className="text-xs font-bold text-green-600 bg-green-50 dark:bg-green-950 border border-green-300 dark:border-green-800 px-2.5 py-1">
-                {saveStatus}
-              </span>
-            )}
-          </div>
-          {loadingModelSettings ? (
-            <div className="soft-skeleton h-64" />
-          ) : (
-            <div className="grid gap-6 md:grid-cols-2">
-              {/* PRO TIER SETTINGS */}
-              <div className="panel-strong p-5 space-y-4 border-2 border-[#ff4e26]">
-                <div className="flex justify-between items-center border-b dark:border-zinc-700 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 bg-[#ff4e26] rounded-full inline-block" />
-                    <h4 className="text-sm font-black uppercase text-black dark:text-white">Pro Accounts (Premium Tier)</h4>
-                  </div>
-                  <span className="px-2 py-0.5 font-bold uppercase text-[9px] bg-red-100 dark:bg-red-950 text-[#ff4e26] border border-[#ff4e26]">
-                    {proBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (proBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : "Configured Gateway")}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Used exclusively for Pro users. Select any curated preset or configure a custom endpoint.
-                </p>
+      {/* LLM ENDPOINTS & ROUTING TAB */}
+      {activeTab === "models" && <LlmSettingsPanel />}
 
-                  {/* Pro Model Presets */}
-                  <div>
-                    <Label className="text-xs font-bold">Quick Presets (Auto-fill)</Label>
-                    <select
-                      className="w-full h-8 text-xs border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 mt-1 font-sans"
-                      onChange={(e) => {
-                        const preset = UNIFIED_MODEL_PRESETS.find(p => p.model === e.target.value)
-                        if (preset) {
-                          setProBaseUrl(preset.baseUrl)
-                          setProModel(preset.model)
-                          setProFallbackModel(preset.fallbackModel)
-                        }
-                      }}
-                      value={UNIFIED_MODEL_PRESETS.some(p => p.model === proModel) ? proModel : ""}
-                    >
-                      <option value="">Choose a pre-registered Pro model...</option>
-                      {UNIFIED_MODEL_PRESETS.map((p) => (
-                        <option key={p.model} value={p.model}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex flex-wrap gap-1.5 pt-1.5">
-                      {UNIFIED_MODEL_PRESETS.map((p) => (
-                        <button
-                          key={p.model}
-                          type="button"
-                          onClick={() => {
-                            setProBaseUrl(p.baseUrl)
-                            setProModel(p.model)
-                            setProFallbackModel(p.fallbackModel)
-                          }}
-                          className={`text-[10px] px-2 py-0.5 font-bold border transition-colors ${proModel === p.model ? "bg-[#ff4e26] text-white border-[#ff4e26]" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700 hover:border-zinc-500"}`}
-                        >
-                          {p.name.split("—")[0].trim()}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-xs font-bold">Provider Base URL</Label>
-                    <Input
-                      value={proBaseUrl}
-                      onChange={(e) => setProBaseUrl(e.target.value)}
-                      placeholder="https://omniroute-latest-rmm0.onrender.com/"
-                      className="h-8 text-xs font-mono mt-1"
-                    />
-                    <p className="text-[10px] text-zinc-400 mt-0.5">OpenAI-compatible gateway endpoint</p>
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold">Model ID / Name</Label>
-                    <Input
-                      value={proModel}
-                      onChange={(e) => setProModel(e.target.value)}
-                      placeholder="gemini-3.8-flash-tiered"
-                      className="h-8 text-xs font-mono mt-1"
-                    />
-                  </div>
-
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs font-bold">Temperature</Label>
-                      <Input
-                        type="number"
-                        step="0.05"
-                        min="0.0"
-                        max="1.0"
-                        value={proTemperature}
-                        onChange={(e) => setProTemperature(parseFloat(e.target.value) || 0.2)}
-                        className="h-8 text-xs font-mono mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs font-bold">OpenRouter Fallback Model</Label>
-                      <Input
-                        value={proFallbackModel}
-                        onChange={(e) => setProFallbackModel(e.target.value)}
-                        placeholder="google/gemini-3.8-flash"
-                        className="h-8 text-xs font-mono mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-2 border-t dark:border-zinc-700">
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      disabled={updateModelSettingsMutation.isPending}
-                      onClick={() => updateModelSettingsMutation.mutate("pro")}
-                    >
-                      Save Pro Settings
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={testModelMutation.isPending}
-                      onClick={() => testModelMutation.mutate("pro")}
-                    >
-                      {testModelMutation.isPending && testOutput?.tier === "pro" ? "Testing..." : "Test Connection"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* FREE TIER SETTINGS */}
-              <div className="panel-strong p-5 space-y-4 border border-zinc-300 dark:border-zinc-700">
-                <div className="flex justify-between items-center border-b dark:border-zinc-700 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 bg-zinc-400 rounded-full inline-block" />
-                    <h4 className="text-sm font-black uppercase text-black dark:text-white">Free Accounts (Standard Tier)</h4>
-                  </div>
-                  <span className="px-2 py-0.5 font-bold uppercase text-[9px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-300 dark:border-zinc-700">
-                    {freeBaseUrl.includes("openrouter.ai") ? "OpenRouter Pool" : (freeBaseUrl.includes("omniroute") ? "OmniRoute Gateway" : "Configured Gateway")}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Used for standard registered users and guests. Select any curated preset or configure a custom endpoint.
-                </p>
-
-                  {/* Free Model Presets */}
-                  <div>
-                    <Label className="text-xs font-bold">Quick Presets (Auto-fill)</Label>
-                    <select
-                      className="w-full h-8 text-xs border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 mt-1 font-sans"
-                      onChange={(e) => {
-                        const preset = UNIFIED_MODEL_PRESETS.find(p => p.model === e.target.value)
-                        if (preset) {
-                          setFreeBaseUrl(preset.baseUrl)
-                          setFreeModel(preset.model)
-                          setFreeFallbackModel(preset.fallbackModel)
-                        }
-                      }}
-                      value={UNIFIED_MODEL_PRESETS.some(p => p.model === freeModel) ? freeModel : ""}
-                    >
-                      <option value="">Choose a pre-registered Free model...</option>
-                      {UNIFIED_MODEL_PRESETS.map((p) => (
-                        <option key={p.model} value={p.model}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex flex-wrap gap-1.5 pt-1.5">
-                      {UNIFIED_MODEL_PRESETS.map((p) => (
-                        <button
-                          key={p.model}
-                          type="button"
-                          onClick={() => {
-                            setFreeBaseUrl(p.baseUrl)
-                            setFreeModel(p.model)
-                            setFreeFallbackModel(p.fallbackModel)
-                          }}
-                          className={`text-[10px] px-2 py-0.5 font-bold border transition-colors ${freeModel === p.model ? "bg-black dark:bg-white text-white dark:text-black border-black dark:border-white" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700 hover:border-zinc-500"}`}
-                        >
-                          {p.name.split("—")[0].trim()}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-xs font-bold">Provider Base URL</Label>
-                    <Input
-                      value={freeBaseUrl}
-                      onChange={(e) => setFreeBaseUrl(e.target.value)}
-                      placeholder="https://openrouter.ai/api/v1"
-                      className="h-8 text-xs font-mono mt-1"
-                    />
-                  </div>
-
-                  <div>
-                    <Label className="text-xs font-bold">Model ID / Name</Label>
-                    <Input
-                      value={freeModel}
-                      onChange={(e) => setFreeModel(e.target.value)}
-                      placeholder="google/gemini-3.8-flash"
-                      className="h-8 text-xs font-mono mt-1"
-                    />
-                    <p className="text-[10px] text-zinc-400 mt-0.5">e.g. google/gemini-3.8-flash</p>
-                  </div>
-
-
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs font-bold">Temperature</Label>
-                      <Input
-                        type="number"
-                        step="0.05"
-                        min="0.0"
-                        max="1.0"
-                        value={freeTemperature}
-                        onChange={(e) => setFreeTemperature(parseFloat(e.target.value) || 0.2)}
-                        className="h-8 text-xs font-mono mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs font-bold">OpenRouter Fallback Model</Label>
-                      <Input
-                        value={freeFallbackModel}
-                        onChange={(e) => setFreeFallbackModel(e.target.value)}
-                        placeholder="google/gemini-3.8-flash"
-                        className="h-8 text-xs font-mono mt-1"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-2 border-t dark:border-zinc-700">
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      disabled={updateModelSettingsMutation.isPending}
-                      onClick={() => updateModelSettingsMutation.mutate("free")}
-                    >
-                      Save Free Settings
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={testModelMutation.isPending}
-                      onClick={() => testModelMutation.mutate("free")}
-                    >
-                      {testModelMutation.isPending && testOutput?.tier === "free" ? "Testing..." : "Test Connection"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TEST CONNECTION OUTPUT */}
-          {testOutput && (
-            <div className={`panel-strong p-4 space-y-2 border-2 ${testOutput.success ? "border-green-600 bg-green-50/20" : "border-red-600 bg-red-50/20"}`}>
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold uppercase tracking-wide">
-                  {testOutput.success ? "✓ Test Succeeded" : "✕ Test Failed"} ({testOutput.tier?.toUpperCase()} Tier)
-                </span>
-                {testOutput.latency_ms !== undefined && (
-                  <span className="text-xs font-mono font-bold text-zinc-500">
-                    Latency: {testOutput.latency_ms}ms
-                  </span>
-                )}
-              </div>
-              {testOutput.model_used && (
-                <p className="text-xs font-mono text-zinc-600 dark:text-zinc-400">
-                  Model Responded: <strong>{testOutput.model_used}</strong>
-                </p>
-              )}
-              {testOutput.output && (
-                <pre className="text-xs p-2 bg-black text-green-400 font-mono overflow-x-auto rounded-none">
-                  {testOutput.output}
-                </pre>
-              )}
-              {testOutput.error && (
-                <p className="text-xs font-bold text-red-600 font-mono">
-                  {testOutput.error}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* GENERATIONS TAB */}
       {activeTab === "generations" && (
         <div className="space-y-4 pixel-enter">
           {viewingLogsGenId ? (

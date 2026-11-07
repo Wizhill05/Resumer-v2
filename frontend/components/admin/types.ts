@@ -49,8 +49,8 @@ export const ADMIN_TAB_INFO: Record<AdminTabId, { group: string; title: string; 
   },
   models: {
     group: "AI Engine & Infrastructure",
-    title: "Model Providers & Routing",
-    description: "Configure Pro and Free tier LLM providers, base URLs, and fallback models",
+    title: "LLM Endpoints & Routing",
+    description: "Connect any OpenAI-compatible API, pick models, and route pipeline tasks with fallbacks",
   },
   prompts: {
     group: "AI Engine & Infrastructure",

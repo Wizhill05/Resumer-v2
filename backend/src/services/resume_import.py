@@ -98,6 +98,8 @@ async def extract_resume_draft(text: str, filename: str = "resume") -> ResumeImp
             draft: ResumeImportDraft = await invoke_with_fallback(
                 lambda llm, p: prompt | _structured(llm, ResumeImportDraft, p),
                 {"text": text},
+                node_name="resume_import",
+                role="utility",
             )
 
             draft.profile.skills = unique_strings(draft.profile.skills)

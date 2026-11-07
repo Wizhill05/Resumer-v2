@@ -27,7 +27,7 @@ class GenerationCreate(BaseModel):
     company: str | None = None
     keywords: list[str] | None = None
     instructions: str | None = None
-    model_used: str = "google/gemini-3.8-flash"
+    model_used: str = "unknown"
     # Optional — backend falls back to template default when absent.
     content_split: ContentSplitRequest | None = None
     send_email: bool | None = None

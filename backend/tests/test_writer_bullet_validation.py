@@ -12,6 +12,18 @@ from src.schemas.pipeline import (
     TailoredProjectBatch,
 )
 from src.services.resume_retailor import retailor_resume_with_project
+from src.services.llm_config import llm_config_service
+from tests.llm_fixtures import make_target
+
+
+@pytest.fixture(autouse=True)
+def _patched_routing(monkeypatch):
+    target = make_target()
+    monkeypatch.setattr(llm_config_service, "ensure_fresh", AsyncMock())
+    monkeypatch.setattr(llm_config_service, "resolve_targets", lambda role: [target])
+    monkeypatch.setattr(llm_config_service, "build_client", lambda target: object())
+    import src.pipeline.nodes as _nodes_mod
+    monkeypatch.setattr(_nodes_mod, "record_node_metric", AsyncMock())
 
 
 class SequenceRunnable(Runnable):

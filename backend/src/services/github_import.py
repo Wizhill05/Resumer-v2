@@ -103,8 +103,6 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             ),
         ]
     )
-    from src.core.config import settings
-    is_pro = bool(getattr(user, "is_pro", False) or (user.email and (user.email in settings.admin_emails or "*" in settings.admin_emails)))
     draft: GitHubProjectDraft = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, GitHubProjectDraft, p),
         {
@@ -115,7 +113,8 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
             "manifests": context["manifests"],
             "readme": context["readme"],
         },
-        is_pro=is_pro,
+        role="utility",
+        node_name="github_import",
     )
     draft.technologies = unique_strings(draft.technologies)
     draft.bullet_points = unique_strings(draft.bullet_points)

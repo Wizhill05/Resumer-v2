@@ -69,7 +69,7 @@ Most resume tools either make you manually fight layout or produce generic AI te
 | Forms and state | react-hook-form, Zod, TanStack Query |
 | Auth | NextAuth.js v5, JWT sessions |
 | Backend | FastAPI, Pydantic v2, SQLAlchemy async, Alembic |
-| AI pipeline | LangGraph, LangChain, Google Gemini / Gemma API |
+| AI pipeline | LangGraph, LangChain, any OpenAI-compatible API |
 | Rendering | Jinja2 templates, WeasyPrint PDF renderer |
 | Database | PostgreSQL |
 | Storage | Cloudflare R2 or any S3-compatible bucket |

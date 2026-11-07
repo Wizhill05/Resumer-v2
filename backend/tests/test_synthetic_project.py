@@ -5,7 +5,8 @@ import pytest
 
 from src.pipeline import nodes
 from src.schemas.pipeline import TailoredProject
-from src.services.llm_config import TierConfig, llm_config_service
+from src.services.llm_config import llm_config_service
+from tests.llm_fixtures import make_target
 
 
 SYNTHETIC = {
@@ -72,11 +73,10 @@ class FakeLLM:
 
 @pytest.fixture
 def project_node_setup(monkeypatch):
-    cfg = TierConfig(
-        tier="pro", provider_name="omniroute", base_url="https://omniroute.example/v1",
-        model="primary", fallback_model="fallback",
-    )
-    monkeypatch.setattr(llm_config_service, "get_tier_config", lambda tier: cfg)
+    primary_target = make_target(name="primary", model="primary", endpoint_id="e1", max_retries=1)
+    fallback_target = make_target(name="fallback", model="fallback", endpoint_id="e2", max_retries=1)
+    monkeypatch.setattr(llm_config_service, "ensure_fresh", __import__("unittest.mock", fromlist=["AsyncMock"]).AsyncMock())
+    monkeypatch.setattr(llm_config_service, "resolve_targets", lambda role: [primary_target, fallback_target])
 
     async def prompt_config(db, name, default_system, default_user=None):
         return default_system, default_user
@@ -127,10 +127,9 @@ async def test_synthetic_project_retries_incomplete_output(project_node_setup, m
     state, tailored, messages = project_node_setup
     primary = FakeLLM(
         [tailored, {**SYNTHETIC, "description": None}, SYNTHETIC],
-        "https://omniroute.example/v1",
+        "https://primary.example/v1",
     )
-    monkeypatch.setattr(llm_config_service, "get_llm", lambda **kwargs: primary)
-    monkeypatch.setattr(llm_config_service, "get_fallback_llm", lambda **kwargs: pytest.fail("Fallback was unnecessary"))
+    monkeypatch.setattr(llm_config_service, "build_client", lambda target: primary)
 
     result = await nodes.project_node(state, None, "test-generation")
 
@@ -144,10 +143,10 @@ async def test_synthetic_project_retries_incomplete_output(project_node_setup, m
 async def test_synthetic_project_accepts_valid_fallback_output(project_node_setup, monkeypatch):
     state, tailored, _ = project_node_setup
     invalid = {**SYNTHETIC, "technologies": []}
-    primary = FakeLLM([tailored, invalid, invalid], "https://omniroute.example/v1")
-    fallback = FakeLLM([SYNTHETIC], "https://openrouter.ai/api/v1")
-    monkeypatch.setattr(llm_config_service, "get_llm", lambda **kwargs: primary)
-    monkeypatch.setattr(llm_config_service, "get_fallback_llm", lambda **kwargs: fallback)
+    primary = FakeLLM([tailored, invalid, invalid], "https://primary.example/v1")
+    fallback = FakeLLM([SYNTHETIC], "https://fallback.example/v1")
+    llms = iter([primary, primary, primary, fallback])
+    monkeypatch.setattr(llm_config_service, "build_client", lambda target: next(llms))
 
     result = await nodes.project_node(state, None, "test-generation")
 
@@ -160,10 +159,10 @@ async def test_synthetic_project_accepts_valid_fallback_output(project_node_setu
 async def test_synthetic_project_preserves_tailored_project_after_provider_exhaustion(project_node_setup, monkeypatch):
     state, tailored, messages = project_node_setup
     invalid = {**SYNTHETIC, "bullet_points": []}
-    primary = FakeLLM([tailored, invalid, invalid], "https://omniroute.example/v1")
-    fallback = FakeLLM([invalid, invalid], "https://openrouter.ai/api/v1")
-    monkeypatch.setattr(llm_config_service, "get_llm", lambda **kwargs: primary)
-    monkeypatch.setattr(llm_config_service, "get_fallback_llm", lambda **kwargs: fallback)
+    primary = FakeLLM([tailored, invalid, invalid], "https://primary.example/v1")
+    fallback = FakeLLM([invalid, invalid], "https://fallback.example/v1")
+    llms = iter([primary, primary, primary, fallback, fallback])
+    monkeypatch.setattr(llm_config_service, "build_client", lambda target: next(llms))
 
     result = await nodes.project_node(state, None, "test-generation")
 

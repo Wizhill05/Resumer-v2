@@ -17,7 +17,6 @@ from pydantic import ValidationError
 from langchain_core.exceptions import OutputParserException
 from openai import APIError
 import httpx
-from src.core.api_key_pool import ApiKeyUnavailable
 
 from src.core.config import settings  # noqa: F401 (kept for other settings usage)
 from src.core.database import AsyncSessionLocal
@@ -70,7 +69,9 @@ async def log_progress(
 
 # ── LLM Init Helper ───────────────────────────────────────────────────────────
 
-from src.services.llm_config import llm_config_service
+from src.services.llm_config import llm_config_service, InferenceExhausted, LLMNotConfigured  # noqa: F401 - re-exported
+
+
 
 
 def _structured(llm, schema, provider: str | None = None):
@@ -78,12 +79,18 @@ def _structured(llm, schema, provider: str | None = None):
     from langchain_core.messages import SystemMessage
     from langchain_core.runnables import RunnableLambda
 
+    mode = getattr(llm, "_structured_mode", "json_schema") or "json_schema"
+
     async def invoke(value, config=None):
         messages = value.to_messages() if hasattr(value, "to_messages") else value
         contract = schema.model_json_schema()
-        options = {"extra_body": {"provider": {"require_parameters": True}}} if (provider or _actual_provider(llm)) == "openrouter" else {}
-        request = llm.bind(**options, response_format={"type": "json_schema", "json_schema": {
-            "name": schema.__name__, "schema": contract}})
+        if mode == "prompt_only":
+            request = llm
+        elif mode == "json_object":
+            request = llm.bind(response_format={"type": "json_object"})
+        else:
+            request = llm.bind(response_format={"type": "json_schema", "json_schema": {
+                "name": schema.__name__, "schema": contract}})
         raw = await request.ainvoke([SystemMessage(content=(
             "Return only one JSON object matching this schema. No markdown or commentary. "
             + json.dumps(contract))), *messages], config=config)
@@ -329,9 +336,6 @@ async def record_node_metric(
 
 
 
-class InferenceExhausted(RuntimeError):
-    pass
-
 class InvalidSelection(ValueError):
     pass
 
@@ -354,13 +358,7 @@ def _validate_synthetic_project(project: TailoredProject) -> None:
 
 
 def _actual_provider(llm: Any) -> str:
-    if getattr(llm, "_route_provider", None):
-        return llm._route_provider
-    url = str(getattr(llm, "openai_api_base", None) or "").lower()
-    for domain, name in (("openrouter.ai", "openrouter"), ("omniroute", "omniroute")):
-        if domain in url:
-            return name
-    return "openai_compatible"
+    return getattr(llm, "_endpoint_name", None) or "openai_compatible"
 
 
 def _status_code(exc):
@@ -379,42 +377,36 @@ def _finish_reason(reason):
     return str(reason or "").lower().split(".")[-1]
 
 
-async def invoke_with_fallback(
-    chain_factory,
-    invoke_args,
-    timeout: float = 40.0,
-    node_name: str | None = None,
-    gen_id: str | None = None,
-    max_attempts_per_provider: int = 2,
-    is_pro: bool = False,
-    validate_result=None,
-):
-    """Try the selected tier and its independent OpenRouter fallback, with bounded retries."""
-    if not 1 <= max_attempts_per_provider <= 2:
-        raise ValueError("Attempts per route must be one or two")
-    tier = "pro" if is_pro else "free"
-    cfg = llm_config_service.get_tier_config(tier)
-    providers = [
-        (cfg.provider_name, (cfg.base_url.rstrip("/"), cfg.model), lambda: llm_config_service.get_llm(tier=tier)),
-        ("openrouter", ("https://openrouter.ai/api/v1", cfg.fallback_model), lambda: llm_config_service.get_fallback_llm(tier=tier)),
-    ]
-    seen_routes = set()
-    for index, (name, route, factory) in enumerate(providers):
-        if route in seen_routes:
-            continue
-        seen_routes.add(route)
-        for attempt in range(1, max_attempts_per_provider + 1):
+async def invoke_with_fallback(chain_factory, invoke_args, timeout: float | None = None, node_name: str | None = None,
+                               gen_id: str | None = None, max_attempts_per_provider: int | None = None,
+                               is_pro: bool = False, validate_result=None, role: str | None = None):
+    """Try each configured role target in order, with bounded retries per target."""
+    await llm_config_service.ensure_fresh()
+    effective_role = role or ("pro" if is_pro else "default")
+    targets = llm_config_service.resolve_targets(effective_role)
+    if not targets:
+        raise LLMNotConfigured(effective_role)
+
+    for index, target in enumerate(targets):
+        endpoint = target.endpoint
+        name = endpoint.name
+        attempts = endpoint.max_retries + 1
+        if max_attempts_per_provider is not None:
+            attempts = min(attempts, max_attempts_per_provider)
+        attempts = max(1, attempts)
+        deadline = timeout or endpoint.timeout_seconds
+        for attempt in range(1, attempts + 1):
             try:
-                llm = factory()
-            except (ValueError, APIError, httpx.HTTPError, ApiKeyUnavailable) as exc:
-                print(f"[llm_fallback] {name} initialization failed ({type(exc).__name__}).")
+                llm = llm_config_service.build_client(target)
+            except (ValueError, APIError, httpx.HTTPError) as exc:
+                print(f"[llm_fallback] {endpoint.name} initialization failed ({type(exc).__name__}).")
                 break
             name = _actual_provider(llm)
-            chain = chain_factory(llm, name)
+            chain = chain_factory(llm, endpoint.name)
             started = time.perf_counter()
             usage_result = None
             try:
-                result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=timeout)
+                result = await asyncio.wait_for(chain.ainvoke(invoke_args), timeout=deadline)
                 usage_result = result
                 if isinstance(result, dict) and {"raw", "parsed", "parsing_error"} <= result.keys():
                     parsing_error = result["parsing_error"]
@@ -431,9 +423,8 @@ async def invoke_with_fallback(
                     validate_result(result)
             except (TimeoutError, APIError, httpx.HTTPError, OutputParserException, ValidationError, InvalidSelection, InvalidStructuredOutput) as exc:
                 status = _status_code(exc)
-                owner = getattr(llm, "_credential_owner", None)
-                if owner and status in (401, 403, 429):
-                    owner[0].mark_failure(owner[1])
+                if status in (401, 403, 429):
+                    llm_config_service.mark_cooldown(endpoint.id)
                 prompt_tokens, completion_tokens, total_tokens = _extract_token_usage(usage_result)
                 await record_node_metric(
                     gen_id,
@@ -447,14 +438,14 @@ async def invoke_with_fallback(
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     total_tokens=total_tokens,
-                    error_message=f"attempt {attempt}/{max_attempts_per_provider}: {type(exc).__name__}" + (f" HTTP {status}" if status else "") + (f" ({exc})" if isinstance(exc, InvalidStructuredOutput) and str(exc) in ("length", "content_filter", "parse_error") else ""),
+                    error_message=f"attempt {attempt}/{attempts}: {type(exc).__name__}" + (f" HTTP {status}" if status else "") + (f" ({exc})" if isinstance(exc, InvalidStructuredOutput) and str(exc) in ("length", "content_filter", "parse_error") else ""),
                 )
-                if status in (400, 402, 404, 422, 500, 502):
-                    print(f"[llm_fallback] {name} returned {status}. Trying next route.")
+                if status in (400, 401, 402, 403, 404, 422, 429, 500, 502, 503):
+                    print(f"[llm_fallback] {name} returned {status}. Trying next target.")
                     break
-                if attempt < max_attempts_per_provider:
+                if attempt < attempts:
                     sleep_for = min(0.5 * (2 ** (attempt - 1)), 2.0)
-                    print(f"[llm_retry] {name} attempt {attempt} failed ({type(exc).__name__}). Rotating key and retrying in {sleep_for:.2f}s...")
+                    print(f"[llm_retry] {name} attempt {attempt} failed ({type(exc).__name__}). Retrying in {sleep_for:.2f}s...")
                     await asyncio.sleep(sleep_for)
 
             else:
@@ -473,7 +464,7 @@ async def invoke_with_fallback(
                 )
                 return result
 
-        print(f"[llm_fallback] {name} exhausted attempts. Falling back to next provider in chain...")
+        print(f"[llm_fallback] {name} exhausted attempts. Falling back to next target in chain...")
     raise InferenceExhausted("All LLM providers failed") from None
 
 async def get_prompt_config(db: AsyncSession, name: str, default_system: str, default_user: str | None = None) -> tuple[str, str | None]:

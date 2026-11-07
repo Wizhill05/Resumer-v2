@@ -16,7 +16,7 @@ class GuestGenerationCreate(BaseModel):
     job_description: str
     keywords: list[str] | None = None
     instructions: str | None = None
-    model_used: str = "google/gemini-3.8-flash"
+    model_used: str = "unknown"
     content_split: ContentSplitRequest | None = None
     creativity_mode: CreativityMode = "proper"
     profile: ProfileUpdate = ProfileUpdate()

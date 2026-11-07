@@ -351,7 +351,7 @@ async def test_capture_complete_outgoing_structured_request_all_three_modes(mode
                 "id": f"test-{mode}",
                 "object": "chat.completion",
                 "created": 12345,
-                "model": "google/gemini-3.8-flash",
+                "model": "mock-model-1",
                 "choices": [
                     {
                         "index": 0,
@@ -365,10 +365,10 @@ async def test_capture_complete_outgoing_structured_request_all_three_modes(mode
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(mock_transport)) as client:
         llm = ChatOpenAI(
-            model="google/gemini-3.8-flash",
+            model="mock-model-1",
             api_key="synthetic-key",
             max_retries=0,
-            base_url="https://openrouter.ai/api/v1",
+            base_url="https://api.example.com/v1",
             http_async_client=client,
         )
 

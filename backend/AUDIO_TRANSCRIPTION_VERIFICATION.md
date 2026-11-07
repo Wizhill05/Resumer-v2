@@ -1,3 +1,5 @@
+Superseded: audio now uses the `audio` role (see docs/llm-endpoints.md).
+
 # Audio transcription verification
 
 Local investigation on 2026-11-01. No deployment, database settings, stored user
