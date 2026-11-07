@@ -17,6 +17,7 @@ from src.models.generation import (  # noqa: F401
     ReportAttachment,
     FeedbackRating,
 )
+from src.models.llm import LlmEndpoint, LlmRoleAssignment  # noqa: F401
 from src.models.oauth import (  # noqa: F401
     OAuthClient,
     OAuthAuthorizationCode,

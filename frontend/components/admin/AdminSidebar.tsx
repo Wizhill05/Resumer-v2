@@ -36,7 +36,7 @@ const NAV_GROUPS: AdminNavGroup[] = [
   {
     group: "AI Engine & Infrastructure",
     items: [
-      { id: "models", label: "Model Providers", icon: Cpu },
+      { id: "models", label: "LLM Endpoints", icon: Cpu },
       { id: "prompts", label: "Prompt Manager", icon: Settings },
       { id: "metrics", label: "LLM Metrics", icon: Database },
       { id: "templates", label: "Templates", icon: Play },

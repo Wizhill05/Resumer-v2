@@ -12,8 +12,6 @@ sqlite3.register_adapter(dict, json.dumps)
 
 from src.core.config import settings
 settings.JWT_SECRET = "test-jwt-secret-rotated-12345"
-if not settings.OPENROUTER_API_KEYS:
-    settings.OPENROUTER_API_KEYS = "sk-or-v1-testkey1,sk-or-v1-testkey2"
 from src.core.database import get_db
 from src.core.oauth import create_oauth_access_token
 from src.main import app

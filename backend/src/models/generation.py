@@ -25,7 +25,7 @@ class Generation(Base):
     company: Mapped[str | None] = mapped_column(String)
     keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     instructions: Mapped[str | None] = mapped_column(Text)
-    model_used: Mapped[str] = mapped_column(String, default="google/gemini-3.8-flash")
+    model_used: Mapped[str] = mapped_column(String, default="unknown")
     status: Mapped[str] = mapped_column(String, default="pending")
     error_message: Mapped[str | None] = mapped_column(Text)
     pdf_storage_key: Mapped[str | None] = mapped_column(String)
@@ -241,20 +241,3 @@ class FeedbackRating(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-
-
-class LLMProviderConfig(Base):
-    __tablename__ = "llm_provider_configs"
-
-    tier: Mapped[str] = mapped_column(String, primary_key=True)  # "free" | "pro"
-    provider_name: Mapped[str] = mapped_column(String, default="openai_compatible")
-    base_url: Mapped[str] = mapped_column(String, nullable=False)
-    model: Mapped[str] = mapped_column(String, nullable=False)
-    temperature: Mapped[float] = mapped_column(Float, default=0.2)
-    fallback_provider: Mapped[str | None] = mapped_column(String, default="openrouter")
-    fallback_model: Mapped[str | None] = mapped_column(String, default="google/gemini-3.8-flash")
-    extra_headers: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), default=dict)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )

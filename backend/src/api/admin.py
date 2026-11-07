@@ -30,7 +30,7 @@ from src.models.generation import (
 from src.models.user import User
 from src.services.support import ReplyCreate
 from src.pipeline.nodes import invoke_with_fallback
-from src.services.llm_config import llm_config_service, TierConfig
+from src.services.llm_config import llm_config_service
 from src.template_registry.service import TemplateRegistryService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -39,48 +39,8 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 
-class ModelSettingsOut(BaseModel):
-    tier: str
-    provider_name: str
-    base_url: str
-    model: str
-    temperature: float
-    fallback_provider: str | None = None
-    fallback_model: str | None = None
-    extra_headers: dict[str, str] = {}
-    is_active: bool = True
-    updated_at: datetime | None = None
-
-
-class ModelSettingsUpdate(BaseModel):
-    tier: str  # "free" | "pro"
-    base_url: str
-    model: str
-    temperature: float = 0.2
-    provider_name: str | None = None
-    fallback_provider: str | None = "openrouter"
-    fallback_model: str | None = settings.OPENROUTER_FALLBACK_MODEL
-    extra_headers: dict[str, str] | None = None
-
-
-class ModelTestRequest(BaseModel):
-    tier: str = "pro"  # "pro" | "free"
-    base_url: str | None = None
-    model: str | None = None
-    prompt: str | None = None
-
-
 class UserTierUpdate(BaseModel):
     is_pro: bool
-
-
-def _mask_key(key: str) -> str:
-    if not key:
-        return ""
-    key = key.strip()
-    if len(key) <= 8:
-        return "****"
-    return f"{key[:4]}...{key[-4:]}"
 
 
 class PromptConfigSchema(BaseModel):
@@ -167,6 +127,7 @@ async def _run_prompt_test(data: PromptPlaygroundRequest) -> tuple[str | None, f
         response = await invoke_with_fallback(
             lambda llm, provider: prompt | llm,
             data.variables,
+            role="default",
             timeout=120.0,
         )
         latency_ms = (time.perf_counter() - started) * 1000
@@ -235,36 +196,10 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
     failed_count = generations_by_status.get("failed", 0)
     failure_rate = (failed_count / total_generations * 100) if total_generations > 0 else 0.0
 
-    # 6. Keys status (round robin count). Import lazily so admin route import
-    # does not crash before app startup validation can produce a clear error.
     try:
-        from src.core.api_key_pool import openrouter_pool, pro_pool
-
-        openrouter_key_count = openrouter_pool.count
-        pro_key_count = pro_pool.count if pro_pool.count > 0 else (1 if settings.PRO_MODEL_API_KEY else 0)
-    except RuntimeError:
-        openrouter_key_count = len(settings.openrouter_api_keys)
-        pro_key_count = len(settings.pro_model_api_keys) or (1 if settings.PRO_MODEL_API_KEY else 0)
-
-    try:
-        await llm_config_service.load_from_db(db)
+        llm_status = await llm_config_service.status_summary(db)
     except Exception:
-        pass
-    pro_cfg = llm_config_service.get_tier_config("pro")
-    free_cfg = llm_config_service.get_tier_config("free")
-
-    keys_status = {
-        "openrouter": {
-            "configured_keys_count": openrouter_key_count,
-            "model": free_cfg.model,
-            "base_url": free_cfg.base_url,
-        },
-        "pro": {
-            "model": pro_cfg.model,
-            "base_url": pro_cfg.base_url,
-            "configured_keys_count": pro_key_count,
-        },
-    }
+        llm_status = None
     total_tokens, avg_node_latency, fallback_count, parse_error_count, metric_count = 0, 0.0, 0, 0, 0
     try:
         metrics_result = await db.execute(
@@ -296,7 +231,7 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
         "p99_latency_seconds": p99_latency,
         "duration_buckets": duration_buckets,
         "failure_rate_percent": round(failure_rate, 2),
-        "keys_status": keys_status,
+        "llm_status": llm_status,
         "llm_metrics": {
             "total_tokens": int(total_tokens or 0),
             "average_node_latency_ms": round(avg_node_latency or 0, 2),
@@ -1054,96 +989,6 @@ async def update_user_rate_limit(
 
     await db.commit()
     return {"status": "success", "message": f"User {id} rate limit updated to {data.request_count}"}
-
-
-@router.get("/model-settings", dependencies=[Depends(get_current_admin)])
-async def get_model_settings(db: AsyncSession = Depends(get_db)):
-    await llm_config_service.load_from_db(db)
-    configs = llm_config_service.get_all_configs()
-    response = {}
-    for tier_key, cfg in configs.items():
-        response[tier_key] = {
-            "tier": cfg.tier,
-            "provider_name": cfg.provider_name,
-            "base_url": cfg.base_url,
-            "model": cfg.model,
-            "temperature": cfg.temperature,
-            "fallback_provider": cfg.fallback_provider,
-            "fallback_model": cfg.fallback_model,
-            "extra_headers": cfg.extra_headers,
-            "is_active": cfg.is_active,
-            "updated_at": cfg.updated_at.isoformat() if cfg.updated_at else None,
-        }
-    return response
-
-
-@router.put("/model-settings", dependencies=[Depends(get_current_admin)])
-async def update_model_settings(data: ModelSettingsUpdate, db: AsyncSession = Depends(get_db)):
-    try:
-        updated = await llm_config_service.update_tier_config(
-            db=db,
-            tier=data.tier,
-            base_url=data.base_url,
-            model=data.model,
-            temperature=data.temperature,
-            provider_name=data.provider_name,
-            fallback_provider=data.fallback_provider,
-            fallback_model=data.fallback_model,
-            extra_headers=data.extra_headers,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
-    return {
-        "tier": updated.tier,
-        "provider_name": updated.provider_name,
-        "base_url": updated.base_url,
-        "model": updated.model,
-        "temperature": updated.temperature,
-        "fallback_provider": updated.fallback_provider,
-        "fallback_model": updated.fallback_model,
-        "extra_headers": updated.extra_headers,
-        "is_active": updated.is_active,
-        "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
-    }
-
-
-@router.post("/model-settings/test", dependencies=[Depends(get_current_admin)])
-async def test_model_endpoint(data: ModelTestRequest, db: AsyncSession = Depends(get_db)):
-    started = time.perf_counter()
-    tier = data.tier.lower()
-    try:
-        if data.base_url or data.model:
-            base_url = (data.base_url or (settings.PRO_MODEL_BASE_URL if tier == "pro" else settings.FREE_MODEL_BASE_URL)).rstrip("/")
-            model = data.model or (settings.PRO_MODEL_NAME if tier == "pro" else settings.FREE_MODEL_NAME)
-            from src.services.llm_config import TierConfig
-            provider = llm_config_service.resolve_provider(base_url)
-            llm = llm_config_service.create_client(TierConfig(
-                tier=tier, provider_name=provider, base_url=base_url, model=model, temperature=0))
-        else:
-            await llm_config_service.load_from_db(db)
-            llm = llm_config_service.get_llm(tier=tier)
-
-        prompt_text = data.prompt or "Respond with a brief greeting containing the word 'pong'."
-        from langchain_core.messages import HumanMessage
-        response = await asyncio.wait_for(llm.ainvoke([HumanMessage(content=prompt_text)]), timeout=30.0)
-        latency_ms = (time.perf_counter() - started) * 1000
-        output_text = _message_content_to_text(response.content)
-
-        return {
-            "success": True,
-            "latency_ms": round(latency_ms, 2),
-            "output": output_text,
-            "model_used": getattr(llm, "model_name", None) or getattr(llm, "model", None),
-            "tier": tier,
-        }
-    except Exception as exc:
-        latency_ms = (time.perf_counter() - started) * 1000
-        return {
-            "success": False,
-            "latency_ms": round(latency_ms, 2),
-            "error": type(exc).__name__,
-            "tier": tier,
-        }
 
 
 @router.patch("/users/{id}/tier", dependencies=[Depends(get_current_admin)])

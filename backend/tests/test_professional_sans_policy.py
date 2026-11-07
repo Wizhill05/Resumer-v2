@@ -940,12 +940,10 @@ async def test_regression_empty_blank_bullets_rejected_triggers_retry_and_fallba
     real_chain.ainvoke = AsyncMock(return_value=empty_exp_batch)
 
     # Use real invoke_with_fallback wrapper with fake LLM factory
-    from src.services.llm_config import llm_config_service, TierConfig
-    monkeypatch.setattr(llm_config_service, "get_tier_config", lambda tier: TierConfig(
-        tier="free", provider_name="openai_compatible", model="test-model", base_url="http://mock", fallback_model="test-fb"
-    ))
-    monkeypatch.setattr(llm_config_service, "get_llm", lambda tier="free": MagicMock())
-    monkeypatch.setattr(llm_config_service, "get_fallback_llm", lambda tier="free": MagicMock())
+    from src.services.llm_config import llm_config_service
+    from tests.llm_fixtures import make_target
+    monkeypatch.setattr(llm_config_service, "resolve_targets", lambda role: [make_target()])
+    monkeypatch.setattr(llm_config_service, "build_client", lambda target: MagicMock())
 
     def fake_chain_factory(llm, name):
         invoke_attempts.append(name)

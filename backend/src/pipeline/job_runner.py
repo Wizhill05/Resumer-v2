@@ -282,9 +282,8 @@ async def run_generation(gen_id: str) -> None:
                 return
 
             is_pro = bool(initial_state.get("is_pro"))
-            tier_cfg = llm_config_service.get_tier_config("pro" if is_pro else "free")
             gen.status = "in_progress"
-            gen.model_used = tier_cfg.model
+            gen.model_used = llm_config_service.describe_primary("pro" if is_pro else "default")
             await db.commit()
 
             # The generations row has no email; fetch the user's email for notifications.
@@ -306,7 +305,7 @@ async def run_generation(gen_id: str) -> None:
                 previous_metadata = dict(g.render_metadata or {})
                 g.status = "completed"
                 is_pro = bool(initial_state.get("is_pro"))
-                g.model_used = llm_config_service.get_tier_config("pro" if is_pro else "free").model
+                g.model_used = llm_config_service.describe_primary("pro" if is_pro else "default")
                 g.job_title = job_analysis.get("job_title") or g.job_title
                 g.company = job_analysis.get("company") or g.company
                 g.pdf_storage_key = result.get("pdf_storage_key")

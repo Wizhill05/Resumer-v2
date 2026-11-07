@@ -13,19 +13,9 @@ from src.core.database import AsyncSessionLocal
 from src.core.storage import StorageService
 from src.models.generation import ReportAttachment, SupportReport
 from src.pipeline.nodes import InvalidStructuredOutput, invoke_with_fallback
+from src.services.llm_config import llm_config_service
 
 logger = logging.getLogger(__name__)
-
-
-def _transcription_chain(llm, provider):
-    # Synthetic speech probes returned unrelated text for every tested format.
-    # Keep OmniRoute disabled for audio until its gateway passes those probes.
-    if provider == "omniroute":
-        async def unavailable(_):
-            logger.warning("[feedback_ai] OmniRoute audio transcription unavailable: synthetic speech verification failed; trying fallback")
-            raise InvalidStructuredOutput("Audio route unavailable")
-        return RunnableLambda(unavailable)
-    return llm
 
 
 async def process_new_support_report(report_id: uuid.UUID) -> None:
@@ -55,6 +45,7 @@ async def process_new_support_report(report_id: uuid.UUID) -> None:
                 lambda llm, p: prompt | llm,
                 {},
                 node_name="support_summarization",
+                role="utility",
             )
 
             raw_text = response.content if hasattr(response, "content") else str(response)
@@ -112,10 +103,9 @@ async def process_new_support_report(report_id: uuid.UUID) -> None:
 
 
 async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str) -> Optional[str]:
-    """Transcribe audio through the same Gemini gateway routes as text requests."""
+    """Transcribe audio through the `audio` role endpoint."""
     import base64
-    # Chat Completions accepts provider-specific formats, unlike the Responses
-    # API's wav/mp3-only input_audio contract. Preserve browser recorder formats.
+
     formats = {
         "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4",
         "audio/wav": "wav", "audio/x-wav": "wav",
@@ -124,6 +114,9 @@ async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str) -> Optional
     normalized_mime = mime_type.split(";", 1)[0].strip().lower()
     if normalized_mime not in formats or not audio_bytes:
         logger.warning("[feedback_ai] Audio transcription skipped: unsupported MIME type or empty recording")
+        return None
+    if not llm_config_service.resolve_targets("audio"):
+        logger.info("[feedback_ai] audio role not configured; skipping transcription")
         return None
     message = HumanMessage(content=[
         {"type": "text", "text": "Transcribe this recording verbatim. Return only the transcription."},
@@ -135,8 +128,8 @@ async def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str) -> Optional
 
     try:
         response = await invoke_with_fallback(
-            _transcription_chain, [message], node_name="support_transcription",
-            validate_result=validate_transcript, max_attempts_per_provider=1,
+            lambda llm, p: llm, [message], node_name="support_transcription",
+            role="audio", validate_result=validate_transcript, max_attempts_per_provider=1,
         )
         return response.content.strip()
     except Exception as exc:

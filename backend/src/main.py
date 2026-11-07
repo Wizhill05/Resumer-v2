@@ -1,3 +1,4 @@
+import logging
 import sys
 import asyncio
 from contextlib import asynccontextmanager
@@ -17,12 +18,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.analytics import shutdown_analytics
-from src.api import profile, generation, system, imports, guest, admin, feedback, oauth, files, auth
+from src.api import profile, generation, system, imports, guest, admin, feedback, oauth, files, auth, admin_llm
 from src.core.oauth import ensure_oauth_schema
-from src.services.llm_config import ensure_llm_provider_schema, llm_config_service
+from src.core.database import AsyncSessionLocal
+from src.services.llm_config import ensure_llm_schema, llm_config_service
 from src.template_registry import router as template_router
 from src.services.import_jobs import cleanup_old_jobs
 from src.mcp.server import mcp_server, get_mcp_app
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,22 +35,20 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("JWT_SECRET is not set. Generate one and set it in env / Secret Manager.")
     if settings.JWT_SECRET == "changeme":
         raise RuntimeError("JWT_SECRET is still the default 'changeme'. Rotate before running.")
-    has_primary_keys = bool(
-        settings.openrouter_api_keys
-        or settings.pro_model_api_keys
-        or settings.PRO_MODEL_API_KEY
-    )
-    if not has_primary_keys:
-        raise RuntimeError("No primary AI provider keys configured. Set OPENROUTER_API_KEYS or PRO_MODEL_API_KEYS in env.")
-    if not settings.openrouter_api_keys:
-        logger.warning("[startup] OPENROUTER_API_KEYS is unset. Independent fallback is unavailable.")
 
     # Idempotently ensure OAuth tables and columns exist in PostgreSQL.
     await ensure_oauth_schema()
 
-    # Idempotently ensure LLM provider config schema and user pro tier exist.
-    await ensure_llm_provider_schema()
+    # Idempotently ensure LLM schema.
+    await ensure_llm_schema()
+    try:
+        async with AsyncSessionLocal() as s:
+            await llm_config_service.bootstrap_from_env(s)
+    except Exception as exc:  # noqa: BLE001 - never block startup on optional LLM bootstrap
+        logger.warning("[startup] LLM bootstrap skipped (%s). Configure endpoints in Admin → LLM Endpoints.", type(exc).__name__)
     await llm_config_service.load_from_db()
+    if not llm_config_service.resolve_targets("default"):
+        logger.warning("[startup] No LLM endpoint configured for role 'default'.")
     cleanup_task = asyncio.create_task(cleanup_old_jobs())
     try:
         mcp_server.session_manager._has_started = False
@@ -86,6 +88,7 @@ app.include_router(generation.router)
 app.include_router(guest.router)
 app.include_router(template_router)
 app.include_router(admin.router)
+app.include_router(admin_llm.router)
 app.include_router(feedback.router)
 app.include_router(oauth.router)
 app.include_router(files.router)

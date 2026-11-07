@@ -36,30 +36,13 @@ class Settings(BaseSettings):
     R2_SECRET_ACCESS_KEY: str = ""
     R2_BUCKET_NAME: str = "resumer-artifacts"
 
-    # Stored as raw string; parsed via property so pydantic-settings never
-    # tries json.loads on a bare comma-separated value like "key1,key2".
-    OPENROUTER_API_KEYS: str = Field(default="", alias="OPENROUTER_API_KEYS")
-    PRO_MODEL_API_KEYS: str = Field(default="", alias="PRO_MODEL_API_KEYS")
-
-    FREE_MODEL_NAME: str = "google/gemini-3.8-flash"
-    FREE_MODEL_BASE_URL: str = "https://openrouter.ai/api/v1"
-
-    PRO_MODEL_NAME: str = "gemini-3.8-flash-tiered"
-    PRO_MODEL_BASE_URL: str = "https://omniroute-latest-rmm0.onrender.com/"
-    PRO_MODEL_API_KEY: str = ""
-    OPENROUTER_FALLBACK_MODEL: str = "google/gemini-3.8-flash"
+    LLM_SECRET_KEY: str = ""
+    LLM_BOOTSTRAP_NAME: str = "Primary"
+    LLM_BOOTSTRAP_BASE_URL: str = ""
+    LLM_BOOTSTRAP_API_KEY: str = ""
+    LLM_BOOTSTRAP_MODEL: str = ""
+    LLM_CONFIG_REFRESH_SECONDS: int = 30
     LLM_MAX_OUTPUT_TOKENS: int = Field(default=8192, ge=256, le=32768)
-
-    @property
-    def openrouter_api_keys(self) -> list[str]:
-        return _parse_keys(self.OPENROUTER_API_KEYS)
-
-    @property
-    def pro_model_api_keys(self) -> list[str]:
-        keys = _parse_keys(self.PRO_MODEL_API_KEYS)
-        if not keys and self.PRO_MODEL_API_KEY and self.PRO_MODEL_API_KEY.strip():
-            return [self.PRO_MODEL_API_KEY.strip()]
-        return keys
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = ""
     FILE_LINK_TTL_HOURS: int = 168  # 7 days default
