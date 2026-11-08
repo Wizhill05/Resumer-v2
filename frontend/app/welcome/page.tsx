@@ -4,12 +4,13 @@ import { redirect } from "next/navigation"
 import { Nav } from "@/components/Nav"
 import { Footer } from "@/components/Footer"
 import { PageHero } from "@/components/PageHero"
+import { needsWelcome } from "@/lib/welcome-gate"
 import { WelcomeClient } from "./WelcomeClient"
 
 export default async function WelcomePage() {
   const session = await auth()
   if (!session) redirect("/")
-  if (!(session as { needsWelcome?: boolean }).needsWelcome) redirect("/dashboard")
+  if (!needsWelcome(session)) redirect("/dashboard")
 
   const provider = (session as { provider?: string }).provider ?? null
 

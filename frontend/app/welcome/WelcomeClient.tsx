@@ -8,6 +8,9 @@ import { z } from "zod"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { Check } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 function GithubGlyph({ size = 16 }: { size?: number }) {
   return (
@@ -16,10 +19,6 @@ function GithubGlyph({ size = 16 }: { size?: number }) {
     </svg>
   )
 }
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { QueryError } from "@/components/profile/QueryError"
 
 function isLinkedinUrl(value: string): boolean {
   try {
@@ -48,6 +47,25 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
+const WELCOME_DRAFT_KEY = "welcome-draft"
+
+function readWelcomeDraft(): FormData | null {
+  try {
+    const raw = sessionStorage.getItem(WELCOME_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<Record<keyof FormData, unknown>>
+    return {
+      full_name: typeof parsed.full_name === "string" ? parsed.full_name : "",
+      subtitle: typeof parsed.subtitle === "string" ? parsed.subtitle : "",
+      location: typeof parsed.location === "string" ? parsed.location : "",
+      phone: typeof parsed.phone === "string" ? parsed.phone : "",
+      linkedin_url: typeof parsed.linkedin_url === "string" ? parsed.linkedin_url : "",
+    }
+  } catch {
+    return null
+  }
+}
+
 type WelcomePrefill = {
   full_name: string | null
   subtitle: string | null
@@ -71,7 +89,7 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
   const githubParam = searchParams.get("github")
   const githubConnected = githubParam === "connected"
 
-  const { data: prefill, isLoading, isError, refetch } = useQuery<WelcomePrefill>({
+  const { data: prefill, isLoading, isError } = useQuery<WelcomePrefill>({
     queryKey: ["welcome"],
     queryFn: async () => {
       const res = await fetch("/api/backend/account/welcome")
@@ -98,6 +116,15 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
     trigger,
     formState: { errors },
   } = form
+
+  useEffect(() => {
+    const draft = readWelcomeDraft()
+    sessionStorage.removeItem(WELCOME_DRAFT_KEY)
+    if (draft) {
+      reset(draft)
+      initialized.current = true
+    }
+  }, [reset])
 
   useEffect(() => {
     if (prefill && !initialized.current) {
@@ -158,15 +185,12 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
     mutation.mutate({ full_name: getValues("full_name"), skip: true })
   }
 
-  if (isError) {
-    return (
-      <QueryError
-        message="Could not load your details. Please try again."
-        onRetry={() => {
-          void refetch()
-        }}
-      />
-    )
+  const onConnect = () => {
+    try {
+      sessionStorage.setItem(WELCOME_DRAFT_KEY, JSON.stringify(getValues()))
+    } catch {
+      // Draft is best-effort; navigation still proceeds.
+    }
   }
 
   if (isLoading) {
@@ -183,12 +207,16 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
 
   return (
     <div className="soft-card p-6 md:p-7">
+      {isError && (
+        <p className="mb-4 text-xs font-semibold text-ink-soft">Couldn&apos;t load saved details.</p>
+      )}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <fieldset disabled={mutation.isPending} className="min-w-0 space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="full_name">Full Name</Label>
             <Input
               id="full_name"
+              autoComplete="name"
               aria-invalid={!!errors.full_name}
               aria-describedby={errors.full_name ? "full_name-error" : undefined}
               {...register("full_name")}
@@ -204,6 +232,7 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
             <Label htmlFor="subtitle">What role are you targeting?</Label>
             <Input
               id="subtitle"
+              autoComplete="organization-title"
               placeholder="Backend engineer"
               aria-invalid={!!errors.subtitle}
               aria-describedby={errors.subtitle ? "subtitle-error" : undefined}
@@ -219,12 +248,12 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="location">Location</Label>
-              <Input id="location" placeholder="City, Country" {...register("location")} />
+              <Input id="location" autoComplete="address-level2" placeholder="City, Country" {...register("location")} />
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="phone">Phone</Label>
-              <Input id="phone" {...register("phone")} />
+              <Input id="phone" type="tel" autoComplete="tel" {...register("phone")} />
             </div>
           </div>
 
@@ -232,6 +261,8 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
             <Label htmlFor="linkedin_url">LinkedIn URL</Label>
             <Input
               id="linkedin_url"
+              type="url"
+              autoComplete="url"
               aria-invalid={!!errors.linkedin_url}
               aria-describedby={errors.linkedin_url ? "linkedin_url-error" : undefined}
               {...register("linkedin_url")}
@@ -260,6 +291,7 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
             {provider !== "github" && !githubConnected && (
               <a
                 href="/api/integrations/github/start?private=0&returnTo=/welcome"
+                onClick={onConnect}
                 className="shrink-0 text-sm font-semibold text-ember underline hover:text-ink"
               >
                 Connect
