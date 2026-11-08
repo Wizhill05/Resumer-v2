@@ -1,5 +1,5 @@
 export type AdminTabId =
-  | "analytics"
+  | "overview"
   | "generations"
   | "timing"
   | "models"
@@ -16,60 +16,74 @@ export interface AdminNavItem {
   icon: React.ComponentType<{ size?: number; className?: string }>
 }
 
-export interface AdminNavGroup {
-  group: string
-  items: AdminNavItem[]
+export const ADMIN_TAB_IDS: AdminTabId[] = [
+  "overview",
+  "generations",
+  "timing",
+  "models",
+  "prompts",
+  "metrics",
+  "users",
+  "feedback",
+  "templates",
+  "storage",
+]
+
+/** Old links used `?tab=analytics` for the home page. */
+export function parseAdminTab(value: string | null | undefined): AdminTabId {
+  if (value === "analytics") return "overview"
+  return ADMIN_TAB_IDS.find((id) => id === value) ?? "overview"
 }
 
 export const ADMIN_TAB_INFO: Record<AdminTabId, { group: string; title: string; description: string }> = {
-  analytics: {
+  overview: {
     group: "Overview & Operations",
-    title: "Analytics & System Health",
-    description: "Platform usage overview, latency distributions, and failure rates",
+    title: "Overview",
+    description: "Audience, growth and pipeline health at a glance",
   },
   generations: {
     group: "Overview & Operations",
-    title: "Live Generations",
-    description: "Real-time résumé generation trace inspector and execution status",
+    title: "Generations",
+    description: "Every résumé build with its status, logs and downloads",
   },
   timing: {
     group: "Overview & Operations",
-    title: "Pipeline Timing & Benchmarks",
-    description: "Per-node latency waterfall, model execution speed, and bottleneck analysis",
+    title: "Pipeline timing",
+    description: "Model speed, node latency and the slowest builds",
   },
   users: {
     group: "Overview & Operations",
-    title: "User Rate Limits & Caps",
-    description: "Inspect registered accounts, override daily/monthly limits, and manage access",
+    title: "Users & limits",
+    description: "Accounts, tiers and daily or monthly caps",
   },
   feedback: {
     group: "Overview & Operations",
     title: "Support & feedback",
-    description: "Read issues, reply to users, and follow each conversation.",
+    description: "Read issues, reply to users, and follow each conversation",
   },
   models: {
     group: "AI Engine & Infrastructure",
-    title: "LLM Endpoints & Routing",
-    description: "Connect any OpenAI-compatible API, pick models, and route pipeline tasks with fallbacks",
+    title: "LLM endpoints",
+    description: "Connect OpenAI-compatible APIs and route pipeline tasks",
   },
   prompts: {
     group: "AI Engine & Infrastructure",
-    title: "Prompt Manager & Playground",
-    description: "Edit system and user prompts with real-time test case evaluation",
+    title: "Prompts",
+    description: "Edit system and user prompts and test them",
   },
   metrics: {
     group: "AI Engine & Infrastructure",
-    title: "LLM Node Metrics",
-    description: "Detailed per-node call volume, token counts, and error tracking",
+    title: "LLM metrics",
+    description: "Per-node call volume, tokens and errors",
   },
   templates: {
     group: "AI Engine & Infrastructure",
-    title: "Template Sandbox",
-    description: "Live Jinja2 template preview, context injector, and layout tester",
+    title: "Template sandbox",
+    description: "Render a template against any context",
   },
   storage: {
     group: "AI Engine & Infrastructure",
-    title: "Storage Explorer (Cloudflare R2)",
-    description: "Inspect generated PDF artifacts, object keys, and direct download links",
+    title: "Storage",
+    description: "Generated PDFs in Cloudflare R2",
   },
 }
