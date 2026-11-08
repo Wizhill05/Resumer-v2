@@ -159,6 +159,8 @@ h2 + ul {
 .skills-table td {
     vertical-align: top;
     padding: 1px 0;
+    /* body is justified; skill rows (label and list) read as left-aligned, not stretched */
+    text-align: left;
 }
 
 .skills-table td:first-child {

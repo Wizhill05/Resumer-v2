@@ -34,6 +34,12 @@ from src.services.resume_render import (
 )
 from src.pipeline.state import ResumeGraphState
 from src.core.skill_categories import merge_skill_categories, skill_category_display
+from src.core.skill_enrichment import (
+    build_candidate_evidence,
+    collect_evidence_skills,
+    enrich_skills,
+    evidence_text,
+)
 from src.schemas.pipeline import (
     JobAnalysis,
     StrictSelectedItems,
@@ -692,6 +698,7 @@ async def selection_node(
         )
     selected_experiences = [experiences[i] for i in result.selected_experience_indices]
     selected_projects = [projects[i] for i in result.selected_project_indices]
+    candidate_evidence = build_candidate_evidence((state.get("profile") or {}).get("skills"), projects, experiences)
 
     await log_progress(
         db,
@@ -703,6 +710,7 @@ async def selection_node(
     return {
         "experiences": selected_experiences,
         "projects": selected_projects,
+        "candidate_evidence": candidate_evidence,
     }
 
 
@@ -824,20 +832,26 @@ async def summary_skills_node(
     )
 
     mode = _creativity_mode(state)
+    skills_fill = (
+        "- Fill every category: at least 3 skills per category (Soft Skills 3-4) and 15-22 skills in total, so the section never looks sparse.\n"
+        "- Build skills from ALL candidate evidence: profile skills, technologies used in the candidate's projects, and tools named in their experience. "
+        "Put the job's required skills first within each category.\n"
+    )
     if mode == "proper":
         skills_rule = (
-            "- categories: 3-6 skill categories total (e.g. Languages, Frontend, Backend, Tools, Soft Skills). Must include a 'Soft Skills' category.\n"
+            "- categories: 4-6 skill categories total (e.g. Languages, Frontend, Backend, Databases, AI & ML, Tools, Soft Skills). Must include a 'Soft Skills' category with items grounded in the experience (mentoring, collaboration, ownership).\n"
             "- Each category must have a category name and a list of short skill names.\n"
-            "- Use ONLY skills evidenced in candidate material; include a job-matching skill only if the candidate plausibly demonstrates it.\n"
-            "- Vary selection per job but never invent tools the candidate has no basis for."
+            f"{skills_fill}"
+            "- Use ONLY skills evidenced in candidate material; never invent a tool the candidate has no basis for."
         )
         summary_rule = "- Anchor summary in candidate evidence and job priorities; do not claim unsupported years, degrees, employers, or certifications."
     else:
         skills_rule = (
-            "- categories: 3-6 skill categories total (e.g. Languages, Frontend, Backend, Tools, Soft Skills). Must include a 'Soft Skills' category.\n"
+            "- categories: 4-6 skill categories total (e.g. Languages, Frontend, Backend, Databases, AI & ML, Tools, Soft Skills). Must include a 'Soft Skills' category.\n"
             "- Each category must have a category name and a list of short skill names.\n"
             "- START from the job's extracted skills and make coverage the priority: every important job skill MUST appear somewhere, even if absent from the candidate profile.\n"
-            "- Blend in candidate skills lightly for variety, but job-required skills take precedence. Vary wording/order per job so outputs do not look identical."
+            f"{skills_fill}"
+            "- Vary wording/order per job so outputs do not look identical."
         )
         summary_rule = (
             "- Write a vivid, varied summary anchored in job priorities; mirror the job's language and foreground its top 2-3 requirements. "
@@ -865,11 +879,17 @@ async def summary_skills_node(
     sys_prompt += _professional_sans_policy(state, "summary")
     prompt = ChatPromptTemplate.from_messages([("system", sys_prompt), ("user", usr_prompt)])
 
+    evidence = state.get("candidate_evidence") or build_candidate_evidence(
+        state["profile"].get("skills"), state.get("projects") or [], state.get("experiences") or []
+    )
+    profile_skills = ", ".join(state["profile"].get("skills") or [])
+    # The stored prompt rows only carry {candidate_skills}, so the evidence digest rides along in it.
+    candidate_skills = (profile_skills + "\n\nCandidate evidence (projects and experience):\n" + evidence_text(evidence)) if evidence_text(evidence) else profile_skills
     result = await invoke_with_fallback(
         lambda llm, p: prompt | _structured(llm, TailoredSummaryAndSkills, p),
         {
             "job_analysis": str(state["job_analysis"]),
-            "candidate_skills": ", ".join(state["profile"].get("skills") or []),
+            "candidate_skills": candidate_skills,
             "candidate_summary": state["profile"].get("summary") or "",
         },
         node_name="summary_skills",
@@ -894,6 +914,25 @@ async def summary_skills_node(
     summary_draft["skills"] = _normalize_skills(skills_dict)
     jd_skills = (state.get("job_analysis") or {}).get("extracted_skills") or []
     tmpl_id = (state.get("template_manifest") or {}).get("id") or state.get("template_id")
+    manifest = state.get("template_manifest") or {}
+    compact = tmpl_id == "professional-sans"
+    job_analysis = state.get("job_analysis") or {}
+    job_terms = [*jd_skills, *(job_analysis.get("key_requirements") or []), *(state.get("keywords") or [])]
+    before = sum(len(v) for v in summary_draft["skills"].values())
+    summary_draft["skills"] = enrich_skills(
+        summary_draft["skills"],
+        collect_evidence_skills(evidence, [p.get("name", "") for p in state.get("projects") or []]),
+        job_terms,
+        floor_total=14 if compact else 16,
+        max_total=20 if compact else 24,
+        max_categories=manifest.get("max_skills_categories") or 6,
+    )
+    after = sum(len(v) for v in summary_draft["skills"].values())
+    if after > before:
+        await log_progress(
+            db, gen_id, "summary_skills",
+            f"Skills: added {after - before} skill(s) from your projects and experience ({before} -> {after} across {len(summary_draft['skills'])} categories).",
+        )
     if tmpl_id == "professional-sans":
         summary_draft["skills"] = _apply_professional_sans_skill_budget(summary_draft["skills"])
     summary_draft["skills"] = _ensure_jd_skill_coverage(summary_draft["skills"], jd_skills, mode, template_id=tmpl_id)

@@ -19,6 +19,6 @@ dd { flex: 0 0 auto; text-align: right; white-space: nowrap; }
 ul { padding-left: 1.35em; margin: 0.25em 0 0; } dl + p { margin-top: 0.25em; }
 li { margin-bottom: 0.18em; orphans: 2; widows: 2; overflow-wrap: anywhere; }
 .skills-table { border-collapse: collapse; width: 100%; }
-.skills-table td { padding: 0.08em 0; vertical-align: top; overflow-wrap: anywhere; }
+.skills-table td { padding: 0.08em 0; vertical-align: top; overflow-wrap: anywhere; text-align: left; }
 .skills-table td:first-child { font-weight: 700; width: 22%; padding-right: 0.8em; }
 .skills-table tr, .extracurriculars-section li { break-inside: avoid-page; }
