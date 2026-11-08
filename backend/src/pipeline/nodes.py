@@ -1946,6 +1946,68 @@ def _render_for_verification(
         gc.collect()
 
 
+_REPAIR_BUDGET_RULES = (
+    "HOW THE CHARACTER BUDGET WORKS:\n"
+    "- Every bullet has its own LENGTH TARGET: a window of visible characters (** markers excluded), measured from how that "
+    "bullet actually rendered. Budgets differ per bullet because wording changes how much fits on a line.\n"
+    "- Write about the \"aim for about\" value. MAX is a hard ceiling: one more character wraps onto a 3rd line and the bullet "
+    "is discarded. Below MIN the last line stays an orphan.\n"
+    "- A bullet marked PREVIOUS ATTEMPT FAILED was already rendered; its numbers are real. Move toward the aim value.\n"
+    "- A bullet with no LENGTH TARGET has no measured budget: expand it by one short clause, do not pad, never shorten it.\n"
+)
+
+
+def orphan_repair_default_prompts(is_larp: bool) -> tuple[str, str]:
+    """Default (system, user) prompts for orphan repair; also what the DB rows are seeded with."""
+    if is_larp:
+        default_system = (
+            "ROLE: Precise resume line-wrap repair editor.\n"
+            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
+            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
+            "QUALITY BAR: Embellish creatively to fit layout constraints while preserving role, company, and JD alignment."
+        )
+        truth_rule = (
+            "- LARP MODE: you may embellish freely with plausible JD-aligned technical detail, tools, and metrics to fill the line; never shorten or compress a bullet.\n"
+            "- Expand by adding plausible features, stack tools, or scale that prove the job requirements, without creating new employers or roles."
+        )
+    else:
+        default_system = (
+            "ROLE: Precise resume line-wrap repair editor.\n"
+            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
+            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
+            "QUALITY BAR: Preserve meaning and truth while meeting layout constraints."
+        )
+        truth_rule = (
+            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet.\n"
+            "- Keep the core meaning and factual claims of the original; do not invent unsupported metrics or facts."
+        )
+
+    default_user = (
+        "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
+        "{\n"
+        '  "bullets": [\n'
+        '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
+        '    {"index": 2, "replacement": "..."}\n'
+        "  ]\n"
+        "}\n\n"
+        "INPUT: Rendering Context\n"
+        "Font: Proportional font. Every bullet has its own measured character budget.\n\n"
+        f"{_REPAIR_BUDGET_RULES}\n"
+        "RULES:\n"
+        "- Return one replacement for every Bullet listed below, using same index values.\n"
+        "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
+        "- Start every bullet with a strong action verb.\n"
+        "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
+        f"{truth_rule}\n"
+        "- The renderer verifies every replacement, so respect the length target rather than guessing.\n"
+        "- No emojis, no trailing explanations, no omitted bullets.\n\n"
+        "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
+        "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
+        "Return only the raw JSON object."
+    )
+    return default_system, default_user
+
+
 async def orphan_repair_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -2138,52 +2200,7 @@ async def orphan_repair_node(
     is_larp = mode in ("larp", "super_larp")
     prompt_name = _prompt_name("orphan_repair", mode)
 
-    if is_larp:
-        default_system = (
-            "ROLE: Precise resume line-wrap repair editor.\n"
-            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
-            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
-            "QUALITY BAR: Embellish creatively to fit layout constraints while preserving role, company, and JD alignment."
-        )
-        truth_rule = (
-            "- LARP MODE: you may embellish freely with plausible JD-aligned technical detail, tools, and metrics to fill the line; never shorten or compress a bullet.\n"
-            "- Expand by adding plausible features, stack tools, or scale that prove the job requirements, without creating new employers or roles."
-        )
-    else:
-        default_system = (
-            "ROLE: Precise resume line-wrap repair editor.\n"
-            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
-            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
-            "QUALITY BAR: Preserve meaning and truth while meeting layout constraints."
-        )
-        truth_rule = (
-            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet.\n"
-            "- Keep the core meaning and factual claims of the original; do not invent unsupported metrics or facts."
-        )
-
-    default_user = (
-        "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
-        "{\n"
-        '  "bullets": [\n'
-        '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
-        '    {"index": 2, "replacement": "..."}\n'
-        "  ]\n"
-        "}\n\n"
-        "INPUT: Rendering Context\n"
-        "Font: Proportional font. Each bullet has an exact visible-character target range.\n\n"
-        "RULES:\n"
-        "- Return one replacement for every Bullet listed below, using same index values.\n"
-        "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
-        "- When a bullet has a LENGTH TARGET, stay inside it; going over wraps onto a 3rd line and the bullet is discarded.\n"
-        "- Start every bullet with a strong action verb.\n"
-        "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
-        f"{truth_rule}\n"
-        "- The renderer verifies every replacement, so respect the length target rather than guessing.\n"
-        "- No emojis, no trailing explanations, no omitted bullets.\n\n"
-        "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
-        "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
-        "Return only the raw JSON object."
-    )
+    default_system, default_user = orphan_repair_default_prompts(is_larp)
 
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
