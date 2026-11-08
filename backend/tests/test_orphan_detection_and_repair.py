@@ -123,7 +123,7 @@ async def test_orphan_repair_node_real_weasyprint_5_line_rollback(monkeypatch):
                 "text": original_bullet,
                 "renderedLines": 2,
                 "lastLineFillPercent": 34.5,
-                "minimumLastLineFill": 75,
+                "minimumLastLineFill": 80,
             }
         ],
         "repair_attempts": 0,
@@ -199,7 +199,7 @@ async def test_orphan_repair_node_real_weasyprint_clean_expansion_kept(monkeypat
                 "text": original_bullet,
                 "renderedLines": 2,
                 "lastLineFillPercent": 13.5,
-                "minimumLastLineFill": 75,
+                "minimumLastLineFill": 80,
             }
         ],
         "repair_attempts": 0,
@@ -615,7 +615,7 @@ async def test_orphan_repair_prompt_creativity_mode_semantics_across_templates(m
                 "projects_draft": [{"name": "Cache", "bullet_points": [bullet_text]}],
                 "experience_draft": [],
                 "extracurriculars_draft": [],
-                "orphans": [{"text": bullet_text, "fix_type": "expand", "minimumLastLineFill": 75, "lastLineFillPercent": 40}],
+                "orphans": [{"text": bullet_text, "fix_type": "expand", "minimumLastLineFill": 80, "lastLineFillPercent": 40}],
                 "keywords": ["Python"],
                 "repair_attempts": 0,
                 "repair_history": {},
