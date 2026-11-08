@@ -173,6 +173,30 @@ async def test_status_needs_reauth(client, async_db):
     assert data["private_access"] is False
 
 
+async def test_status_connect_needs_reauth_login_active(client, async_db):
+    user = await _create_user(async_db, "olivia@example.com", provider="github")
+    ident = await _create_identity(async_db, user.id, kind="login")
+    await _create_token(async_db, ident.id, "connect", scopes="read:user,repo", status_="needs_reauth")
+    await _create_token(async_db, ident.id, "login", status_="active")
+    res = await client.get("/integrations/github", headers=_auth_headers(user))
+    data = res.json()
+    assert data["connected"] is True
+    assert data["status"] == "active"
+    assert data["private_access"] is False
+
+
+async def test_status_all_tokens_needs_reauth(client, async_db):
+    user = await _create_user(async_db, "paula@example.com", provider="github")
+    ident = await _create_identity(async_db, user.id, kind="login")
+    await _create_token(async_db, ident.id, "connect", status_="needs_reauth")
+    await _create_token(async_db, ident.id, "login", status_="needs_reauth")
+    res = await client.get("/integrations/github", headers=_auth_headers(user))
+    data = res.json()
+    assert data["connected"] is True
+    assert data["status"] == "needs_reauth"
+    assert data["private_access"] is False
+
+
 # --- start ---
 
 async def test_start_creates_hashed_state_and_authorize_url(client, async_db):
@@ -332,7 +356,7 @@ async def test_complete_github_login_user_different_account(client, async_db, mo
     assert res.json()["detail"] == "different_account"
 
 
-async def test_complete_legacy_null_account_filled_in(client, async_db, monkeypatch):
+async def test_complete_legacy_null_account_sign_in_again(client, async_db, monkeypatch):
     _patch_github(monkeypatch, gh_id=123, gh_login="octocat", scope="read:user,repo")
     user = await _create_user(async_db, "oliver@example.com", provider="github")
     ident = await _create_identity(async_db, user.id, account_id=None, kind="login")
@@ -344,12 +368,12 @@ async def test_complete_legacy_null_account_filled_in(client, async_db, monkeypa
         json={"code": "abc", "state": start["state"]},
         headers=_auth_headers(user),
     )
-    assert res.status_code == 200
+    assert res.status_code == 409
+    assert res.json()["detail"] == "sign_in_again"
     await async_db.refresh(ident)
-    assert ident.provider_account_id == "123"
-    assert ident.kind == "login"
+    assert ident.provider_account_id is None
     result = await async_db.execute(select(GithubToken).where(GithubToken.oauth_app == "connect"))
-    assert result.scalar_one() is not None
+    assert result.scalars().all() == []
 
 
 # --- disconnect / private ---

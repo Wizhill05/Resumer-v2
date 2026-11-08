@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { backendTokenForSession } from "@/lib/jwt";
+import { safeReturnTo } from "@/lib/safe-return-to";
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000";
 const COOKIE_NAME = "gh_link";
 
-function validReturnTo(value: string | null): string {
-  if (value && value.startsWith("/") && !value.startsWith("//")) return value;
-  return "/account";
+function validReturnTo(value: string | null, requestUrl: string): string {
+  return safeReturnTo(value, requestUrl);
 }
 
 function withGithubParams(returnTo: string, params: Record<string, string>): string {
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   const searchParams = req.nextUrl.searchParams;
   const wantPrivate = searchParams.get("private") === "1";
-  const returnTo = validReturnTo(searchParams.get("returnTo"));
+  const returnTo = validReturnTo(searchParams.get("returnTo"), req.url);
 
   let state = "";
   let authorizeUrl = "";

@@ -20,6 +20,7 @@ const REASON_MESSAGES: Record<string, string> = {
   denied: "GitHub access was cancelled.",
   expired: "That link expired. Try again.",
   failed: "Couldn't connect GitHub. Try again.",
+  sign_in_again: "Sign out and sign in with GitHub once more, then try again.",
 };
 
 type Notice = { type: "success" | "error"; message: string } | null;

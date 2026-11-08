@@ -123,13 +123,12 @@ async def get_github_status(
     tokens = await _get_tokens(db, identity.id)
     connected = len(tokens) > 0
     kind = identity.kind
-    token = _sync_token(tokens)
-    if not connected or token is None:
+    if not tokens:
         status_value = None
-    elif token.status == "needs_reauth":
-        status_value = "needs_reauth"
-    else:
+    elif any(t.status == "active" for t in tokens):
         status_value = "active"
+    else:
+        status_value = "needs_reauth"
     private_access = any(
         t.oauth_app == "connect" and t.status == "active" and "repo" in _parse_scopes(t.scopes)
         for t in tokens
@@ -235,10 +234,10 @@ async def complete_link(
 
     identity = await get_github_identity(db, user.id)
     if identity is not None and identity.kind == "login":
-        if identity.provider_account_id is not None and identity.provider_account_id != gh_id:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="different_account")
         if identity.provider_account_id is None:
-            identity.provider_account_id = gh_id
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="sign_in_again")
+        if identity.provider_account_id != gh_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="different_account")
         identity.provider_login = gh_login
     else:
         if identity is None:

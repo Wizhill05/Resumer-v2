@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { backendTokenForSession } from "@/lib/jwt";
+import { safeReturnTo } from "@/lib/safe-return-to";
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000";
 const COOKIE_NAME = "gh_link";
+const COOKIE_PATH = "/api/integrations/github";
 
 function sha256hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -44,14 +46,11 @@ export async function GET(req: NextRequest) {
 
   const rawCookie = req.cookies.get(COOKIE_NAME)?.value;
   const cookie = parseCookie(rawCookie);
-  const returnTo =
-    cookie?.r && cookie.r.startsWith("/") && !cookie.r.startsWith("//")
-      ? cookie.r
-      : "/account";
+  const returnTo = safeReturnTo(cookie?.r, req.url);
 
   const redirectTo = (params: Record<string, string>) => {
     const response = NextResponse.redirect(new URL(withGithubParams(returnTo, params), req.url), 302);
-    response.cookies.delete(COOKIE_NAME);
+    response.cookies.set(COOKIE_NAME, "", { path: COOKIE_PATH, maxAge: 0 });
     return response;
   };
 
@@ -69,7 +68,9 @@ export async function GET(req: NextRequest) {
 
   const session = await auth();
   if (!session || !session.user?.email) {
-    return NextResponse.redirect(new URL("/", req.url));
+    const response = NextResponse.redirect(new URL("/", req.url));
+    response.cookies.set(COOKIE_NAME, "", { path: COOKIE_PATH, maxAge: 0 });
+    return response;
   }
 
   try {
