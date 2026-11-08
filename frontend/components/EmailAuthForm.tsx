@@ -111,6 +111,7 @@ export function EmailAuthForm({
       const verifyRes = await verifyEmailRegistrationAction({
         email: targetEmail,
         code: cleanCode,
+        password,
       })
 
       if (!verifyRes.success) {

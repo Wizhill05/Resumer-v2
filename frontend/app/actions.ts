@@ -1,6 +1,26 @@
 "use server"
 
+import { headers as nextHeaders } from "next/headers"
+
 import { signIn, signOut } from "@/lib/auth"
+import { internalToken } from "@/lib/jwt"
+
+async function backendHeaders(): Promise<Record<string, string>> {
+  const extra: Record<string, string> = {}
+  try {
+    const token = await internalToken()
+    extra.Authorization = `Bearer ${token}`
+    const forwardedFor = (await nextHeaders()).get("x-forwarded-for")
+    const firstHop = forwardedFor?.split(",")[0]?.trim()
+    if (firstHop) {
+      extra["X-Client-IP"] = firstHop
+    }
+  } catch {
+    // No INTERNAL_API_SECRET or no request context: send without the
+    // internal headers; the backend then applies only the per-email limit.
+  }
+  return extra
+}
 
 function callbackUrl(formData?: FormData) {
   const raw = formData?.get("callbackUrl")
@@ -67,7 +87,7 @@ export async function startEmailRegistrationAction({
   try {
     const res = await fetch(`${backendUrl}/auth/email/register/start`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await backendHeaders()) },
       body: JSON.stringify({ email, password, name }),
       cache: "no-store",
     })
@@ -90,9 +110,11 @@ export async function startEmailRegistrationAction({
 export async function verifyEmailRegistrationAction({
   email,
   code,
+  password,
 }: {
   email: string
   code: string
+  password: string
 }) {
   const backendUrl =
     process.env.BACKEND_INTERNAL_URL ||
@@ -102,8 +124,8 @@ export async function verifyEmailRegistrationAction({
   try {
     const res = await fetch(`${backendUrl}/auth/email/register/verify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code }),
+      headers: { "Content-Type": "application/json", ...(await backendHeaders()) },
+      body: JSON.stringify({ email, code, password }),
       cache: "no-store",
     })
 
@@ -127,7 +149,7 @@ export async function resendEmailCodeAction({ email }: { email: string }) {
   try {
     const res = await fetch(`${backendUrl}/auth/email/register/resend`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await backendHeaders()) },
       body: JSON.stringify({ email }),
       cache: "no-store",
     })

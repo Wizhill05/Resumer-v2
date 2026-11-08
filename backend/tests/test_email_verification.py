@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jose import jwt as jose_jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -105,7 +106,7 @@ async def test_happy_path_start_verify_creates_verified_user(
 
     verify = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": code},
+        json={"email": "new@example.com", "code": code, "password": "Password123!"},
     )
     assert verify.status_code == 200
     data = verify.json()
@@ -180,7 +181,7 @@ async def test_wrong_code_increments_attempts(client: AsyncClient, async_db: Asy
 
     res = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": wrong},
+        json={"email": "new@example.com", "code": wrong, "password": "Password123!"},
     )
     assert res.status_code == 400
     assert res.json()["detail"] == "That code is wrong or expired."
@@ -193,7 +194,7 @@ async def test_wrong_code_increments_attempts(client: AsyncClient, async_db: Asy
     # The correct code still works after one wrong attempt.
     ok = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": _latest_code(sent_codes)},
+        json={"email": "new@example.com", "code": _latest_code(sent_codes), "password": "Password123!"},
     )
     assert ok.status_code == 200
 
@@ -207,14 +208,14 @@ async def test_five_wrong_attempts_then_429(client: AsyncClient, async_db: Async
     for _ in range(5):
         res = await client.post(
             "/auth/email/register/verify",
-            json={"email": "new@example.com", "code": wrong},
+            json={"email": "new@example.com", "code": wrong, "password": "Password123!"},
         )
         assert res.status_code == 400
 
     # Even the right code is now refused.
     res = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": _latest_code(sent_codes)},
+        json={"email": "new@example.com", "code": _latest_code(sent_codes), "password": "Password123!"},
     )
     assert res.status_code == 429
     assert res.json()["detail"] == "Too many attempts. Request a new code."
@@ -235,7 +236,7 @@ async def test_expired_code_is_rejected(client: AsyncClient, async_db: AsyncSess
 
     res = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": _latest_code(sent_codes)},
+        json={"email": "new@example.com", "code": _latest_code(sent_codes), "password": "Password123!"},
     )
     assert res.status_code == 400
     assert res.json()["detail"] == "That code is wrong or expired."
@@ -244,7 +245,7 @@ async def test_expired_code_is_rejected(client: AsyncClient, async_db: AsyncSess
 async def test_verify_without_pending_is_400(client: AsyncClient):
     res = await client.post(
         "/auth/email/register/verify",
-        json={"email": "ghost@example.com", "code": "123456"},
+        json={"email": "ghost@example.com", "code": "123456", "password": "Password123!"},
     )
     assert res.status_code == 400
     assert res.json()["detail"] == "That code is wrong or expired."
@@ -264,13 +265,13 @@ async def test_resend_replaces_code(client: AsyncClient, sent_codes):
 
     old = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": first},
+        json={"email": "new@example.com", "code": first, "password": "Password123!"},
     )
     assert old.status_code == 400
 
     new = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": second},
+        json={"email": "new@example.com", "code": second, "password": "Password123!"},
     )
     assert new.status_code == 200
 
@@ -305,7 +306,7 @@ async def test_user_appearing_between_start_and_verify_is_409(
 
     res = await client.post(
         "/auth/email/register/verify",
-        json={"email": "new@example.com", "code": code},
+        json={"email": "new@example.com", "code": code, "password": "Password123!"},
     )
     assert res.status_code == 409
     assert res.json()["detail"] == "This email is registered with Google. Sign in with Google."
@@ -346,3 +347,105 @@ async def test_send_failure_returns_503_and_keeps_pending(client: AsyncClient, m
     res = await _start(client)
     assert res.status_code == 503
     assert res.json()["detail"] == "Email sending is unavailable right now."
+
+
+async def test_attacker_restart_with_victim_password_is_rejected(
+    client: AsyncClient, async_db: AsyncSession, sent_codes
+):
+    assert (
+        await _start(client, password="VictimPass123!", name="Victim")
+    ).status_code == 200
+
+    # Attacker restarts the same email with their own password.
+    auth_module._send_times.clear()
+    assert (
+        await _start(client, password="AttackerPass123!", name="Attacker")
+    ).status_code == 200
+    newest_code = _latest_code(sent_codes)
+
+    # Victim types the newest code with her own password: same generic 400,
+    # and no account is created.
+    res = await client.post(
+        "/auth/email/register/verify",
+        json={"email": "new@example.com", "code": newest_code, "password": "VictimPass123!"},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == "That code is wrong or expired."
+
+    pending = (
+        await async_db.execute(select(EmailVerification).where(EmailVerification.email == "new@example.com"))
+    ).scalar_one()
+    assert pending.attempts == 1
+
+    user = (await async_db.execute(select(User).where(User.email == "new@example.com"))).scalar_one_or_none()
+    assert user is None
+
+
+async def test_correct_code_and_password_creates_user_with_that_password(
+    client: AsyncClient, async_db: AsyncSession, sent_codes
+):
+    assert (await _start(client, password="ChosenPass123!")).status_code == 200
+    code = _latest_code(sent_codes)
+
+    res = await client.post(
+        "/auth/email/register/verify",
+        json={"email": "new@example.com", "code": code, "password": "ChosenPass123!"},
+    )
+    assert res.status_code == 200
+
+    user = (await async_db.execute(select(User).where(User.email == "new@example.com"))).scalar_one()
+    assert user.provider == "credentials"
+
+    login = await client.post(
+        "/auth/email/login",
+        json={"email": "new@example.com", "password": "ChosenPass123!"},
+    )
+    assert login.status_code == 200
+
+    bad_login = await client.post(
+        "/auth/email/login",
+        json={"email": "new@example.com", "password": "WrongPass123!"},
+    )
+    assert bad_login.status_code == 401
+
+
+async def test_different_emails_same_host_not_blocked(client: AsyncClient, sent_codes):
+    for i in range(3):
+        res = await _start(client, email=f"user{i}@example.com")
+        assert res.status_code == 200
+
+
+async def test_client_ip_without_valid_token_is_ignored(client: AsyncClient, sent_codes):
+    headers = {"X-Client-IP": "203.0.113.1", "Authorization": "Bearer invalid-token"}
+    for i in range(11):
+        res = await client.post(
+            "/auth/email/register/start",
+            json={"email": f"user{i}@example.com", "password": "Password123!", "name": "User"},
+            headers=headers,
+        )
+        assert res.status_code == 200
+
+
+async def test_per_ip_limit_with_valid_internal_token(client: AsyncClient, sent_codes, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_API_SECRET", "test-internal-secret")
+    token = jose_jwt.encode(
+        {"aud": "internal", "exp": datetime.now(timezone.utc).timestamp() + 60},
+        "test-internal-secret",
+        algorithm="HS256",
+    )
+    headers = {"Authorization": f"Bearer {token}", "X-Client-IP": "203.0.113.1"}
+
+    for i in range(10):
+        res = await client.post(
+            "/auth/email/register/start",
+            json={"email": f"user{i}@example.com", "password": "Password123!", "name": "User"},
+            headers=headers,
+        )
+        assert res.status_code == 200
+
+    res11 = await client.post(
+        "/auth/email/register/start",
+        json={"email": "user10@example.com", "password": "Password123!", "name": "User"},
+        headers=headers,
+    )
+    assert res11.status_code == 429

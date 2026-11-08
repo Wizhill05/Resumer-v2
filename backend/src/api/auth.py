@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.database import get_db
+from src.core.internal_token import is_valid_internal_token
 from src.core.notify import send_verification_code_email
 from src.core.provider_messages import provider_mismatch_message
 from src.core.security import hash_password, verify_password
@@ -24,6 +25,7 @@ EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 CODE_TTL_SECONDS = 900
 RESEND_AFTER_SECONDS = 60
 MAX_SENDS_PER_WINDOW = 3
+MAX_SENDS_PER_IP_WINDOW = 10
 SEND_WINDOW_SECONDS = 900
 MIN_SEND_INTERVAL_SECONDS = 60
 MAX_VERIFY_ATTEMPTS = 5
@@ -44,6 +46,7 @@ class EmailRegisterStartRequest(BaseModel):
 class EmailRegisterVerifyRequest(BaseModel):
     email: str = Field(..., description="User email address")
     code: str = Field(..., description="6-digit verification code")
+    password: str = Field(..., description="Password from the latest /register/start")
 
 
 class EmailRegisterResendRequest(BaseModel):
@@ -118,13 +121,16 @@ def _new_expiry(now: datetime) -> datetime:
     return now + timedelta(seconds=CODE_TTL_SECONDS)
 
 
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+def _client_ip(request: Request) -> str | None:
+    # Only trust X-Client-IP when the request carries a valid internal
+    # token; a forwarded IP on a public endpoint can be spoofed.
+    if not is_valid_internal_token(request.headers.get("Authorization")):
+        return None
+    client_ip = request.headers.get("X-Client-IP")
+    if not client_ip:
+        return None
+    cleaned = client_ip.split(",")[0].strip()
+    return cleaned or None
 
 
 def _prune_sends(key: str, now: datetime) -> list[datetime]:
@@ -133,26 +139,38 @@ def _prune_sends(key: str, now: datetime) -> list[datetime]:
     return times
 
 
-def _check_rate_limit(email: str, client_ip: str, now: datetime) -> None:
-    for key in (f"email:{email}", f"ip:{client_ip}"):
-        times = _prune_sends(key, now)
-        if times and (now - times[-1]).total_seconds() < MIN_SEND_INTERVAL_SECONDS:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Please wait a minute before requesting another code.",
-            )
-        if len(times) >= MAX_SENDS_PER_WINDOW:
+def _check_rate_limit(email: str, client_ip: str | None, now: datetime) -> None:
+    email_key = f"email:{email}"
+    times = _prune_sends(email_key, now)
+    if times and (now - times[-1]).total_seconds() < MIN_SEND_INTERVAL_SECONDS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Please wait a minute before requesting another code.",
+        )
+    if len(times) >= MAX_SENDS_PER_WINDOW:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many verification emails. Please try again later.",
+        )
+    if client_ip is not None:
+        ip_times = _prune_sends(f"ip:{client_ip}", now)
+        if len(ip_times) >= MAX_SENDS_PER_IP_WINDOW:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many verification emails. Please try again later.",
             )
 
 
-def _record_send(email: str, client_ip: str, now: datetime) -> None:
-    for key in (f"email:{email}", f"ip:{client_ip}"):
-        times = _prune_sends(key, now)
-        times.append(now)
-        _send_times[key] = times
+def _record_send(email: str, client_ip: str | None, now: datetime) -> None:
+    email_key = f"email:{email}"
+    times = _prune_sends(email_key, now)
+    times.append(now)
+    _send_times[email_key] = times
+    if client_ip is not None:
+        ip_key = f"ip:{client_ip}"
+        ip_times = _prune_sends(ip_key, now)
+        ip_times.append(now)
+        _send_times[ip_key] = ip_times
 
 
 async def _get_pending(db: AsyncSession, email: str) -> EmailVerification | None:
@@ -267,7 +285,9 @@ async def verify_email_registration(
             detail="Too many attempts. Request a new code.",
         )
 
-    if not hmac.compare_digest(pending.code_hash, _hash_code(email, code)):
+    code_ok = hmac.compare_digest(pending.code_hash, _hash_code(email, code))
+    password_ok = verify_password(payload.password, pending.password_hash)
+    if not code_ok or not password_ok:
         pending.attempts += 1
         await db.commit()
         raise HTTPException(
