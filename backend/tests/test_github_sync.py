@@ -331,6 +331,30 @@ async def test_project_import_uses_token_and_leaves_link_off_private_repo(client
     assert "Private repo, link left off. Add a public link if you have one." in messages
 
 
+async def test_repos_network_timeout_returns_502(client, async_db, monkeypatch):
+    user = await _create_user(async_db, "timeout-repos@example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    _mock_github(monkeypatch, handler)
+    res = await client.get("/profile/import/github-repos?username=octocat", headers=auth_headers(user))
+    assert res.status_code == 502, res.text
+    assert res.json() == {"detail": "Couldn't reach GitHub. Try again."}
+
+
+async def test_project_import_network_timeout_returns_502(client, async_db, monkeypatch):
+    user = await _create_user(async_db, "timeout-project@example.com")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("timed out", request=request)
+
+    _mock_github(monkeypatch, handler)
+    res = await client.post("/profile/import/github-project", json={"url": "octocat/secret"}, headers=auth_headers(user))
+    assert res.status_code == 502, res.text
+    assert res.json() == {"detail": "Couldn't reach GitHub. Try again."}
+
+
 async def test_project_import_rate_limit_returns_429_shape(client, async_db, monkeypatch):
     user = await _create_user(async_db, "priv2@example.com")
     reset_epoch = str(int(datetime(2026, 11, 8, 16, 0, tzinfo=timezone.utc).timestamp()))

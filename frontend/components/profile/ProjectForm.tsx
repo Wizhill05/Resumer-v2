@@ -61,7 +61,7 @@ type DuplicateCandidate = {
 
 type ImportedProject = ProjectItem & {
   duplicate_candidates?: DuplicateCandidate[];
-  warnings?: string[];
+  warnings?: { scope: string; message: string }[];
 };
 
 type GitHubRepoItem = {
@@ -1029,8 +1029,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                       Import notes
                     </p>
                     <ul className="mt-1 list-inside list-disc space-y-1 text-sm font-semibold text-yellow-950 dark:text-yellow-200">
-                      {importPreview.warnings.map((warning) => (
-                        <li key={warning}>{warning}</li>
+                      {importPreview.warnings.map((warning, index) => (
+                        <li key={`${warning.scope}-${index}`}>{warning.message}</li>
                       ))}
                     </ul>
                   </div>

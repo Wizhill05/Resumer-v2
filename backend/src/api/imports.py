@@ -285,6 +285,8 @@ async def get_github_user_repos(
         except GithubNotFound:
             raise HTTPException(status_code=404, detail="GitHub user or repositories not found")
         except GithubError as error:
+            if error.status_code is None:
+                raise HTTPException(status_code=502, detail="Couldn't reach GitHub. Try again.")
             raise HTTPException(status_code=400, detail=error.body_message or "Failed to fetch GitHub repositories")
         items = _repo_items(data)
         identity = await get_github_identity(db, current_user.id)
@@ -304,6 +306,8 @@ async def get_github_user_repos(
     except GithubNotFound:
         raise HTTPException(status_code=404, detail="GitHub user or repositories not found")
     except GithubError as error:
+        if error.status_code is None:
+            raise HTTPException(status_code=502, detail="Couldn't reach GitHub. Try again.")
         raise HTTPException(status_code=400, detail=error.body_message or "Failed to fetch GitHub repositories")
     items = _repo_items(data)
     return GitHubReposResponse(repos=items, connected=False, github_username=cleaned_username, source="public")

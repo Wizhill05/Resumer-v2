@@ -119,10 +119,13 @@ async def github_get(path: str, token: str | None = None) -> Any:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    async with httpx.AsyncClient(
-        base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False
-    ) as client:
-        response = await client.get(path, headers=headers)
+    try:
+        async with httpx.AsyncClient(
+            base_url=API_BASE, timeout=TIMEOUT, follow_redirects=False
+        ) as client:
+            response = await client.get(path, headers=headers)
+    except httpx.HTTPError as exc:
+        raise GithubError("Couldn't reach GitHub. Try again.", status_code=None) from exc
 
     remaining = response.headers.get("x-ratelimit-remaining")
     logger.debug(

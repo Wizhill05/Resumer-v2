@@ -97,7 +97,9 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reconnect GitHub")
     except GithubNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GitHub repository not found or not public")
-    except GithubError:
+    except GithubError as error:
+        if error.status_code is None:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Couldn't reach GitHub. Try again.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not read GitHub repository")
     prompt = ChatPromptTemplate.from_messages(
         [
