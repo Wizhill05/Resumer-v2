@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
+from src.core.provider_messages import provider_mismatch_message
 from src.core.security import hash_password, verify_password
 from src.models.user import User
 
@@ -32,10 +33,6 @@ class AuthUserResponse(BaseModel):
     image: str | None = None
     provider: str | None = None
     needs_welcome: bool = False
-
-
-def _provider_label(provider: str | None) -> str:
-    return {"google": "Google", "github": "GitHub"}.get(provider or "", provider or "social login")
 
 
 def normalize_email(email: str) -> str:
@@ -66,31 +63,14 @@ async def register_email_user(
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
-        if existing_user.provider and existing_user.provider != "credentials":
-            label = _provider_label(existing_user.provider)
+        if existing_user.provider in ("google", "github"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"This email is registered with {label}. Sign in with {label}.",
+                detail=provider_mismatch_message(existing_user.provider),
             )
-        if existing_user.hashed_password:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="An account with this email already exists. Please sign in instead.",
-            )
-        # Legacy row with no provider: allow creating credentials account data.
-        existing_user.hashed_password = hash_password(password)
-        existing_user.provider = "credentials"
-        if payload.name and not existing_user.name:
-            existing_user.name = payload.name.strip()
-        await db.commit()
-        await db.refresh(existing_user)
-        return AuthUserResponse(
-            id=str(existing_user.id),
-            email=existing_user.email,
-            name=existing_user.name,
-            image=existing_user.image,
-            provider=existing_user.provider,
-            needs_welcome=existing_user.signup_completed_at is None,
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists. Sign in instead.",
         )
 
     # Create new user
@@ -133,10 +113,9 @@ async def login_email_user(
         )
 
     if not user.hashed_password:
-        label = _provider_label(user.provider)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"This email is registered with {label}. Sign in with {label}.",
+            detail=provider_mismatch_message(user.provider),
         )
 
     if not verify_password(password, user.hashed_password):

@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { AuthErrorBanner } from "@/components/AuthErrorBanner"
 import { HeroSection } from "@/components/landing/HeroSection"
 import { StoryOverture } from "@/components/landing/StoryOverture"
 import { StoryJourney } from "@/components/landing/StoryJourney"
@@ -17,6 +18,7 @@ export default async function Home() {
 
   return (
     <main className="relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-white text-[var(--fluid-ink)] dark:bg-[#18181b]">
+      <AuthErrorBanner />
       <HeroSection />
       <div id="how-it-works" className="scroll-mt-16">
         <StoryOverture />

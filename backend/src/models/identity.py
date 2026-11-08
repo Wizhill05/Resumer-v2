@@ -63,7 +63,7 @@ class EmailVerification(Base):
     __tablename__ = "email_verifications"
 
     id: Mapped[uuid.UUID] = _uuid_col(primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)

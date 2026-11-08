@@ -30,6 +30,8 @@ type SessionLike = {
   needsWelcome?: boolean | null
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function backendTokenForSession(session: SessionLike) {
   const uid = session.user?.id ?? ""
   const email = session.user?.email ?? ""
@@ -38,7 +40,11 @@ export async function backendTokenForSession(session: SessionLike) {
     throw new Error("AUTH_SECRET or NEXTAUTH_SECRET is not set in environment.")
   }
   const JWT_SECRET = new TextEncoder().encode(NEXTAUTH_SECRET)
-  return await new SignJWT({ sub: uid, email, provider })
+  const payload: Record<string, string> = { email, provider }
+  if (UUID_RE.test(uid)) {
+    payload.sub = uid
+  }
+  return await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("1h")

@@ -18,6 +18,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # fail fast on duplicates before any data change
+    conn = op.get_bind()
+    dup = conn.execute(
+        sa.text("SELECT lower(email) AS e, count(*) AS c FROM users GROUP BY 1 HAVING count(*) > 1 LIMIT 1")
+    ).fetchone()
+    if dup is not None:
+        raise RuntimeError(f"Duplicate lower(email) values exist (e.g. {dup[0]}); resolve duplicates before migrating")
+
     # users columns
     op.add_column("users", sa.Column("email_verified_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("users", sa.Column("signup_completed_at", sa.DateTime(timezone=True), nullable=True))
@@ -27,14 +35,6 @@ def upgrade() -> None:
     op.execute("UPDATE users SET hashed_password = NULL WHERE coalesce(provider, '') <> 'credentials'")
     op.execute("UPDATE users SET signup_completed_at = now()")
     op.execute("UPDATE users SET email_verified_at = created_at WHERE provider IN ('google', 'github')")
-
-    # duplicate check before unique index
-    conn = op.get_bind()
-    dup = conn.execute(
-        sa.text("SELECT lower(email) AS e, count(*) AS c FROM users GROUP BY 1 HAVING count(*) > 1 LIMIT 1")
-    ).fetchone()
-    if dup is not None:
-        raise RuntimeError(f"Duplicate lower(email) values exist (e.g. {dup[0]}); resolve duplicates before migrating")
 
     op.create_table(
         "user_identities",
@@ -94,7 +94,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_email_verifications_email", "email_verifications", ["email"])
+    op.create_index("ix_email_verifications_email", "email_verifications", ["email"], unique=True)
 
     # backfill identities
     op.execute(
