@@ -29,6 +29,7 @@ export function EmailAuthForm({
   const [name, setName] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [registerStep, setRegisterStep] = useState<1 | 2>(1)
   const [code, setCode] = useState("")
   const [pendingEmail, setPendingEmail] = useState<string | null>(null)
@@ -71,23 +72,28 @@ export function EmailAuthForm({
 
     setLoading(true)
 
-    const startRes = await startEmailRegistrationAction({
-      email: cleanEmail,
-      password,
-      name: cleanName,
-    })
+    try {
+      const startRes = await startEmailRegistrationAction({
+        email: cleanEmail,
+        password,
+        name: cleanName,
+      })
 
-    if (!startRes.success) {
-      setError(startRes.error || "Registration failed.")
+      if (!startRes.success) {
+        setError(startRes.error || "Registration failed.")
+        setLoading(false)
+        return
+      }
+
+      setPendingEmail(startRes.email)
+      setResendCountdown(startRes.resendAfter)
+      setCode("")
+      setRegisterStep(2)
       setLoading(false)
-      return
+    } catch {
+      setError("An unexpected error occurred. Please try again.")
+      setLoading(false)
     }
-
-    setPendingEmail(startRes.email)
-    setResendCountdown(startRes.resendAfter)
-    setCode("")
-    setRegisterStep(2)
-    setLoading(false)
   }
 
   const handleVerify = async () => {
@@ -101,36 +107,47 @@ export function EmailAuthForm({
 
     setLoading(true)
 
-    const verifyRes = await verifyEmailRegistrationAction({
-      email: targetEmail,
-      code: cleanCode,
-    })
+    try {
+      const verifyRes = await verifyEmailRegistrationAction({
+        email: targetEmail,
+        code: cleanCode,
+      })
 
-    if (!verifyRes.success) {
-      setError(verifyRes.error || "Verification failed.")
+      if (!verifyRes.success) {
+        setError(verifyRes.error || "Verification failed.")
+        setLoading(false)
+        return
+      }
+
+      // Establish NextAuth session with the password still in component state
+      const signInRes = await signIn("credentials", {
+        email: targetEmail,
+        password,
+        redirect: false,
+        callbackUrl,
+      })
+
+      if (signInRes?.error) {
+        // The account now exists and the pending sign-up is gone, so the
+        // user cannot retry Verify. Hand off to Sign in instead.
+        setMode("login")
+        resetRegisterFlow()
+        setEmail(targetEmail)
+        setPassword("")
+        setNotice("Your account is ready. Sign in with your email and password.")
+        setLoading(false)
+        return
+      }
+
+      // Redirect on success
+      if (typeof window !== "undefined") {
+        window.location.href = callbackUrl
+      } else {
+        router.push(callbackUrl)
+      }
+    } catch {
+      setError("An unexpected error occurred. Please try again.")
       setLoading(false)
-      return
-    }
-
-    // Establish NextAuth session with the password still in component state
-    const signInRes = await signIn("credentials", {
-      email: targetEmail,
-      password,
-      redirect: false,
-      callbackUrl,
-    })
-
-    if (signInRes?.error) {
-      setError("Failed to sign in. Please verify your credentials.")
-      setLoading(false)
-      return
-    }
-
-    // Redirect on success
-    if (typeof window !== "undefined") {
-      window.location.href = callbackUrl
-    } else {
-      router.push(callbackUrl)
     }
   }
 
@@ -140,22 +157,28 @@ export function EmailAuthForm({
     const targetEmail = pendingEmail ?? email.trim().toLowerCase()
     setResending(true)
 
-    const resendRes = await resendEmailCodeAction({ email: targetEmail })
+    try {
+      const resendRes = await resendEmailCodeAction({ email: targetEmail })
 
-    if (!resendRes.success) {
-      setError(resendRes.error || "Could not resend the code.")
+      if (!resendRes.success) {
+        setError(resendRes.error || "Could not resend the code.")
+        setResending(false)
+        return
+      }
+
+      setResendCountdown(resendRes.resendAfter)
+      setError(null)
       setResending(false)
-      return
+    } catch {
+      setError("An unexpected error occurred. Please try again.")
+      setResending(false)
     }
-
-    setResendCountdown(resendRes.resendAfter)
-    setError(null)
-    setResending(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setNotice(null)
 
     if (mode === "register") {
       if (registerStep === 1) {
@@ -228,8 +251,10 @@ export function EmailAuthForm({
         <button
           type="button"
           onClick={() => {
+            if (mode === "login") return
             setMode("login")
             setError(null)
+            setNotice(null)
             resetRegisterFlow()
           }}
           className={`flex-1 rounded-[4px] py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
@@ -243,8 +268,10 @@ export function EmailAuthForm({
         <button
           type="button"
           onClick={() => {
+            if (mode === "register") return
             setMode("register")
             setError(null)
+            setNotice(null)
             resetRegisterFlow()
           }}
           className={`flex-1 rounded-[4px] py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
@@ -265,6 +292,17 @@ export function EmailAuthForm({
         >
           <AlertCircle size={15} className="mt-0.5 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Notice Callout */}
+      {notice && !error && (
+        <div
+          role="status"
+          className="flex items-start gap-2 border border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 p-2.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 rounded-md"
+        >
+          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+          <span>{notice}</span>
         </div>
       )}
 
@@ -353,14 +391,16 @@ export function EmailAuthForm({
           <>
             {mode === "register" && (
               <div>
-                <label className="block text-[11px] font-bold text-ink mb-1">
+                <label htmlFor="email-auth-name" className="block text-[11px] font-bold text-ink mb-1">
                   Full Name
                 </label>
                 <input
+                  id="email-auth-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Alex Smith"
+                  autoComplete="name"
                   disabled={loading}
                   className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
                 />
@@ -368,10 +408,11 @@ export function EmailAuthForm({
             )}
 
             <div>
-              <label className="block text-[11px] font-bold text-ink mb-1">
+              <label htmlFor="email-auth-email" className="block text-[11px] font-bold text-ink mb-1">
                 Email Address
               </label>
               <input
+                id="email-auth-email"
                 type="email"
                 required
                 value={email}
@@ -384,10 +425,11 @@ export function EmailAuthForm({
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-ink mb-1">
+              <label htmlFor="email-auth-password" className="block text-[11px] font-bold text-ink mb-1">
                 Password
               </label>
               <input
+                id="email-auth-password"
                 type="password"
                 required
                 value={password}
