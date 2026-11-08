@@ -496,7 +496,7 @@ async def detect_orphans_handler(
     CRITICAL WORKFLOW INSTRUCTION:
     Whenever you add, modify, or remove projects, work experience, or bullet points in a resume,
     you MUST call this tool immediately BEFORE finalizing the resume.
-    It inspects WeasyPrint line boxes to detect bullets where the last line has only 1-3 words (<75% line fill)
+    It inspects WeasyPrint line boxes to detect bullets where the last line has only 1-3 words (<80% line fill)
     or bullets that overflow to 3+ lines.
     """
     user = get_current_mcp_user()

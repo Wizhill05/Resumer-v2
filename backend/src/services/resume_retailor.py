@@ -16,6 +16,8 @@ from src.core.storage import StorageService
 from src.models.generation import Generation
 from src.models.profile import UserProject
 from src.pipeline.nodes import (
+    _source_metrics_line,
+    projects_writer_default_prompts,
     InferenceExhausted,
     InvalidStructuredOutput,
     _professional_sans_policy,
@@ -106,6 +108,7 @@ async def retailor_resume_with_project(
         f"Description: {raw_replacement.get('description') or ''}\n"
         f"Technologies: {', '.join(raw_replacement.get('technologies') or [])}\n"
         f"Bullet Points:\n" + "\n".join(raw_replacement.get("bullet_points") or []) + "\n"
+        + _source_metrics_line(raw_replacement.get("description"), raw_replacement.get("bullet_points"))
     )
 
     manifest_obj = TemplateRegistryService.get_template_manifest(gen.template_id)
@@ -113,45 +116,12 @@ async def retailor_resume_with_project(
     manifest_data = manifest_obj.model_dump() if manifest_obj else {}
 
     mode = getattr(gen, "creativity_mode", None) or "proper"
-    if mode == "proper":
-        tech_rule = "- technologies: normalized list of technologies from input plus clearly supported technologies only."
-        depth_rule = "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported."
-        invent_rule = "- Do not invent metrics, deployments, users, awards, or technologies not supported by input."
-    else:
-        tech_rule = "- technologies: normalized list that MUST foreground the job's required stack; add missing JD technologies even if absent from input."
-        depth_rule = (
-            "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact. "
-            "Vary phrasing per job so outputs do not look templated."
-        )
-        invent_rule = (
-            "- LARP MODE: you may add plausible JD-aligned features, integrations, and metrics to the existing project "
-            "(e.g. claim the missing feature because it fits the job). Never invent a wholly new project here — "
-            "that is reserved for Super LARP slot 1 — but do not be afraid to stretch details."
-        )
-
+    default_system, default_user = projects_writer_default_prompts(mode)
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         _prompt_name("projects_writer", mode),
-        default_system=(
-            "ROLE: Senior technical resume writer specializing in project sections.\n"
-            "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
-            "OUTPUT CONTRACT: Return only the structured TailoredProjectBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
-            "RULES:\n"
-            "- Preserve project name unless spelling cleanup is needed.\n"
-            "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
-            "- description: one concise sentence explaining what the project does and why it matters.\n"
-            f"{tech_rule}\n"
-            "- bullet_points: 2-3 concise achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
-            f"{depth_rule}\n"
-            f"{invent_rule}\n"
-            "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
-            "- Line-fit: craft each bullet to either comfortably fit on a single line or completely fill two lines. Avoid short orphan second lines.\n"
-            "- No prose outside the structured output."
-        ),
-        default_user=(
-            "INPUT: Job Analysis\n{job_analysis}\n\n"
-            "INPUT: Project Entries To Rewrite\n{entries}"
-        ),
+        default_system=default_system,
+        default_user=default_user,
     )
     sys_prompt += _professional_sans_policy({"template_id": gen.template_id, "creativity_mode": mode}, "project")
 

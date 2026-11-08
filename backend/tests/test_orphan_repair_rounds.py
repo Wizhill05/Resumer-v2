@@ -4,7 +4,7 @@ The repair model cannot see rendered line widths, so a pass often lands a few
 characters over the two-line limit. These tests pin the guarantees that make the
 repair converge instead of discarding everything:
 
-- every bullet gets a numeric visible-character window (aimed low),
+- every bullet gets a numeric visible-character window (aimed mid-window),
 - only bullets that spill onto a 3rd line are reverted; the rest are kept,
 - failed bullets are re-asked alone, with the measured result as feedback,
 - rounds are bounded, and a round that changes nothing stops the loop.
@@ -31,7 +31,7 @@ def _orphan(entry_idx: int, bullet_idx: int, text: str) -> dict:
         "text": text,
         "renderedLines": 2,
         "lastLineFillPercent": 30.0,
-        "minimumLastLineFill": 75,
+        "minimumLastLineFill": 80,
         "charsPerLine": 110,
         "targetCharsMin": 199,
         "targetCharsMax": 216,
@@ -97,7 +97,7 @@ class Harness:
                     "text": b,
                     "renderedLines": 2,
                     "lastLineFillPercent": 40.0,
-                    "minimumLastLineFill": 75,
+                    "minimumLastLineFill": 80,
                     "charsPerLine": 110,
                     "targetCharsMin": 199,
                     "targetCharsMax": 216,
@@ -124,16 +124,16 @@ def _bullets(result):
     return result["experience_draft"][0]["bullet_points"]
 
 
-async def test_prompt_contains_numeric_window_aimed_low(monkeypatch):
+async def test_prompt_contains_numeric_window_aimed_mid(monkeypatch):
     original = "x" * 90
     h = Harness(monkeypatch, [{1: GOOD}])
     await h.run(_state([original]))
 
     prompt = h.prompts[0]
     assert "between 199 and 216 visible characters" in prompt
-    # aim = 199 + round(17 * 0.35) = 205, well under the 216 ceiling
-    assert "aim for about 205" in prompt
-    assert "add roughly 115" in prompt
+    # aim = 199 + round(17 * 0.5) = 207, inside the window and under the 216 ceiling
+    assert "aim for about 207" in prompt
+    assert "add roughly 117" in prompt
     assert "3rd line" in prompt
 
 
@@ -270,12 +270,12 @@ async def test_llm_failure_on_first_round_changes_nothing(monkeypatch):
 @pytest.mark.parametrize(
     "orphan,text,expected",
     [
-        ({"targetCharsMin": 199, "targetCharsMax": 216}, "x" * 90, (199, 216, 205)),
-        ({"charsPerLine": 100}, "x" * 90, (180, 195, 185)),
+        ({"targetCharsMin": 199, "targetCharsMax": 216}, "x" * 90, (199, 216, 207)),
+        ({"charsPerLine": 100}, "x" * 90, (184, 195, 190)),
         ({}, "x" * 90, None),
         ({"targetCharsMin": 199, "targetCharsMax": 216}, "x" * 214, None),
         # markdown bold markers are not visible characters
-        ({"targetCharsMin": 199, "targetCharsMax": 216}, "**" + "x" * 90 + "**", (199, 216, 205)),
+        ({"targetCharsMin": 199, "targetCharsMax": 216}, "**" + "x" * 90 + "**", (199, 216, 207)),
     ],
 )
 def test_length_window(orphan, text, expected):
@@ -451,3 +451,109 @@ async def test_real_render_overshoot_is_reverted_then_retry_lands_in_window(monk
     assert f"between {orphan['targetCharsMin']} and {orphan['targetCharsMax']}" in prompts[0]
     assert "PREVIOUS ATTEMPT FAILED (too long)" in prompts[1]
     assert not _real_detect(result["experience_draft"][0]["bullet_points"][0])
+
+
+# ── Shortening bullets that overflow to 3+ lines ─────────────────────────────
+
+def _oversize_orphan(lines: int, text: str) -> dict:
+    return {
+        "fix_type": "oversize", "section": "experience", "entry_idx": 0, "bullet_idx": 0,
+        "text": text, "renderedLines": lines, "charsPerLine": 110,
+        "targetCharsMin": 202, "targetCharsMax": 214,
+    }
+
+
+def test_oversize_block_asks_to_shorten_and_keep_metrics():
+    text = "Built **FastAPI** service cutting latency **40%** " + "x" * 240
+    block = nodes_mod._repair_block(1, "ctx", text, _oversize_orphan(3, text), True)
+    assert "SHORTEN this bullet" in block and "renders on 3 lines" in block
+    assert "Keep every bold metric and tool" in block
+    assert "between 202 and 214" in block and "remove roughly" in block
+    assert "EXPAND this bullet" not in block
+    assert "new bold metric" not in block  # never ask for more metrics while cutting length
+
+
+async def test_oversize_bullet_without_repair_history_is_shortened(monkeypatch):
+    h = Harness(monkeypatch, [{1: GOOD}])
+    state = _state([LONG])
+    state["orphans"] = [_oversize_orphan(3, LONG)]
+
+    result = await h.run(state)
+
+    assert _bullets(result) == [GOOD]
+    assert "SHORTEN this bullet" in h.prompts[0]
+    assert result["repair_history"]["experience:0:0"] == LONG
+
+
+async def test_partial_shortening_progress_is_kept_and_retried(monkeypatch):
+    four = "F" * 350      # 4 lines
+    three = "T" * 250     # 3 lines: progress, but still over two
+    h = Harness(monkeypatch, [{1: three}, {1: GOOD}])
+
+    def render(state, experiences, projects, extracurriculars):
+        text = experiences[0]["bullet_points"][0]
+        if len(text) > 300:
+            return 1, [_oversize_orphan(4, text)]
+        if len(text) > 200:
+            return 1, [_oversize_orphan(3, text)]
+        return 1, []
+
+    monkeypatch.setattr(nodes_mod, "_render_for_verification", render)
+    state = _state([four])
+    state["orphans"] = [_oversize_orphan(4, four)]
+
+    result = await h.run(state)
+
+    assert _bullets(result) == [GOOD]
+    assert len(h.prompts) == 2
+    assert f'Original: "{three}"' in h.prompts[1]  # round 2 continues from the kept 3-line text
+    assert "renders on 3 lines" in h.prompts[1]
+
+
+async def test_shortening_that_makes_no_progress_is_reverted(monkeypatch):
+    monkeypatch.setattr(nodes_mod, "ORPHAN_REPAIR_MAX_ROUNDS", 1)
+    h = Harness(monkeypatch, [{1: "M" * 260}])
+    state = _state([LONG])
+    state["orphans"] = [_oversize_orphan(3, LONG)]
+
+    result = await h.run(state)
+
+    assert _bullets(result) == [LONG]  # still 3 lines, not fewer: original kept
+
+
+# ── Numeric feedback: weak models need arithmetic, not adjectives ────────────
+
+def test_initial_block_tells_model_to_keep_wording_and_add_a_delta():
+    block = nodes_mod._repair_block(1, "ctx", "x" * 90, _orphan(0, 0, "x" * 90), False)
+    assert "keep its wording and add roughly 117 characters" in block
+    assert "do not rewrite it shorter" in block
+
+
+def test_short_feedback_flags_a_reply_shorter_than_the_original():
+    orphan = _orphan(0, 0, "x" * 187)
+    failed = {"kind": "short", "text": "t" * 170, "chars": 170, "fill": 61.0}
+    block = nodes_mod._repair_block(1, "ctx", "x" * 187, orphan, False, failed)
+    assert "was 170 characters" in block and "only 61.0% full" in block
+    assert "SHORTER than the original (187 characters)" in block
+    assert "Never shorten: keep the original wording and add about 20 characters" in block  # aim 207 - 187
+
+
+def test_short_feedback_for_a_longer_but_still_short_reply_gives_the_remaining_gap():
+    orphan = _orphan(0, 0, "x" * 150)
+    failed = {"kind": "short", "text": "t" * 190, "chars": 190, "fill": 70.0}
+    block = nodes_mod._repair_block(1, "ctx", "x" * 150, orphan, False, failed)
+    assert "Add about 17 more characters (target about 207)" in block  # aim 207 - 190
+    assert "SHORTER" not in block
+
+
+def test_long_feedback_says_how_many_characters_to_cut():
+    orphan = _orphan(0, 0, "x" * 150)
+    failed = {"kind": "long", "text": "t" * 240, "chars": 240, "lines": 3}
+    block = nodes_mod._repair_block(1, "ctx", "x" * 150, orphan, False, failed)
+    assert "Cut about 33 characters (target about 207, limit 216)" in block  # 240 - 207
+
+
+def test_default_round_budget_fits_four_rounds():
+    assert nodes_mod.ORPHAN_REPAIR_MAX_ROUNDS == 4
+    assert nodes_mod.ORPHAN_REPAIR_TIME_BUDGET_S >= 200
+    assert nodes_mod._REPAIR_AIM_FRACTION == 0.5

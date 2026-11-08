@@ -52,7 +52,7 @@ def _make_state(original_bullet: str) -> dict:
                 "text": original_bullet,
                 "renderedLines": 2,
                 "lastLineFillPercent": 30.0,
-                "minimumLastLineFill": 75,
+                "minimumLastLineFill": 80,
             }
         ],
     }

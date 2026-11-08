@@ -27,6 +27,9 @@ from src.services.resume_render import (
     build_resume_markdown,
     check_horizontal_overflow,
     detect_orphans_in_weasyprint,
+    ORPHAN_FILL_FLOOR,
+    REPAIR_TARGET_LINES_MAX,
+    REPAIR_TARGET_LINES_MIN,
 )
 from src.pipeline.state import ResumeGraphState
 from src.core.skill_categories import merge_skill_categories, skill_category_display
@@ -896,6 +899,172 @@ async def summary_skills_node(
     return {"summary_draft": summary_draft}
 
 
+# ── Writer prompts: metric-dense bullets ──────────────────────────────────────
+# One source for the code defaults and the stored prompt_configs rows (stored rows
+# override these defaults). No literal braces: the system prompt is .format()-ed.
+
+_BULLET_STYLE_RULES = (
+    "- Bold each number together with its unit as one short span, and each named tool, framework, language, or model. "
+    "Never bold generic fields (Machine Learning, AI, Data Analytics) or spans longer than 4 words.\n"
+    "- Line-fit: write each bullet to fill about 1.85-1.95 rendered lines (two nearly full lines), roughly 190-215 visible characters; "
+    "over 215 wraps onto a third line, so cut a clause rather than run over. Never leave a short second line.\n"
+    "- ATS-readable: standard tool names, digits for numbers, no emojis or arrows. No periods required.\n"
+)
+
+_LARP_METRIC_RULES = (
+    "- Bullet formula: action verb + what was built + bold tools + how + bold measured result.\n"
+    "- Every bullet: at least 2 bold metrics and at least 2 bold technologies.\n"
+    "- Metrics are outcomes or scale in varied units: % change, ms/s latency, x speedup, K/M records or requests, QPS, $ cost, "
+    "GB, accuracy/F1/AUC, hours saved. First place every number listed under Source metrics into that entry's bullets, exactly as "
+    "given; only then invent further metrics, which must look measured, not round (avoid 30%, 50%, 10x). "
+    "Never use headcounts (team size, reviewers, attendees) as a metric. Never repeat a number in your output.\n"
+)
+
+_PROPER_METRIC_RULES = (
+    "- Bullet formula: action verb + what was built + bold tools + how + result (bold and measured when the input states a number).\n"
+    "- Every bullet: at least 2 bold technologies supported by the input (1 if the entry names only one).\n"
+    "- Quantify only with numbers stated in that entry's input (listed under Source metrics); keep each one exact and bold, "
+    "and lead with it. If an entry has none, show concrete scope (named systems, data sources, tools) instead of vague adjectives.\n"
+)
+
+_METRIC_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9.])(?!(?:19|20)\d\d\b)[$<>~]?\d[\d,.]*\s?(?:%|x|ms|s|[kKMB]|\+)?(?![A-Za-z])"
+)
+_BOLD_SPAN = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _source_metrics(texts: list[str]) -> list[str]:
+    """Distinct numbers stated in the source text, in order (years and version-like tokens excluded)."""
+    found: list[str] = []
+    for text in texts:
+        for match in _METRIC_TOKEN.finditer(text or ""):
+            token = match.group(0).strip(" .,")
+            if token and token not in found:
+                found.append(token)
+    return found[:12]
+
+
+def _source_metrics_line(*texts: Any) -> str:
+    flat: list[str] = []
+    for item in texts:
+        if isinstance(item, (list, tuple)):
+            flat.extend(str(x) for x in item if x)
+        elif item:
+            flat.append(str(item))
+    metrics = _source_metrics(flat)
+    return f"Source metrics: {', '.join(metrics) if metrics else 'none'}\n"
+
+
+def _is_metric_span(span: str) -> bool:
+    span = span.strip()
+    return bool(
+        re.match(r"^[<>~$+\-]?\s?\d", span)
+        or re.search(r"\d\s?(?:%|x\b|ms\b|s\b|[KMB]\b|\+)", span)
+    )
+
+
+def bullet_density(text: str) -> tuple[int, int]:
+    """(bold metric spans, bold technology spans) in a bullet."""
+    spans = _BOLD_SPAN.findall(text or "")
+    metrics = sum(1 for s in spans if _is_metric_span(s))
+    return metrics, len(spans) - metrics
+
+
+def _density_summary(bullets: list[str]) -> str:
+    dense = sum(1 for b in bullets if (lambda m, t: m >= 2 and t >= 2)(*bullet_density(b)))
+    with_metric = sum(1 for b in bullets if bullet_density(b)[0] >= 1)
+    return (
+        f"Density: {dense}/{len(bullets)} bullets have >=2 bold metrics and >=2 bold tools; "
+        f"{with_metric}/{len(bullets)} have a metric."
+    )
+
+
+def experience_writer_default_prompts(mode: str) -> tuple[str, str]:
+    if mode == "proper":
+        truth_rule = "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence.\n"
+        variety_rule = "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact.\n"
+        metric_rules = _PROPER_METRIC_RULES
+    else:
+        truth_rule = (
+            "- LARP MODE: you may embellish freely within the existing role/company. Add job-required features, tools, and "
+            "plausible metrics/scale the candidate did not state, as long as role, organization, and dates stay intact. "
+            "Never create a new employer or role, but do not be afraid to claim the job's stack.\n"
+        )
+        variety_rule = (
+            "- Each bullet proves a different JD requirement through a technical result; fold documentation, collaboration, "
+            "or communication requirements into a technical bullet, never a standalone one. Vary verbs and sentence shapes. "
+            "Foreground exact JD keywords and technologies.\n"
+        )
+        metric_rules = _LARP_METRIC_RULES
+    system = (
+        "ROLE: Senior technical resume writer.\n"
+        "TASK: Rewrite selected experience entries to prove fit for the target job while preserving truth.\n"
+        "OUTPUT CONTRACT: Return only the structured TailoredExperienceBatch object with entries. "
+        "Return EXACTLY {batch_len} entries in input order.\n"
+        "RULES:\n"
+        "- Preserve role, organization, dates, and location unless input is missing.\n"
+        "- Each entry must contain 2-3 bullet_points (hard limit: never more than 3), limited by available source material.\n"
+        "- Start every bullet with a strong past-tense action verb.\n"
+        + variety_rule + truth_rule + metric_rules + _BULLET_STYLE_RULES +
+        "- No prose outside the structured output."
+    )
+    user = "INPUT: Job Analysis\n{job_analysis}\n\nINPUT: Experience Entries To Rewrite\n{entries}"
+    return system, user
+
+
+def projects_writer_default_prompts(mode: str) -> tuple[str, str]:
+    if mode == "proper":
+        tech_rule = "- technologies: normalized list of technologies from input plus clearly supported technologies only.\n"
+        depth_rule = "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported.\n"
+        invent_rule = "- Do not invent metrics, deployments, users, awards, or technologies not supported by input.\n"
+        metric_rules = _PROPER_METRIC_RULES
+    else:
+        tech_rule = "- technologies: normalized list that MUST foreground the job's required stack; add missing JD technologies even if absent from input.\n"
+        depth_rule = "- Emphasize architecture and implementation depth; vary phrasing per job so outputs do not look templated.\n"
+        invent_rule = (
+            "- LARP MODE: you may add plausible JD-aligned features, integrations, and metrics to the existing project "
+            "(e.g. claim the missing feature because it fits the job). Never invent a wholly new project here — "
+            "that is reserved for Super LARP slot 1 — but do not be afraid to stretch details.\n"
+        )
+        metric_rules = _LARP_METRIC_RULES
+    system = (
+        "ROLE: Senior technical resume writer specializing in project sections.\n"
+        "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
+        "OUTPUT CONTRACT: Return only the structured TailoredProjectBatch object with entries. "
+        "Return EXACTLY {batch_len} entries in input order.\n"
+        "RULES:\n"
+        "- Preserve project name unless spelling cleanup is needed.\n"
+        "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
+        "- description: one concise sentence explaining what the project does and why it matters.\n"
+        + tech_rule +
+        "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
+        + depth_rule + invent_rule + metric_rules + _BULLET_STYLE_RULES +
+        "- No prose outside the structured output."
+    )
+    user = "INPUT: Job Analysis\n{job_analysis}\n\nINPUT: Project Entries To Rewrite\n{entries}"
+    return system, user
+
+
+def synthetic_project_default_prompts() -> tuple[str, str]:
+    system = (
+        "ROLE: Senior engineer inventing a single hyper-relevant portfolio project for a resume.\n"
+        "TASK: Invent ONE project that mirrors the target job description as closely as possible.\n"
+        "OUTPUT CONTRACT: Return only the structured TailoredProject object.\n"
+        "RULES:\n"
+        "- Name: realistic, specific, not a copy of the job title (e.g. 'Realtime Fraud Scoring API').\n"
+        "- project_summary: 2-4 words, e.g. 'ML Scoring Service'.\n"
+        "- description: one sentence on what it does and why it matters for this job.\n"
+        "- technologies: the job's core stack (normalize names), 4-8 items.\n"
+        "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3) starting with strong action verbs, "
+        "each embedding JD keywords and plausible architecture.\n"
+        + _LARP_METRIC_RULES + _BULLET_STYLE_RULES +
+        "- Keep it believable as a personal project; no employer claims, no awards.\n"
+        "- No prose outside the structured output."
+    )
+    user = "INPUT: Job Analysis\n{job_analysis}\n\nInvent the single most job-aligned project for this role."
+    return system, user
+
+
 async def experience_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -919,44 +1088,16 @@ async def experience_node(
             f"\n--- Entry {i} ---\n"
             f"Role: {exp['role']}\nCompany: {exp['organization']}\n"
             f"Bullet Points:\n" + "\n".join(exp.get("bullet_points") or []) + "\n"
+            + _source_metrics_line(exp.get("bullet_points"))
         )
 
     mode = _creativity_mode(state)
-    if mode == "proper":
-        truth_rule = "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence."
-        variety_rule = "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact."
-    else:
-        truth_rule = (
-            "- LARP MODE: you may embellish freely within the existing role/company. Add job-required features, tools, and "
-            "plausible metrics/scale the candidate did not state, as long as role, organization, and dates stay intact. "
-            "Never create a new employer or role, but do not be afraid to claim the job's stack."
-        )
-        variety_rule = (
-            "- Rewrite creatively so no two resumes read the same: vary verbs, structures, and which JD requirements each bullet proves. "
-            "Foreground exact JD keywords, technologies, and responsibilities in every entry."
-        )
+    default_system, default_user = experience_writer_default_prompts(mode)
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         _prompt_name("experience_writer", mode),
-        default_system=(
-            "ROLE: Senior technical resume writer.\n"
-            "TASK: Rewrite selected experience entries to prove fit for the target job while preserving truth.\n"
-            "OUTPUT CONTRACT: Return only the structured TailoredExperienceBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
-            "RULES:\n"
-            "- Preserve role, organization, dates, and location unless input is missing.\n"
-            "- Each entry must contain 2-3 bullet_points (hard limit: never more than 3), limited by available source material.\n"
-            "- Start every bullet with a strong past-tense action verb.\n"
-            f"{variety_rule}\n"
-            f"{truth_rule}\n"
-            "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks, e.g. **35%**, **FastAPI**, **400ms**.\n"
-            "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
-            "- Keep bullets concise, specific, and ATS-readable. No periods required.\n"
-            "- No prose outside the structured output."
-        ),
-        default_user=(
-            "INPUT: Job Analysis\n{job_analysis}\n\n"
-            "INPUT: Experience Entries To Rewrite\n{entries}"
-        )
+        default_system=default_system,
+        default_user=default_user,
     )
     sys_prompt += _professional_sans_policy(state, "experience")
     prompt = ChatPromptTemplate.from_messages(
@@ -1023,6 +1164,10 @@ async def experience_node(
             tailored_exps.append(copy.deepcopy(original))
 
     await log_progress(db, gen_id, "experience_writer", "Finished tailoring all experience entries.")
+    await log_progress(
+        db, gen_id, "experience_writer",
+        _density_summary([b for e in tailored_exps for b in e.get("bullet_points") or []]),
+    )
     return {"experience_draft": tailored_exps}
 
 
@@ -1051,47 +1196,16 @@ async def project_node(
             f"Description: {proj.get('description') or ''}\n"
             f"Technologies: {', '.join(proj.get('technologies') or [])}\n"
             f"Bullet Points:\n" + "\n".join(proj.get("bullet_points") or []) + "\n"
+            + _source_metrics_line(proj.get("description"), proj.get("bullet_points"))
         )
 
     mode = _creativity_mode(state)
-    if mode == "proper":
-        tech_rule = "- technologies: normalized list of technologies from input plus clearly supported technologies only."
-        depth_rule = "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported."
-        invent_rule = "- Do not invent metrics, deployments, users, awards, or technologies not supported by input."
-    else:
-        tech_rule = "- technologies: normalized list that MUST foreground the job's required stack; add missing JD technologies even if absent from input."
-        depth_rule = (
-            "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact. "
-            "Vary phrasing per job so outputs do not look templated."
-        )
-        invent_rule = (
-            "- LARP MODE: you may add plausible JD-aligned features, integrations, and metrics to the existing project "
-            "(e.g. claim the missing feature because it fits the job). Never invent a wholly new project here — "
-            "that is reserved for Super LARP slot 1 — but do not be afraid to stretch details."
-        )
+    default_system, default_user = projects_writer_default_prompts(mode)
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         _prompt_name("projects_writer", mode),
-        default_system=(
-            "ROLE: Senior technical resume writer specializing in project sections.\n"
-            "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
-            "OUTPUT CONTRACT: Return only the structured TailoredProjectBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
-            "RULES:\n"
-            "- Preserve project name unless spelling cleanup is needed.\n"
-            "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
-            "- description: one concise sentence explaining what the project does and why it matters.\n"
-            f"{tech_rule}\n"
-            "- bullet_points: 2-3 concise achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
-            f"{depth_rule}\n"
-            f"{invent_rule}\n"
-            "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
-            "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
-            "- No prose outside the structured output."
-        ),
-        default_user=(
-            "INPUT: Job Analysis\n{job_analysis}\n\n"
-            "INPUT: Project Entries To Rewrite\n{entries}"
-        )
+        default_system=default_system,
+        default_user=default_user,
     )
     sys_prompt += _professional_sans_policy(state, "project")
     prompt = ChatPromptTemplate.from_messages(
@@ -1160,33 +1274,22 @@ async def project_node(
             tailored_projs.append(copy.deepcopy(original))
 
     await log_progress(db, gen_id, "projects_writer", "Finished tailoring all project entries.")
+    await log_progress(
+        db, gen_id, "projects_writer",
+        _density_summary([b for p in tailored_projs for b in p.get("bullet_points") or []]),
+    )
     if mode == "super_larp" and tailored_projs:
         await log_progress(
             db, gen_id, "projects_writer",
             "Super LARP: replacing first project with JD-hyper-focused synthetic project...",
         )
         try:
+            synth_default_system, synth_default_user = synthetic_project_default_prompts()
             synth_sys, _ = await get_prompt_config(
                 db,
                 "synthetic_project_super_larp",
-                default_system=(
-                    "ROLE: Senior engineer inventing a single hyper-relevant portfolio project for a resume.\n"
-                    "TASK: Invent ONE project that mirrors the target job description as closely as possible.\n"
-                    "OUTPUT CONTRACT: Return only the structured TailoredProject object.\n"
-                    "RULES:\n"
-                    "- Name: realistic, specific, not a copy of the job title (e.g. 'Realtime Fraud Scoring API').\n"
-                    "- project_summary: 2-4 words, e.g. 'ML Scoring Service'.\n"
-                    "- description: one sentence on what it does and why it matters for this job.\n"
-                    "- technologies: the job's core stack (normalize names), 4-8 items.\n"
-                    "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3) starting with strong action verbs, each embedding JD keywords, "
-                    "plausible architecture, scale, and metrics. Bold numbers and key tech with **.\n"
-                    "- Keep it believable as a personal project; no employer claims, no awards.\n"
-                    "- No prose outside the structured output."
-                ),
-                default_user=(
-                    "INPUT: Job Analysis\n{job_analysis}\n\n"
-                    "Invent the single most job-aligned project for this role."
-                ),
+                default_system=synth_default_system,
+                default_user=synth_default_user,
             )
             synth_sys += _professional_sans_policy(state, "synthetic_project")
             synth_prompt = ChatPromptTemplate.from_messages(
@@ -1736,11 +1839,14 @@ async def save_artifacts_node(
 # characters over the two-line limit (a 3rd line) or short of the fill target.
 # Each round is verified with a real render; only the bullets that missed are
 # sent back, along with the measured result.
-ORPHAN_REPAIR_MAX_ROUNDS = 3
-ORPHAN_REPAIR_TIME_BUDGET_S = 150.0
-# Aim low inside the target window: overshooting discards the bullet (3 lines),
-# falling slightly short only leaves a mild orphan that the next round can fix.
-_REPAIR_AIM_FRACTION = 0.35
+ORPHAN_REPAIR_MAX_ROUNDS = 4
+ORPHAN_REPAIR_TIME_BUDGET_S = 200.0
+# Aim for the middle of the target window. An overshoot is caught by the verify-and-revert
+# step and costs one round, while aiming low made weaker models (which land ~5% under the
+# number they are given) stall just below the fill floor. Measured on gemini-3.5-flash-lite
+# over 4 runs: aim 0.35 left 1-9 short bullets per resume, aim 0.50 left 0-1, both with 0%
+# first-round overshoot.
+_REPAIR_AIM_FRACTION = 0.5
 
 
 class _VerifyUnavailable(Exception):
@@ -1770,10 +1876,14 @@ def _repair_length_window(orphan: dict[str, Any], current_text: str) -> dict[str
         cpl = orphan.get("charsPerLine")
         if not isinstance(cpl, (int, float)) or cpl <= 0:
             return None
-        lo, hi = cpl * 1.80, cpl * 1.95
+        lo, hi = cpl * REPAIR_TARGET_LINES_MIN, cpl * REPAIR_TARGET_LINES_MAX
     lo, hi = int(lo), int(hi)
     current = _visible_len(current_text)
-    if hi <= lo or current >= hi - 4:
+    if hi <= lo:
+        return None
+    if orphan.get("fix_type") == "oversize":
+        return {"min": lo, "max": hi, "aim": lo + round((hi - lo) * _REPAIR_AIM_FRACTION), "current": current}
+    if current >= hi - 4:
         return None
     aim = max(lo + round((hi - lo) * _REPAIR_AIM_FRACTION), current + 8)
     return {"min": lo, "max": hi, "aim": min(aim, hi - 2), "current": current}
@@ -1787,52 +1897,86 @@ def _repair_block(
     is_larp: bool,
     failure: dict[str, Any] | None = None,
 ) -> str:
-    min_fill = int(orphan.get("minimumLastLineFill", 75))
+    min_fill = int(orphan.get("minimumLastLineFill", round(ORPHAN_FILL_FLOOR * 100)))
     current_fill = int(orphan.get("lastLineFillPercent", 0))
     detail = (
         "plausible, job-relevant detail or embellishment" if is_larp else "truthful, job-relevant detail"
     )
     window = _repair_length_window(orphan, base_md)
-    lines = [
-        "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.",
-        f"  It currently renders on 2 lines and the final line is {current_fill}% full.",
-        f"  Add {detail} until the final rendered line is at least {min_fill}% full.",
-    ]
-    if window:
+    shorten = orphan.get("fix_type") == "oversize"
+    if shorten:
+        lines = [
+            f"  FIX: SHORTEN this bullet; it currently renders on {orphan.get('renderedLines', 3)} lines and must fit on exactly two.",
+            "  Cut filler, repeated ideas and low-value clauses first. Keep every bold metric and tool; never drop a number.",
+        ]
+    else:
+        lines = [
+            "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.",
+            f"  It currently renders on 2 lines and the final line is {current_fill}% full.",
+            f"  Add {detail} until the final rendered line is at least {min_fill}% full.",
+        ]
+    if window and shorten:
         lines.append(
             f"  LENGTH TARGET: the replacement must be between {window['min']} and {window['max']} visible "
             f"characters (not counting ** markers); aim for about {window['aim']}. The original is "
-            f"{window['current']} characters, so add roughly {window['aim'] - window['current']}. "
+            f"{window['current']} characters, so remove roughly {max(window['current'] - window['aim'], 0)}. "
+            f"Going over {window['max']} wraps onto another line, which is a failure; under {window['min']} leaves an orphan. "
+            "Count carefully."
+        )
+    elif window:
+        lines.append(
+            f"  LENGTH TARGET: the replacement must be between {window['min']} and {window['max']} visible "
+            f"characters (not counting ** markers); aim for about {window['aim']}. The original is "
+            f"{window['current']} characters, so keep its wording and add roughly {window['aim'] - window['current']} "
+            f"characters (a short clause); do not rewrite it shorter. "
             f"Going over {window['max']} wraps onto a 3rd line, which is a failure and discards the bullet; "
             f"falling under {window['min']} leaves an orphan. Count carefully."
         )
+    elif shorten:
+        lines.append("  Rewrite it so it renders on exactly two lines.")
     else:
         lines.append(
             "  The renderer will measure the result, so do not estimate character counts or line length."
         )
     if failure:
         kind = failure.get("kind")
-        limit = f" The limit is {window['max']}; write about {window['aim']}." if window else ""
+        chars = failure.get("chars", 0)
         if kind == "long":
+            cut = f" Cut about {max(chars - window['aim'], 1)} characters (target about {window['aim']}, limit {window['max']})." if window else ""
             lines.append(
-                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {failure['chars']} characters "
-                f"and rendered on {failure['lines']} lines.{limit} Make it shorter than that attempt."
+                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {chars} characters "
+                f"and rendered on {failure['lines']} lines.{cut} Make it shorter than that attempt."
             )
         elif kind == "overflow":
+            cut = f" Cut about {max(chars - window['aim'], 1)} characters (target about {window['aim']}, limit {window['max']})." if window else ""
             lines.append(
-                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {failure['chars']} characters "
-                f"and pushed the resume past its page limit.{limit} Make it shorter than that attempt."
+                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {chars} characters "
+                f"and pushed the resume past its page limit.{cut} Make it shorter than that attempt."
             )
         elif kind == "short":
+            if window and chars < window["current"]:
+                fix = (
+                    f" It was SHORTER than the original ({window['current']} characters). Never shorten: keep the original "
+                    f"wording and add about {max(window['aim'] - window['current'], 1)} characters."
+                )
+            elif window:
+                fix = f" Add about {max(window['aim'] - chars, 1)} more characters (target about {window['aim']})."
+            else:
+                fix = " Make it longer than that attempt."
             lines.append(
-                f"  PREVIOUS ATTEMPT FAILED (too short): \"{failure['text']}\" was {failure['chars']} characters "
-                f"and left the last line only {failure['fill']}% full (needed {min_fill}%). "
-                "Make it longer than that attempt, but stay inside the length target."
+                f"  PREVIOUS ATTEMPT FAILED (too short): \"{failure['text']}\" was {chars} characters "
+                f"and left the last line only {failure['fill']}% full (needed {min_fill}%).{fix}"
             )
         elif kind == "unchanged":
             lines.append("  PREVIOUS ROUND: you returned this bullet unchanged. Expand it.")
         elif kind == "missing":
             lines.append("  PREVIOUS ROUND: this bullet was missing from your response. Return it.")
+    if is_larp and not shorten:
+        metrics, _ = bullet_density(base_md)
+        if metrics < 2:
+            lines.append(
+                f"  This bullet has {metrics} bold metric(s): the added words must include a new bold metric."
+            )
     return f"Bullet {prompt_index}:\n  {context}\n  Original: \"{base_md}\"\n" + "\n".join(lines)
 
 
@@ -1967,8 +2111,7 @@ def orphan_repair_default_prompts(is_larp: bool) -> tuple[str, str]:
             "QUALITY BAR: Embellish creatively to fit layout constraints while preserving role, company, and JD alignment."
         )
         truth_rule = (
-            "- LARP MODE: you may embellish freely with plausible JD-aligned technical detail, tools, and metrics to fill the line; never shorten or compress a bullet.\n"
-            "- Expand by adding plausible features, stack tools, or scale that prove the job requirements, without creating new employers or roles."
+            "- LARP MODE: you may embellish freely with plausible JD-aligned metrics, tools, and scale; never new employers or roles; never shorten a bullet marked EXPAND."
         )
     else:
         default_system = (
@@ -1978,7 +2121,7 @@ def orphan_repair_default_prompts(is_larp: bool) -> tuple[str, str]:
             "QUALITY BAR: Preserve meaning and truth while meeting layout constraints."
         )
         truth_rule = (
-            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet.\n"
+            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet marked EXPAND.\n"
             "- Keep the core meaning and factual claims of the original; do not invent unsupported metrics or facts."
         )
 
@@ -1997,9 +2140,10 @@ def orphan_repair_default_prompts(is_larp: bool) -> tuple[str, str]:
         "- Return one replacement for every Bullet listed below, using same index values.\n"
         "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
         "- Start every bullet with a strong action verb.\n"
-        "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
+        "- Keep every bold metric and tool already in the bullet. Bold each new number with its unit and each tool name.\n"
+        "- A bullet marked SHORTEN loses filler and repeated ideas, never a metric or a tool.\n"
+        "- Fill with substance (a metric, a tool, a scale), never filler such as seamlessly, robust, reliably, comprehensive, today, in practice.\n"
         f"{truth_rule}\n"
-        "- The renderer verifies every replacement, so respect the length target rather than guessing.\n"
         "- No emojis, no trailing explanations, no omitted bullets.\n\n"
         "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
         "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
@@ -2127,11 +2271,6 @@ async def orphan_repair_node(
         section_key, item_idx, bullet_idx, original_md = match
         hkey = history_key(section_key, item_idx, bullet_idx)
 
-        # Oversize bullets are only actionable when they correspond to a
-        # previous repair; otherwise leave them to page-fit/content reduction.
-        if orphan.get("fix_type") == "oversize" and hkey not in repair_history:
-            continue
-
         # ── Rollback check: if this bullet was repaired before and is now >2 lines,
         #    revert to the pre-repair original instead of trying again.
         if hkey in repair_history and orphan.get("renderedLines", 0) > 2:
@@ -2161,7 +2300,7 @@ async def orphan_repair_node(
         else:
             context = "Extracurricular activity"
 
-        if orphan.get("fix_type") != "expand":
+        if orphan.get("fix_type") not in ("expand", "oversize"):
             continue
 
         mapping.append({
@@ -2337,11 +2476,15 @@ async def orphan_repair_node(
         try:
             pages, found = _render_for_verification(state, experiences, projects, extracurriculars_draft)
 
-            grown = [
-                e for e in applied
-                if (m := _match_orphan(e, found, _entry_text(experiences, projects, extracurriculars_draft, e)))
-                and m.get("renderedLines", 0) > 2
-            ]
+            def _still_too_long(entry: dict[str, Any]) -> bool:
+                m = _match_orphan(entry, found, _entry_text(experiences, projects, extracurriculars_draft, entry))
+                if not m or m.get("renderedLines", 0) <= 2:
+                    return False
+                # A shortened bullet that lost lines is progress even if still over two.
+                before = entry["orphan"].get("renderedLines", 2) if entry["orphan"].get("fix_type") == "oversize" else 2
+                return m["renderedLines"] >= before
+
+            grown = [e for e in applied if _still_too_long(e)]
             if grown:
                 for e in grown:
                     outcomes[e["history_key"]] = "long"
@@ -2379,6 +2522,9 @@ async def orphan_repair_node(
                     )
                     if still is None:
                         outcomes[e["history_key"]] = "ok"
+                    elif still.get("fix_type") == "oversize":
+                        outcomes[e["history_key"]] = "short"
+                        e["next_orphan"] = still
                     elif still.get("lastLineFillPercent", 0) <= e["orphan"].get("lastLineFillPercent", 0):
                         # Still an orphan and no fuller than before: not an improvement.
                         outcomes[e["history_key"]] = "worse"
