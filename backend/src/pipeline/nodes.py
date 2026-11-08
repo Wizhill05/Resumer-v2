@@ -1730,6 +1730,214 @@ async def save_artifacts_node(
     }
 
 
+# ── Orphan repair helpers ─────────────────────────────────────────────────────
+
+# The model cannot see rendered line widths, so a single pass often lands a few
+# characters over the two-line limit (a 3rd line) or short of the fill target.
+# Each round is verified with a real render; only the bullets that missed are
+# sent back, along with the measured result.
+ORPHAN_REPAIR_MAX_ROUNDS = 3
+ORPHAN_REPAIR_TIME_BUDGET_S = 150.0
+# Aim low inside the target window: overshooting discards the bullet (3 lines),
+# falling slightly short only leaves a mild orphan that the next round can fix.
+_REPAIR_AIM_FRACTION = 0.35
+
+
+class _VerifyUnavailable(Exception):
+    """The verification render cannot run (missing template/profile or empty HTML)."""
+
+
+def _clean_bullet_text(s: str) -> str:
+    s = re.sub(r"[*_`]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _visible_len(text: str) -> int:
+    return len(text.replace("**", ""))
+
+
+_SECTION_ALIASES = {
+    "experience": "experience", "experiences": "experience",
+    "project": "projects", "projects": "projects",
+    "extracurricular": "extracurriculars", "extracurriculars": "extracurriculars",
+}
+
+
+def _repair_length_window(orphan: dict[str, Any], current_text: str) -> dict[str, int] | None:
+    """Visible-character window that renders as a well-filled 2-line bullet."""
+    lo, hi = orphan.get("targetCharsMin"), orphan.get("targetCharsMax")
+    if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+        cpl = orphan.get("charsPerLine")
+        if not isinstance(cpl, (int, float)) or cpl <= 0:
+            return None
+        lo, hi = cpl * 1.80, cpl * 1.95
+    lo, hi = int(lo), int(hi)
+    current = _visible_len(current_text)
+    if hi <= lo or current >= hi - 4:
+        return None
+    aim = max(lo + round((hi - lo) * _REPAIR_AIM_FRACTION), current + 8)
+    return {"min": lo, "max": hi, "aim": min(aim, hi - 2), "current": current}
+
+
+def _repair_block(
+    prompt_index: int,
+    context: str,
+    base_md: str,
+    orphan: dict[str, Any],
+    is_larp: bool,
+    failure: dict[str, Any] | None = None,
+) -> str:
+    min_fill = int(orphan.get("minimumLastLineFill", 75))
+    current_fill = int(orphan.get("lastLineFillPercent", 0))
+    detail = (
+        "plausible, job-relevant detail or embellishment" if is_larp else "truthful, job-relevant detail"
+    )
+    window = _repair_length_window(orphan, base_md)
+    lines = [
+        "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.",
+        f"  It currently renders on 2 lines and the final line is {current_fill}% full.",
+        f"  Add {detail} until the final rendered line is at least {min_fill}% full.",
+    ]
+    if window:
+        lines.append(
+            f"  LENGTH TARGET: the replacement must be between {window['min']} and {window['max']} visible "
+            f"characters (not counting ** markers); aim for about {window['aim']}. The original is "
+            f"{window['current']} characters, so add roughly {window['aim'] - window['current']}. "
+            f"Going over {window['max']} wraps onto a 3rd line, which is a failure and discards the bullet; "
+            f"falling under {window['min']} leaves an orphan. Count carefully."
+        )
+    else:
+        lines.append(
+            "  The renderer will measure the result, so do not estimate character counts or line length."
+        )
+    if failure:
+        kind = failure.get("kind")
+        limit = f" The limit is {window['max']}; write about {window['aim']}." if window else ""
+        if kind == "long":
+            lines.append(
+                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {failure['chars']} characters "
+                f"and rendered on {failure['lines']} lines.{limit} Make it shorter than that attempt."
+            )
+        elif kind == "overflow":
+            lines.append(
+                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {failure['chars']} characters "
+                f"and pushed the resume past its page limit.{limit} Make it shorter than that attempt."
+            )
+        elif kind == "missing":
+            lines.append("  PREVIOUS ROUND: this bullet was missing from your response. Return it.")
+    return f"Bullet {prompt_index}:\n  {context}\n  Original: \"{base_md}\"\n" + "\n".join(lines)
+
+
+def _entry_text(experiences: list, projects: list, extracurriculars: list, entry: dict[str, Any]) -> str:
+    section, item, bullet = entry["section_key"], entry["item_idx"], entry["bullet_idx"]
+    if section == "experience":
+        return experiences[item]["bullet_points"][bullet]
+    if section == "projects":
+        return projects[item]["bullet_points"][bullet]
+    return extracurriculars[item]["description"]
+
+
+def _set_entry_text(
+    experiences: list, projects: list, extracurriculars: list, entry: dict[str, Any], text: str
+) -> None:
+    section, item, bullet = entry["section_key"], entry["item_idx"], entry["bullet_idx"]
+    if section == "experience":
+        experiences[item]["bullet_points"][bullet] = text
+    elif section == "projects":
+        projects[item]["bullet_points"][bullet] = text
+    else:
+        extracurriculars[item]["description"] = text
+
+
+def _match_orphan(entry: dict[str, Any], orphans: list[dict[str, Any]], current_text: str) -> dict[str, Any] | None:
+    """Find the detector finding for a repaired bullet: stable identity first, then text."""
+    clean = _clean_bullet_text(current_text)
+    for found in orphans:
+        if (
+            found.get("section") is not None
+            and found.get("entry_idx") is not None
+            and found.get("bullet_idx") is not None
+        ):
+            if (
+                _SECTION_ALIASES.get(found["section"]) == entry["section_key"]
+                and found["entry_idx"] == entry["item_idx"]
+                and found["bullet_idx"] == entry["bullet_idx"]
+            ):
+                return found
+        elif _clean_bullet_text(found.get("text", "")) == clean:
+            return found
+    return None
+
+
+def _parse_repair_response(raw_text: str) -> dict[int, str]:
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+    if fenced:
+        json_text = fenced.group(1).strip()
+    else:
+        start, end = raw_text.find("{"), raw_text.rfind("}")
+        json_text = raw_text[start:end + 1] if start != -1 and end != -1 else raw_text
+    bullets = json.loads(json_text).get("bullets", [])
+    replacements: dict[int, str] = {}
+    for item in bullets:
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index"))
+        except (TypeError, ValueError):
+            continue
+        text = item.get("replacement")
+        if isinstance(text, str) and text.strip():
+            replacements[index] = text.strip()
+    if bullets and not replacements:
+        raise ValueError("response used an incompatible schema; expected a non-empty 'replacement' per bullet")
+    return replacements
+
+
+def _render_for_verification(
+    state: ResumeGraphState, experiences: list, projects: list, extracurriculars: list
+) -> tuple[int, list[dict[str, Any]]]:
+    """Render the candidate at the current font size; return (page_count, orphans)."""
+    manifest = state.get("template_manifest") or {}
+    profile = state.get("profile") or {}
+    template_id = manifest.get("id") or state.get("template_id")
+    if not (template_id and profile):
+        raise _VerifyUnavailable("missing template or profile")
+
+    from weasyprint import HTML as _VerifyHTML  # type: ignore[import-untyped]
+
+    base_resume = dict(state.get("tailored_resume") or {})
+    if not base_resume:
+        summary_draft = state.get("summary_draft") or {}
+        base_resume = {
+            "summary": summary_draft.get("summary"),
+            "skills": summary_draft.get("skills"),
+            "education": state.get("education") or [],
+        }
+    candidate = dict(base_resume)
+    candidate["experiences"] = experiences
+    candidate["projects"] = projects
+    candidate["extracurriculars"] = extracurriculars
+
+    html = TemplateRegistryService.render_template(
+        template_id,
+        {
+            "profile": profile,
+            "resume": candidate,
+            "font_size": state.get("font_size") or manifest.get("max_font_size", 10.0),
+            "page_margin_mm": manifest.get("page_margin_mm", 15),
+            "section_order": state.get("section_order"),
+        },
+    )
+    if not html:
+        raise _VerifyUnavailable("verification render is empty")
+    doc = _VerifyHTML(string=html, base_url=str(settings.TEMPLATES_DIR / template_id)).render()
+    try:
+        return len(doc.pages), detect_orphans_in_weasyprint(doc)
+    finally:
+        del doc
+        gc.collect()
+
+
 async def orphan_repair_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -1752,14 +1960,11 @@ async def orphan_repair_node(
     # Keys: "section:item_idx:bullet_idx" → original text before first repair.
     repair_history = dict(state.get("repair_history") or {})
 
-    def clean_text(s: str) -> str:
-        s = re.sub(r"[*_`]", "", s)
-        return re.sub(r"\s+", " ", s).strip()
+    clean_text = _clean_bullet_text
 
     def history_key(section, item_idx, bullet_idx):
         return f"{section}:{item_idx}:{bullet_idx}"
 
-    bullet_blocks = []
     mapping = []
     reverted = 0
 
@@ -1889,32 +2094,6 @@ async def orphan_repair_node(
         if orphan.get("fix_type") != "expand":
             continue
 
-        min_fill = int(orphan.get("minimumLastLineFill", 75))
-        current_fill = int(orphan.get("lastLineFillPercent", 0))
-        mode = _creativity_mode(state)
-        is_larp = mode in ("larp", "super_larp")
-        if is_larp:
-            instruction = (
-                "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
-                f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
-                f"  Add plausible, job-relevant detail or embellishment until the final rendered line is at least {min_fill}% full.\n"
-                "  The renderer will measure the result, so do not estimate character counts or line length."
-            )
-        else:
-            instruction = (
-                "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
-                f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
-                f"  Add truthful, job-relevant detail until the final rendered line is at least {min_fill}% full.\n"
-                "  The renderer will measure the result, so do not estimate character counts or line length."
-            )
-
-        block = (
-            f"Bullet {idx}:\n"
-            f"  {context}\n"
-            f"  Original: \"{original_md}\"\n"
-            f"{instruction}"
-        )
-        bullet_blocks.append(block)
         mapping.append({
             "prompt_index": idx,
             "section_key": section_key,
@@ -1922,6 +2101,8 @@ async def orphan_repair_node(
             "bullet_idx": bullet_idx,
             "original_md": original_md,
             "history_key": hkey,
+            "context": context,
+            "orphan": orphan,
         })
 
     if reverted:
@@ -1930,7 +2111,7 @@ async def orphan_repair_node(
             f"Reverted {reverted} bullet(s) to pre-repair originals due to >2 line regression.",
         )
 
-    if not bullet_blocks:
+    if not mapping:
         return {
             "experience_draft": experiences,
             "projects_draft": projects,
@@ -1944,11 +2125,6 @@ async def orphan_repair_node(
         kw_text = ", ".join(state["keywords"][:8]) if state["keywords"] else "N/A"
     except Exception:
         kw_text = "N/A"
-
-    pre_repair_experiences = copy.deepcopy(experiences)
-    pre_repair_projects = copy.deepcopy(projects)
-    pre_repair_extracurriculars = copy.deepcopy(extracurriculars_draft)
-    pre_repair_history = copy.deepcopy(repair_history)
 
     mode = _creativity_mode(state)
     is_larp = mode in ("larp", "super_larp")
@@ -1986,14 +2162,15 @@ async def orphan_repair_node(
         "  ]\n"
         "}\n\n"
         "INPUT: Rendering Context\n"
-        "Font: Proportional font. Each bullet has exact visible-character target range.\n\n"
+        "Font: Proportional font. Each bullet has an exact visible-character target range.\n\n"
         "RULES:\n"
         "- Return one replacement for every Bullet listed below, using same index values.\n"
         "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
+        "- Stay inside each bullet's LENGTH TARGET range; going over it wraps onto a 3rd line and the bullet is discarded.\n"
         "- Start every bullet with a strong action verb.\n"
         "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
         f"{truth_rule}\n"
-        "- The renderer, not character count, determines whether the replacement fits.\n"
+        "- The renderer verifies every replacement, so respect the length target rather than guessing.\n"
         "- No emojis, no trailing explanations, no omitted bullets.\n\n"
         "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
         "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
@@ -2008,306 +2185,220 @@ async def orphan_repair_node(
     )
     sys_prompt += _professional_sans_policy(state, "orphan_repair")
 
-    formatted_usr_prompt = _replace_prompt_vars(
-        usr_prompt,
-        {
-            "kw_text": kw_text,
-            "bullet_blocks": "\n\n".join(bullet_blocks),
-        },
-    )
+    target_pages = (state.get("template_manifest") or {}).get("target_pages", 1)
+    pre_repair_pages = state.get("page_count", 1)
 
-    raw_response = ""
-    try:
-        from langchain_core.messages import SystemMessage, HumanMessage
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=formatted_usr_prompt)
-        ]
-        # invoke_with_fallback expects a chain_factory; for raw message invoke, wrap accordingly.
-        resp = await invoke_with_fallback(
-            lambda llm, p: llm,
-            messages,
-            timeout=40.0,
-            node_name="orphan_repair",
-            gen_id=gen_id,
-            is_pro=state.get("is_pro", False),
-        )
-        content = resp.content
-        if isinstance(content, list):
-            text_parts = []
-            for part in content:
-                if isinstance(part, str):
-                    text_parts.append(part)
-                elif isinstance(part, dict) and part.get("type") == "text":
-                    text_parts.append(part.get("text", ""))
-            raw_response = "".join(text_parts).strip()
-        else:
-            raw_response = str(content).strip()
-    except Exception as e:
-        await log_progress(
-            db,
-            gen_id,
-            "orphan_repair",
-            f"Error calling LLM for orphan repair: {e}",
-            "error",
-        )
-        return {
-            "orphans": None,
-            "repair_attempts": state.get("repair_attempts", 0) + 1,
-            "repair_history": repair_history,
-        }
+    pending = [dict(entry, base_md=entry["original_md"], failure=None) for entry in mapping]
+    fixed_keys: set[str] = set()   # bullets that now render as a well-filled 2-line bullet
+    kept_keys: set[str] = set()    # bullets whose repaired text is retained (fixed or improved)
+    rounds_run = 0
+    started = time.monotonic()
 
-    def extract_json(raw_text):
-        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
-        if fenced:
-            return fenced.group(1).strip()
-        start = raw_text.find("{")
-        end = raw_text.rfind("}")
-        if start != -1 and end != -1:
-            return raw_text[start:end+1]
-        return raw_text
-
-    applied = 0
-    applied_entries: list[dict[str, Any]] = []
-    try:
-        json_text = extract_json(raw_response)
-        result = json.loads(json_text)
-        replacements = result.get("bullets", [])
-        if replacements and not any(
-            isinstance(item, dict) and item.get("replacement")
-            for item in replacements
-        ):
+    for round_no in range(1, ORPHAN_REPAIR_MAX_ROUNDS + 1):
+        if not pending:
+            break
+        if round_no > 1 and time.monotonic() - started > ORPHAN_REPAIR_TIME_BUDGET_S:
             await log_progress(
-                db,
-                gen_id,
-                "orphan_repair",
-                "Repair response used an incompatible schema; expected a non-empty 'replacement' for each bullet.",
+                db, gen_id, "orphan_repair",
+                f"Repair time budget reached; leaving {len(pending)} bullet(s) as they are.",
                 "warning",
             )
+            break
+        rounds_run = round_no
+        if round_no > 1:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                f"Round {round_no}/{ORPHAN_REPAIR_MAX_ROUNDS}: re-asking for {len(pending)} bullet(s) with measured feedback...",
+            )
 
-        for repl in replacements:
-            idx = repl.get("index")
-            new_text = repl.get("replacement", "").strip()
-            if not idx or not new_text:
-                continue
-            entry = next((m for m in mapping if m["prompt_index"] == idx), None)
-            if entry is None:
-                continue
-
-            section_key = entry["section_key"]
-            item_idx = entry["item_idx"]
-            bullet_idx = entry["bullet_idx"]
-            hkey = entry["history_key"]
-
-            # Save original to repair_history BEFORE overwriting (only first time).
-            if hkey not in repair_history:
-                repair_history[hkey] = entry["original_md"]
-
-            if section_key == "experience":
-                experiences[item_idx]["bullet_points"][bullet_idx] = new_text
-            elif section_key == "projects":
-                projects[item_idx]["bullet_points"][bullet_idx] = new_text
-            elif section_key == "extracurriculars":
-                extracurriculars_draft[item_idx]["description"] = new_text
-
-            applied += 1
-            applied_entries.append(entry)
-
-        await log_progress(
-            db,
-            gen_id,
-            "orphan_repair",
-            f"Successfully repaired and applied {applied}/{len(mapping)} bullet point(s).",
+        for number, entry in enumerate(pending, start=1):
+            entry["prompt_index"] = number
+        bullet_blocks = [
+            _repair_block(e["prompt_index"], e["context"], e["base_md"], e["orphan"], is_larp, e["failure"])
+            for e in pending
+        ]
+        formatted_usr_prompt = _replace_prompt_vars(
+            usr_prompt,
+            {"kw_text": kw_text, "bullet_blocks": "\n\n".join(bullet_blocks)},
         )
-    except Exception as e:
-        await log_progress(
-            db,
-            gen_id,
-            "orphan_repair",
-            f"Error parsing LLM repair response: {e}. Raw response:\n{raw_response}",
-            "error",
-        )
-        experiences = pre_repair_experiences
-        projects = pre_repair_projects
-        extracurriculars_draft = pre_repair_extracurriculars
-        repair_history = pre_repair_history
-        applied_entries = []
 
-    # ── Fallback verification: never let an expansion grow lines or break page fit ──
-    # The expand repair adds text, so it can overshoot (2 lines → 3) or push a tight
-    # 1-page resume to 2 pages. The graph routes overflow → content_reduction (not
-    # back to repair), so a bad expansion would otherwise never be reverted — the
-    # next render diverts to point deletion while the over-long expansion stays.
-    # Verify locally with WeasyPrint and fall back to the pre-repair original:
-    #   1. Page-overflow guard: if verification overflows but pre-repair fit, revert all.
-    #   2. Per-bullet guard: if a repaired bullet grew to 3+ lines, revert just it.
-    if applied_entries:
+        raw_response = ""
         try:
-            _manifest = state.get("template_manifest") or {}
-            _profile = state.get("profile") or {}
-            _template_id = _manifest.get("id") or state.get("template_id")
-            if not (_template_id and _profile):
+            from langchain_core.messages import SystemMessage, HumanMessage
+            resp = await invoke_with_fallback(
+                lambda llm, p: llm,
+                [SystemMessage(content=sys_prompt), HumanMessage(content=formatted_usr_prompt)],
+                node_name="orphan_repair",
+                gen_id=gen_id,
+                is_pro=state.get("is_pro", False),
+            )
+            content = resp.content
+            if isinstance(content, list):
+                raw_response = "".join(
+                    part if isinstance(part, str) else part.get("text", "")
+                    for part in content
+                    if isinstance(part, str) or (isinstance(part, dict) and part.get("type") == "text")
+                ).strip()
+            else:
+                raw_response = str(content).strip()
+        except Exception as e:
+            await log_progress(
+                db, gen_id, "orphan_repair", f"Error calling LLM for orphan repair: {e}", "error",
+            )
+            if round_no == 1:
+                return {
+                    "orphans": None,
+                    "repair_attempts": state.get("repair_attempts", 0) + 1,
+                    "repair_history": repair_history,
+                }
+            break
+
+        try:
+            replacements = _parse_repair_response(raw_response)
+        except Exception as e:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                f"Error parsing LLM repair response: {e}. Raw response:\n{raw_response}",
+                "error",
+            )
+            continue
+
+        round_snapshot = (
+            copy.deepcopy(experiences),
+            copy.deepcopy(projects),
+            copy.deepcopy(extracurriculars_draft),
+            copy.deepcopy(repair_history),
+        )
+
+        def _revert_entries(entries: list[dict[str, Any]]) -> None:
+            for item in entries:
+                _set_entry_text(experiences, projects, extracurriculars_draft, item, item["base_md"])
+                if item["added_history"]:
+                    repair_history.pop(item["history_key"], None)
+
+        applied: list[dict[str, Any]] = []
+        for entry in pending:
+            new_text = replacements.get(entry["prompt_index"])
+            if not new_text:
+                entry["failure"] = {"kind": "missing"}
+                continue
+            if new_text == entry["base_md"].strip():
+                continue  # unchanged: nothing to verify, and asking again repeats the same answer
+            entry["added_history"] = entry["history_key"] not in repair_history
+            if entry["added_history"]:
+                repair_history[entry["history_key"]] = entry["original_md"]
+            _set_entry_text(experiences, projects, extracurriculars_draft, entry, new_text)
+            entry["new_text"] = new_text
+            applied.append(entry)
+
+        if not applied:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                "Repair round returned no changed bullets; stopping.",
+                "warning",
+            )
+            break
+
+        # ── Verify with a real render; keep what fits, revert only what does not ──
+        outcomes: dict[str, str] = {}
+        failure_text: dict[str, str] = {}
+        try:
+            pages, found = _render_for_verification(state, experiences, projects, extracurriculars_draft)
+
+            grown = [
+                e for e in applied
+                if (m := _match_orphan(e, found, _entry_text(experiences, projects, extracurriculars_draft, e)))
+                and m.get("renderedLines", 0) > 2
+            ]
+            if grown:
+                for e in grown:
+                    outcomes[e["history_key"]] = "long"
+                    failure_text[e["history_key"]] = e["new_text"]
+                    e["failure_lines"] = (_match_orphan(
+                        e, found, e["new_text"]) or {}).get("renderedLines", 3)
+                _revert_entries(grown)
                 await log_progress(
-                    db,
-                    gen_id,
-                    "orphan_repair",
-                    "Verification cannot be performed (missing template or profile); rolling back repairs to pre-repair originals.",
+                    db, gen_id, "orphan_repair",
+                    f"Verification: {len(grown)} repaired bullet(s) grew to 3+ lines after filling. "
+                    "Reverted to pre-repair originals.",
                     "warning",
                 )
-                experiences = pre_repair_experiences
-                projects = pre_repair_projects
-                extracurriculars_draft = pre_repair_extracurriculars
-                repair_history = pre_repair_history
-                applied = 0
-            else:
-                from weasyprint import HTML as _VerifyHTML  # type: ignore[import-untyped]
+                # Re-measure without the overshooting bullets before judging page fit.
+                pages, found = _render_for_verification(state, experiences, projects, extracurriculars_draft)
 
-                _target_pages = _manifest.get("target_pages", 1)
-                _pre_repair_pages = state.get("page_count", 1)
-                _verify_fs = state.get("font_size") or _manifest.get("max_font_size", 10.0)
-                _margin = _manifest.get("page_margin_mm", 15)
-
-                _base_resume = dict(state.get("tailored_resume") or {})
-                if not _base_resume:
-                    _summary_draft = state.get("summary_draft") or {}
-                    _base_resume = {
-                        "summary": _summary_draft.get("summary"),
-                        "skills": _summary_draft.get("skills"),
-                        "education": state.get("education") or [],
-                    }
-                _candidate = dict(_base_resume)
-                _candidate["experiences"] = experiences
-                _candidate["projects"] = projects
-                _candidate["extracurriculars"] = extracurriculars_draft
-
-                _html = TemplateRegistryService.render_template(
-                    _template_id,
-                    {
-                        "profile": _profile,
-                        "resume": _candidate,
-                        "font_size": _verify_fs,
-                        "page_margin_mm": _margin,
-                        "section_order": state.get("section_order"),
-                    },
+            if pages > target_pages and pre_repair_pages <= target_pages:
+                survivors = [e for e in applied if e["history_key"] not in outcomes]
+                for e in survivors:
+                    outcomes[e["history_key"]] = "overflow"
+                    failure_text[e["history_key"]] = e["new_text"]
+                _revert_entries(survivors)
+                await log_progress(
+                    db, gen_id, "orphan_repair",
+                    f"Verification: expansion pushed resume to {pages} page(s) (target {target_pages}). "
+                    f"Reverted {len(survivors)} repair(s) to pre-repair originals to preserve page fit.",
+                    "warning",
                 )
-                _verify_doc = None
-                if _html:
-                    _font_base = str(settings.TEMPLATES_DIR / _template_id)
-                    _verify_doc = _VerifyHTML(string=_html, base_url=_font_base).render()
-
-                if _verify_doc is None:
-                    await log_progress(
-                        db,
-                        gen_id,
-                        "orphan_repair",
-                        "Verification render is None; rolling back repairs to pre-repair originals.",
-                        "warning",
+            else:
+                for e in applied:
+                    if e["history_key"] in outcomes:
+                        continue
+                    still = _match_orphan(
+                        e, found, _entry_text(experiences, projects, extracurriculars_draft, e)
                     )
-                    experiences = pre_repair_experiences
-                    projects = pre_repair_projects
-                    extracurriculars_draft = pre_repair_extracurriculars
-                    repair_history = pre_repair_history
-                    applied = 0
-                else:
-                    _new_pages = len(_verify_doc.pages)
-                    _new_orphans = detect_orphans_in_weasyprint(_verify_doc)
-
-                    def _current_text(_entry: dict[str, Any]) -> str:
-                        _sk = _entry["section_key"]
-                        _ii = _entry["item_idx"]
-                        _bi = _entry["bullet_idx"]
-                        if _sk == "experience":
-                            return experiences[_ii]["bullet_points"][_bi]
-                        if _sk == "projects":
-                            return projects[_ii]["bullet_points"][_bi]
-                        return extracurriculars_draft[_ii]["description"]
-
-                    def _revert(_entry: dict[str, Any]) -> None:
-                        _sk = _entry["section_key"]
-                        _ii = _entry["item_idx"]
-                        _bi = _entry["bullet_idx"]
-                        _hk = _entry["history_key"]
-                        _orig = _entry["original_md"]
-                        if _sk == "experience":
-                            experiences[_ii]["bullet_points"][_bi] = _orig
-                        elif _sk == "projects":
-                            projects[_ii]["bullet_points"][_bi] = _orig
-                        else:
-                            extracurriculars_draft[_ii]["description"] = _orig
-                        repair_history.pop(_hk, None)
-
-                    # Guard 1: expansion broke page fit — revert everything.
-                    if _new_pages > _target_pages and _pre_repair_pages <= _target_pages:
-                        experiences = pre_repair_experiences
-                        projects = pre_repair_projects
-                        extracurriculars_draft = pre_repair_extracurriculars
-                        repair_history = pre_repair_history
-                        applied = 0
-                        await log_progress(
-                            db,
-                            gen_id,
-                            "orphan_repair",
-                            f"Verification: expansion pushed resume to {_new_pages} page(s) "
-                            f"(target {_target_pages}). Reverted {len(applied_entries)} "
-                            "repair(s) to pre-repair originals to preserve 1-page fit.",
-                            "warning",
-                        )
+                    if still is None:
+                        outcomes[e["history_key"]] = "ok"
                     else:
-                        # Guard 2: per-bullet line growth — revert only grown bullets.
-                        def _is_entry_oversize(entry):
-                            sec = entry["section_key"]
-                            item_idx = entry["item_idx"]
-                            bullet_idx = entry["bullet_idx"]
-                            txt = clean_text(_current_text(entry))
-                            for _o in _new_orphans:
-                                if _o.get("renderedLines", 0) > 2:
-                                    if (
-                                        _o.get("section") is not None
-                                        and _o.get("entry_idx") is not None
-                                        and _o.get("bullet_idx") is not None
-                                    ):
-                                        o_sec = _o["section"]
-                                        matched_sec = (
-                                            (sec == "experience" and o_sec in ("experience", "experiences"))
-                                            or (sec == "projects" and o_sec in ("project", "projects"))
-                                            or (sec == "extracurriculars" and o_sec in ("extracurricular", "extracurriculars"))
-                                        )
-                                        if matched_sec and _o["entry_idx"] == item_idx and _o["bullet_idx"] == bullet_idx:
-                                            return True
-                                    elif clean_text(_o.get("text", "")) == txt:
-                                        return True
-                            return False
-
-                        _grown_reverts = 0
-                        for _entry in applied_entries:
-                            if _is_entry_oversize(_entry):
-                                _revert(_entry)
-                                _grown_reverts += 1
-                        if _grown_reverts:
-                            applied -= _grown_reverts
-                            await log_progress(
-                                db,
-                                gen_id,
-                                "orphan_repair",
-                                f"Verification: {_grown_reverts} repaired bullet(s) grew to 3+ "
-                                "lines after filling. Reverted to pre-repair originals.",
-                                "warning",
-                            )
-                    del _verify_doc
-                    gc.collect()
+                        outcomes[e["history_key"]] = "short"
+                        e["next_orphan"] = still
+        except _VerifyUnavailable as ve:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                f"Verification cannot be performed ({ve}); rolling back repairs to pre-repair originals.",
+                "warning",
+            )
+            experiences, projects, extracurriculars_draft, repair_history = round_snapshot
+            break
         except Exception as ve:
             await log_progress(
-                db,
-                gen_id,
-                "orphan_repair",
+                db, gen_id, "orphan_repair",
                 f"Verification error ({ve}); rolling back repairs to pre-repair originals.",
                 "warning",
             )
-            experiences = pre_repair_experiences
-            projects = pre_repair_projects
-            extracurriculars_draft = pre_repair_extracurriculars
-            repair_history = pre_repair_history
-            applied = 0
+            experiences, projects, extracurriculars_draft, repair_history = round_snapshot
+            break
+
+        next_pending: list[dict[str, Any]] = []
+        for entry in pending:
+            key = entry["history_key"]
+            outcome = outcomes.get(key)
+            if outcome == "ok":
+                fixed_keys.add(key)
+                kept_keys.add(key)
+                continue
+            if outcome == "short":
+                # Text stays (it is closer to the target); ask again from the new text.
+                kept_keys.add(key)
+                entry["base_md"] = entry["new_text"]
+                entry["orphan"] = entry.pop("next_orphan")
+                entry["failure"] = None
+            elif outcome in ("long", "overflow"):
+                kept_keys.discard(key)
+                entry["failure"] = {
+                    "kind": "long" if outcome == "long" else "overflow",
+                    "text": failure_text[key],
+                    "chars": _visible_len(failure_text[key]),
+                    "lines": entry.get("failure_lines", 3),
+                }
+            next_pending.append(entry)
+        pending = next_pending
+
+    # Bullets that never improved keep their original text, so the next graph
+    # pass (or the rollback check above) still sees an honest repair_history.
+    await log_progress(
+        db, gen_id, "orphan_repair",
+        f"Successfully repaired and applied {len(kept_keys)}/{len(mapping)} bullet point(s); "
+        f"{len(fixed_keys)} now fill their last line, after {rounds_run} round(s).",
+    )
 
     return {
         "experience_draft": experiences,
