@@ -21,6 +21,9 @@ class ResumeGraphState(TypedDict):
     is_pro: Optional[bool]
     # Truthfulness control: "proper" | "larp" | "super_larp". Defaults to proper.
     creativity_mode: str
+    # Everything the candidate material says they can do (profile skills, every project's technologies, experience text).
+    # Captured before selection narrows projects/experiences so the skills section can draw on all of it.
+    candidate_evidence: Optional[dict]
 
     # Outputs
     job_analysis: Optional[dict]
