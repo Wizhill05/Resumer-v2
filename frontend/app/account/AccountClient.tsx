@@ -5,6 +5,7 @@ import Link from "next/link"
 import { LogOut, Copy, Check, User, Shield, LifeBuoy, Bot, ChevronRight } from "lucide-react"
 import { PageHero } from "@/components/PageHero"
 import { signOutAction } from "@/app/actions"
+import { clearResumePdfCache } from "@/lib/resume-pdf-cache"
 import { DAILY_GENERATION_CAP, useGenerationStats } from "@/components/useGenerationStats"
 import { useIsAdmin } from "@/components/useIsAdmin"
 
@@ -94,7 +95,7 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
           </span>
         }
         actions={
-          <form action={signOutAction}>
+          <form action={signOutAction} onSubmit={() => { void clearResumePdfCache() }}>
             <button
               type="submit"
               className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-line-strong bg-paper/70 px-4 text-sm font-semibold text-ink backdrop-blur-sm transition-colors hover:border-red-500/50 hover:text-red-600"

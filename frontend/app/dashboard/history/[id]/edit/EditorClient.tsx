@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Save, Download, RotateCcw, X, Loader2, Eye, Edit3 } from "lucide-react"
 import { captureDownload } from "@/lib/posthog"
+import { forgetResumePdf } from "@/lib/resume-pdf-cache"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { ResumeJsonEditor } from "@/components/editor/ResumeJsonEditor"
 import { ResumeFormEditor } from "@/components/editor/ResumeFormEditor"
@@ -116,6 +117,8 @@ export function EditorClient({ payload }: Props) {
       }
 
       const data: EditorSaveResponse = await res.json()
+      // The stored PDF was just re-rendered; drop any copy cached on this device.
+      await forgetResumePdf(payload.id).catch(() => {})
       setRevision(data.editor_revision)
       setFitFontPt(data.font_size)
       setFitPageCount(data.page_count)
@@ -160,6 +163,7 @@ export function EditorClient({ payload }: Props) {
 
       const data: ReplaceProjectResponse = await res.json()
       if (data.status === "remaking_project" || data.success) {
+        void forgetResumePdf(payload.id)
         router.push(`/dashboard/history/${payload.id}/remake`)
         return
       }
