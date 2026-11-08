@@ -7,6 +7,7 @@ import { PageHero } from "@/components/PageHero"
 import { signOutAction } from "@/app/actions"
 import { DAILY_GENERATION_CAP, useGenerationStats } from "@/components/useGenerationStats"
 import { useIsAdmin } from "@/components/useIsAdmin"
+import { GithubConnectionCard } from "@/components/github/GithubConnectionCard"
 
 interface AccountClientProps {
   name: string | null
@@ -151,6 +152,8 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
           </section>
 
           <div className="min-w-0 space-y-5">
+            <GithubConnectionCard />
+
             <section className="soft-card p-5">
               <h2 className="text-sm font-semibold text-ink-muted">Login email</h2>
               {email ? (

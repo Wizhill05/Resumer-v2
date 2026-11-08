@@ -22,6 +22,7 @@ export default function PrivacyPage() {
             <p>Guest draft details imported or typed in the trial are stored in your browser device storage. They are sent to the server only when you import résumés for parsing or generate a résumé.</p>
             <p>Guest generation inputs and artifacts may be stored temporarily so the pipeline can finish and you can download the PDF. Guest artifacts are intended to expire and are not account history.</p>
             <p>OAuth providers may share basic account details such as name, email, and avatar depending on provider settings.</p>
+            <p>Connecting GitHub stores an encrypted access token that is used only to read your repositories. If you opt in to private repos, GitHub grants full repo access, but Résumer only reads repository details and never writes. README and manifest text from imported repos, including private ones you choose to import, is sent to our AI provider to draft the project. You can disconnect GitHub or remove private repo access at any time from the Account page.</p>
             <p>You can delete generated history inside app where supported. For account or data removal requests, contact project owner/admin.</p>
             <p>This policy may change as product changes. Continued use means updated policy applies.</p>
           </div>
