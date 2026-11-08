@@ -26,21 +26,21 @@ export function PageHero({ title, subtitle, actions, back, narrow, className = "
     >
       <FluidField variant="banner" />
       <div
-        className={`relative mx-auto w-[min(100%-1.5rem,72rem)] pt-[4.25rem] pb-6 sm:pt-20 sm:pb-8 md:w-[min(100%-3rem,72rem)] md:pt-[6.5rem] md:pb-10 ${
+        className={`relative mx-auto w-[min(100%-1.5rem,72rem)] pt-[6.5rem] pb-6 sm:pt-20 sm:pb-8 md:w-[min(100%-3rem,72rem)] md:pt-[6.5rem] md:pb-10 ${
           narrow ? "max-w-4xl" : ""
         }`}
       >
         {back && (
           <Link
             href={back.href}
-            className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] dark:text-[#fff2ef]/80 dark:hover:text-[#fff2ef]"
+            className="mb-3 inline-flex px-3 sm:px-0 items-center gap-1.5 text-sm font-semibold text-[var(--fluid-ink-soft)] transition-colors hover:text-[var(--fluid-ink)] dark:text-[#fff2ef]/80 dark:hover:text-[#fff2ef]"
           >
             <ArrowLeft size={14} aria-hidden="true" />
             {back.label}
           </Link>
         )}
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between md:gap-8">
-          <div className="min-w-0">
+          <div className="min-w-0 px-3 sm:px-0">
             <h1 className="text-[1.75rem] font-bold leading-[1.05] tracking-[-0.035em] text-[var(--fluid-ink)] sm:text-4xl md:text-[2.75rem]">
               {title}
             </h1>
