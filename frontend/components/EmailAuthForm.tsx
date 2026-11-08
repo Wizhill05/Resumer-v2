@@ -1,9 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
-import { registerEmailUserAction, precheckEmailLoginAction } from "@/app/actions"
+import {
+  startEmailRegistrationAction,
+  verifyEmailRegistrationAction,
+  resendEmailCodeAction,
+  precheckEmailLoginAction,
+} from "@/app/actions"
 import { ArrowLeft, Loader2, AlertCircle } from "lucide-react"
 
 interface EmailAuthFormProps {
@@ -24,10 +29,142 @@ export function EmailAuthForm({
   const [name, setName] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [registerStep, setRegisterStep] = useState<1 | 2>(1)
+  const [code, setCode] = useState("")
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null)
+  const [resendCountdown, setResendCountdown] = useState(0)
+  const [resending, setResending] = useState(false)
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return
+    const id = setInterval(() => {
+      setResendCountdown((c) => Math.max(0, c - 1))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [resendCountdown])
+
+  const resetRegisterFlow = () => {
+    setRegisterStep(1)
+    setCode("")
+    setPendingEmail(null)
+    setResendCountdown(0)
+    setResending(false)
+  }
+
+  const handleRegisterStep1 = async () => {
+    const cleanName = name.trim()
+    if (!cleanName) {
+      setError("Please enter your full name.")
+      return
+    }
+
+    const cleanEmail = email.trim().toLowerCase()
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setError("Please enter a valid email address.")
+      return
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.")
+      return
+    }
+
+    setLoading(true)
+
+    const startRes = await startEmailRegistrationAction({
+      email: cleanEmail,
+      password,
+      name: cleanName,
+    })
+
+    if (!startRes.success) {
+      setError(startRes.error || "Registration failed.")
+      setLoading(false)
+      return
+    }
+
+    setPendingEmail(startRes.email)
+    setResendCountdown(startRes.resendAfter)
+    setCode("")
+    setRegisterStep(2)
+    setLoading(false)
+  }
+
+  const handleVerify = async () => {
+    const targetEmail = pendingEmail ?? email.trim().toLowerCase()
+    const cleanCode = code.replace(/\D/g, "")
+
+    if (!/^\d{6}$/.test(cleanCode)) {
+      setError("Please enter the 6-digit code.")
+      return
+    }
+
+    setLoading(true)
+
+    const verifyRes = await verifyEmailRegistrationAction({
+      email: targetEmail,
+      code: cleanCode,
+    })
+
+    if (!verifyRes.success) {
+      setError(verifyRes.error || "Verification failed.")
+      setLoading(false)
+      return
+    }
+
+    // Establish NextAuth session with the password still in component state
+    const signInRes = await signIn("credentials", {
+      email: targetEmail,
+      password,
+      redirect: false,
+      callbackUrl,
+    })
+
+    if (signInRes?.error) {
+      setError("Failed to sign in. Please verify your credentials.")
+      setLoading(false)
+      return
+    }
+
+    // Redirect on success
+    if (typeof window !== "undefined") {
+      window.location.href = callbackUrl
+    } else {
+      router.push(callbackUrl)
+    }
+  }
+
+  const handleResend = async () => {
+    if (resending || resendCountdown > 0) return
+
+    const targetEmail = pendingEmail ?? email.trim().toLowerCase()
+    setResending(true)
+
+    const resendRes = await resendEmailCodeAction({ email: targetEmail })
+
+    if (!resendRes.success) {
+      setError(resendRes.error || "Could not resend the code.")
+      setResending(false)
+      return
+    }
+
+    setResendCountdown(resendRes.resendAfter)
+    setError(null)
+    setResending(false)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (mode === "register") {
+      if (registerStep === 1) {
+        await handleRegisterStep1()
+      } else {
+        await handleVerify()
+      }
+      return
+    }
 
     const cleanEmail = email.trim().toLowerCase()
     if (!cleanEmail || !cleanEmail.includes("@")) {
@@ -43,31 +180,16 @@ export function EmailAuthForm({
     setLoading(true)
 
     try {
-      if (mode === "register") {
-        // 1. Register with backend
-        const regRes = await registerEmailUserAction({
-          email: cleanEmail,
-          password,
-          name: name.trim() || undefined,
-        })
+      // 1. Verify credentials with backend
+      const checkRes = await precheckEmailLoginAction({
+        email: cleanEmail,
+        password,
+      })
 
-        if (!regRes.success) {
-          setError(regRes.error || "Registration failed.")
-          setLoading(false)
-          return
-        }
-      } else {
-        // 1. Verify credentials with backend
-        const checkRes = await precheckEmailLoginAction({
-          email: cleanEmail,
-          password,
-        })
-
-        if (!checkRes.success) {
-          setError(checkRes.error || "Invalid email or password.")
-          setLoading(false)
-          return
-        }
+      if (!checkRes.success) {
+        setError(checkRes.error || "Invalid email or password.")
+        setLoading(false)
+        return
       }
 
       // 2. Establish NextAuth session
@@ -97,6 +219,8 @@ export function EmailAuthForm({
     }
   }
 
+  const isVerifyStep = mode === "register" && registerStep === 2
+
   return (
     <div className="w-full space-y-3.5">
       {/* Mode Switcher Tabs */}
@@ -106,6 +230,7 @@ export function EmailAuthForm({
           onClick={() => {
             setMode("login")
             setError(null)
+            resetRegisterFlow()
           }}
           className={`flex-1 rounded-[4px] py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
             mode === "login"
@@ -120,6 +245,7 @@ export function EmailAuthForm({
           onClick={() => {
             setMode("register")
             setError(null)
+            resetRegisterFlow()
           }}
           className={`flex-1 rounded-[4px] py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
             mode === "register"
@@ -144,70 +270,157 @@ export function EmailAuthForm({
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-2.5">
-        {mode === "register" && (
-          <div>
-            <label className="block text-[11px] font-bold text-ink mb-1">
-              Full Name (Optional)
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Alex Smith"
+        {isVerifyStep ? (
+          <>
+            <p className="text-xs font-semibold text-ink">
+              We sent a 6-digit code to {pendingEmail ?? email.trim().toLowerCase()}.
+            </p>
+
+            <div>
+              <label
+                htmlFor="email-verification-code"
+                className="block text-[11px] font-bold text-ink mb-1"
+              >
+                Verification Code
+              </label>
+              <input
+                id="email-verification-code"
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
+                maxLength={6}
+                autoFocus
+                placeholder="123456"
+                disabled={loading}
+                className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
+              />
+            </div>
+
+            <button
+              type="submit"
               disabled={loading}
-              className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
-            />
-          </div>
+              className={`group flex min-h-[44px] w-full items-center justify-center gap-2 border border-line-strong bg-[#ff4e26] text-white px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer disabled:opacity-70 disabled:pointer-events-none shadow-soft rounded-md ${
+                compact ? "min-h-[40px] py-2" : ""
+              }`}
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>Verifying...</span>
+                </>
+              ) : (
+                <span>Verify</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resendCountdown > 0 || resending || loading}
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 border border-line-strong bg-paper text-ink px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer disabled:opacity-70 disabled:pointer-events-none rounded-md"
+            >
+              {resending ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>Sending...</span>
+                </>
+              ) : resendCountdown > 0 ? (
+                <span>Resend code ({resendCountdown}s)</span>
+              ) : (
+                <span>Resend code</span>
+              )}
+            </button>
+
+            <div className="text-center pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setRegisterStep(1)
+                  setCode("")
+                  setResendCountdown(0)
+                  setError(null)
+                }}
+                className="text-xs font-bold text-ink-muted hover:text-ink dark:hover:text-white transition-colors cursor-pointer"
+              >
+                Use a different email
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {mode === "register" && (
+              <div>
+                <label className="block text-[11px] font-bold text-ink mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Alex Smith"
+                  disabled={loading}
+                  className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[11px] font-bold text-ink mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                disabled={loading}
+                className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-ink mb-1">
+                Password
+              </label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === "register" ? "At least 8 characters" : "••••••••"}
+                autoComplete={mode === "register" ? "new-password" : "current-password"}
+                disabled={loading}
+                className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className={`group flex min-h-[44px] w-full items-center justify-center gap-2 border border-line-strong bg-[#ff4e26] text-white px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer disabled:opacity-70 disabled:pointer-events-none shadow-soft rounded-md ${
+                compact ? "min-h-[40px] py-2" : ""
+              }`}
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>
+                    {mode === "register" ? "Sending Code..." : "Signing In..."}
+                  </span>
+                </>
+              ) : (
+                <span>
+                  {mode === "register" ? "Continue" : "Sign In with Email"}
+                </span>
+              )}
+            </button>
+          </>
         )}
-
-        <div>
-          <label className="block text-[11px] font-bold text-ink mb-1">
-            Email Address
-          </label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
-            disabled={loading}
-            className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[11px] font-bold text-ink mb-1">
-            Password
-          </label>
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={mode === "register" ? "At least 6 characters" : "••••••••"}
-            autoComplete={mode === "register" ? "new-password" : "current-password"}
-            disabled={loading}
-            className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className={`group flex min-h-[44px] w-full items-center justify-center gap-2 border border-line-strong bg-[#ff4e26] text-white px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer disabled:opacity-70 disabled:pointer-events-none shadow-soft rounded-md ${
-            compact ? "min-h-[40px] py-2" : ""
-          }`}
-        >
-          {loading ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              <span>{mode === "register" ? "Creating Account..." : "Signing In..."}</span>
-            </>
-          ) : (
-            <span>{mode === "register" ? "Create Account & Sign In" : "Sign In with Email"}</span>
-          )}
-        </button>
       </form>
 
       {/* Back to social login */}
