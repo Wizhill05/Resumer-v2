@@ -86,31 +86,31 @@ export function ReplaceProjectModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[rgb(35_10_4/38%)] dark:bg-black/60 backdrop-blur-xs">
       <div
-        className="relative w-full max-w-lg max-h-[90vh] flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="relative w-full max-w-lg max-h-[90vh] flex flex-col bg-paper border border-line rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         role="dialog"
         aria-modal="true"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
           <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-700 dark:text-zinc-200">
+            <div className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center text-ink">
               <ArrowLeftRight size={16} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+              <h3 className="text-sm font-bold text-ink">
                 Replace Project from Profile
               </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Replacing <span className="font-semibold text-zinc-800 dark:text-zinc-200">&ldquo;{targetProjectName || "Selected Project"}&rdquo;</span>
+              <p className="text-xs text-ink-muted">
+                Replacing <span className="font-semibold text-ink">&ldquo;{targetProjectName || "Selected Project"}&rdquo;</span>
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
             disabled={isReplacing}
-            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            className="text-ink-faint hover:text-ink-muted dark:hover:text-ink p-1.5 rounded-md hover:bg-ink/5 dark:hover:bg-ink/[0.06] transition-colors disabled:opacity-50"
           >
             <X size={16} />
           </button>
@@ -119,8 +119,8 @@ export function ReplaceProjectModal({
         {/* Content Body */}
         <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3">
           {loading && (
-            <div className="py-12 flex flex-col items-center justify-center gap-2 text-zinc-400 text-xs">
-              <Loader2 className="animate-spin text-zinc-500" size={20} />
+            <div className="py-12 flex flex-col items-center justify-center gap-2 text-ink-faint text-xs">
+              <Loader2 className="animate-spin text-ink-muted" size={20} />
               <span>Loading profile projects...</span>
             </div>
           )}
@@ -134,11 +134,11 @@ export function ReplaceProjectModal({
 
           {!loading && !error && projects.length === 0 && (
             <div className="py-10 px-4 text-center space-y-2">
-              <FolderGit size={28} className="mx-auto text-zinc-400" />
-              <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              <FolderGit size={28} className="mx-auto text-ink-faint" />
+              <p className="text-xs font-semibold text-ink">
                 No projects found in your profile
               </p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
+              <p className="text-xs text-ink-muted max-w-sm mx-auto">
                 Add your projects in the Profile tab first to swap them into your résumés anytime.
               </p>
             </div>
@@ -146,11 +146,11 @@ export function ReplaceProjectModal({
 
           {!loading && !error && projects.length > 0 && availableCount === 0 && (
             <div className="py-10 px-4 text-center space-y-2">
-              <FolderGit size={28} className="mx-auto text-zinc-400" />
-              <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+              <FolderGit size={28} className="mx-auto text-ink-faint" />
+              <p className="text-xs font-semibold text-ink">
                 All profile projects are already in this résumé
               </p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
+              <p className="text-xs text-ink-muted max-w-sm mx-auto">
                 Add more projects in the Profile section to replace existing entries.
               </p>
             </div>
@@ -158,7 +158,7 @@ export function ReplaceProjectModal({
 
           {!loading && !error && projects.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 flex justify-between">
+              <div className="text-[11px] font-medium text-ink-muted flex justify-between">
                 <span>Select a replacement project:</span>
                 <span>{availableCount} available</span>
               </div>
@@ -175,26 +175,26 @@ export function ReplaceProjectModal({
                     onClick={() => setSelectedId(project.id)}
                     className={`w-full text-left p-3 rounded-lg border transition-all text-xs flex items-start justify-between gap-3 ${
                       isActive
-                        ? "bg-zinc-50/70 dark:bg-zinc-800/40 border-zinc-200 dark:border-zinc-800 opacity-60 cursor-not-allowed"
+                        ? "bg-ink/[0.03] dark:bg-ink/[0.06] border-line opacity-60 cursor-not-allowed"
                         : isSelected
-                        ? "bg-zinc-100 dark:bg-zinc-800 border-zinc-900 dark:border-zinc-300 ring-1 ring-zinc-900 dark:ring-zinc-300 cursor-pointer"
-                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 cursor-pointer"
+                        ? "bg-ink/5 border-line-strong ring-1 ring-line-strong dark:ring-line cursor-pointer"
+                        : "bg-paper border-line hover:border-ember/50 cursor-pointer"
                     }`}
                   >
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                        <span className="font-bold text-ink truncate">
                           {project.name}
                         </span>
                         {isActive && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 font-semibold shrink-0">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-ink/10 text-ink-muted font-semibold shrink-0">
                             Active in résumé
                           </span>
                         )}
                       </div>
 
                       {project.description && (
-                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2">
+                        <p className="text-[11px] text-ink-muted line-clamp-2">
                           {project.description}
                         </p>
                       )}
@@ -204,13 +204,13 @@ export function ReplaceProjectModal({
                           {project.technologies.slice(0, 5).map((tech, tIdx) => (
                             <span
                               key={tIdx}
-                              className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700"
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-ink/5 text-ink-muted border border-line"
                             >
                               {tech}
                             </span>
                           ))}
                           {project.technologies.length > 5 && (
-                            <span className="text-[9px] text-zinc-400">
+                            <span className="text-[9px] text-ink-faint">
                               +{project.technologies.length - 5} more
                             </span>
                           )}
@@ -222,8 +222,8 @@ export function ReplaceProjectModal({
                       <div
                         className={`h-4 w-4 rounded-full border flex items-center justify-center ${
                           isSelected
-                            ? "bg-zinc-900 border-zinc-900 text-white dark:bg-zinc-100 dark:border-zinc-100 dark:text-zinc-900"
-                            : "border-zinc-300 dark:border-zinc-600"
+                            ? "border-ember/50 bg-ember-tint text-ember"
+                            : "border-line"
                         }`}
                       >
                         {isSelected && <Check size={10} strokeWidth={3} />}
@@ -236,11 +236,11 @@ export function ReplaceProjectModal({
           )}
 
           {isReplacing && (
-            <div className="p-3 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-lg flex items-center gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
-              <Loader2 className="animate-spin shrink-0 text-zinc-900 dark:text-zinc-100" size={16} />
+            <div className="p-3 bg-ink/[0.03] border border-line rounded-lg flex items-center gap-2.5 text-xs text-ink">
+              <Loader2 className="animate-spin shrink-0 text-ink" size={16} />
               <div className="space-y-0.5">
                 <p className="font-semibold">Re-tailoring with AI...</p>
-                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                <p className="text-[10px] text-ink-muted">
                   Rewriting project achievements & running WeasyPrint orphan repair.
                 </p>
               </div>
@@ -249,12 +249,12 @@ export function ReplaceProjectModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-zinc-50/70 dark:bg-zinc-900/70 border-t border-zinc-100 dark:border-zinc-800">
+        <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-ink/[0.03] border-t border-line">
           <button
             type="button"
             onClick={onClose}
             disabled={isReplacing}
-            className="px-3.5 py-1.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+            className="px-3.5 py-1.5 text-xs font-semibold text-ink-muted hover:bg-ink/[0.07] dark:hover:bg-ink/[0.06] rounded-lg transition-colors cursor-pointer disabled:opacity-50"
           >
             Cancel
           </button>
@@ -262,7 +262,7 @@ export function ReplaceProjectModal({
             type="button"
             onClick={handleConfirm}
             disabled={!selectedId || isReplacing}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
+            className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-paper bg-ink hover:opacity-90 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
           >
             {isReplacing ? (
               <>

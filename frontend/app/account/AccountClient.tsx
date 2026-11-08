@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { LogOut, Copy, Check, User, Shield } from "lucide-react"
+import { LogOut, Copy, Check, User, Shield, LifeBuoy, Bot, ChevronRight } from "lucide-react"
+import { PageHero } from "@/components/PageHero"
 import { signOutAction } from "@/app/actions"
 import { DAILY_GENERATION_CAP, useGenerationStats } from "@/components/useGenerationStats"
 import { useIsAdmin } from "@/components/useIsAdmin"
@@ -52,167 +53,140 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
     } catch {}
   }
 
+  const links = [
+    { href: "/profile", icon: User, title: "Résumé profile", desc: "Experience, projects, skills" },
+    { href: "/support", icon: LifeBuoy, title: "Support", desc: "Bugs, questions, feature requests" },
+    { href: "/agent", icon: Bot, title: "Connect an agent", desc: "Use Résumer from Claude Code, Codex and more" },
+    ...(isAdmin ? [{ href: "/admin", icon: Shield, title: "Admin", desc: "Analytics, users, limits" }] : []),
+  ]
+
   return (
-    <div className="max-w-xl">
-      {/* Identity card */}
-      <section className="border-2 border-black bg-white p-5 shadow-[5px_5px_0px_#000000] dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-[5px_5px_0px_#3f3f46]">
-        <div className="flex items-center gap-4">
-          {image ? (
-            <img
-              src={image}
-              alt=""
-              width={56}
-              height={56}
-              referrerPolicy="no-referrer"
-              className="h-14 w-14 rounded-full border border-zinc-200 object-cover dark:border-zinc-700"
-            />
-          ) : (
-            <span
-              aria-hidden="true"
-              className="flex h-14 w-14 items-center justify-center rounded-full bg-[#ff4e26] text-lg font-black text-white"
-            >
-              {initials(name, email)}
-            </span>
-          )}
-          <div className="min-w-0">
-            <h2 className="truncate text-lg font-extrabold tracking-tight">
-              {name ?? "Account"}
-            </h2>
-            <span className="mt-1 inline-block border border-zinc-300 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wide text-zinc-500 uppercase dark:border-zinc-700 dark:text-zinc-400">
+    <>
+      <PageHero
+        title={
+          <span className="flex items-center gap-4 md:gap-5">
+            {image ? (
+              <img
+                src={image}
+                alt=""
+                width={72}
+                height={72}
+                referrerPolicy="no-referrer"
+                className="h-14 w-14 shrink-0 rounded-full border-[3px] border-paper object-cover shadow-[0_10px_24px_-8px_rgb(255_78_38/45%)] md:h-[4.5rem] md:w-[4.5rem]"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-[3px] border-paper bg-gradient-to-br from-[#ff7d5c] to-[#ff4e26] text-lg font-bold tracking-normal text-white shadow-[0_10px_24px_-8px_rgb(255_78_38/55%)] md:h-[4.5rem] md:w-[4.5rem] md:text-2xl"
+              >
+                {initials(name, email)}
+              </span>
+            )}
+            <span className="min-w-0 truncate">{name ?? "Account"}</span>
+          </span>
+        }
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
+            {email && <span className="break-all">{email}</span>}
+            <span className="rounded border border-line bg-paper/70 px-1.5 py-0.5 text-xs font-semibold text-ink-soft">
               {providerLabel(provider)}
             </span>
-          </div>
-        </div>
-
-        <div className="mt-4 border-t border-dashed border-zinc-300 pt-4 dark:border-zinc-700">
-          <p className="font-mono text-[10px] font-bold tracking-widest text-zinc-500 uppercase dark:text-zinc-400">
-            Login email
-          </p>
-          {email ? (
-            <div className="mt-1 flex items-start gap-2">
-              <p className="min-w-0 flex-1 text-sm font-bold break-all select-all">
-                {email}
-              </p>
-              <button
-                type="button"
-                onClick={copyEmail}
-                aria-label="Copy email"
-                className="shrink-0 cursor-pointer border border-zinc-300 p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-black dark:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-white"
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-              </button>
-            </div>
-          ) : (
-            <p className="mt-1 text-sm font-semibold text-zinc-500">
-              No email on file for this login.
-            </p>
-          )}
-        </div>
-
-        {/* Daily usage with progress bar */}
-        <div className="mt-4 border-t border-dashed border-zinc-300 pt-4 dark:border-zinc-700">
-          <div className="flex items-baseline justify-between">
-            <p className="font-mono text-[10px] font-bold tracking-widest text-zinc-500 uppercase dark:text-zinc-400">
-              Daily usage
-            </p>
-            <p className="text-xs font-extrabold">
-              {stats ? (
-                stats.cap === null ? (
-                  <span className="text-[#ff4e26]">Unlimited</span>
-                ) : (
-                  <>
-                    {stats.usedToday}
-                    <span className="text-zinc-400 dark:text-zinc-500"> / {stats.cap}</span>
-                  </>
-                )
-              ) : (
-                "–"
-              )}
-            </p>
-          </div>
-          <div
-            role="progressbar"
-            aria-label="Daily generation usage"
-            aria-valuemin={0}
-            aria-valuemax={stats?.cap ?? 100}
-            aria-valuenow={stats?.usedToday ?? 0}
-            className="mt-2 h-2.5 w-full overflow-hidden rounded-full border border-zinc-300 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800"
-          >
-            <div
-              className="h-full rounded-full bg-[#ff4e26] transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <div className="border border-zinc-200 bg-zinc-50 p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-800/50">
-            <p className="text-xl font-black tracking-tight">
-              {stats ? (stats.remaining ?? "∞") : "–"}
-            </p>
-            <p className="mt-0.5 text-[10px] font-bold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-              Left today
-            </p>
-          </div>
-          <div className="border border-zinc-200 bg-zinc-50 p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-800/50">
-            <p className="text-xl font-black tracking-tight">
-              {stats ? stats.thisMonth : "–"}
-            </p>
-            <p className="mt-0.5 text-[10px] font-bold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-              This month
-            </p>
-          </div>
-          <div className="border border-zinc-200 bg-zinc-50 p-2.5 text-center dark:border-zinc-800 dark:bg-zinc-800/50">
-            <p className="text-xl font-black tracking-tight">
-              {stats ? stats.total : "–"}
-            </p>
-            <p className="mt-0.5 text-[10px] font-bold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-              Total
-            </p>
-          </div>
-        </div>
-        <p className="mt-2 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-          {isAdmin
-            ? "Admin account — daily and monthly caps bypassed."
-            : `${DAILY_GENERATION_CAP} free generations per rolling 24 hours.`}
-        </p>
-
-        {/* Linked sections */}
-        <div className={`mt-4 grid gap-2 ${isAdmin ? "grid-cols-2" : "grid-cols-1"}`}>
-          <Link
-            href="/profile"
-            className="flex items-center gap-2.5 border-2 border-black bg-white p-3 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#000000] dark:border-zinc-700 dark:bg-zinc-900 dark:hover:shadow-[3px_3px_0px_#3f3f46]"
-          >
-            <User size={16} className="shrink-0 text-zinc-400 dark:text-zinc-500" />
-            <span>
-              <span className="block text-xs font-black tracking-wide uppercase">Résumé profile</span>
-              <span className="block text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">Experience, projects, skills</span>
-            </span>
-          </Link>
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="flex items-center gap-2.5 border-2 border-black bg-white p-3 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#000000] dark:border-zinc-700 dark:bg-zinc-900 dark:hover:shadow-[3px_3px_0px_#3f3f46]"
+          </span>
+        }
+        actions={
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-line-strong bg-paper/70 px-4 text-sm font-semibold text-ink backdrop-blur-sm transition-colors hover:border-red-500/50 hover:text-red-600"
             >
-              <Shield size={16} className="shrink-0 text-zinc-400 dark:text-zinc-500" />
-              <span>
-                <span className="block text-xs font-black tracking-wide uppercase">Admin</span>
-                <span className="block text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">Analytics, users, limits</span>
-              </span>
-            </Link>
-          )}
-        </div>
+              <LogOut size={16} aria-hidden="true" />
+              Sign out
+            </button>
+          </form>
+        }
+      />
 
-        <form action={signOutAction} className="mt-5">
-          <button
-            type="submit"
-            className="flex w-full cursor-pointer items-center justify-center gap-2 border-2 border-red-600 bg-red-50 px-4 py-2.5 text-xs font-black tracking-wider text-red-700 uppercase transition-colors hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/60"
-          >
-            <LogOut size={14} />
-            Sign out
-          </button>
-        </form>
-      </section>
-    </div>
+      <div className="page-wrap flex-1">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_22rem]">
+          <section className="soft-card p-6 md:p-7" aria-labelledby="usage-heading">
+            <h2 id="usage-heading" className="text-sm font-semibold text-ink-muted">Daily usage</h2>
+            <p className="mt-3 flex items-end gap-2.5">
+              <span className="text-6xl font-bold leading-[0.85] tracking-tight text-ink">
+                {stats ? (stats.cap === null ? "∞" : stats.remaining ?? "–") : "–"}
+              </span>
+              <span className="pb-1 text-base text-ink-soft">
+                {stats?.cap === null ? "unlimited builds" : `of ${stats?.cap ?? DAILY_GENERATION_CAP} builds left today`}
+              </span>
+            </p>
+            <div
+              role="progressbar"
+              aria-label="Daily generation usage"
+              aria-valuemin={0}
+              aria-valuemax={stats?.cap ?? 100}
+              aria-valuenow={stats?.usedToday ?? 0}
+              className="mt-5 h-2 w-full overflow-hidden rounded-full bg-ink/10"
+            >
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#ffb199] to-[#ff4e26] transition-all"
+                style={{ width: `${100 - pct}%` }}
+              />
+            </div>
+            <dl className="mt-5 grid grid-cols-3 border-t border-line pt-4">
+              {[
+                [stats ? stats.usedToday : "–", "used today"],
+                [stats ? stats.thisMonth : "–", "this month"],
+                [stats ? stats.total : "–", "all time"],
+              ].map(([value, label], i) => (
+                <div key={label} className={i ? "border-l border-line pl-4" : ""}>
+                  <dd className="text-2xl font-semibold tracking-tight text-ink">{value}</dd>
+                  <dt className="text-xs text-ink-muted">{label}</dt>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-4 text-xs text-ink-muted">
+              {isAdmin
+                ? "Admin account — daily and monthly caps bypassed."
+                : `${DAILY_GENERATION_CAP} free generations per rolling 24 hours.`}
+            </p>
+          </section>
+
+          <div className="min-w-0 space-y-5">
+            <section className="soft-card p-5">
+              <h2 className="text-sm font-semibold text-ink-muted">Login email</h2>
+              {email ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <p className="min-w-0 flex-1 select-all break-all text-[15px] font-semibold text-ink">{email}</p>
+                  <button
+                    type="button"
+                    onClick={copyEmail}
+                    aria-label="Copy email"
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-line text-ink-soft transition-colors hover:border-ink/30 hover:text-ink"
+                  >
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-ink-muted">No email on file for this login.</p>
+              )}
+            </section>
+
+            <nav aria-label="Account links" className="soft-card divide-y divide-line overflow-hidden">
+              {links.map(({ href, icon: Icon, title, desc }) => (
+                <Link key={href} href={href} className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-ember-tint/40">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-ember-tint text-ember">
+                    <Icon size={15} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-ink">{title}</span>
+                    <span className="block truncate text-xs text-ink-muted">{desc}</span>
+                  </span>
+                  <ChevronRight size={15} aria-hidden="true" className="text-ink-faint transition-transform group-hover:translate-x-0.5" />
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }

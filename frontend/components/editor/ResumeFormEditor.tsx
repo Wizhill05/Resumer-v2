@@ -179,7 +179,7 @@ export function ResumeFormEditor({
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-4 space-y-3 bg-zinc-50 dark:bg-zinc-900">
+    <div className="flex-1 min-h-0 overflow-auto p-4 space-y-3 bg-ink/[0.03]">
       {/* 1. PERSONAL DETAILS */}
       <Section
         title="Personal Details"
@@ -281,17 +281,17 @@ export function ResumeFormEditor({
       >
         <div className="space-y-3">
           {Object.entries(resume.skills || {}).map(([category, list]) => (
-            <div key={category} className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 p-2.5 rounded space-y-2">
+            <div key={category} className="border border-line bg-ink/[0.03] p-2.5 rounded space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <input
                   type="text"
                   defaultValue={category}
                   onBlur={(e) => updateSkillCategoryName(category, e.target.value)}
-                  className="font-bold text-xs uppercase tracking-wider text-zinc-700 dark:text-zinc-300 bg-transparent border-b border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 focus:border-zinc-500 outline-none px-1 py-0.5"
+                  className="font-bold text-xs text-ink bg-transparent border-b border-transparent hover:border-ember/50 focus:border-ember/50 outline-none px-1 py-0.5"
                 />
                 <button
                   onClick={() => deleteSkillCategory(category)}
-                  className="text-zinc-400 hover:text-red-500 transition-colors p-1"
+                  className="text-ink-faint hover:text-red-500 transition-colors p-1"
                   title="Delete category"
                 >
                   <Trash2 size={13} />
@@ -315,7 +315,7 @@ export function ResumeFormEditor({
 
           <button
             onClick={addSkillCategory}
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-line hover:border-ink/40 bg-paper text-ink-muted hover:text-ink rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Skill Category
@@ -383,11 +383,11 @@ export function ResumeFormEditor({
               </div>
 
               {/* Bullet points */}
-              <div className="mt-3.5 space-y-2.5 border-t border-zinc-100 dark:border-zinc-700 pt-3">
+              <div className="mt-3.5 space-y-2.5 border-t border-line pt-3">
                 <Label>Bullet Points</Label>
                 {(exp.bullet_points || []).map((bullet: string, bIdx: number) => (
                   <div key={bIdx} className="flex gap-2 items-start">
-                    <span className="text-[10px] font-bold text-zinc-400 mt-2 shrink-0">{bIdx + 1}.</span>
+                    <span className="text-[10px] font-bold text-ink-faint mt-2 shrink-0">{bIdx + 1}.</span>
                     <Textarea
                       value={bullet}
                       onChange={(e) => updateBulletPoint("experiences", idx, bIdx, e.target.value)}
@@ -396,7 +396,7 @@ export function ResumeFormEditor({
                     />
                     <button
                       onClick={() => deleteBulletPoint("experiences", idx, bIdx)}
-                      className="text-zinc-400 hover:text-red-500 p-1 mt-1.5 transition-colors shrink-0"
+                      className="text-ink-faint hover:text-red-500 p-1 mt-1.5 transition-colors shrink-0"
                       title="Delete bullet"
                     >
                       <Trash2 size={13} />
@@ -405,7 +405,7 @@ export function ResumeFormEditor({
                 ))}
                 <button
                   onClick={() => addBulletPoint("experiences", idx)}
-                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 bg-white dark:bg-zinc-800 px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
+                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-line hover:border-ink/40 text-ink-muted hover:text-ink bg-paper px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
                 >
                   <Plus size={11} /> Add Bullet Point
                 </button>
@@ -424,7 +424,7 @@ export function ResumeFormEditor({
                 bullet_points: [],
               })
             }
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-line hover:border-ink/40 bg-paper text-ink-muted hover:text-ink rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Experience
@@ -495,11 +495,11 @@ export function ResumeFormEditor({
               </div>
 
               {/* Bullet points */}
-              <div className="mt-3.5 space-y-2.5 border-t border-zinc-100 dark:border-zinc-700 pt-3">
+              <div className="mt-3.5 space-y-2.5 border-t border-line pt-3">
                 <Label>Bullet Points</Label>
                 {(proj.bullet_points || []).map((bullet: string, bIdx: number) => (
                   <div key={bIdx} className="flex gap-2 items-start">
-                    <span className="text-[10px] font-bold text-zinc-400 mt-2 shrink-0">{bIdx + 1}.</span>
+                    <span className="text-[10px] font-bold text-ink-faint mt-2 shrink-0">{bIdx + 1}.</span>
                     <Textarea
                       value={bullet}
                       onChange={(e) => updateBulletPoint("projects", idx, bIdx, e.target.value)}
@@ -508,7 +508,7 @@ export function ResumeFormEditor({
                     />
                     <button
                       onClick={() => deleteBulletPoint("projects", idx, bIdx)}
-                      className="text-zinc-400 hover:text-red-500 p-1 mt-1.5 transition-colors shrink-0"
+                      className="text-ink-faint hover:text-red-500 p-1 mt-1.5 transition-colors shrink-0"
                       title="Delete bullet"
                     >
                       <Trash2 size={13} />
@@ -517,7 +517,7 @@ export function ResumeFormEditor({
                 ))}
                 <button
                   onClick={() => addBulletPoint("projects", idx)}
-                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 bg-white dark:bg-zinc-800 px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
+                  className="flex items-center gap-1 text-[11px] font-semibold border border-dashed border-line hover:border-ink/40 text-ink-muted hover:text-ink bg-paper px-2.5 py-1 rounded transition-all cursor-pointer mt-1"
                 >
                   <Plus size={11} /> Add Bullet Point
                 </button>
@@ -536,7 +536,7 @@ export function ResumeFormEditor({
                 live_url: "",
               })
             }
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-line hover:border-ink/40 bg-paper text-ink-muted hover:text-ink rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Project
@@ -644,7 +644,7 @@ export function ResumeFormEditor({
                 gpa: "",
               })
             }
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-line hover:border-ink/40 bg-paper text-ink-muted hover:text-ink rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Education
@@ -661,7 +661,7 @@ export function ResumeFormEditor({
       >
         <div className="space-y-3">
           {(resume.extracurriculars || []).map((ex, idx) => (
-            <div key={idx} className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/80 p-3 rounded relative group/extra">
+            <div key={idx} className="border border-line bg-paper p-3 rounded relative group/extra">
               <div className="flex gap-2 items-start">
                 <Textarea
                   value={ex.description || ""}
@@ -672,7 +672,7 @@ export function ResumeFormEditor({
                 <div className="flex flex-col gap-1 items-center shrink-0">
                   <button
                     onClick={() => deleteArrayItem("extracurriculars", idx)}
-                    className="text-zinc-400 hover:text-red-500 p-1 transition-colors"
+                    className="text-ink-faint hover:text-red-500 p-1 transition-colors"
                     title="Delete item"
                   >
                     <Trash2 size={13} />
@@ -680,7 +680,7 @@ export function ResumeFormEditor({
                   {idx > 0 && (
                     <button
                       onClick={() => reorderArrayItem("extracurriculars", idx, "up")}
-                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 p-0.5 cursor-pointer"
+                      className="text-ink-faint hover:text-ink p-0.5 cursor-pointer"
                     >
                       <ArrowUp size={11} />
                     </button>
@@ -688,7 +688,7 @@ export function ResumeFormEditor({
                   {idx < (resume.extracurriculars || []).length - 1 && (
                     <button
                       onClick={() => reorderArrayItem("extracurriculars", idx, "down")}
-                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 p-0.5 cursor-pointer"
+                      className="text-ink-faint hover:text-ink p-0.5 cursor-pointer"
                     >
                       <ArrowDown size={11} />
                     </button>
@@ -700,7 +700,7 @@ export function ResumeFormEditor({
 
           <button
             onClick={() => addArrayItem("extracurriculars", { description: "" })}
-            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 bg-white dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 rounded transition-all cursor-pointer"
+            className="w-full flex items-center justify-center gap-1 py-1.5 text-xs font-bold border border-dashed border-line hover:border-ink/40 bg-paper text-ink-muted hover:text-ink rounded transition-all cursor-pointer"
           >
             <Plus size={13} />
             Add Achievement
@@ -735,7 +735,7 @@ function InlineEditSkill({
 
   if (editing) {
     return (
-      <div className="inline-flex items-center gap-1 border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+      <div className="inline-flex items-center gap-1 border border-line bg-paper px-1.5 py-0.5 rounded">
         <input
           type="text"
           autoFocus
@@ -743,7 +743,7 @@ function InlineEditSkill({
           onChange={(e) => setVal(e.target.value)}
           onBlur={submit}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          className="text-[11px] font-semibold outline-none w-20 bg-transparent dark:text-zinc-100"
+          className="text-[11px] font-semibold outline-none w-20 bg-transparent dark:text-ink"
         />
       </div>
     )
@@ -752,7 +752,7 @@ function InlineEditSkill({
   return (
     <span
       onClick={() => setEditing(true)}
-      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-800 dark:text-zinc-200 px-2 py-0.5 rounded shadow-sm cursor-pointer hover:border-zinc-400 select-none"
+      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-paper border border-line text-ink px-2 py-0.5 rounded shadow-sm cursor-pointer hover:border-ink/40 select-none"
       title="Click to edit skill"
     >
       {value}
@@ -761,7 +761,7 @@ function InlineEditSkill({
           e.stopPropagation()
           onDelete()
         }}
-        className="text-zinc-500 hover:text-red-500 font-bold ml-0.5 cursor-pointer"
+        className="text-ink-muted hover:text-red-500 font-bold ml-0.5 cursor-pointer"
         title="Delete skill"
       >
         ×
@@ -787,7 +787,7 @@ function InlineAddSkill({ onAdd }: { onAdd: (val: string) => void }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-[10px] font-bold border border-dashed border-zinc-350 dark:border-zinc-600 hover:border-zinc-500 text-zinc-600 dark:text-zinc-400 bg-white dark:bg-zinc-800 hover:text-zinc-800 dark:hover:text-zinc-200 px-2 py-0.5 rounded transition-all cursor-pointer"
+        className="inline-flex items-center gap-1 text-[10px] font-bold border border-dashed border-line-strong hover:border-ink/40 text-ink-muted bg-paper hover:text-ink px-2 py-0.5 rounded transition-all cursor-pointer"
       >
         <Plus size={10} /> Add
       </button>
@@ -795,7 +795,7 @@ function InlineAddSkill({ onAdd }: { onAdd: (val: string) => void }) {
   }
 
   return (
-    <div className="inline-flex items-center gap-1 border border-zinc-400 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+    <div className="inline-flex items-center gap-1 border border-line-strong bg-paper px-1.5 py-0.5 rounded">
       <input
         type="text"
         autoFocus
@@ -803,7 +803,7 @@ function InlineAddSkill({ onAdd }: { onAdd: (val: string) => void }) {
         onChange={(e) => setVal(e.target.value)}
         onBlur={submit}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        className="text-[11px] font-semibold outline-none w-14 bg-transparent dark:text-zinc-100"
+        className="text-[11px] font-semibold outline-none w-14 bg-transparent dark:text-ink"
       />
     </div>
   )
@@ -824,18 +824,18 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-md overflow-hidden shadow-xs">
+    <div className="border border-line bg-paper rounded-md overflow-hidden shadow-xs">
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-2 px-3.5 py-2.5 bg-zinc-50/90 dark:bg-zinc-800/90 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-left font-black uppercase text-xs tracking-wider text-zinc-800 dark:text-zinc-200 outline-none border-b border-zinc-200 dark:border-zinc-700 cursor-pointer transition-colors"
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 bg-ink/[0.03] dark:bg-ink/[0.06] hover:bg-ink/5 dark:hover:bg-ink/[0.06] text-left font-bold text-xs text-ink outline-none border-b border-line cursor-pointer transition-colors"
       >
-        <span className="text-zinc-500 shrink-0">{icon}</span>
+        <span className="text-ink-muted shrink-0">{icon}</span>
         <span>{title}</span>
-        <span className="ml-auto text-zinc-500">
+        <span className="ml-auto text-ink-muted">
           {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </span>
       </button>
-      {isExpanded && <div className="p-3.5 bg-white dark:bg-zinc-900">{children}</div>}
+      {isExpanded && <div className="p-3.5 bg-paper">{children}</div>}
     </div>
   )
 }
@@ -856,15 +856,15 @@ function ItemCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded overflow-hidden shadow-xs">
+    <div className="border border-line bg-paper rounded overflow-hidden shadow-xs">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-zinc-100/70 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700">
-        <span className="text-xs font-extrabold uppercase text-zinc-800 dark:text-zinc-200 truncate">{title}</span>
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-ink/5 dark:bg-ink/[0.06] border-b border-line">
+        <span className="text-xs font-bold text-ink truncate">{title}</span>
         <div className="flex items-center gap-1.5 shrink-0">
           {index > 0 && (
             <button
               onClick={() => onMove("up")}
-              className="h-7 w-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded cursor-pointer transition-colors shadow-2xs"
+              className="h-7 w-7 flex items-center justify-center bg-paper text-ink hover:bg-ink/5 dark:hover:bg-ink/10 border border-line rounded cursor-pointer transition-colors shadow-2xs"
               title="Move Up"
             >
               <ArrowUp size={13} strokeWidth={2.5} />
@@ -873,7 +873,7 @@ function ItemCard({
           {index < totalItems - 1 && (
             <button
               onClick={() => onMove("down")}
-              className="h-7 w-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded cursor-pointer transition-colors shadow-2xs"
+              className="h-7 w-7 flex items-center justify-center bg-paper text-ink hover:bg-ink/5 dark:hover:bg-ink/10 border border-line rounded cursor-pointer transition-colors shadow-2xs"
               title="Move Down"
             >
               <ArrowDown size={13} strokeWidth={2.5} />
@@ -881,7 +881,7 @@ function ItemCard({
           )}
           <button
             onClick={onDelete}
-            className="h-7 w-7 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-600 hover:text-red-600 dark:text-zinc-300 dark:hover:text-red-400 border border-zinc-300 dark:border-zinc-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded cursor-pointer transition-colors shadow-2xs"
+            className="h-7 w-7 flex items-center justify-center bg-paper text-ink-muted hover:text-red-600 dark:hover:text-red-400 border border-line hover:bg-red-50 dark:hover:bg-red-950/30 rounded cursor-pointer transition-colors shadow-2xs"
             title="Delete"
           >
             <Trash2 size={13} />
@@ -920,17 +920,17 @@ function ProjectCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden shadow-xs">
+    <div className="border border-line bg-paper rounded-lg overflow-hidden shadow-xs">
       {/* 2-Row Header */}
-      <div className="p-3 bg-zinc-50/90 dark:bg-zinc-800/80 border-b border-zinc-200 dark:border-zinc-700 space-y-2.5">
+      <div className="p-3 bg-ink/[0.03] dark:bg-ink/[0.06] border-b border-line space-y-2.5">
         {/* Row 1: Top Left Title + Top Right (Replace + Delete) */}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-100 truncate">
+            <h4 className="text-xs font-bold text-ink truncate">
               {title || "Untitled Project"}
             </h4>
             {subtitle && (
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+              <p className="text-[11px] text-ink-muted truncate mt-0.5">
                 {subtitle}
               </p>
             )}
@@ -943,14 +943,14 @@ function ProjectCard({
                 type="button"
                 onClick={onReplace}
                 disabled={isReplacing}
-                className="group relative h-8 px-2.5 flex items-center gap-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-md shadow-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold"
+                className="group relative h-8 px-2.5 flex items-center gap-1.5 bg-paper text-ink hover:bg-ink/5 dark:hover:bg-ink/10 border border-line rounded-md shadow-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold"
                 title="Replace project from profile with AI"
                 aria-label="Replace project from profile"
               >
-                <ArrowLeftRight size={13} className="text-zinc-900 dark:text-zinc-100" />
+                <ArrowLeftRight size={13} className="text-ink" />
                 <span className="hidden sm:inline text-[11px]">Replace</span>
                 {/* Tooltip on hover */}
-                <span className="pointer-events-none absolute -top-8 right-0 hidden group-hover:flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-semibold text-white bg-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 rounded shadow-md z-30 transition-opacity">
+                <span className="pointer-events-none absolute -top-8 right-0 hidden group-hover:flex items-center whitespace-nowrap px-2 py-0.5 text-[10px] font-semibold text-paper bg-ink rounded shadow-md z-30 transition-opacity">
                   Replace from profile
                 </span>
               </button>
@@ -960,7 +960,7 @@ function ProjectCard({
             <button
               type="button"
               onClick={onDelete}
-              className="h-8 w-8 flex items-center justify-center bg-white dark:bg-zinc-800 text-zinc-600 hover:text-red-600 dark:text-zinc-300 dark:hover:text-red-400 border border-zinc-300 dark:border-zinc-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md shadow-xs transition-all cursor-pointer"
+              className="h-8 w-8 flex items-center justify-center bg-paper text-ink-muted hover:text-red-600 dark:hover:text-red-400 border border-line hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md shadow-xs transition-all cursor-pointer"
               title="Delete Project"
               aria-label="Delete project"
             >
@@ -970,14 +970,14 @@ function ProjectCard({
         </div>
 
         {/* Row 2: Bottom Left (Reorder arrows) + Bottom Right (Details Dropdown) */}
-        <div className="flex items-center justify-between pt-1 border-t border-zinc-200/70 dark:border-zinc-700/60">
+        <div className="flex items-center justify-between pt-1 border-t border-line dark:border-line-strong">
           {/* Bottom Left: Reorder Up/Down */}
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => onMove("up")}
               disabled={index === 0}
-              className="h-7 px-2 flex items-center gap-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold"
+              className="h-7 px-2 flex items-center gap-1 bg-paper text-ink hover:bg-ink/5 dark:hover:bg-ink/10 border border-line rounded shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold"
               title="Move Up"
             >
               <ArrowUp size={12} strokeWidth={2.5} />
@@ -987,7 +987,7 @@ function ProjectCard({
               type="button"
               onClick={() => onMove("down")}
               disabled={index >= totalItems - 1}
-              className="h-7 px-2 flex items-center gap-1 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold"
+              className="h-7 px-2 flex items-center gap-1 bg-paper text-ink hover:bg-ink/5 dark:hover:bg-ink/10 border border-line rounded shadow-xs transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-[11px] font-semibold"
               title="Move Down"
             >
               <ArrowDown size={12} strokeWidth={2.5} />
@@ -999,7 +999,7 @@ function ProjectCard({
           <button
             type="button"
             onClick={onToggleExpand}
-            className="h-7 px-2.5 flex items-center gap-1.5 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded shadow-xs text-xs font-bold transition-all cursor-pointer"
+            className="h-7 px-2.5 flex items-center gap-1.5 bg-paper text-ink hover:bg-ink/5 dark:hover:bg-ink/10 border border-line rounded shadow-xs text-xs font-bold transition-all cursor-pointer"
           >
             <span>{isExpanded ? "Collapse" : "Edit Details"}</span>
             {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -1009,7 +1009,7 @@ function ProjectCard({
 
       {/* Collapsible Details Body */}
       {isExpanded && (
-        <div className="p-3.5 space-y-3 bg-white dark:bg-zinc-900 animate-in fade-in-50 duration-150">
+        <div className="p-3.5 space-y-3 bg-paper animate-in fade-in-50 duration-150">
           {children}
         </div>
       )}
@@ -1018,7 +1018,7 @@ function ProjectCard({
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1">{children}</div>
+  return <div className="text-[10px] font-bold text-ink-muted mb-1">{children}</div>
 }
 
 // Style overrides
@@ -1026,7 +1026,7 @@ function Input(props: React.ComponentProps<"input">) {
   return (
     <input
       {...props}
-      className="w-full h-8 text-xs font-semibold px-2 border border-zinc-300 dark:border-zinc-600 rounded focus:border-zinc-800 dark:focus:border-zinc-400 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-500 bg-white dark:bg-zinc-800 dark:text-zinc-100"
+      className="w-full h-8 text-xs font-semibold px-2 border border-line rounded focus:border-ember/50 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all placeholder:text-ink-muted bg-paper dark:text-ink"
     />
   )
 }
@@ -1035,7 +1035,7 @@ function Textarea({ className = "", ...props }: React.ComponentProps<"textarea">
   return (
     <textarea
       {...props}
-      className={`w-full p-2 text-xs font-semibold border border-zinc-300 dark:border-zinc-600 rounded focus:border-zinc-800 dark:focus:border-zinc-400 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all resize-y placeholder:text-zinc-400 dark:placeholder:text-zinc-500 bg-white dark:bg-zinc-800 dark:text-zinc-100 ${className}`}
+      className={`w-full p-2 text-xs font-semibold border border-line rounded focus:border-ember/50 dark:focus:border-ember/50 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all resize-y placeholder:text-ink-muted dark:placeholder:text-ink-muted bg-paper dark:text-ink ${className}`}
     />
   )
 }

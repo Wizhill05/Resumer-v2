@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import {
   AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
   Loader2, Plus, Trash2, Upload, X, Pencil, FileText,
-  Briefcase, FolderGit2, GraduationCap, Award, User, Lock, Menu,
+  Briefcase, FolderGit2, GraduationCap, Award, User, Lock, Menu, Info,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,16 +45,16 @@ const FOCUS_OPTIONS: { id: FocusMode; label: string; desc: string; projects: num
 function ConsentBanner({ accepted, onAccept }: { accepted: boolean; onAccept: () => void }) {
   if (accepted) return null
   return (
-    <div className="flex shrink-0 items-start gap-3 border-b border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900">
-      <span className="mt-0.5 shrink-0 text-blue-500">ⓘ</span>
+    <div className="flex shrink-0 items-start gap-3 border-b border-line bg-ember-tint/50 px-4 py-2.5 text-sm text-ink-soft">
+      <Info size={15} className="mt-0.5 shrink-0 text-ember" aria-hidden="true" />
       <p className="flex-1 leading-snug text-xs">
         We use an essential session cookie to enforce the 5/day limit and protect your downloads.
         Your draft is saved on this device.{" "}
         <Link href="/privacy" className="underline">Privacy</Link>
       </p>
       <div className="flex shrink-0 gap-2">
-        <Link href="/" className="text-xs font-semibold text-blue-700 hover:underline">Decline</Link>
-        <button onClick={onAccept} className="rounded bg-blue-600 px-2.5 py-0.5 text-xs font-semibold text-white hover:bg-blue-700">
+        <Link href="/" className="text-xs font-semibold text-ink-soft hover:underline">Decline</Link>
+        <button onClick={onAccept} className="cursor-pointer rounded-md bg-ember px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90">
           Accept
         </button>
       </div>
@@ -67,7 +67,7 @@ function ConsentBanner({ accepted, onAccept }: { accepted: boolean; onAccept: ()
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <Label className="text-xs font-medium text-zinc-500">{label}</Label>
+      <Label className="text-xs font-medium text-ink-muted">{label}</Label>
       {children}
     </div>
   )
@@ -82,26 +82,26 @@ function ItemRow({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+    <div className="rounded border border-line bg-paper">
       <div className="flex min-w-0 items-center gap-2 px-3 py-2.5">
         <button type="button" onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left">
           {open
-            ? <ChevronDown size={13} className="shrink-0 text-zinc-400" />
-            : <ChevronRight size={13} className="shrink-0 text-zinc-400" />}
+            ? <ChevronDown size={13} className="shrink-0 text-ink-faint" />
+            : <ChevronRight size={13} className="shrink-0 text-ink-faint" />}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</p>
-            {sub && <p className="truncate text-xs text-zinc-400 dark:text-zinc-500">{sub}</p>}
+            <p className="truncate text-sm font-semibold text-ink">{title}</p>
+            {sub && <p className="truncate text-xs text-ink-faint">{sub}</p>}
           </div>
         </button>
-        <button type="button" onClick={() => setOpen(!open)} className="shrink-0 cursor-pointer rounded p-1 text-zinc-400 hover:text-zinc-700">
+        <button type="button" onClick={() => setOpen(!open)} className="shrink-0 cursor-pointer rounded p-1 text-ink-faint hover:text-ink">
           <Pencil size={12} />
         </button>
-        <button type="button" onClick={onDelete} className="shrink-0 cursor-pointer rounded p-1 text-zinc-400 hover:text-red-500">
+        <button type="button" onClick={onDelete} className="shrink-0 cursor-pointer rounded p-1 text-ink-faint hover:text-red-500">
           <Trash2 size={12} />
         </button>
       </div>
       {open && (
-        <div className="border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 px-3 pb-3 pt-2 space-y-3">
+        <div className="border-t border-line bg-ink/[0.03] px-3 pb-3 pt-2 space-y-3">
           {children}
         </div>
       )}
@@ -122,14 +122,14 @@ function NavItem({
       onClick={onClick}
       className={`flex w-full cursor-pointer items-center gap-2.5 rounded px-3 py-2 text-left text-sm transition-colors ${
         active
-          ? "bg-zinc-900 dark:bg-zinc-800 text-white"
-          : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:bg-zinc-800 hover:text-zinc-900"
+          ? "bg-paper text-ink shadow-soft ring-1 ring-line"
+          : "text-ink-muted hover:bg-ink/5 hover:text-ink"
       }`}
     >
       <Icon size={15} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
       {count !== undefined && (
-        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? "bg-white/20 text-white" : "bg-zinc-200 text-zinc-500"}`}>
+        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? "bg-white/20 text-white" : "bg-ink/10 text-ink-muted"}`}>
           {count}
         </span>
       )}
@@ -142,18 +142,18 @@ function NavItem({
 function AddCard({ title, children }: { title: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="rounded border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
+    <div className="rounded border border-dashed border-line bg-ink/[0.03]">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+        className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-ink"
       >
-        <Plus size={14} className="shrink-0 text-zinc-400" />
+        <Plus size={14} className="shrink-0 text-ink-faint" />
         {title}
-        {open ? <ChevronDown size={13} className="ml-auto text-zinc-400" /> : <ChevronRight size={13} className="ml-auto text-zinc-400" />}
+        {open ? <ChevronDown size={13} className="ml-auto text-ink-faint" /> : <ChevronRight size={13} className="ml-auto text-ink-faint" />}
       </button>
       {open && (
-        <div className="border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 pb-3 pt-2 space-y-3">
+        <div className="border-t border-line bg-paper px-3 pb-3 pt-2 space-y-3">
           {children}
         </div>
       )}
@@ -240,8 +240,8 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Import & Profile</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Upload old résumés to auto-fill, then patch any missing fields.</p>
+        <h2 className="text-base font-semibold text-ink">Import & Profile</h2>
+        <p className="mt-0.5 text-xs text-ink-muted">Upload old résumés to auto-fill, then patch any missing fields.</p>
       </div>
 
       {/* Drop zone */}
@@ -252,21 +252,21 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={importing}
-          className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-[#ff4e26]/30 bg-[#ff4e26]/5 py-8 text-sm text-[#ff4e26] transition hover:border-[#ff4e26] hover:bg-[#ff4e26]/10 disabled:opacity-50 cursor-pointer"
+          className="flex w-full flex-col items-center gap-2 rounded-lg border border-dashed border-[#ff4e26]/30 bg-[#ff4e26]/5 py-8 text-sm text-[#ff4e26] transition hover:border-[#ff4e26] hover:bg-[#ff4e26]/10 disabled:opacity-50 cursor-pointer"
         >
           {importing
-            ? <><Loader2 size={20} className="animate-spin" /><span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{stageLabel}</span>{stageHint && <span className="text-xs text-zinc-500 dark:text-zinc-400">{stageHint}</span>}</>
-            : <><Upload size={20} className="text-[#ff4e26]" /><span className="font-bold text-zinc-800 dark:text-zinc-200">Click to upload old résumés</span><span className="text-xs text-zinc-500 dark:text-zinc-400 font-semibold">PDF only · up to 5 files · 5 MB each</span></>
+            ? <><Loader2 size={20} className="animate-spin" /><span className="text-xs font-medium text-ink">{stageLabel}</span>{stageHint && <span className="text-xs text-ink-muted">{stageHint}</span>}</>
+            : <><Upload size={20} className="text-[#ff4e26]" /><span className="font-bold text-ink">Click to upload old résumés</span><span className="text-xs text-ink-muted font-semibold">PDF only · up to 5 files · 5 MB each</span></>
           }
         </button>
         {importing && (
           <div className="mt-2 flex items-center gap-2 px-1">
             <div className="flex gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "parsing" || importStage === "extracting" || importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
-              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "extracting" || importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
-              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "parsing" || importStage === "extracting" || importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-ink/15"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "extracting" || importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-ink/15"}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${importStage === "deduplicating" ? "bg-[#ff4e26]" : "bg-ink/15"}`} />
             </div>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="text-xs text-ink-muted">
               {importStage === "parsing" ? "Step 1 of 3" : importStage === "extracting" ? "Step 2 of 3" : "Step 3 of 3"}
             </span>
           </div>
@@ -290,7 +290,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
               description="Import error is prefilled. Add file name if possible."
               variant="outline"
               size="xs"
-              className="w-fit border-red-300 text-red-700 hover:bg-red-100 bg-white font-black uppercase tracking-wider text-[11px]"
+              className="w-fit border-red-300 text-red-700 hover:bg-red-100 bg-paper font-bold text-[11px]"
             >
               Report this issue
             </ReportIssueButton>
@@ -361,12 +361,12 @@ function ExperiencePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraf
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Experience</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add work experience entries. At least 1-3 needed depending on selected focus.</p>
+        <h2 className="text-base font-semibold text-ink">Experience</h2>
+        <p className="mt-0.5 text-xs text-ink-muted">Add work experience entries. At least 1-3 needed depending on selected focus.</p>
       </div>
 
       {draft.experiences.length === 0 && (
-        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No experience added yet. Import a résumé above or add manually.</p>
+        <p className="rounded border border-line bg-ink/[0.03] px-4 py-6 text-center text-sm text-ink-faint">No experience added yet. Import a résumé above or add manually.</p>
       )}
 
       <div className="space-y-2">
@@ -442,12 +442,12 @@ function ProjectsPanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft:
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Projects</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Add projects. At least 1-3 needed depending on selected focus.</p>
+        <h2 className="text-base font-semibold text-ink">Projects</h2>
+        <p className="mt-0.5 text-xs text-ink-muted">Add projects. At least 1-3 needed depending on selected focus.</p>
       </div>
 
       {draft.projects.length === 0 && (
-        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No projects added yet. Import a résumé or add manually.</p>
+        <p className="rounded border border-line bg-ink/[0.03] px-4 py-6 text-center text-sm text-ink-faint">No projects added yet. Import a résumé or add manually.</p>
       )}
 
       <div className="space-y-2">
@@ -525,12 +525,12 @@ function EducationPanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Education</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Degrees, diplomas, certifications.</p>
+        <h2 className="text-base font-semibold text-ink">Education</h2>
+        <p className="mt-0.5 text-xs text-ink-muted">Degrees, diplomas, certifications.</p>
       </div>
 
       {draft.education.length === 0 && (
-        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No education added yet.</p>
+        <p className="rounded border border-line bg-ink/[0.03] px-4 py-6 text-center text-sm text-ink-faint">No education added yet.</p>
       )}
 
       <div className="space-y-2">
@@ -596,12 +596,12 @@ function ExtracurricularsPanel({ draft, updateDraft }: { draft: GuestDraft; upda
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Extracurriculars</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Clubs, volunteering, leadership, sports, etc.</p>
+        <h2 className="text-base font-semibold text-ink">Extracurriculars</h2>
+        <p className="mt-0.5 text-xs text-ink-muted">Clubs, volunteering, leadership, sports, etc.</p>
       </div>
 
       {draft.extracurriculars.length === 0 && (
-        <p className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-6 text-center text-sm text-zinc-400">No extracurriculars added yet.</p>
+        <p className="rounded border border-line bg-ink/[0.03] px-4 py-6 text-center text-sm text-ink-faint">No extracurriculars added yet.</p>
       )}
 
       <div className="space-y-2">
@@ -678,8 +678,8 @@ function GeneratePanel({
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Generate résumé</h2>
-        <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Choose a focus, paste the job post, and generate.</p>
+        <h2 className="text-base font-semibold text-ink">Generate résumé</h2>
+        <p className="mt-0.5 text-xs text-ink-muted">Choose a focus, paste the job post, and generate.</p>
       </div>
 
       {error && (
@@ -696,7 +696,7 @@ function GeneratePanel({
             description="Error is prefilled. Add job description context."
             variant="outline"
             size="xs"
-            className="w-fit border-red-300 text-red-700 hover:bg-red-100 bg-white font-black uppercase tracking-wider text-[11px]"
+            className="w-fit border-red-300 text-red-700 hover:bg-red-100 bg-paper font-bold text-[11px]"
           >
             Report this issue
           </ReportIssueButton>
@@ -704,9 +704,9 @@ function GeneratePanel({
       )}
 
       {/* Focus picker */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
-        <p className="border-b border-zinc-100 dark:border-zinc-800 px-4 py-2.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400">Content focus</p>
-        <div className="divide-y divide-zinc-100">
+      <div className="rounded-lg border border-line bg-paper">
+        <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted">Content focus</p>
+        <div className="divide-y divide-line">
           {FOCUS_OPTIONS.map((opt) => {
             const locked = draft.experiences.length < opt.experience || draft.projects.length < opt.projects
             const selected = focus === opt.id
@@ -716,17 +716,17 @@ function GeneratePanel({
                 type="button"
                 disabled={locked}
                 onClick={() => !locked && setFocus(opt.id)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"} ${selected ? "bg-zinc-900 dark:bg-zinc-800 text-white" : "hover:bg-zinc-50 dark:hover:bg-zinc-800"}`}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"} ${selected ? "bg-ember-tint/60 text-ink" : "hover:bg-ink/5 dark:hover:bg-ink/[0.06]"}`}
               >
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${selected ? "border-white bg-white text-zinc-900" : "border-zinc-300"}`}>
+                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${selected ? "border-ember bg-ember text-white" : "border-line"}`}>
                   {selected ? "✓" : ""}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-semibold leading-none ${selected ? "text-white" : "text-zinc-900"}`}>{opt.label}</p>
-                  <p className={`mt-0.5 text-xs ${selected ? "text-zinc-300" : "text-zinc-500"}`}>{opt.desc}</p>
+                  <p className={`text-sm font-semibold leading-none ${selected ? "text-ember" : "text-ink"}`}>{opt.label}</p>
+                  <p className={`mt-0.5 text-xs text-ink-muted`}>{opt.desc}</p>
                 </div>
                 {locked && (
-                  <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500">
+                  <span className="flex shrink-0 items-center gap-1 text-xs text-ink-faint">
                     <Lock size={11} />
                     {`Need ${Math.max(0, opt.experience - draft.experiences.length)} exp · ${Math.max(0, opt.projects - draft.projects.length)} proj`}
                   </span>
@@ -738,8 +738,8 @@ function GeneratePanel({
       </div>
 
       {/* Job description */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
-        <p className="border-b border-zinc-100 dark:border-zinc-800 px-4 py-2.5 text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+      <div className="rounded-lg border border-line bg-paper">
+        <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted">
           Job description <span className="font-normal text-red-500">required</span>
         </p>
         <div className="space-y-3 p-4">
@@ -763,8 +763,8 @@ function GeneratePanel({
       </div>
 
       {/* Status summary */}
-      <div className="rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-4 py-3 text-xs text-zinc-600 space-y-1">
-        <p className="font-semibold text-zinc-700 dark:text-zinc-300">Ready to generate?</p>
+      <div className="rounded border border-line bg-ink/[0.03] px-4 py-3 text-xs text-ink-muted space-y-1">
+        <p className="font-semibold text-ink">Ready to generate?</p>
         {[
           { label: "Name", ok: !!draft.profile.full_name?.trim(), hint: "Add name in Profile" },
           { label: `Experience (need ${activeFocus.experience})`, ok: draft.experiences.length >= activeFocus.experience, hint: `Add ${activeFocus.experience - draft.experiences.length} more` },
@@ -774,8 +774,8 @@ function GeneratePanel({
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2">
             <span className={item.ok ? "text-emerald-500" : "text-red-400"}>{item.ok ? "✓" : "✗"}</span>
-            <span className={item.ok ? "text-zinc-600" : "text-zinc-500"}>{item.label}</span>
-            {!item.ok && <span className="text-zinc-400">— {item.hint}</span>}
+            <span className={item.ok ? "text-ink-muted" : "text-ink-muted"}>{item.label}</span>
+            {!item.ok && <span className="text-ink-faint">— {item.hint}</span>}
           </div>
         ))}
       </div>
@@ -871,11 +871,11 @@ export function TryClient() {
   const activeNavItem = nav.find((item) => item.id === active)
 
   return (
-    <div className="flex h-full flex-col relative bg-zinc-50 dark:bg-zinc-900">
+    <div className="flex h-full flex-col relative bg-ink/[0.03]">
       <ConsentBanner accepted={accepted} onAccept={acceptCookies} />
 
       {/* Mobile Top Tabs Header (hidden on desktop) */}
-      <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 md:hidden shrink-0">
+      <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-ink/5 border-b border-line md:hidden shrink-0">
         {nav.map((item) => {
           const Icon = item.icon
           const isActive = active === item.id
@@ -884,16 +884,16 @@ export function TryClient() {
             <button
               key={item.id}
               onClick={() => setActive(item.id)}
-              className={`flex shrink-0 select-none items-center gap-1.5 border px-2.5 py-1.5 text-[11px] font-extrabold uppercase tracking-wide transition-colors rounded cursor-pointer ${
+              className={`flex shrink-0 select-none items-center gap-1.5 border px-2.5 py-1.5 text-xs font-semibold transition-colors rounded-md cursor-pointer ${
                 isActive
-                  ? "border-zinc-950 dark:border-zinc-700 bg-zinc-950 dark:bg-zinc-800 text-white shadow-[1px_1px_0px_#18181b]"
-                  : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:border-zinc-400 dark:hover:border-zinc-500"
+                  ? "border-ember/50 bg-ember-tint text-ember"
+                  : "border-line bg-paper text-ink hover:border-ink/40"
               }`}
             >
               <Icon size={12} />
               <span>{shortLabel}</span>
               {item.count !== undefined && (
-                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-black ${isActive ? "bg-white/20 text-white" : "bg-zinc-250 text-zinc-500"}`}>
+                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isActive ? "bg-ember/15 text-ember" : "bg-ink/5 text-ink-muted"}`}>
                   {item.count}
                 </span>
               )}
@@ -904,7 +904,7 @@ export function TryClient() {
 
       <div className="flex min-h-0 flex-1">
         {/* Sidebar (desktop only) */}
-        <nav className="hidden md:flex w-52 shrink-0 flex-col gap-1 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-2">
+        <nav className="hidden md:flex w-56 shrink-0 flex-col gap-1 border-r border-line bg-app p-3">
           {nav.map((item) => (
             <NavItem
               key={item.id}
@@ -916,17 +916,17 @@ export function TryClient() {
             />
           ))}
           <div className="mt-auto pt-3">
-            <div className="rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Privacy</p>
-              <p className="mt-0.5 text-[11px] font-semibold leading-snug text-zinc-600">
-                All data stays on <span className="font-black text-zinc-900 dark:text-zinc-100">your device</span> unless you log in.
+            <div className="rounded border border-line bg-paper px-2.5 py-2">
+              <p className="text-[10px] font-bold text-ink-faint">Privacy</p>
+              <p className="mt-0.5 text-[11px] font-semibold leading-snug text-ink-muted">
+                All data stays on <span className="font-bold text-ink">your device</span> unless you log in.
               </p>
             </div>
           </div>
         </nav>
 
         {/* Main content + sticky footer */}
-        <div className="flex min-w-0 flex-1 flex-col bg-white dark:bg-zinc-900">
+        <div className="flex min-w-0 flex-1 flex-col bg-paper">
           {/* Scrollable content area */}
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} />}
@@ -948,7 +948,7 @@ export function TryClient() {
           </div>
 
           {/* Sticky generate bar — always visible */}
-          <div className="shrink-0 border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-5 py-3">
+          <div className="shrink-0 border-t border-line bg-paper px-5 py-3">
             <div className="flex items-center gap-3">
               <Button
                 type="button"
@@ -967,8 +967,8 @@ export function TryClient() {
                 }
               </Button>
               <div className="shrink-0 text-right">
-                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">5 free / day</p>
-                <p className="text-[10px] text-zinc-400">No login needed</p>
+                <p className="text-xs font-semibold text-ink">5 free / day</p>
+                <p className="text-[10px] text-ink-faint">No login needed</p>
               </div>
             </div>
           </div>

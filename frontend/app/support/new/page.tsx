@@ -9,7 +9,11 @@ export default async function NewSupportIssue({
   const [session, query] = await Promise.all([auth(), searchParams])
   const text = (key: string) => (typeof query[key] === "string" ? query[key] : undefined)
   return (
-    <SupportShell>
+    <SupportShell
+      title="New issue"
+      subtitle="Tell us what you need. Follow up in your private conversation."
+      back={{ href: "/support", label: "All issues" }}
+    >
       <SupportClient
         userEmail={session?.user?.email ?? undefined}
         signedIn={Boolean(session?.user)}

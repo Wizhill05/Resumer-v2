@@ -100,20 +100,20 @@ export function EmailAuthForm({
   return (
     <div className="w-full space-y-3.5">
       {/* Mode Switcher Tabs */}
-      <div className="flex border-2 border-black dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 p-0.5">
+      <div className="flex rounded-md border border-line bg-ink/5 p-0.5">
         <button
           type="button"
           onClick={() => {
             setMode("login")
             setError(null)
           }}
-          className={`flex-1 py-1.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer ${
+          className={`flex-1 rounded-[4px] py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
             mode === "login"
-              ? "bg-black text-white dark:bg-white dark:text-black shadow-[2px_2px_0px_#ff4e26]"
-              : "text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+              ? "bg-paper text-ink shadow-soft ring-1 ring-line"
+              : "text-ink-muted hover:text-ink dark:hover:text-white"
           }`}
         >
-          Sign In
+          Sign in
         </button>
         <button
           type="button"
@@ -121,13 +121,13 @@ export function EmailAuthForm({
             setMode("register")
             setError(null)
           }}
-          className={`flex-1 py-1.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer ${
+          className={`flex-1 rounded-[4px] py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
             mode === "register"
-              ? "bg-black text-white dark:bg-white dark:text-black shadow-[2px_2px_0px_#ff4e26]"
-              : "text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+              ? "bg-paper text-ink shadow-soft ring-1 ring-line"
+              : "text-ink-muted hover:text-ink dark:hover:text-white"
           }`}
         >
-          Create Account
+          Create account
         </button>
       </div>
 
@@ -135,7 +135,7 @@ export function EmailAuthForm({
       {error && (
         <div
           role="alert"
-          className="flex items-start gap-2 border-2 border-red-500 bg-red-50 dark:bg-red-950/40 p-2.5 text-xs font-bold text-red-700 dark:text-red-300"
+          className="flex items-start gap-2 border border-red-500 bg-red-50 dark:bg-red-950/40 p-2.5 text-xs font-bold text-red-700 dark:text-red-300 rounded-md"
         >
           <AlertCircle size={15} className="mt-0.5 shrink-0" />
           <span>{error}</span>
@@ -146,7 +146,7 @@ export function EmailAuthForm({
       <form onSubmit={handleSubmit} className="space-y-2.5">
         {mode === "register" && (
           <div>
-            <label className="block text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300 mb-1">
+            <label className="block text-[11px] font-bold text-ink mb-1">
               Full Name (Optional)
             </label>
             <input
@@ -155,13 +155,13 @@ export function EmailAuthForm({
               onChange={(e) => setName(e.target.value)}
               placeholder="Alex Smith"
               disabled={loading}
-              className="w-full border-2 border-black dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-xs sm:text-sm font-semibold text-black dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#ff4e26]"
+              className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
             />
           </div>
         )}
 
         <div>
-          <label className="block text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300 mb-1">
+          <label className="block text-[11px] font-bold text-ink mb-1">
             Email Address
           </label>
           <input
@@ -172,12 +172,12 @@ export function EmailAuthForm({
             placeholder="you@example.com"
             autoComplete="email"
             disabled={loading}
-            className="w-full border-2 border-black dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-xs sm:text-sm font-semibold text-black dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#ff4e26]"
+            className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
           />
         </div>
 
         <div>
-          <label className="block text-[11px] font-black uppercase tracking-wide text-zinc-700 dark:text-zinc-300 mb-1">
+          <label className="block text-[11px] font-bold text-ink mb-1">
             Password
           </label>
           <input
@@ -188,14 +188,14 @@ export function EmailAuthForm({
             placeholder={mode === "register" ? "At least 6 characters" : "••••••••"}
             autoComplete={mode === "register" ? "new-password" : "current-password"}
             disabled={loading}
-            className="w-full border-2 border-black dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-xs sm:text-sm font-semibold text-black dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#ff4e26]"
+            className="w-full border border-line-strong bg-paper px-3 py-2 text-xs sm:text-sm font-semibold text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-[#ff4e26] rounded-md"
           />
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className={`group flex min-h-[44px] w-full items-center justify-center gap-2 border-2 border-black bg-[#ff4e26] text-white px-4 py-2.5 text-xs sm:text-sm font-black uppercase tracking-wide shadow-[3px_3px_0px_#000000] dark:shadow-[3px_3px_0px_#3f3f46] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_#000000] active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0px_#000000] cursor-pointer disabled:opacity-70 disabled:pointer-events-none ${
+          className={`group flex min-h-[44px] w-full items-center justify-center gap-2 border border-line-strong bg-[#ff4e26] text-white px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer disabled:opacity-70 disabled:pointer-events-none shadow-soft rounded-md ${
             compact ? "min-h-[40px] py-2" : ""
           }`}
         >
@@ -215,7 +215,7 @@ export function EmailAuthForm({
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-muted hover:text-ink dark:hover:text-white transition-colors cursor-pointer"
         >
           <ArrowLeft size={13} />
           <span>Back to Google / GitHub</span>

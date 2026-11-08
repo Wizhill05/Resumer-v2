@@ -42,7 +42,7 @@ type Props = {
 
 type Editor = "resume" | "mode" | "details" | "email" | null
 const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]"
-const outlineButton = `inline-flex min-h-11 items-center justify-center gap-2 border border-zinc-300 bg-white px-3 text-sm font-semibold dark:border-zinc-700 dark:bg-zinc-950 ${focus}`
+const outlineButton = `inline-flex min-h-11 items-center justify-center gap-2 border border-line bg-paper px-3 text-sm font-semibold rounded-md ${focus}`
 const modeLabel = (value: CreativityMode) => MODE_LABELS.find((mode) => mode.val === value)?.label ?? value
 
 function subscribeMobile(onChange: () => void) {
@@ -103,14 +103,14 @@ function MobileSheet({ title, children, action, onDismiss, open = true }: {
     <dialog ref={dialog} aria-labelledby={titleId}
       onCancel={(event) => { event.preventDefault(); close() }}
       onClick={(event) => { if (event.target === event.currentTarget) close() }}
-      className={`${styles.sheet} fixed inset-x-0 bottom-0 top-auto m-0 max-h-[90dvh] w-full max-w-none overflow-hidden border-0 border-t border-zinc-300 bg-[#fbfbf3] p-0 text-zinc-950 backdrop:bg-black/60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100`}>
+      className={`${styles.sheet} fixed inset-x-0 bottom-0 top-auto m-0 max-h-[90dvh] w-full max-w-none overflow-hidden border-0 border-t border-line bg-app p-0 text-ink backdrop:bg-[rgb(35_10_4/38%)] dark:backdrop:bg-black/60`}>
       <div className="flex max-h-[90dvh] flex-col" onClick={(event) => event.stopPropagation()}>
-        <header className="flex shrink-0 items-center justify-between border-b border-zinc-300 px-5 py-2.5 dark:border-zinc-700">
+        <header className="flex shrink-0 items-center justify-between border-b border-line px-5 py-2.5">
           <h2 id={titleId} tabIndex={-1} autoFocus className="text-xl font-bold outline-none">{title}</h2>
           <button type="button" onClick={() => close()} aria-label={`Close ${title}`} className={`flex h-11 w-11 shrink-0 items-center justify-center ${focus}`}><X size={20} aria-hidden="true" /></button>
         </header>
         <div className="min-h-0 overflow-y-auto overscroll-contain px-5 py-5">{children}</div>
-        {action && <footer className="shrink-0 border-t border-zinc-300 bg-white px-5 pt-3.5 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-zinc-700 dark:bg-zinc-950">{action}</footer>}
+        {action && <footer className="shrink-0 border-t border-line bg-paper px-5 pt-3.5 pb-[max(1rem,env(safe-area-inset-bottom))]">{action}</footer>}
       </div>
     </dialog>
     </SheetCloseContext.Provider>
@@ -123,19 +123,19 @@ function SaveButton({ children, onClick }: { children: ReactNode; onClick: () =>
 }
 
 function BriefRow({ label, summary, onClick }: { label: string; summary: string; onClick: () => void }) {
-  return <button type="button" onClick={(event) => { event.currentTarget.focus(); onClick() }} className={`${styles.row} flex min-h-16 w-full items-center justify-between gap-4 border-b border-zinc-300 py-3.5 text-left dark:border-zinc-700 ${focus}`}>
-    <span className="min-w-0 space-y-1"><span className="block text-sm font-semibold">{label}</span><span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">{summary}</span></span>
-    <ChevronRight size={18} className="shrink-0 text-zinc-500" aria-hidden="true" />
+  return <button type="button" onClick={(event) => { event.currentTarget.focus(); onClick() }} className={`${styles.row} flex min-h-16 w-full items-center justify-between gap-4 border-b border-line py-3.5 text-left ${focus}`}>
+    <span className="min-w-0 space-y-1"><span className="block text-sm font-semibold">{label}</span><span className="block truncate text-xs text-ink-muted">{summary}</span></span>
+    <ChevronRight size={18} className="shrink-0 text-ink-muted" aria-hidden="true" />
   </button>
 }
 
 function ContentCounter({ label, value, onChange, icon }: { label: string; value: number; onChange: (delta: number) => void; icon: ReactNode }) {
-  return <div className="min-w-0 space-y-3 border border-zinc-300 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-950">
+  return <div className="min-w-0 space-y-3 border border-line bg-paper p-2.5 rounded-md">
     <div className="flex items-center gap-2 text-xs font-semibold">{icon}{label}</div>
     <div className="flex items-center justify-between gap-1">
-      <button type="button" onClick={() => onChange(-1)} disabled={value <= 1} aria-label={`Decrease ${label.toLowerCase()}`} className={`flex h-11 w-11 shrink-0 items-center justify-center border border-zinc-300 disabled:opacity-30 dark:border-zinc-700 ${focus}`}><Minus size={14} /></button>
+      <button type="button" onClick={() => onChange(-1)} disabled={value <= 1} aria-label={`Decrease ${label.toLowerCase()}`} className={`flex h-11 w-11 shrink-0 items-center justify-center border border-line disabled:opacity-30 rounded-md ${focus}`}><Minus size={14} /></button>
       <output aria-label={`${label} count`} className="text-base font-semibold tabular-nums">{value}</output>
-      <button type="button" onClick={() => onChange(1)} disabled={value >= 3} aria-label={`Increase ${label.toLowerCase()}`} className={`flex h-11 w-11 shrink-0 items-center justify-center border border-zinc-300 disabled:opacity-30 dark:border-zinc-700 ${focus}`}><Plus size={14} /></button>
+      <button type="button" onClick={() => onChange(1)} disabled={value >= 3} aria-label={`Increase ${label.toLowerCase()}`} className={`flex h-11 w-11 shrink-0 items-center justify-center border border-line disabled:opacity-30 rounded-md ${focus}`}><Plus size={14} /></button>
     </div>
   </div>
 }
@@ -178,16 +178,16 @@ function ResumeSettings({ templates, preferences, onSave, onDismiss, profileProj
     <MobileSheet title="Your résumé" open={!editingLayout} onDismiss={onDismiss} action={<SaveButton onClick={() => onSave(draft)}>Save résumé settings</SaveButton>}>
       <div className="space-y-7">
         <section aria-label="Template" className="space-y-3">
-          <h3 className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Template</h3>
-          <div role="group" aria-label="Résumé template" className="divide-y divide-zinc-300 border border-zinc-300 dark:divide-zinc-700 dark:border-zinc-700">
+          <h3 className="text-xs font-medium text-ink-muted">Template</h3>
+          <div role="group" aria-label="Résumé template" className="divide-y divide-line-strong border border-line rounded-md">
             {templates.map((item, index) => {
               const selected = draft.templateId === item.id
               const Icon = index === 0 ? FileText : PanelsTopLeft
               return <button key={item.id} type="button" aria-pressed={selected} onClick={() => setDraft({ ...draft, templateId: item.id })}
-                className={`flex min-h-18 w-full items-center gap-3 px-4 py-3 text-left ${focus} ${selected ? "bg-zinc-100 dark:bg-zinc-800" : "bg-white dark:bg-zinc-950"}`}>
+                className={`flex min-h-18 w-full items-center gap-3 px-4 py-3 text-left ${focus} ${selected ? "bg-ink/5" : "bg-paper"}`}>
                 <Icon size={20} className="shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{item.id === "personal-classic" ? "Serif · Single column" : item.id === "professional-sans" ? "Sans serif · Compact A4" : item.description}</span></span>
-                {selected ? <CheckCircle2 size={18} className="shrink-0" aria-hidden="true" /> : <Circle size={18} className="shrink-0 text-zinc-500" aria-hidden="true" />}
+                <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{item.name}</span><span className="mt-1 block text-xs leading-relaxed text-ink-muted">{item.id === "personal-classic" ? "Serif · Single column" : item.id === "professional-sans" ? "Sans serif · Compact A4" : item.description}</span></span>
+                {selected ? <CheckCircle2 size={18} className="shrink-0" aria-hidden="true" /> : <Circle size={18} className="shrink-0 text-ink-muted" aria-hidden="true" />}
               </button>
             })}
           </div>
@@ -198,13 +198,13 @@ function ResumeSettings({ templates, preferences, onSave, onDismiss, profileProj
           {isError && <p className="text-xs text-amber-700 dark:text-amber-400">Layout preference unavailable. <button type="button" onClick={() => refetch()} className="min-h-11 underline">Retry</button></p>}
         </section>
         <section aria-label="Content" className="space-y-3">
-          <h3 className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Content</h3>
+          <h3 className="text-xs font-medium text-ink-muted">Content</h3>
           <div className="grid grid-cols-2 gap-3">
             <ContentCounter label="Projects" value={draft.split.projects} onChange={(delta) => changeCount("projects", delta)} icon={<FolderGit2 size={16} className="shrink-0" aria-hidden="true" />} />
             <ContentCounter label="Experience" value={draft.split.experience} onChange={(delta) => changeCount("experience", delta)} icon={<Briefcase size={16} className="shrink-0" aria-hidden="true" />} />
           </div>
-          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{profileProjects} projects and {profileExperiences} experiences in your profile</p>
-          {notice && <p role="status" className="text-xs text-zinc-600 dark:text-zinc-400">{notice}</p>}
+          <p className="text-[11px] text-ink-muted">{profileProjects} projects and {profileExperiences} experiences in your profile</p>
+          {notice && <p role="status" className="text-xs text-ink-muted">{notice}</p>}
           {missing && <p className="text-xs text-amber-700 dark:text-amber-400">Your profile needs more content for these counts. <Link href="/profile" className="underline">Add to profile</Link></p>}
         </section>
       </div>
@@ -218,11 +218,11 @@ function ModeSettings({ value, onSave, onDismiss }: { value: CreativityMode; onS
   const [draft, setDraft] = useState(value)
   const [info, setInfo] = useState(false)
   return <MobileSheet title="Generation mode" onDismiss={onDismiss} action={<SaveButton onClick={() => onSave(draft)}>Use {modeLabel(draft)}</SaveButton>}>
-    <div role="group" aria-label="Generation mode" className="divide-y divide-zinc-300 border border-zinc-300 dark:divide-zinc-700 dark:border-zinc-700">
-      {MODE_LABELS.map((mode) => <button key={mode.val} type="button" aria-pressed={draft === mode.val} onClick={() => setDraft(mode.val)} className={`flex min-h-14 w-full items-center justify-between px-4 text-sm ${focus} ${draft === mode.val ? "bg-zinc-100 font-semibold dark:bg-zinc-800" : "bg-white dark:bg-zinc-950"}`}>{mode.label}{draft === mode.val ? <CheckCircle2 size={18} aria-hidden="true" /> : <Circle size={18} className="text-zinc-500" aria-hidden="true" />}</button>)}
+    <div role="group" aria-label="Generation mode" className="divide-y divide-line-strong border border-line rounded-md">
+      {MODE_LABELS.map((mode) => <button key={mode.val} type="button" aria-pressed={draft === mode.val} onClick={() => setDraft(mode.val)} className={`flex min-h-14 w-full items-center justify-between px-4 text-sm ${focus} ${draft === mode.val ? "bg-ink/5 font-semibold" : "bg-paper"}`}>{mode.label}{draft === mode.val ? <CheckCircle2 size={18} aria-hidden="true" /> : <Circle size={18} className="text-ink-muted" aria-hidden="true" />}</button>)}
     </div>
-    <button type="button" onClick={() => setInfo(!info)} aria-expanded={info} aria-controls="mobile-mode-info" className={`mt-2 flex min-h-12 w-full items-center gap-2 text-left text-xs text-zinc-500 dark:text-zinc-400 ${focus}`}><Info size={16} aria-hidden="true" /><span className="flex-1">About generation modes</span><ChevronRight size={16} className={info ? "rotate-90" : ""} aria-hidden="true" /></button>
-    {info && <div id="mobile-mode-info" className="space-y-4 border-t border-zinc-300 pt-4 dark:border-zinc-700">{MODE_INFO.map((mode) => <div key={mode.title}><h3 className="text-sm font-semibold">{mode.title}</h3><p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">{mode.body}</p></div>)}</div>}
+    <button type="button" onClick={() => setInfo(!info)} aria-expanded={info} aria-controls="mobile-mode-info" className={`mt-2 flex min-h-12 w-full items-center gap-2 text-left text-xs text-ink-muted ${focus}`}><Info size={16} aria-hidden="true" /><span className="flex-1">About generation modes</span><ChevronRight size={16} className={info ? "rotate-90" : ""} aria-hidden="true" /></button>
+    {info && <div id="mobile-mode-info" className="space-y-4 border-t border-line pt-4">{MODE_INFO.map((mode) => <div key={mode.title}><h3 className="text-sm font-semibold">{mode.title}</h3><p className="mt-1 text-xs leading-relaxed text-ink-muted">{mode.body}</p></div>)}</div>}
   </MobileSheet>
 }
 
@@ -232,7 +232,7 @@ function DetailsSettings({ preferences, onSave, onDismiss }: { preferences: Pref
   const id = useId()
   return <MobileSheet title="Keywords and instructions" onDismiss={onDismiss} action={<SaveButton onClick={() => onSave({ ...preferences, keywords, instructions })}>Save tailoring details</SaveButton>}>
     <div className="space-y-5">
-      <div className="space-y-2"><Label htmlFor={`${id}-keywords`} className="text-sm font-semibold">Target keywords</Label><Input id={`${id}-keywords`} value={keywords} onChange={(event) => setKeywords(event.target.value)} placeholder="e.g. React, Python, AWS" className="h-12 text-base" /><p className="text-xs text-zinc-500 dark:text-zinc-400">Separate keywords with commas.</p></div>
+      <div className="space-y-2"><Label htmlFor={`${id}-keywords`} className="text-sm font-semibold">Target keywords</Label><Input id={`${id}-keywords`} value={keywords} onChange={(event) => setKeywords(event.target.value)} placeholder="e.g. React, Python, AWS" className="h-12 text-base" /><p className="text-xs text-ink-muted">Separate keywords with commas.</p></div>
       <div className="space-y-2"><Label htmlFor={`${id}-instructions`} className="text-sm font-semibold">Custom instructions</Label><Textarea id={`${id}-instructions`} value={instructions} onChange={(event) => setInstructions(event.target.value)} rows={4} className="text-base" placeholder="e.g. Focus on technical contributions" /></div>
     </div>
   </MobileSheet>
@@ -241,7 +241,7 @@ function DetailsSettings({ preferences, onSave, onDismiss }: { preferences: Pref
 function EmailSettings({ value, onSave, onDismiss }: { value: boolean | null; onSave: (value: boolean | null) => void; onDismiss: () => void }) {
   const [draft, setDraft] = useState(value)
   return <MobileSheet title="Email notification" onDismiss={onDismiss} action={<SaveButton onClick={() => onSave(draft)}>Save email preference</SaveButton>}>
-    <div role="group" aria-label="Email notification" className="divide-y divide-zinc-300 border border-zinc-300 dark:divide-zinc-700 dark:border-zinc-700">{[{ label: "Profile default", value: null }, { label: "Send email", value: true }, { label: "No email", value: false }].map((option) => <button key={option.label} type="button" aria-pressed={draft === option.value} onClick={() => setDraft(option.value)} className={`flex min-h-14 w-full items-center justify-between px-4 text-sm ${focus} ${draft === option.value ? "bg-zinc-100 font-semibold dark:bg-zinc-800" : "bg-white dark:bg-zinc-950"}`}>{option.label}{draft === option.value ? <CheckCircle2 size={18} aria-hidden="true" /> : <Circle size={18} className="text-zinc-500" aria-hidden="true" />}</button>)}</div>
+    <div role="group" aria-label="Email notification" className="divide-y divide-line-strong border border-line rounded-md">{[{ label: "Profile default", value: null }, { label: "Send email", value: true }, { label: "No email", value: false }].map((option) => <button key={option.label} type="button" aria-pressed={draft === option.value} onClick={() => setDraft(option.value)} className={`flex min-h-14 w-full items-center justify-between px-4 text-sm ${focus} ${draft === option.value ? "bg-ink/5 font-semibold" : "bg-paper"}`}>{option.label}{draft === option.value ? <CheckCircle2 size={18} aria-hidden="true" /> : <Circle size={18} className="text-ink-muted" aria-hidden="true" />}</button>)}</div>
   </MobileSheet>
 }
 
@@ -271,8 +271,8 @@ function MobileBriefContent(props: Props) {
     <form id={formId} onSubmit={props.onGenerate} className="space-y-2.5 pb-28">
       <div className="space-y-2"><Label htmlFor={jobId} className="text-sm font-semibold">Job description *</Label><Textarea id={jobId} required value={props.jobDescription} onChange={(event) => props.onJobDescriptionChange(event.target.value)} rows={6} placeholder="Paste the full job description, including responsibilities and requirements…" className="min-h-40 text-base leading-relaxed" /></div>
       <div className="flex items-center gap-4 pt-4 pb-1">
-        {sample?.page_images[0] ? <button type="button" aria-label={`Preview ${template?.name} template sample`} onClick={() => setPreview(true)} className={`relative aspect-[210/297] w-2/5 max-w-36 shrink-0 border border-zinc-300 bg-white ${focus}`}><Image src={sample.page_images[0]} unoptimized fill sizes="144px" alt={`${template?.name} template sample`} className="object-contain object-top" /></button> : <div className="flex aspect-[210/297] w-2/5 max-w-36 shrink-0 flex-col items-center justify-center gap-3 border border-zinc-300 bg-white p-3 text-center text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-950">{isError ? <><FileText size={24} aria-hidden="true" /><span>Template sample unavailable</span><button type="button" onClick={() => refetch()} className={`min-h-11 underline ${focus}`}>Retry preview</button></> : <><Loader2 size={20} className="animate-spin" aria-hidden="true" /><span role="status">Loading sample…</span></>}</div>}
-        <div className="min-w-0 flex-1 space-y-3"><h2 className="text-lg font-bold leading-snug">{template?.name ?? "Choose a template"}</h2><p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{preferences.split.projects} projects<br />{preferences.split.experience} experience</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setEditor("resume") }} className={`${outlineButton} w-full`}>Change</button><p className="text-[10px] text-zinc-500 dark:text-zinc-400">Template sample</p></div>
+        {sample?.page_images[0] ? <button type="button" aria-label={`Preview ${template?.name} template sample`} onClick={() => setPreview(true)} className={`relative aspect-[210/297] w-2/5 max-w-36 shrink-0 border border-line bg-paper rounded-md ${focus}`}><Image src={sample.page_images[0]} unoptimized fill sizes="144px" alt={`${template?.name} template sample`} className="object-contain object-top" /></button> : <div className="flex aspect-[210/297] w-2/5 max-w-36 shrink-0 flex-col items-center justify-center gap-3 border border-line bg-paper p-3 text-center text-xs text-ink-muted rounded-md">{isError ? <><FileText size={24} aria-hidden="true" /><span>Template sample unavailable</span><button type="button" onClick={() => refetch()} className={`min-h-11 underline ${focus}`}>Retry preview</button></> : <><Loader2 size={20} className="animate-spin" aria-hidden="true" /><span role="status">Loading sample…</span></>}</div>}
+        <div className="min-w-0 flex-1 space-y-3"><h2 className="text-lg font-bold leading-snug">{template?.name ?? "Choose a template"}</h2><p className="text-xs leading-relaxed text-ink-muted">{preferences.split.projects} projects<br />{preferences.split.experience} experience</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setEditor("resume") }} className={`${outlineButton} w-full`}>Change</button><p className="text-[10px] text-ink-muted">Template sample</p></div>
       </div>
       {missing && <p className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400"><AlertCircle size={14} className="shrink-0" aria-hidden="true" /><span>Not enough profile content for these counts. <Link href="/profile" className="underline">Add to profile</Link> or <button type="button" onClick={() => setEditor("resume")} className="underline">change counts</button>.</span></p>}
       <div>
@@ -280,9 +280,9 @@ function MobileBriefContent(props: Props) {
         <BriefRow label="Keywords and instructions" summary={[preferences.keywords && "Keywords added", preferences.instructions && "Instructions added"].filter(Boolean).join(" · ") || "None added · Optional"} onClick={() => setEditor("details")} />
         <BriefRow label="Email notification" summary={preferences.sendEmail === null ? "Default" : preferences.sendEmail ? "Send email" : "No email"} onClick={() => setEditor("email")} />
       </div>
-      {createPortal(<div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-300 bg-white px-5 pt-3.5 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-zinc-700 dark:bg-zinc-950">
+      {createPortal(<div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper px-5 pt-3.5 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <Button form={formId} type="submit" disabled={props.isSubmitting || !props.jobDescription.trim()} className={`h-12 w-full border-[#ff4e26] text-sm normal-case tracking-normal shadow-none ${focus}`}>{props.isSubmitting ? <><Loader2 size={18} className="animate-spin" />Generating…</> : "Generate résumé"}</Button>
-        <p className="mt-2 text-center text-[11px] text-zinc-500 dark:text-zinc-400">Free beta: 5 builds per day</p>
+        <p className="mt-2 text-center text-[11px] text-ink-muted">Free beta: 5 builds per day</p>
       </div>, document.body)}
     </form>
     {editor === "resume" && <ResumeSettings templates={templates} preferences={preferences} onSave={save} onDismiss={() => setEditor(null)} profileProjects={props.profileProjects} profileExperiences={props.profileExperiences} />}

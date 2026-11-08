@@ -12,7 +12,6 @@ import {
   Loader2,
   AlertCircle,
   ArrowLeft,
-  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -119,36 +118,32 @@ export function RemakeClient({ runId }: Props) {
   }, [runId])
 
   return (
-    <div className="mx-auto max-w-xl space-y-5 py-8 md:py-14 px-4">
-      <div className="border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 md:p-8 rounded-xl">
+    <div className="mx-auto max-w-xl space-y-5 px-4 py-8 md:py-12">
+      <div className="soft-card p-6 md:p-8">
         {/* Top Tag & Header */}
         <div className="mb-6 text-center space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold tracking-wider uppercase bg-[#ff4e26]/10 text-[#ff4e26]">
-            <Sparkles size={12} />
-            <span>{isComplete ? "Done" : isFailed ? "Failed" : "In Progress"}</span>
-          </div>
-          <h2 className="text-xl font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100 md:text-2xl">
+          <h2 className="text-xl font-bold tracking-tight text-ink md:text-2xl">
             {isComplete
-              ? "Project Replaced & Résumé Remade"
+              ? "Your résumé is ready"
               : isFailed
-              ? "Project Remake Encountered an Issue"
-              : "Remaking Résumé with New Project"}
+              ? "The remake ran into a problem"
+              : "Remaking your résumé"}
           </h2>
-          <p className="text-xs font-medium text-amber-600 dark:text-amber-400 md:text-sm">
-            {isComplete ? "All sections updated & PDF rendered" : `${stepLabel} (${percent}%)`}
+          <p className="text-xs text-ink-muted md:text-sm">
+            {isComplete ? "Sections updated and the PDF re-rendered." : `${stepLabel} (${percent}%)`}
           </p>
         </div>
 
         {/* Live Progress Bar */}
         <div className="space-y-2">
-          <div className="flex justify-between font-mono text-xs font-bold text-zinc-600 dark:text-zinc-400">
+          <div className="flex justify-between text-xs font-semibold text-ink-muted">
             <span>Progress</span>
             <span>{percent}%</span>
           </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-ink/[0.06]">
             <div
               className={`h-full transition-all duration-500 ease-out ${
-                isFailed ? "bg-red-500" : "bg-[#ff4e26]"
+                isFailed ? "bg-red-500" : "bg-gradient-to-r from-[#ff7d5c] to-ember"
               }`}
               style={{ width: `${percent}%` }}
             />
@@ -158,16 +153,16 @@ export function RemakeClient({ runId }: Props) {
         {/* Advisory message while in progress */}
         {!isComplete && !isFailed && (
           <div className="mt-6 space-y-4 text-center">
-            <p className="text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs font-medium leading-relaxed text-ink-muted">
               This will run in the background anyway. You can safely leave this page or return to history anytime.
             </p>
             <div>
               <Link
                 href="/dashboard/history"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-md transition-colors"
+                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-paper px-3.5 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ember/50 hover:text-ember"
               >
                 <ArrowLeft size={13} />
-                <span>Back to History</span>
+                <span>Back to history</span>
               </Link>
             </div>
           </div>
@@ -183,17 +178,17 @@ export function RemakeClient({ runId }: Props) {
             <div className="flex justify-center gap-3">
               <Link
                 href={`/dashboard/history/${runId}/edit`}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-md transition-colors"
+                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-paper px-3.5 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ember/50 hover:text-ember"
               >
                 <Edit3 size={13} />
-                <span>Return to Editor</span>
+                <span>Return to editor</span>
               </Link>
               <Link
                 href="/dashboard/history"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#ff4e26] text-white text-xs font-bold hover:bg-[#e03d16] rounded-md transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-md bg-ember px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#e03d16]"
               >
                 <History size={13} />
-                <span>Go to History</span>
+                <span>Go to history</span>
               </Link>
             </div>
           </div>
@@ -201,20 +196,20 @@ export function RemakeClient({ runId }: Props) {
 
         {/* Completion state: Exactly the 3 requested action buttons */}
         {isComplete && (
-          <div className="mt-8 space-y-4 pt-6 border-t border-zinc-100 dark:border-zinc-800">
-            <div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
+          <div className="mt-8 space-y-4 pt-6 border-t border-line">
+            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-[var(--ok)]">
               <CheckCircle2 size={16} />
-              <span>Résumé has been updated with the new project &amp; layout checked!</span>
+              <span>New project added and the layout checked.</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
               {/* 1. Edit the PDF that got generated */}
               <Link
                 href={`/dashboard/history/${runId}/edit`}
-                className="inline-flex items-center justify-center gap-2 h-10 px-4 border border-zinc-900 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-extrabold uppercase text-xs tracking-wider rounded-md shadow-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-line bg-paper px-4 text-xs font-semibold text-ink-soft transition-colors hover:border-ember/50 hover:text-ember"
               >
                 <Edit3 size={14} />
-                <span>Edit Résumé</span>
+                <span>Edit résumé</span>
               </Link>
 
               {/* 2. Download the new PDF */}
@@ -222,7 +217,7 @@ export function RemakeClient({ runId }: Props) {
                 href={`/api/backend/generate/${runId}/download`}
             onClick={() => captureDownload(runId, "remake")}
                 download
-                className="inline-flex items-center justify-center gap-2 h-10 px-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-extrabold uppercase text-xs tracking-wider rounded-md shadow-xs transition-colors"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-ember px-4 text-xs font-semibold text-white shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)] transition-colors hover:bg-[#e03d16]"
               >
                 <Download size={14} />
                 <span>Download PDF</span>
@@ -231,10 +226,10 @@ export function RemakeClient({ runId }: Props) {
               {/* 3. Go to the history */}
               <Link
                 href="/dashboard/history"
-                className="inline-flex items-center justify-center gap-2 h-10 px-4 border border-zinc-900 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-extrabold uppercase text-xs tracking-wider rounded-md shadow-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-line bg-paper px-4 text-xs font-semibold text-ink-soft transition-colors hover:border-ember/50 hover:text-ember"
               >
                 <History size={14} />
-                <span>Go to History</span>
+                <span>Go to history</span>
               </Link>
             </div>
           </div>

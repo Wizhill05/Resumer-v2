@@ -140,14 +140,14 @@ export function IssueThread({
         {thread?.viewer_is_admin || adminView ? "Support inbox" : "All issues"}
       </Link>
       {loading && (
-        <p className="flex items-center gap-2 py-8 text-sm text-zinc-500">
+        <p className="flex items-center gap-2 py-8 text-sm text-ink-muted">
           <Loader2 className="animate-spin" size={18} /> Loading conversation...
         </p>
       )}
       {error && (
         <div
           role="alert"
-          className="border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"
+          className="border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300 rounded-md"
         >
           <p>{error}</p>
           {!thread && (
@@ -173,13 +173,13 @@ export function IssueThread({
       )}
       {thread && (
         <>
-          <header className="space-y-3 border-b border-zinc-300 pb-5 dark:border-zinc-700">
-            <h1 className="break-words text-2xl font-black leading-tight tracking-tight sm:text-3xl">
+          <header className="space-y-3 border-b border-line pb-5">
+            <h1 className="break-words text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
               {issueTitle(thread)}
             </h1>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-ink-muted">
               <span
-                className={`inline-flex items-center gap-1.5 border px-2.5 py-1.5 font-bold ${open ? "border-[#ff4e26] text-[#ff4e26]" : "border-zinc-400 text-zinc-600 dark:text-zinc-300"}`}
+                className={`inline-flex items-center gap-1.5 border px-2.5 py-1.5 font-bold rounded-md ${open ? "border-[#ff4e26] text-[#ff4e26]" : "border-line-strong text-ink-muted"}`}
               >
                 {open ? <CircleDot size={15} /> : <CircleCheck size={15} />}
                 {statusLabels[thread.status]}
@@ -199,21 +199,21 @@ export function IssueThread({
             />
           )}
           {token && !thread.viewer_is_admin && (
-            <p className="border-l-2 border-[#ff4e26] pl-3 text-xs leading-5 text-zinc-500">
+            <p className="border-l border-[#ff4e26] pl-3 text-xs leading-5 text-ink-muted">
               This is your private issue link. Bookmark it to return to this conversation, and keep
               it to yourself.
             </p>
           )}
           <section aria-label="Conversation" className="space-y-4">
-            <article className="min-w-0 border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-              <div className="flex flex-wrap items-center justify-between gap-1 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
+            <article className="min-w-0 border border-line bg-paper rounded-md">
+              <div className="flex flex-wrap items-center justify-between gap-1 border-b border-line bg-ink/[0.03] px-4 py-3 text-xs">
                 <span className="font-bold">
                   {thread.viewer_is_admin
                     ? thread.user_name || thread.user_email || thread.email_override || "Guest"
                     : "You"}{" "}
-                  <span className="font-normal text-zinc-500">opened this issue</span>
+                  <span className="font-normal text-ink-muted">opened this issue</span>
                 </span>
-                <time className="text-zinc-500" dateTime={thread.created_at}>
+                <time className="text-ink-muted" dateTime={thread.created_at}>
                   {new Date(thread.created_at).toLocaleString()}
                 </time>
               </div>
@@ -230,18 +230,18 @@ export function IssueThread({
                   .map((item) => (
                     <div key={item.label}>
                       <h2 className="text-sm font-bold">{item.label}</h2>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-ink-muted">
                         {item.value}
                       </p>
                     </div>
                   ))}
                 {thread.generation_id && (
-                  <p className="break-all text-xs text-zinc-500">
+                  <p className="break-all text-xs text-ink-muted">
                     Generation: {thread.generation_id}
                   </p>
                 )}
                 {thread.attachments.length > 0 && (
-                  <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                  <div className="space-y-3 border-t border-line pt-4">
                     <h2 className="text-sm font-bold">Attachments</h2>
                     {thread.attachments.map((attachment) =>
                       attachment.presigned_url ? (
@@ -273,14 +273,14 @@ export function IssueThread({
                                 width={800}
                                 height={600}
                                 unoptimized
-                                className="mb-2 h-auto max-h-96 w-auto max-w-full border border-zinc-200 object-contain dark:border-zinc-700"
+                                className="mb-2 h-auto max-h-96 w-auto max-w-full border border-line object-contain rounded-md"
                               />
                               {attachment.filename}
                             </a>
                           )}
                         </div>
                       ) : (
-                        <p key={attachment.id} className="text-sm text-zinc-500">
+                        <p key={attachment.id} className="text-sm text-ink-muted">
                           {attachment.filename} is temporarily unavailable.
                         </p>
                       )
@@ -293,7 +293,7 @@ export function IssueThread({
               message.author_role === "system" ? (
                 <p
                   key={message.id}
-                  className="flex items-start gap-2 border-l-2 border-zinc-300 py-2 pl-4 text-xs leading-5 text-zinc-500 dark:border-zinc-700"
+                  className="flex items-start gap-2 border-l border-line py-2 pl-4 text-xs leading-5 text-ink-muted"
                 >
                   <CircleDot size={14} className="mt-0.5 shrink-0" />
                   <span>
@@ -306,9 +306,9 @@ export function IssueThread({
               ) : (
                 <article
                   key={message.id}
-                  className={`min-w-0 border bg-white dark:bg-zinc-900 ${message.author_role === "admin" ? "border-[#ff4e26]/50" : "border-zinc-300 dark:border-zinc-700"}`}
+                  className={`min-w-0 border bg-paper rounded-md ${message.author_role === "admin" ? "border-[#ff4e26]/50" : "border-line"}`}
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-1 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
+                  <div className="flex flex-wrap items-center justify-between gap-1 border-b border-line bg-ink/[0.03] px-4 py-3 text-xs">
                     <span className="font-bold">
                       {message.author_role === "admin"
                         ? "Support team"
@@ -316,7 +316,7 @@ export function IssueThread({
                           ? thread.user_name || "Reporter"
                           : "You"}
                     </span>
-                    <time dateTime={message.created_at} className="text-zinc-500">
+                    <time dateTime={message.created_at} className="text-ink-muted">
                       {new Date(message.created_at).toLocaleString()}
                     </time>
                   </div>
@@ -329,7 +329,7 @@ export function IssueThread({
           </section>
           <form
             onSubmit={reply}
-            className="space-y-3 border border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900 sm:p-5"
+            className="space-y-3 border border-line bg-paper p-4 sm:p-5 rounded-md"
           >
             <Label htmlFor="issue-reply" className="text-sm font-bold">
               Leave a reply
@@ -345,7 +345,7 @@ export function IssueThread({
               className="text-base leading-6 sm:text-sm"
             />
             {!open && !thread.viewer_is_admin && (
-              <p className="text-xs leading-5 text-zinc-500">Replying will reopen this issue.</p>
+              <p className="text-xs leading-5 text-ink-muted">Replying will reopen this issue.</p>
             )}
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <Button type="submit" disabled={busy !== null || !draft.trim()} className="min-h-11">
@@ -358,8 +358,8 @@ export function IssueThread({
               </Button>
             </div>
           </form>
-          <div className="flex flex-col gap-3 border-t border-zinc-300 pt-4 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-700">
-            <p className="text-xs leading-5 text-zinc-500">
+          <div className="flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-5 text-ink-muted">
               {open
                 ? "Finished with this conversation? You can close it and reopen it later."
                 : "Need more help? Reopen the issue to continue."}
@@ -381,7 +381,7 @@ export function IssueThread({
             </Button>
           </div>
           {notice && (
-            <p role="status" className="border-l-2 border-[#ff4e26] pl-3 text-sm leading-6">
+            <p role="status" className="border-l border-[#ff4e26] pl-3 text-sm leading-6">
               {notice}
             </p>
           )}

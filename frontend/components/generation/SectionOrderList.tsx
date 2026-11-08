@@ -104,7 +104,7 @@ export function SectionOrderList({ items, onChange, onHoverSection, disabled = f
     <div className={`select-none ${className}`}>
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</div>
       <p id="reorder-instructions" className="sr-only">Press Space to pick up, arrow keys to move, Space to drop, or Escape to cancel. You can also use the move up and down buttons.</p>
-      <div className="mb-4 flex items-center gap-3 px-3 py-3 text-zinc-500 dark:text-zinc-400">
+      <div className="mb-4 flex items-center gap-3 px-3 py-3 text-ink-muted">
         <User size={20} aria-hidden="true" />
         <span className="flex-1 text-sm font-medium">Name & contact details</span>
         <Lock size={14} aria-hidden="true" />
@@ -124,7 +124,7 @@ export function SectionOrderList({ items, onChange, onHoverSection, disabled = f
               role="listitem" data-section-id={id}
               onMouseEnter={() => onHoverSection?.(id)} onMouseLeave={() => onHoverSection?.(null)}
               style={{ transform: `translateY(${translate}px)`, zIndex: active ? 20 : 0, transition: drag?.id === id ? "none" : undefined }}
-              className={`relative touch-pan-y flex min-h-[72px] items-center gap-2 rounded-lg border bg-white px-2.5 py-3 dark:bg-zinc-900 motion-safe:transition-transform motion-safe:duration-200 ${active ? "border-[#ff4e26] shadow-lg ring-2 ring-[#ff4e26]/15" : "border-zinc-200 dark:border-zinc-700"}`}
+              className={`relative touch-pan-y flex min-h-[72px] items-center gap-2 rounded-lg border bg-paper px-2.5 py-3 motion-safe:transition-transform motion-safe:duration-200 ${active ? "border-[#ff4e26] shadow-lg ring-2 ring-[#ff4e26]/15" : "border-line"}`}
             >
               <button type="button" data-drag-handle aria-label={`Reorder ${SECTION_METADATA[id].label}, position ${index + 1} of ${items.length}`}
                 aria-describedby="reorder-instructions" disabled={disabled}
@@ -133,13 +133,13 @@ export function SectionOrderList({ items, onChange, onHoverSection, disabled = f
                 onLostPointerCapture={(e) => finish(e, true)}
                 onKeyDown={(e) => keyDown(e, id, index)}
                 onBlur={() => setGrabbed(null)}
-                className="touch-none flex h-11 w-8 shrink-0 items-center justify-center text-zinc-400 cursor-grab active:cursor-grabbing rounded focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
+                className="touch-none flex h-11 w-8 shrink-0 items-center justify-center text-ink-faint cursor-grab active:cursor-grabbing rounded focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
                 <GripVertical size={18} aria-hidden="true" />
               </button>
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${active ? "bg-orange-50 text-[#ff4e26] dark:bg-orange-950/40" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}><SectionIcon section={id} size={20} /></span>
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${active ? "bg-orange-50 text-[#ff4e26] dark:bg-orange-950/40" : "bg-ink/5 text-ink-muted"}`}><SectionIcon section={id} size={20} /></span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold leading-tight text-zinc-900 dark:text-zinc-100">{SECTION_METADATA[id].label}</span>
-                <span className="hidden lg:block mt-1 text-xs leading-snug text-zinc-500 dark:text-zinc-400">{SECTION_METADATA[id].shortDescription}</span>
+                <span className="block text-sm font-semibold leading-tight text-ink">{SECTION_METADATA[id].label}</span>
+                <span className="hidden lg:block mt-1 text-xs leading-snug text-ink-muted">{SECTION_METADATA[id].shortDescription}</span>
               </span>
               <div className="flex shrink-0 items-center">
                 {(["up", "down"] as const).map((direction) => (
@@ -153,7 +153,7 @@ export function SectionOrderList({ items, onChange, onHoverSection, disabled = f
                         else button.focus()
                       })
                     }}
-                    className="flex h-11 w-9 items-center justify-center rounded text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-20 focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
+                    className="flex h-11 w-9 items-center justify-center rounded text-ink-muted hover:bg-ink/5 dark:hover:bg-ink/[0.06] disabled:opacity-20 focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
                     {direction === "up" ? <ChevronUp size={17} aria-hidden="true" /> : <ChevronDown size={17} aria-hidden="true" />}
                   </button>
                 ))}

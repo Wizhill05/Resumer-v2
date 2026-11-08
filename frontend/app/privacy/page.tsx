@@ -1,16 +1,19 @@
-import Link from "next/link"
+import { Nav } from "@/components/Nav"
+import { Footer } from "@/components/Footer"
+import { PageHero } from "@/components/PageHero"
 
 export default function PrivacyPage() {
   return (
-    <main className="min-h-screen bg-[#fbfbf3] px-5 py-8 text-black md:px-8">
-      <div className="mx-auto max-w-3xl">
-        <Link href="/" className="resumer-mark px-3 py-1 text-xl font-black">
-          R<span className="normal-case">é</span>sumer
-        </Link>
-        <section className="mt-10 border border-zinc-900 bg-white p-6 shadow-[4px_4px_0_#18181b] md:p-10">
-          <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#ff4e26]">Privacy Policy</p>
-          <h1 className="mt-4 text-4xl font-black uppercase leading-none tracking-[-0.07em] md:text-6xl">Your résumé data stays purposeful.</h1>
-          <div className="mt-8 space-y-5 text-sm font-semibold leading-relaxed text-zinc-600">
+    <main className="app-surface flex min-h-screen flex-col">
+      <Nav />
+      <PageHero
+        narrow
+        title="Privacy"
+        subtitle="What Résumer stores, why, and what it never does with your data."
+      />
+      <div className="page-wrap max-w-4xl flex-1">
+        <section className="soft-card p-6 md:p-10">
+          <div className="space-y-5 text-[0.95rem] leading-relaxed text-ink-muted">
             <p>Résumer stores account, profile, job description, generation history, and résumé output data needed to provide résumé generation features.</p>
             <p>We use this data to authenticate you, build résumés, show past generations, and improve reliability. We do not sell personal data.</p>
             <p>We use PostHog to understand visits, page navigation, résumé generation results, and PDF download clicks. Analytics can link signed-in activity using your account email. We do not intentionally send résumé contents, job descriptions, or custom instructions as analytics event properties.</p>
@@ -24,6 +27,7 @@ export default function PrivacyPage() {
           </div>
         </section>
       </div>
+      <Footer />
     </main>
   )
 }

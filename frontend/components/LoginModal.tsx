@@ -73,16 +73,16 @@ export function LoginModal({
         >
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-[rgb(35_10_4/38%)] dark:bg-black/60"
             onClick={handleClose}
           />
 
           {/* Modal */}
-          <div className="relative z-10 w-full max-w-lg border-3 border-black dark:border-zinc-600 bg-white dark:bg-zinc-900 p-6 shadow-[8px_8px_0px_#000000] dark:shadow-[8px_8px_0px_#3f3f46] sm:p-8 md:p-10">
+          <div className="relative z-10 w-full max-w-lg border border-line-strong bg-paper p-6 sm:p-8 md:p-10 shadow-soft rounded-md">
             {/* Close */}
             <button
               onClick={handleClose}
-              className="absolute top-4 right-4 p-1 hover:bg-zinc-100 rounded transition-colors cursor-pointer"
+              className="absolute top-4 right-4 p-1 hover:bg-ink/5 rounded transition-colors cursor-pointer"
               aria-label="Close"
             >
               <X size={18} />
@@ -90,13 +90,13 @@ export function LoginModal({
 
             {/* Header */}
             <div className="mb-8">
-              <div className="resumer-mark px-3 py-1 text-lg font-black mb-4">
-                <span className="text-xl font-extrabold uppercase tracking-tight">R<span className="normal-case">é</span>sumer</span>
+              <div className="resumer-mark px-3 py-1 text-lg font-bold mb-4">
+                <span className="text-xl font-bold tracking-tight">R<span className="normal-case">é</span>sumer</span>
               </div>
-              <h2 className="text-3xl font-extrabold uppercase leading-tight tracking-[-0.03em] md:text-4xl dark:text-white">
+              <h2 className="text-3xl font-bold leading-tight tracking-[-0.03em] md:text-4xl dark:text-white">
                 Sign in to continue
               </h2>
-              <p className="mt-2 text-base font-semibold text-zinc-500 dark:text-zinc-400">
+              <p className="mt-2 text-base font-semibold text-ink-muted">
                 Choose a provider to get started
               </p>
             </div>
@@ -109,7 +109,7 @@ export function LoginModal({
                     <input type="hidden" name="callbackUrl" value={callbackUrl} />
                     <button
                       type="submit"
-                      className="flex min-h-14 w-full items-center gap-3 border-2 border-black dark:border-zinc-600 bg-white dark:bg-zinc-800 px-5 py-4 text-left text-base font-bold dark:text-zinc-100 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700 active:bg-zinc-100 dark:active:bg-zinc-600 cursor-pointer"
+                      className="flex min-h-14 w-full items-center gap-3 border border-line-strong bg-paper px-5 py-4 text-left text-base font-bold dark:text-ink transition-colors hover:bg-ink/5 dark:hover:bg-ink/10 active:bg-ink/5 dark:active:bg-ink/10 cursor-pointer rounded-md"
                     >
                       {/* GitHub icon */}
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -123,7 +123,7 @@ export function LoginModal({
                     <input type="hidden" name="callbackUrl" value={callbackUrl} />
                     <button
                       type="submit"
-                      className="flex min-h-14 w-full items-center gap-3 border-2 border-black dark:border-zinc-600 bg-white dark:bg-zinc-800 px-5 py-4 text-left text-base font-bold dark:text-zinc-100 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700 active:bg-zinc-100 dark:active:bg-zinc-600 cursor-pointer"
+                      className="flex min-h-14 w-full items-center gap-3 border border-line-strong bg-paper px-5 py-4 text-left text-base font-bold dark:text-ink transition-colors hover:bg-ink/5 dark:hover:bg-ink/10 active:bg-ink/5 dark:active:bg-ink/10 cursor-pointer rounded-md"
                     >
                       {/* Google icon */}
                       <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
@@ -141,9 +141,9 @@ export function LoginModal({
                   <button
                     type="button"
                     onClick={() => setShowEmail(true)}
-                    className="text-xs font-bold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-4 transition-colors cursor-pointer"
+                    className="text-xs font-bold text-ink-muted hover:text-ink underline underline-offset-4 transition-colors cursor-pointer"
                   >
-                    Use Email Instead
+                    Use email instead
                   </button>
                 </div>
               </>
@@ -154,7 +154,7 @@ export function LoginModal({
               />
             )}
 
-            <p className="mt-6 text-center text-sm font-semibold text-zinc-400 dark:text-zinc-500">
+            <p className="mt-6 text-center text-sm font-semibold text-ink-faint">
               Free beta. 5 generations per day.
             </p>
           </div>

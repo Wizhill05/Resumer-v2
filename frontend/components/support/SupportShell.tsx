@@ -1,12 +1,23 @@
+import type { ReactNode } from "react"
 import { Nav } from "@/components/Nav"
 import { Footer } from "@/components/Footer"
+import { PageHero } from "@/components/PageHero"
 
-export function SupportShell({ children }: { children: React.ReactNode }) {
+interface SupportShellProps {
+  children: ReactNode
+  title?: ReactNode
+  subtitle?: ReactNode
+  actions?: ReactNode
+  back?: { href: string; label: string }
+}
+
+export function SupportShell({ children, title, subtitle, actions, back }: SupportShellProps) {
   return (
-    <main className="ph-no-capture flex min-h-screen flex-1 flex-col bg-[#fbfbf3] font-sans text-black dark:bg-zinc-900 dark:text-white">
+    <main className="ph-no-capture app-surface flex min-h-screen flex-1 flex-col font-sans">
       <Nav />
-      <div className="page-wrap min-w-0 flex-1 py-6 md:py-8">
-        <div className="mx-auto w-full max-w-4xl min-w-0">{children}</div>
+      {title && <PageHero title={title} subtitle={subtitle} actions={actions} back={back} />}
+      <div className="page-wrap min-w-0 flex-1">
+        <div className="min-w-0">{children}</div>
       </div>
       <Footer />
     </main>

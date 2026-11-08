@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Loader2, Paperclip, X, Mic, Square } from "lucide-react"
+import { Loader2, Paperclip, X, Mic, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -148,19 +148,9 @@ export function SupportClient({
   }
   return (
     <div className="space-y-5">
-      <Link href="/support" className="inline-flex min-h-11 items-center gap-2 text-sm font-bold">
-        <ArrowLeft size={16} /> All issues
-      </Link>
-      <div>
-        <h1 className="text-3xl font-black tracking-tight">New issue</h1>
-        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          Tell us what you need. You can add more details and follow up in your private
-          conversation.
-        </p>
-      </div>
       <form
         onSubmit={submit}
-        className="space-y-6 border border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900 sm:p-6"
+        className="soft-card space-y-6 p-5 sm:p-7"
       >
         <fieldset>
           <legend className="mb-2 text-sm font-bold">What can we help with?</legend>
@@ -171,7 +161,7 @@ export function SupportClient({
                 type="button"
                 aria-pressed={category === item.value}
                 onClick={() => setCategory(item.value)}
-                className={`min-h-11 border px-3 text-xs font-bold ${category === item.value ? "border-black bg-[#ff4e26] text-white dark:border-zinc-500" : "border-zinc-300 hover:border-black dark:border-zinc-700 dark:hover:border-zinc-400"}`}
+                className={`min-h-10 cursor-pointer border px-3.5 text-sm font-semibold rounded-md transition-colors ${category === item.value ? "border-ember/60 bg-ember-tint text-ember" : "border-line-strong bg-paper text-ink hover:border-ink/30"}`}
               >
                 {item.label}
               </button>
@@ -180,7 +170,7 @@ export function SupportClient({
         </fieldset>
         <div className="space-y-2">
           <Label htmlFor="issue-title">
-            Title <span className="font-normal text-zinc-500">optional</span>
+            Title <span className="font-normal text-ink-muted">optional</span>
           </Label>
           <Input
             id="issue-title"
@@ -215,10 +205,10 @@ export function SupportClient({
           />
         </div>
         {category !== "feedback" && (
-          <details className="border-y border-zinc-200 py-3 dark:border-zinc-700">
+          <details className="border-y border-line py-3">
             <summary className="cursor-pointer py-2 text-sm font-bold">
               Add details to help us investigate{" "}
-              <span className="font-normal text-zinc-500">optional</span>
+              <span className="font-normal text-ink-muted">optional</span>
             </summary>
             <div className="mt-4 space-y-4">
               <div className="space-y-2">
@@ -260,10 +250,10 @@ export function SupportClient({
         )}
         <div className="space-y-3">
           <p className="text-sm font-bold">
-            Attachments <span className="font-normal text-zinc-500">optional</span>
+            Attachments <span className="font-normal text-ink-muted">optional</span>
           </p>
           <div className="flex flex-wrap gap-3">
-            <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 border border-zinc-300 px-3 text-sm font-bold focus-within:outline-2 focus-within:outline-[#ff4e26] dark:border-zinc-600">
+            <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 border border-line px-3 text-sm font-bold focus-within:outline-2 focus-within:outline-[#ff4e26] rounded-md">
               <Paperclip size={16} /> Add screenshots
               <input
                 aria-label="Add screenshots"
@@ -297,13 +287,13 @@ export function SupportClient({
               </Button>
             )}
           </div>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-ink-muted">
             Up to 5 images, 5 MB each. Avoid including passwords or private documents.
           </p>
           {screenshots.map((file, index) => (
             <div
               key={`${file.name}-${index}`}
-              className="flex min-w-0 items-center justify-between gap-2 border-b border-zinc-200 py-1 dark:border-zinc-700"
+              className="flex min-w-0 items-center justify-between gap-2 border-b border-line py-1"
             >
               <span className="truncate text-sm">{file.name}</span>
               <button
@@ -335,7 +325,7 @@ export function SupportClient({
         </div>
         <div className="space-y-2">
           <Label htmlFor="issue-email">
-            Email for updates <span className="font-normal text-zinc-500">optional</span>
+            Email for updates <span className="font-normal text-ink-muted">optional</span>
           </Label>
           <Input
             id="issue-email"
@@ -346,26 +336,26 @@ export function SupportClient({
             placeholder="you@example.com"
             className="min-h-11 text-base sm:text-sm"
           />
-          <p className="text-xs leading-5 text-zinc-500">
+          <p className="text-xs leading-5 text-ink-muted">
             Replies stay in this conversation. Add an email to receive notifications too.
             {!signedIn && " Keep your private issue link so you can return later."}
           </p>
         </div>
         {generationId && (
-          <p className="break-all text-xs text-zinc-500">
+          <p className="break-all text-xs text-ink-muted">
             Generation context attached: {generationId}
           </p>
         )}
         {error && (
           <p
             role="alert"
-            className="border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"
+            className="border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300 rounded-md"
           >
             {error}
           </p>
         )}
-        <div className="flex flex-col-reverse gap-3 border-t border-zinc-200 pt-5 dark:border-zinc-700 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-zinc-500">
+        <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-ink-muted">
             Only you and the support team can view this issue.
           </p>
           <Button type="submit" disabled={submitting || recording} className="min-h-11 px-5">

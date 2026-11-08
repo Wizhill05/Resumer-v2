@@ -92,29 +92,29 @@ export function GuestResultClient({ id }: { id: string }) {
   const status = run?.status ?? "in_progress"
   return (
     <section className="py-10">
-      {error && <div className="mb-4 flex gap-2 border-2 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-3 text-sm font-bold text-red-700 dark:text-red-400"><AlertCircle size={18} /> {error}</div>}
+      {error && <div className="mb-4 flex gap-2 border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-3 text-sm font-bold text-red-700 dark:text-red-400 rounded-md"><AlertCircle size={18} /> {error}</div>}
       <div className="panel-strong space-y-5 p-6 md:p-8">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff4e26]">Guest generation</p>
-          <h1 className="mt-2 text-4xl font-black uppercase leading-[0.92] tracking-[-0.045em] md:text-6xl dark:text-white">
+          <p className="text-xs font-bold text-[#ff4e26]">Guest generation</p>
+          <h1 className="mt-2 text-4xl font-bold leading-[0.92] tracking-[-0.045em] md:text-6xl dark:text-white">
             {status === "completed" ? "Résumé ready." : status === "failed" ? "Generation failed." : "Résumé cooking."}
           </h1>
-          <p className="mt-3 text-sm font-bold text-zinc-600 dark:text-zinc-400">
+          <p className="mt-3 text-sm font-bold text-ink-muted">
             {run?.job_title || "Tailored Résumé"}{run?.company ? ` at ${run.company}` : ""}
           </p>
         </div>
-        <div className="h-3 overflow-hidden border border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+        <div className="h-3 overflow-hidden border border-line-strong bg-paper rounded-md">
           <div className="h-full bg-[#ff4e26] transition-all duration-500" style={{ width: `${status === "completed" ? 100 : percent}%` }} />
         </div>
         {/* Login nudge during generation — prompts user to sign in so the resume saves to their history */}
         {status !== "completed" && status !== "failed" && (
-          <div className="flex items-center justify-between gap-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/80 px-3 py-2.5">
-            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+          <div className="flex items-center justify-between gap-3 border border-line bg-ink/[0.03] px-3 py-2.5 rounded-md">
+            <p className="text-xs font-semibold text-ink-muted">
               Sign in to save this résumé to your history automatically.
             </p>
             <LoginModal
               callbackUrl="/dashboard?importGuestDraft=1"
-              triggerClassName="shrink-0 border border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs font-black uppercase tracking-wide text-zinc-950 dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 shadow-[2px_2px_0_#18181b] dark:shadow-[2px_2px_0_#3f3f46]"
+              triggerClassName="shrink-0 border border-line-strong bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink/5 dark:hover:bg-ink/[0.06] shadow-soft rounded-md"
             />
           </div>
         )}
@@ -130,19 +130,19 @@ export function GuestResultClient({ id }: { id: string }) {
                 description="Run ID is prefilled. Add job description context."
                 variant="outline"
                 size="sm"
-                className="font-black uppercase tracking-wider border-red-300 text-red-700 hover:bg-red-50 bg-white"
+                className="font-bold border-red-300 text-red-700 hover:bg-red-50 bg-paper"
               >
                 Report this failure
               </ReportIssueButton>
-              <Link href="/support" className="inline-flex items-center justify-center border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-xs font-bold">
+              <Link href="/support" className="inline-flex items-center justify-center border border-line bg-paper px-3 py-2 text-xs font-bold rounded-md">
                 Open support
               </Link>
             </div>
           </div>
         )}
         {status === "completed" && (
-          <div className="border-2 border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3">
-            <p className="text-sm font-black uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+          <div className="border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 rounded-md">
+            <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">
               Your résumé is ready. Download it now.
             </p>
             <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
@@ -159,19 +159,19 @@ export function GuestResultClient({ id }: { id: string }) {
               onClick={() => {
                 captureDownload(id, "guest")
               }}
-              className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46]"
+              className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-[#ff4e26] px-5 text-sm font-bold text-white shadow-soft rounded-md"
             >
               <CheckCircle2 size={18} className="mr-2" /> Download PDF
             </a>
           ) : status === "failed" ? null : (
-            <span className="inline-flex min-h-12 cursor-not-allowed items-center justify-center border-2 border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-5 text-sm font-black uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+            <span className="inline-flex min-h-12 cursor-not-allowed items-center justify-center border border-line bg-ink/5 px-5 text-sm font-bold text-ink-faint rounded-md">
               <Loader2 className="mr-2 animate-spin" size={18} /> {stepLabel}…
             </span>
           )}
-          <Link href="/try" className="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-5 text-sm font-black uppercase tracking-wide text-zinc-950 dark:text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46]">Make another</Link>
-          <LoginModal callbackUrl="/dashboard?importGuestDraft=1" triggerClassName="inline-flex min-h-12 items-center justify-center border-2 border-zinc-950 dark:border-zinc-700 bg-[#ff4e26] px-5 text-sm font-black uppercase tracking-wide text-white shadow-[3px_3px_0_#18181b] dark:shadow-[3px_3px_0_#3f3f46]" />
+          <Link href="/try" className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-paper px-5 text-sm font-bold text-ink shadow-soft rounded-md">Make another</Link>
+          <LoginModal callbackUrl="/dashboard?importGuestDraft=1" triggerClassName="inline-flex min-h-12 items-center justify-center border border-line-strong bg-[#ff4e26] px-5 text-sm font-bold text-white shadow-soft rounded-md" />
         </div>
-        <p className="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Login saves history and keeps future résumés tied to your account.</p>
+        <p className="text-xs font-bold text-ink-muted">Login saves history and keeps future résumés tied to your account.</p>
       </div>
     </section>
   )
