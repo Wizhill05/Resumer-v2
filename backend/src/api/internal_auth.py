@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.database import get_db
+from src.core.internal_token import is_valid_internal_token
 from src.core.provider_messages import provider_label, provider_mismatch_message
 from src.models.identity import UserIdentity
 from src.models.user import User
@@ -54,6 +55,8 @@ def _require_internal(authorization: str | None = Header(default=None)):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Internal auth is not configured")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing internal token")
+    if not is_valid_internal_token(authorization):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token")
     token = authorization[7:]
     try:
         payload = jwt.decode(token, settings.INTERNAL_API_SECRET, algorithms=["HS256"], options={"verify_aud": True}, audience="internal")

@@ -1,6 +1,26 @@
 "use server"
 
+import { headers as nextHeaders } from "next/headers"
+
 import { signIn, signOut } from "@/lib/auth"
+import { internalToken } from "@/lib/jwt"
+
+async function backendHeaders(): Promise<Record<string, string>> {
+  const extra: Record<string, string> = {}
+  try {
+    const token = await internalToken()
+    extra.Authorization = `Bearer ${token}`
+    const forwardedFor = (await nextHeaders()).get("x-forwarded-for")
+    const firstHop = forwardedFor?.split(",")[0]?.trim()
+    if (firstHop) {
+      extra["X-Client-IP"] = firstHop
+    }
+  } catch {
+    // No INTERNAL_API_SECRET or no request context: send without the
+    // internal headers; the backend then applies only the per-email limit.
+  }
+  return extra
+}
 
 function callbackUrl(formData?: FormData) {
   const raw = formData?.get("callbackUrl")
@@ -17,39 +37,6 @@ export async function signInGoogle(formData?: FormData) {
 
 export async function signOutAction() {
   await signOut({ redirectTo: "/" })
-}
-
-export async function registerEmailUserAction({
-  email,
-  password,
-  name,
-}: {
-  email: string
-  password: string
-  name?: string
-}) {
-  const backendUrl =
-    process.env.BACKEND_INTERNAL_URL ||
-    process.env.NEXT_PUBLIC_BACKEND_URL ||
-    "http://localhost:8000"
-
-  try {
-    const res = await fetch(`${backendUrl}/auth/email/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, name }),
-      cache: "no-store",
-    })
-
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      return { success: false, error: data.detail || "Registration failed." }
-    }
-    return { success: true, user: data }
-  } catch (err) {
-    console.error("registerEmailUserAction error:", err)
-    return { success: false, error: "Failed to connect to authentication server." }
-  }
 }
 
 export async function precheckEmailLoginAction({
@@ -100,7 +87,7 @@ export async function startEmailRegistrationAction({
   try {
     const res = await fetch(`${backendUrl}/auth/email/register/start`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await backendHeaders()) },
       body: JSON.stringify({ email, password, name }),
       cache: "no-store",
     })
@@ -123,9 +110,11 @@ export async function startEmailRegistrationAction({
 export async function verifyEmailRegistrationAction({
   email,
   code,
+  password,
 }: {
   email: string
   code: string
+  password: string
 }) {
   const backendUrl =
     process.env.BACKEND_INTERNAL_URL ||
@@ -135,8 +124,8 @@ export async function verifyEmailRegistrationAction({
   try {
     const res = await fetch(`${backendUrl}/auth/email/register/verify`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code }),
+      headers: { "Content-Type": "application/json", ...(await backendHeaders()) },
+      body: JSON.stringify({ email, code, password }),
       cache: "no-store",
     })
 
@@ -160,7 +149,7 @@ export async function resendEmailCodeAction({ email }: { email: string }) {
   try {
     const res = await fetch(`${backendUrl}/auth/email/register/resend`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await backendHeaders()) },
       body: JSON.stringify({ email }),
       cache: "no-store",
     })

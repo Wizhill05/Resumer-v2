@@ -27,6 +27,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    ENVIRONMENT: str = "development"
     DATABASE_URL: str = "postgresql+psycopg://user:pass@localhost/resumer"
     JWT_SECRET: str = "changeme"
     JWT_ALGORITHM: str = "HS256"
