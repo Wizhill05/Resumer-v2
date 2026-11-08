@@ -288,15 +288,18 @@ class GitHubRepoItem(BaseModel):
     language: str | None = None
     stargazers_count: int = 0
     updated_at: str | None = None
+    private: bool = False
 
 
 class GitHubReposResponse(BaseModel):
     repos: list[GitHubRepoItem] = Field(default_factory=list)
     connected: bool = False
     github_username: str | None = None
+    source: Literal["token", "public"] = "public"
 
 
 class GitHubProjectDraft(ProjectCreate):
+    github_url: str | None = None
     duplicate_candidates: list[DuplicateCandidate] = Field(default_factory=list)
     warnings: list[ImportWarning] = Field(default_factory=list)
 

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, BackgroundTasks
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 import asyncio
+import re
 import time
 import uuid
 from pydantic import BaseModel
@@ -11,9 +13,10 @@ from src.core.auth import get_current_user
 from src.core.database import get_db, AsyncSessionLocal
 from src.models.profile import Profile, UserEducation, UserExperience, UserProject, UserExtracurricular
 from src.models.user import User
-import requests
 from src.schemas.profile import GitHubProjectDraft, GitHubProjectImportRequest, GitHubRepoItem, GitHubReposResponse, ImportApplyRequest, ResumeImportDraft
+from src.services.github_client import GithubAuthError, GithubError, GithubNotFound, GithubRateLimited, github_get
 from src.services.github_import import import_github_project
+from src.services.github_tokens import get_github_identity, get_sync_token, mark_needs_reauth
 from src.services.resume_import import (
     MAX_FILES,
     add_duplicates,
@@ -33,6 +36,23 @@ from src.services.import_utils import (
 from src.services.import_jobs import import_jobs
 
 router = APIRouter(prefix="/profile/import", tags=["profile-import"])
+
+_GITHUB_USERNAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$")
+
+RATE_LIMIT_DETAIL = "GitHub's shared limit is used up. Connect GitHub to keep importing."
+
+
+def _validate_github_username(username: str) -> str:
+    if not _GITHUB_USERNAME_RE.fullmatch(username):
+        raise HTTPException(status_code=400, detail="Invalid GitHub username")
+    return username
+
+
+def _rate_limited_response(error: GithubRateLimited) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": RATE_LIMIT_DETAIL, "reset_at": error.reset_at.isoformat()},
+    )
 
 
 def _project_exists(item, existing_projects: list[UserProject], seen: set[str]) -> bool:
@@ -233,88 +253,80 @@ async def import_github_project_route(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await import_github_project(data.url, db, current_user)
+    try:
+        return await import_github_project(data.url, db, current_user)
+    except GithubRateLimited as error:
+        return _rate_limited_response(error)
 
 
 @router.get("/github-repos", response_model=GitHubReposResponse)
 async def get_github_user_repos(
     username: str | None = None,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "Resumer-v2/1.0",
-    }
-    github_user = getattr(current_user, "github_username", None)
-    access_token = getattr(current_user, "github_access_token", None)
-    target_username = username.strip() if username else github_user
+    sync = await get_sync_token(db, current_user.id)
 
-    attempt_auth = False
-    if access_token:
-        if not target_username or (github_user and target_username.lower() == github_user.lower()):
-            attempt_auth = True
-
-    res = None
-    if attempt_auth:
-        headers["Authorization"] = f"Bearer {access_token}"
-        url = "https://api.github.com/user/repos?sort=updated&per_page=100"
-        try:
-            res = requests.get(url, headers=headers, timeout=8)
-            if res.status_code in (401, 403):
-                # Access token expired or invalid; fall back to unauthenticated public repo fetch
-                res = None
-        except Exception:
-            res = None
-
-    if res is None:
-        headers.pop("Authorization", None)
-        if target_username:
-            url = f"https://api.github.com/users/{target_username}/repos?sort=updated&per_page=100"
-            try:
-                res = requests.get(url, headers=headers, timeout=8)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to reach GitHub API: {str(e)}")
-        else:
-            return GitHubReposResponse(repos=[], connected=False, github_username=None)
-
-    try:
-        if res.status_code == 404:
-            raise HTTPException(status_code=404, detail="GitHub user or repositories not found")
-        if res.status_code >= 400:
-            error_detail = "Failed to fetch GitHub repositories"
-            try:
-                body = res.json()
-                if isinstance(body, dict) and body.get("message"):
-                    error_detail = f"GitHub API error: {body['message']}"
-            except Exception:
-                pass
-            raise HTTPException(status_code=res.status_code if res.status_code < 500 else 400, detail=error_detail)
-
-        data = res.json()
-        items = []
-        if isinstance(data, list):
-            for repo in data:
-                if isinstance(repo, dict) and not repo.get("fork"):
-                    items.append(
-                        GitHubRepoItem(
-                            name=repo.get("name") or "",
-                            full_name=repo.get("full_name") or "",
-                            description=repo.get("description"),
-                            html_url=repo.get("html_url") or "",
-                            language=repo.get("language"),
-                            stargazers_count=repo.get("stargazers_count") or 0,
-                            updated_at=repo.get("updated_at"),
-                        )
-                    )
-        return GitHubReposResponse(
-            repos=items,
-            connected=bool(github_user or access_token),
-            github_username=target_username or github_user,
+    if sync is not None:
+        scopes = {part.strip() for part in (sync.scopes or "").split(",") if part.strip()}
+        visibility = "all" if "repo" in scopes else "public"
+        path = (
+            "/user/repos?sort=updated&per_page=100"
+            "&affiliation=owner,collaborator,organization_member"
+            f"&visibility={visibility}"
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to load repositories: {str(e)}")
+        try:
+            data = await github_get(path, sync.token)
+        except GithubRateLimited as error:
+            return _rate_limited_response(error)
+        except GithubAuthError:
+            await mark_needs_reauth(db, sync.id)
+            raise HTTPException(status_code=409, detail="Reconnect GitHub")
+        except GithubNotFound:
+            raise HTTPException(status_code=404, detail="GitHub user or repositories not found")
+        except GithubError as error:
+            raise HTTPException(status_code=400, detail=error.body_message or "Failed to fetch GitHub repositories")
+        items = _repo_items(data)
+        identity = await get_github_identity(db, current_user.id)
+        login = identity.provider_login if identity is not None else None
+        return GitHubReposResponse(repos=items, connected=True, github_username=login, source="token")
+
+    cleaned_username = (username or "").strip()
+    if not cleaned_username:
+        return GitHubReposResponse(repos=[], connected=False, github_username=None, source="public")
+
+    _validate_github_username(cleaned_username)
+    path = f"/users/{cleaned_username}/repos?sort=updated&per_page=100"
+    try:
+        data = await github_get(path, None)
+    except GithubRateLimited as error:
+        return _rate_limited_response(error)
+    except GithubNotFound:
+        raise HTTPException(status_code=404, detail="GitHub user or repositories not found")
+    except GithubError as error:
+        raise HTTPException(status_code=400, detail=error.body_message or "Failed to fetch GitHub repositories")
+    items = _repo_items(data)
+    return GitHubReposResponse(repos=items, connected=False, github_username=cleaned_username, source="public")
+
+
+def _repo_items(data) -> list[GitHubRepoItem]:
+    items: list[GitHubRepoItem] = []
+    if isinstance(data, list):
+        for repo in data:
+            if isinstance(repo, dict) and not repo.get("fork"):
+                items.append(
+                    GitHubRepoItem(
+                        name=repo.get("name") or "",
+                        full_name=repo.get("full_name") or "",
+                        description=repo.get("description"),
+                        html_url=repo.get("html_url") or "",
+                        language=repo.get("language"),
+                        stargazers_count=repo.get("stargazers_count") or 0,
+                        updated_at=repo.get("updated_at"),
+                        private=bool(repo.get("private")),
+                    )
+                )
+    return items
 
 
 @router.post("/apply")

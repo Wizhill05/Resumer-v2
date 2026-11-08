@@ -1,19 +1,27 @@
 import base64
 from urllib.parse import urlparse
 
-import requests
 from fastapi import HTTPException, status
 from langchain_core.prompts import ChatPromptTemplate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.user import User
 from src.pipeline.nodes import invoke_with_fallback, _structured
-from src.schemas.profile import GitHubProjectDraft, ResumeImportDraft
+from src.schemas.profile import GitHubProjectDraft, ImportWarning, ResumeImportDraft
+from src.services.github_client import (
+    GithubAuthError,
+    GithubError,
+    GithubNotFound,
+    GithubRateLimited,
+    github_get,
+)
+from src.services.github_tokens import get_sync_token, mark_needs_reauth
 from src.services.import_utils import unique_strings
 from src.services.resume_import import add_duplicates, load_existing_profile_data
 
 MAX_README_CHARS = 12000
-TIMEOUT = 8
+
+PRIVATE_REPO_WARNING = "Private repo, link left off. Add a public link if you have one."
 
 
 def parse_github_url(url: str) -> tuple[str, str, str]:
@@ -46,29 +54,16 @@ def parse_github_url(url: str) -> tuple[str, str, str]:
     return owner, repo, canonical_url
 
 
-def github_get(path: str) -> dict | list:
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "Resumer-v2/1.0",
-    }
-    response = requests.get(f"https://api.github.com{path}", headers=headers, timeout=TIMEOUT, allow_redirects=False)
-    if response.status_code == 404:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GitHub repository not found or not public")
-    if response.status_code >= 400:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not read GitHub repository")
-    return response.json()
-
-
-def fetch_repo_context(owner: str, repo: str) -> dict:
-    metadata = github_get(f"/repos/{owner}/{repo}")
-    languages = github_get(f"/repos/{owner}/{repo}/languages")
-    contents = github_get(f"/repos/{owner}/{repo}/contents")
+async def fetch_repo_context(owner: str, repo: str, token: str | None = None) -> dict:
+    metadata = await github_get(f"/repos/{owner}/{repo}", token)
+    languages = await github_get(f"/repos/{owner}/{repo}/languages", token)
+    contents = await github_get(f"/repos/{owner}/{repo}/contents", token)
     readme = ""
     try:
-        readme_json = github_get(f"/repos/{owner}/{repo}/readme")
+        readme_json = await github_get(f"/repos/{owner}/{repo}/readme", token)
         encoded = readme_json.get("content", "") if isinstance(readme_json, dict) else ""
         readme = base64.b64decode(encoded).decode("utf-8", errors="ignore")[:MAX_README_CHARS]
-    except HTTPException:
+    except GithubNotFound:
         readme = ""
 
     files = []
@@ -81,15 +76,29 @@ def fetch_repo_context(owner: str, repo: str) -> dict:
             item_type = item.get("type") or ""
             files.append(f"{item_type}: {name}")
             if name in {"package.json", "pyproject.toml", "requirements.txt", "Cargo.toml", "go.mod", "pom.xml"} and item_type == "file":
-                file_json = github_get(f"/repos/{owner}/{repo}/contents/{name}")
+                file_json = await github_get(f"/repos/{owner}/{repo}/contents/{name}", token)
                 encoded = file_json.get("content", "") if isinstance(file_json, dict) else ""
                 manifests[name] = base64.b64decode(encoded).decode("utf-8", errors="ignore")[:4000]
 
     return {"metadata": metadata, "languages": languages, "readme": readme, "files": files, "manifests": manifests}
 
+
 async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHubProjectDraft:
     owner, repo, canonical_url = parse_github_url(url)
-    context = fetch_repo_context(owner, repo)
+    sync = await get_sync_token(db, user.id)
+    token = sync.token if sync else None
+    try:
+        context = await fetch_repo_context(owner, repo, token)
+    except GithubRateLimited:
+        raise
+    except GithubAuthError:
+        if sync is not None:
+            await mark_needs_reauth(db, sync.id)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reconnect GitHub")
+    except GithubNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="GitHub repository not found or not public")
+    except GithubError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not read GitHub repository")
     prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -121,4 +130,8 @@ async def import_github_project(url: str, db: AsyncSession, user: User) -> GitHu
     wrapper = add_duplicates(draft=ResumeImportDraft(projects=[draft]), existing=await load_existing_profile_data(db, user))
     draft.duplicate_candidates = wrapper.duplicate_candidates
     draft.warnings = wrapper.warnings
+    metadata = context["metadata"]
+    if isinstance(metadata, dict) and metadata.get("private") is True:
+        draft.github_url = None
+        draft.warnings.append(ImportWarning(scope="projects", message=PRIVATE_REPO_WARNING))
     return draft
