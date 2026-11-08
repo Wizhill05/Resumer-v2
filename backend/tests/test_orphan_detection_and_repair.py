@@ -198,7 +198,7 @@ async def test_orphan_repair_node_real_weasyprint_clean_expansion_kept(monkeypat
                 "section": "experience",
                 "text": original_bullet,
                 "renderedLines": 2,
-                "lastLineFillPercent": 34.5,
+                "lastLineFillPercent": 13.5,
                 "minimumLastLineFill": 75,
             }
         ],

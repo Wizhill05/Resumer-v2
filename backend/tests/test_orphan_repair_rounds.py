@@ -284,3 +284,170 @@ def test_length_window(orphan, text, expected):
         assert window is None
     else:
         assert (window["min"], window["max"], window["aim"]) == expected
+
+
+async def test_short_result_that_is_not_fuller_is_reverted_with_feedback(monkeypatch):
+    original = "a" * 100  # fake renderer reports a flat 40% fill for anything under 120 chars
+    worse = "w" * 105
+    h = Harness(monkeypatch, [{1: worse}, {1: GOOD}])
+    state = _state([original])
+    state["orphans"][0]["lastLineFillPercent"] = 60.0  # was already fuller than the 40% result
+
+    result = await h.run(state)
+
+    assert _bullets(result) == [GOOD]
+    retry = h.prompts[1]
+    assert "PREVIOUS ATTEMPT FAILED (too short)" in retry
+    assert f'Original: "{original}"' in retry  # re-asked from the unchanged original
+
+
+async def test_retained_short_text_is_counted_after_later_rounds_overshoot(monkeypatch):
+    short = "s" * 110
+    h = Harness(monkeypatch, [{1: short}, {1: LONG}, {1: LONG}])
+
+    result = await h.run(_state(["a" * 100]))
+
+    assert _bullets(result) == [short]
+    assert result["repair_history"]["experience:0:0"] == "a" * 100
+    message = nodes_mod.log_progress.await_args_list[-1].args[3]
+    assert "applied 1/1" in message
+
+
+async def test_empty_reply_after_a_failed_round_stops_the_loop(monkeypatch):
+    originals = ["a" * 100, "b" * 100]
+    # round 1: bullet 1 overshoots, bullet 2 fits. round 2: bullet 1 omitted entirely.
+    # round 3: model replies with bullet 1 (now fixed).
+    h = Harness(monkeypatch, [{1: LONG, 2: GOOD}, {}, {1: GOOD}])
+    state = _state(originals)
+
+    await h.run(state)
+
+    # the empty round-2 reply changes nothing, so the loop stops instead of burning round 3
+    assert len(h.prompts) == 2
+    assert "PREVIOUS ATTEMPT FAILED (too long)" in h.prompts[1]
+
+
+async def test_unchanged_reply_for_one_bullet_is_flagged_on_retry(monkeypatch):
+    originals = ["a" * 100, "b" * 100]
+    # round 1: bullet 1 unchanged, bullet 2 overshoots -> both pending in round 2
+    h = Harness(monkeypatch, [{1: originals[0], 2: LONG}, {1: GOOD, 2: GOOD}])
+
+    result = await h.run(_state(originals))
+
+    assert _bullets(result) == [GOOD, GOOD]
+    assert "you returned this bullet unchanged" in h.prompts[1]
+
+
+async def test_in_flight_llm_call_is_bounded_by_time_budget(monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(nodes_mod, "ORPHAN_REPAIR_TIME_BUDGET_S", 0.05)
+    h = Harness(monkeypatch, [])
+
+    async def hang(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(nodes_mod, "invoke_with_fallback", hang)
+    original = "a" * 100
+
+    # max(remaining, 1.0) floor keeps the call bounded to ~1s instead of the endpoint chain
+    result = await asyncio.wait_for(h.run(_state([original])), timeout=10)
+
+    assert result["orphans"] is None and result["repair_attempts"] == 1
+
+
+def test_block_wording_per_mode_and_feedback():
+    orphan = _orphan(0, 0, "x" * 90)
+    proper = nodes_mod._repair_block(1, "ctx", "x" * 90, orphan, False)
+    larp = nodes_mod._repair_block(1, "ctx", "x" * 90, orphan, True)
+    assert "Add truthful, job-relevant detail" in proper
+    assert "plausible" not in proper
+    assert "Add plausible, job-relevant detail or embellishment" in larp
+    assert "truthful" not in larp
+    failed = nodes_mod._repair_block(
+        1, "ctx", "x" * 90, orphan, False,
+        {"kind": "long", "text": "t" * 230, "chars": 230, "lines": 4},
+    )
+    assert "rendered on 4 lines" in failed and "230 characters" in failed
+
+
+# ── Real WeasyPrint: exercises _match_orphan against genuine detector output ──
+
+_REAL_BASE = {
+    "template_id": "personal-classic",
+    "template_manifest": {
+        "id": "personal-classic", "target_pages": 1, "max_font_size": 10.0, "page_margin_mm": 15.0,
+    },
+    "profile": {"full_name": "Test User", "email": "test@example.com"},
+    "page_count": 1,
+    "font_size": 10.0,
+    "projects_draft": [],
+    "extracurriculars_draft": [],
+    "keywords": ["Python"],
+    "repair_attempts": 0,
+    "repair_history": {},
+}
+_REAL_ORIGINAL = (
+    "Engineered real-time analytics engine with WebSockets handling 50k concurrent "
+    "client streams with sub-second latency."
+)
+_FILLER = [
+    "across", "three", "regions", "using", "partitioned", "Redis", "caching", "and",
+    "automated", "failover", "for", "high", "availability", "under", "peak", "traffic",
+]
+
+
+def _real_detect(bullet: str):
+    return nodes_mod._render_for_verification(
+        _REAL_BASE,
+        [{"role": "Engineer", "organization": "Acme", "bullet_points": [bullet]}],
+        [], [],
+    )[1]
+
+
+async def test_real_render_overshoot_is_reverted_then_retry_lands_in_window(monkeypatch):
+    found = _real_detect(_REAL_ORIGINAL)
+    assert [f["fix_type"] for f in found] == ["expand"], found
+    orphan = found[0]
+    assert orphan["targetCharsMin"] < orphan["targetCharsMax"]
+
+    # A fitting replacement: grow the bullet until the real renderer stops flagging it.
+    fitting = _REAL_ORIGINAL
+    for word in _FILLER:
+        fitting = fitting[:-1] + f" {word}."
+        if not _real_detect(fitting):
+            break
+    assert not _real_detect(fitting), "could not build a fitting bullet for the test"
+    overshoot = fitting + " " + " ".join(_FILLER) + " " + " ".join(_FILLER)
+    assert [f["fix_type"] for f in _real_detect(overshoot)] == ["oversize"]
+
+    replies = iter([{1: overshoot}, {1: fitting}])
+    prompts: list[str] = []
+
+    async def invoke(chain_factory, messages, **kwargs):
+        prompts.append(messages[1].content)
+        msg = MagicMock()
+        msg.content = json.dumps(
+            {"bullets": [{"index": 1, "replacement": t} for t in next(replies).values()]}
+        )
+        return msg
+
+    monkeypatch.setattr(nodes_mod, "invoke_with_fallback", invoke)
+    monkeypatch.setattr(nodes_mod, "log_progress", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        nodes_mod, "get_prompt_config",
+        AsyncMock(return_value=("sys", "{kw_text}\n{bullet_blocks}")),
+    )
+    state = dict(
+        _REAL_BASE,
+        experience_draft=[{"role": "Engineer", "organization": "Acme", "bullet_points": [_REAL_ORIGINAL]}],
+        orphans=found,
+    )
+
+    result = await nodes_mod.orphan_repair_node(state, db=AsyncMock(), gen_id="g")
+
+    assert result["experience_draft"][0]["bullet_points"][0] == fitting
+    assert len(prompts) == 2
+    assert f"between {orphan['targetCharsMin']} and {orphan['targetCharsMax']}" in prompts[0]
+    assert "PREVIOUS ATTEMPT FAILED (too long)" in prompts[1]
+    assert not _real_detect(result["experience_draft"][0]["bullet_points"][0])

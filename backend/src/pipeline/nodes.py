@@ -1823,6 +1823,14 @@ def _repair_block(
                 f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {failure['chars']} characters "
                 f"and pushed the resume past its page limit.{limit} Make it shorter than that attempt."
             )
+        elif kind == "short":
+            lines.append(
+                f"  PREVIOUS ATTEMPT FAILED (too short): \"{failure['text']}\" was {failure['chars']} characters "
+                f"and left the last line only {failure['fill']}% full (needed {min_fill}%). "
+                "Make it longer than that attempt, but stay inside the length target."
+            )
+        elif kind == "unchanged":
+            lines.append("  PREVIOUS ROUND: you returned this bullet unchanged. Expand it.")
         elif kind == "missing":
             lines.append("  PREVIOUS ROUND: this bullet was missing from your response. Return it.")
     return f"Bullet {prompt_index}:\n  {context}\n  Original: \"{base_md}\"\n" + "\n".join(lines)
@@ -2166,7 +2174,7 @@ async def orphan_repair_node(
         "RULES:\n"
         "- Return one replacement for every Bullet listed below, using same index values.\n"
         "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
-        "- Stay inside each bullet's LENGTH TARGET range; going over it wraps onto a 3rd line and the bullet is discarded.\n"
+        "- When a bullet has a LENGTH TARGET, stay inside it; going over wraps onto a 3rd line and the bullet is discarded.\n"
         "- Start every bullet with a strong action verb.\n"
         "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
         f"{truth_rule}\n"
@@ -2190,7 +2198,6 @@ async def orphan_repair_node(
 
     pending = [dict(entry, base_md=entry["original_md"], failure=None) for entry in mapping]
     fixed_keys: set[str] = set()   # bullets that now render as a well-filled 2-line bullet
-    kept_keys: set[str] = set()    # bullets whose repaired text is retained (fixed or improved)
     rounds_run = 0
     started = time.monotonic()
 
@@ -2225,12 +2232,18 @@ async def orphan_repair_node(
         raw_response = ""
         try:
             from langchain_core.messages import SystemMessage, HumanMessage
-            resp = await invoke_with_fallback(
-                lambda llm, p: llm,
-                [SystemMessage(content=sys_prompt), HumanMessage(content=formatted_usr_prompt)],
-                node_name="orphan_repair",
-                gen_id=gen_id,
-                is_pro=state.get("is_pro", False),
+            # invoke_with_fallback only bounds a single attempt, so cap the whole call
+            # (attempts x fallback targets) by what is left of the node's time budget.
+            remaining = ORPHAN_REPAIR_TIME_BUDGET_S - (time.monotonic() - started)
+            resp = await asyncio.wait_for(
+                invoke_with_fallback(
+                    lambda llm, p: llm,
+                    [SystemMessage(content=sys_prompt), HumanMessage(content=formatted_usr_prompt)],
+                    node_name="orphan_repair",
+                    gen_id=gen_id,
+                    is_pro=state.get("is_pro", False),
+                ),
+                timeout=max(remaining, 1.0),
             )
             content = resp.content
             if isinstance(content, list):
@@ -2243,7 +2256,7 @@ async def orphan_repair_node(
                 raw_response = str(content).strip()
         except Exception as e:
             await log_progress(
-                db, gen_id, "orphan_repair", f"Error calling LLM for orphan repair: {e}", "error",
+                db, gen_id, "orphan_repair", f"Error calling LLM for orphan repair: {e or type(e).__name__}", "error",
             )
             if round_no == 1:
                 return {
@@ -2280,10 +2293,12 @@ async def orphan_repair_node(
         for entry in pending:
             new_text = replacements.get(entry["prompt_index"])
             if not new_text:
-                entry["failure"] = {"kind": "missing"}
+                entry["failure"] = entry["failure"] or {"kind": "missing"}
                 continue
             if new_text == entry["base_md"].strip():
-                continue  # unchanged: nothing to verify, and asking again repeats the same answer
+                # Unchanged: nothing to verify. Keep any measured feedback from an earlier round.
+                entry["failure"] = entry["failure"] or {"kind": "unchanged"}
+                continue
             entry["added_history"] = entry["history_key"] not in repair_history
             if entry["added_history"]:
                 repair_history[entry["history_key"]] = entry["original_md"]
@@ -2347,6 +2362,11 @@ async def orphan_repair_node(
                     )
                     if still is None:
                         outcomes[e["history_key"]] = "ok"
+                    elif still.get("lastLineFillPercent", 0) <= e["orphan"].get("lastLineFillPercent", 0):
+                        # Still an orphan and no fuller than before: not an improvement.
+                        outcomes[e["history_key"]] = "worse"
+                        failure_text[e["history_key"]] = e["new_text"]
+                        e["failure_fill"] = still.get("lastLineFillPercent", 0)
                     else:
                         outcomes[e["history_key"]] = "short"
                         e["next_orphan"] = still
@@ -2373,16 +2393,21 @@ async def orphan_repair_node(
             outcome = outcomes.get(key)
             if outcome == "ok":
                 fixed_keys.add(key)
-                kept_keys.add(key)
                 continue
             if outcome == "short":
-                # Text stays (it is closer to the target); ask again from the new text.
-                kept_keys.add(key)
+                # Text stays (it is fuller than before); ask again from the new text.
                 entry["base_md"] = entry["new_text"]
                 entry["orphan"] = entry.pop("next_orphan")
                 entry["failure"] = None
+            elif outcome == "worse":
+                _revert_entries([entry])
+                entry["failure"] = {
+                    "kind": "short",
+                    "text": failure_text[key],
+                    "chars": _visible_len(failure_text[key]),
+                    "fill": entry.get("failure_fill", 0),
+                }
             elif outcome in ("long", "overflow"):
-                kept_keys.discard(key)
                 entry["failure"] = {
                     "kind": "long" if outcome == "long" else "overflow",
                     "text": failure_text[key],
@@ -2392,11 +2417,14 @@ async def orphan_repair_node(
             next_pending.append(entry)
         pending = next_pending
 
-    # Bullets that never improved keep their original text, so the next graph
-    # pass (or the rollback check above) still sees an honest repair_history.
+    kept = sum(
+        1 for e in mapping
+        if e["history_key"] in repair_history
+        and _entry_text(experiences, projects, extracurriculars_draft, e) != repair_history[e["history_key"]]
+    )
     await log_progress(
         db, gen_id, "orphan_repair",
-        f"Successfully repaired and applied {len(kept_keys)}/{len(mapping)} bullet point(s); "
+        f"Successfully repaired and applied {kept}/{len(mapping)} bullet point(s); "
         f"{len(fixed_keys)} now fill their last line, after {rounds_run} round(s).",
     )
 
