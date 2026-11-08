@@ -72,14 +72,14 @@ export function DynamicAnnouncementModal() {
       aria-label="Important Announcement"
       className="fixed top-2 md:top-4 left-1/2 -translate-x-1/2 z-[9999] w-[min(94vw,56rem)] animate-in slide-in-from-top-6 duration-200"
     >
-      <div className="border-3 border-black dark:border-zinc-600 bg-[#fbfbf3] dark:bg-zinc-900 shadow-[6px_6px_0px_#000000] dark:shadow-[6px_6px_0px_#ff4e26]">
-        {/* Top brutalist bar */}
-        <div className="flex items-center justify-between border-b-3 border-black dark:border-zinc-700 bg-yellow-400 dark:bg-[#ff4e26] px-3.5 py-2 text-black dark:text-white">
+      <div className="overflow-hidden rounded-md border border-line bg-paper shadow-soft-lg">
+        {/* Top bar */}
+        <div className="flex items-center justify-between border-b border-line bg-ember-tint px-3.5 py-2 text-ink">
           <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center border-2 border-black bg-black text-yellow-400 dark:text-white">
-              <AlertTriangle className="h-3.5 w-3.5 stroke-[3]" />
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-ember text-white">
+              <AlertTriangle className="h-3.5 w-3.5 stroke-[2.5]" />
             </span>
-            <span className="text-xs font-black uppercase tracking-wider">
+            <span className="text-xs font-bold">
               System Notice
             </span>
             <span className="hidden sm:inline-block text-xs font-bold opacity-90">
@@ -87,38 +87,38 @@ export function DynamicAnnouncementModal() {
             </span>
           </div>
 
-          {/* Brutalist Exit Button */}
+          {/* Exit button */}
           <button
             type="button"
             onClick={handleDismiss}
             disabled={isLocked}
             aria-label="Close notification"
-            className={`flex h-7 w-7 items-center justify-center border-2 border-black transition-all ${
+            className={`flex h-7 w-7 items-center justify-center rounded-md border border-line transition-colors ${
               isLocked
-                ? "cursor-not-allowed bg-zinc-200 text-zinc-500 opacity-60 dark:bg-zinc-800 dark:text-zinc-600"
-                : "cursor-pointer bg-white text-black shadow-[2px_2px_0px_#000000] hover:bg-zinc-100 active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+                ? "cursor-not-allowed bg-ink/10 text-ink-muted opacity-60"
+                : "cursor-pointer bg-paper text-ink-muted hover:text-ember hover:border-ember/50"
             }`}
           >
-            <X className="h-4 w-4 stroke-[3]" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Notice Content */}
         <div className="p-4 sm:p-5">
-          <p className="text-sm font-semibold leading-relaxed text-black dark:text-zinc-100 sm:text-base">
+          <p className="text-sm font-semibold leading-relaxed text-ink sm:text-base">
             {CURRENT_ANNOUNCEMENT.message}
           </p>
 
           {/* Bottom control bar */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t-2 border-dashed border-zinc-300 dark:border-zinc-800 pt-3">
-            <div className="text-xs font-bold tracking-tight">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-dashed border-line pt-3">
+            <div className="text-xs">
               {isLocked ? (
-                <span className="inline-flex items-center gap-1.5 border border-black bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-black dark:text-zinc-200">
-                  <span className="inline-block h-2 w-2 bg-[#ff4e26] animate-pulse" />
-                  EXIT LOCKED FOR {secondsRemaining}S
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-ink/5 px-2 py-1 font-semibold text-ink-soft">
+                  <span className="inline-block h-2 w-2 rounded-full bg-ember animate-pulse" />
+                  You can close this in {secondsRemaining}s
                 </span>
               ) : (
-                <span className="text-zinc-600 dark:text-zinc-400">
+                <span className="text-ink-muted">
                   Ready to dismiss.
                 </span>
               )}
@@ -128,13 +128,13 @@ export function DynamicAnnouncementModal() {
               type="button"
               onClick={handleDismiss}
               disabled={isLocked}
-              className={`border-2 border-black px-4 py-1.5 text-xs font-black uppercase tracking-wider transition-all ${
+              className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
                 isLocked
-                  ? "cursor-not-allowed border-zinc-400 bg-zinc-200 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-600"
-                  : "cursor-pointer bg-[#ff4e26] text-white shadow-[3px_3px_0px_#000000] dark:shadow-[3px_3px_0px_#ffffff] hover:bg-[#e03d16] active:translate-x-0.5 active:translate-y-0.5 active:shadow-none"
+                  ? "cursor-not-allowed bg-ink/10 text-ink-muted"
+                  : "cursor-pointer bg-ember text-white hover:bg-[#e03d16] shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)]"
               }`}
             >
-              {isLocked ? `WAIT (${secondsRemaining}S)` : "I UNDERSTAND & CLOSE"}
+              {isLocked ? `Wait ${secondsRemaining}s` : "Got it"}
             </button>
           </div>
         </div>

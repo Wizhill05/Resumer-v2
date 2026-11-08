@@ -11,6 +11,12 @@ export const MODE_LABELS: { val: CreativityMode; label: string }[] = [
   { val: "super_larp", label: "Super LARP" },
 ]
 
+const MODE_HINTS: Record<CreativityMode, string> = {
+  proper: "Only what's in your profile",
+  larp: "Reframes and fills small gaps",
+  super_larp: "Adds an invented hero project",
+}
+
 export const MODE_INFO: { title: string; body: string }[] = [
   {
     title: "Proper — strictly your profile",
@@ -30,10 +36,12 @@ export function CreativityModeSelector({
   value,
   onChange,
   compact = false,
+  showLabel = true,
 }: {
   value: CreativityMode
   onChange: (v: CreativityMode) => void
   compact?: boolean
+  showLabel?: boolean
 }) {
   const [showInfo, setShowInfo] = useState(false)
   const [boostTrigger, setBoostTrigger] = useState(0)
@@ -46,87 +54,80 @@ export function CreativityModeSelector({
   }
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Generation mode</span>
+    <div className="space-y-2">
+      {showLabel && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-semibold text-ink">Generation mode</span>
+          <button
+            type="button"
+            onClick={() => setShowInfo(true)}
+            aria-label="What do the generation modes do?"
+            className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-line text-ink-muted transition-colors hover:border-ink/40 hover:text-ink"
+          >
+            <Info size={10} />
+          </button>
+        </div>
+      )}
+      <div
+        key={boostTrigger}
+        role="radiogroup"
+        aria-label="Generation mode"
+        className={`grid grid-cols-3 gap-1 rounded-md border border-line bg-ink/[0.04] p-1 transition-transform ${
+          boostTrigger > 0 ? "super-larp-thruster" : ""
+        }`}
+        onAnimationEnd={() => setBoostTrigger(0)}
+      >
+        {MODE_LABELS.map((opt) => {
+          const isSelected = value === opt.val
+          return (
+            <button
+              key={opt.val}
+              type="button"
+              role="radio"
+              aria-checked={isSelected}
+              onClick={() => handleSelect(opt.val)}
+              className={`cursor-pointer select-none rounded-[4px] text-left transition-[background-color,box-shadow,color] ${
+                compact ? "px-2 py-1.5 text-center text-xs" : "px-3 py-2.5"
+              } ${
+                isSelected
+                  ? "bg-paper text-ink shadow-[0_1px_2px_rgb(35_10_4/8%),0_4px_12px_-4px_rgb(35_10_4/18%)]"
+                  : "text-ink/70 hover:bg-paper/60 hover:text-ink"
+              }`}
+            >
+              <span className={`flex items-center gap-1.5 font-semibold ${compact ? "justify-center" : "text-sm"}`}>
+                {isSelected && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-ember" />}
+                {opt.label}
+              </span>
+              {!compact && <span className="mt-0.5 block text-xs text-ink-muted">{MODE_HINTS[opt.val]}</span>}
+            </button>
+          )
+        })}
+      </div>
+      {!showLabel && (
         <button
           type="button"
           onClick={() => setShowInfo(true)}
-          aria-label="What do the generation modes do?"
-          className="flex h-4 w-4 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-black text-zinc-500 transition-colors hover:border-zinc-500 hover:text-zinc-800 dark:border-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-100 cursor-pointer"
+          className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-ink-soft hover:text-ink"
         >
-          <Info size={10} />
+          <Info size={12} aria-hidden="true" /> What do the modes do?
         </button>
-      </div>
-
-      <div className="relative py-0.5 px-0.5 -mx-0.5 overflow-visible">
-        <div
-          key={boostTrigger}
-          className={`grid grid-cols-3 gap-1.5 text-xs font-bold transition-transform ${
-            boostTrigger > 0 ? "super-larp-thruster" : ""
-          }`}
-          onAnimationEnd={() => setBoostTrigger(0)}
-        >
-          {MODE_LABELS.map((opt) => {
-            const isSelected = value === opt.val
-            const isSuperLarp = opt.val === "super_larp"
-
-            let buttonClass =
-              "border py-1.5 text-center transition-colors cursor-pointer select-none "
-            if (isSelected) {
-              if (isSuperLarp) {
-                buttonClass +=
-                  "border-[#ff4e26] bg-[#ff4e26] text-white shadow-sm font-black dark:border-[#ff4e26] dark:bg-[#ff4e26]"
-              } else {
-                buttonClass +=
-                  "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-700 text-white"
-              }
-            } else {
-              if (isSuperLarp) {
-                buttonClass +=
-                  "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-[#ff4e26]/60 hover:text-[#ff4e26]"
-              } else {
-                buttonClass +=
-                  "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400"
-              }
-            }
-
-            return (
-              <button
-                key={opt.val}
-                type="button"
-                onClick={() => handleSelect(opt.val)}
-                className={buttonClass}
-              >
-                {opt.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {!compact && (
-        <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-          Proper: only your profile facts. LARP: embellishes details + prioritizes job skills. Super LARP: LARP plus an invented job-focused first project.
-        </p>
       )}
-
       {showInfo && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(35_10_4/38%)] dark:bg-black/60 p-4"
           onClick={() => setShowInfo(false)}
         >
           <div
-            className="w-full max-w-md space-y-3 rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+            className="w-full max-w-md space-y-3 rounded-lg border border-line bg-paper p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-extrabold uppercase tracking-wide">Generation modes</h3>
+              <h3 className="text-sm font-bold">Generation modes</h3>
               <button
                 type="button"
                 onClick={() => setShowInfo(false)}
                 aria-label="Close"
-                className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer"
+                className="text-ink-faint hover:text-ink cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -135,11 +136,11 @@ export function CreativityModeSelector({
               {MODE_INFO.map((m) => (
                 <div key={m.title}>
                   <p className="text-xs font-bold">{m.title}</p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">{m.body}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{m.body}</p>
                 </div>
               ))}
             </div>
-            <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-500">
+            <p className="text-[11px] leading-relaxed text-ink-muted">
               Applies to the summary, skills, experience bullets, and project sections. Your default mode can be
               changed anytime under Profile → Defaults; each generation can still override it for that run only.
             </p>

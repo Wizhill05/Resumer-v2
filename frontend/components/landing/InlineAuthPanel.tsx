@@ -19,7 +19,7 @@ export function InlineAuthPanel({
 
   return (
     <div
-      className={`relative w-full max-w-sm border-3 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 p-5 shadow-[5px_5px_0px_#000000] dark:shadow-[5px_5px_0px_#ff4e26] transition-all ${className}`}
+      className={`relative w-full max-w-sm border border-line-strong bg-paper p-5 transition-all shadow-soft rounded-md ${className}`}
     >
       {/* OAuth Action Buttons or Email Form */}
       {!showEmail ? (
@@ -30,7 +30,7 @@ export function InlineAuthPanel({
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
               <button
                 type="submit"
-                className="group flex min-h-[46px] w-full items-center justify-center gap-3 border-2 border-black dark:border-zinc-600 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 px-4 py-2.5 text-xs sm:text-sm font-black uppercase tracking-wide shadow-[3px_3px_0px_#ff4e26] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_#ff4e26] active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0px_#ff4e26] cursor-pointer"
+                className="group flex min-h-[46px] w-full items-center justify-center gap-3 border border-line-strong bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-soft rounded-md"
               >
                 <svg
                   width="18"
@@ -51,7 +51,7 @@ export function InlineAuthPanel({
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
               <button
                 type="submit"
-                className="group flex min-h-[46px] w-full items-center justify-center gap-3 border-2 border-black dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white px-4 py-2.5 text-xs sm:text-sm font-black uppercase tracking-wide shadow-[3px_3px_0px_#000000] dark:shadow-[3px_3px_0px_#3f3f46] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_#000000] dark:hover:shadow-[5px_5px_0px_#ff4e26] active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0px_#000000] cursor-pointer"
+                className="group flex min-h-[46px] w-full items-center justify-center gap-3 border border-line-strong bg-paper text-ink px-4 py-2.5 text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-soft rounded-md"
               >
                 <svg
                   width="18"
@@ -86,9 +86,9 @@ export function InlineAuthPanel({
             <button
               type="button"
               onClick={() => setShowEmail(true)}
-              className="text-xs font-bold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-4 transition-colors cursor-pointer"
+              className="text-xs font-bold text-ink-muted hover:text-ink dark:hover:text-zinc-200 underline underline-offset-4 transition-colors cursor-pointer"
             >
-              Use Email Instead
+              Use email instead
             </button>
           </div>
         </>
@@ -103,9 +103,9 @@ export function InlineAuthPanel({
       {/* Guest Trial Divider */}
       <div className="relative my-3.5 text-center">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-dashed border-zinc-300 dark:border-zinc-700" />
+          <div className="w-full border-t border-dashed border-line" />
         </div>
-        <div className="relative inline-block bg-white dark:bg-zinc-900 px-2 text-[10px] font-extrabold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+        <div className="relative inline-block bg-paper px-2 text-[10px] font-bold text-ink-muted">
           OR NO LOGIN
         </div>
       </div>
@@ -113,7 +113,7 @@ export function InlineAuthPanel({
       {/* Guest Link */}
       <Link
         href="/try"
-        className="group flex min-h-[40px] w-full items-center justify-between border-2 border-black dark:border-zinc-700 bg-amber-300/30 dark:bg-zinc-800/80 px-3.5 py-2 text-xs font-black uppercase text-zinc-900 dark:text-amber-300 transition-colors hover:bg-amber-300/60 dark:hover:bg-zinc-800"
+        className="group flex min-h-[40px] w-full items-center justify-between border border-line-strong bg-amber-300/30 dark:bg-zinc-800/80 px-3.5 py-2 text-xs font-bold text-ink dark:text-amber-300 transition-colors hover:bg-amber-300/60 dark:hover:bg-zinc-800 rounded-md"
       >
         <span>Build Draft Without Account</span>
         <ArrowRight
@@ -123,7 +123,7 @@ export function InlineAuthPanel({
       </Link>
 
       {/* Micro Footnote */}
-      <div className="mt-3 text-center text-[10px] font-bold text-zinc-500 dark:text-zinc-400">
+      <div className="mt-3 text-center text-[10px] font-bold text-ink-muted">
         5 free generations/day • Zero passwords
       </div>
     </div>

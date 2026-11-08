@@ -27,26 +27,26 @@ export function ResumePreviewPane({ preview, loading, manifest, onFitChange }: P
   }, [preview, onFitChange])
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-900">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-ink/5">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-paper px-3 py-1.5 text-xs text-ink-muted">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="font-medium text-zinc-700 dark:text-zinc-200">PDF preview</span>
+          <span className="font-medium text-ink">PDF preview</span>
           {loading && <span className="animate-pulse text-[#ff4e26]">Updating...</span>}
           {preview && <span className="hidden sm:inline">{preview.pageCount} {preview.pageCount === 1 ? "page" : "pages"}</span>}
         </div>
-        <div className="flex items-center gap-1.5 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-1 py-0.5">
+        <div className="flex items-center gap-1.5 rounded border border-line bg-ink/[0.03] px-1 py-0.5">
           <button
             onClick={() => setZoom((value) => Math.max(0.35, value - 0.1))}
-            className="cursor-pointer rounded p-0.5 text-zinc-500 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-800 dark:hover:text-zinc-200"
+            className="cursor-pointer rounded p-0.5 text-ink-muted transition-colors hover:bg-ink/[0.07] dark:hover:bg-ink/10 hover:text-ink"
             title="Zoom out"
             aria-label="Zoom out"
           >
             <ZoomOut size={12} />
           </button>
-          <span className="w-9 text-center font-mono text-[10px] font-bold text-zinc-700 dark:text-zinc-300">{Math.round(zoom * 100)}%</span>
+          <span className="w-9 text-center text-[10px] font-bold text-ink">{Math.round(zoom * 100)}%</span>
           <button
             onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))}
-            className="cursor-pointer rounded p-0.5 text-zinc-500 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-800 dark:hover:text-zinc-200"
+            className="cursor-pointer rounded p-0.5 text-ink-muted transition-colors hover:bg-ink/[0.07] dark:hover:bg-ink/10 hover:text-ink"
             title="Zoom in"
             aria-label="Zoom in"
           >
@@ -55,13 +55,13 @@ export function ResumePreviewPane({ preview, loading, manifest, onFitChange }: P
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto bg-zinc-200 dark:bg-zinc-800 p-3 sm:p-5">
+      <div className="flex-1 overflow-auto bg-ink/10 p-3 sm:p-5">
         {preview ? (
           <div className="mx-auto flex w-max flex-col items-center gap-6 sm:gap-8">
             {preview.pageImages.map((pageImage, index) => (
               <section key={`${index}-${pageImage.length}`} className="flex flex-col items-center gap-2">
                 <div
-                  className="overflow-hidden bg-white shadow-[0_2px_10px_rgb(24_24_27/0.20)] ring-1 ring-zinc-300 dark:ring-zinc-600"
+                  className="overflow-hidden bg-paper shadow-[0_2px_10px_rgb(24_24_27/0.20)] ring-1 ring-line dark:ring-line-strong"
                   style={{ width: A4_WIDTH_PX * zoom }}
                 >
                   <img
@@ -71,13 +71,13 @@ export function ResumePreviewPane({ preview, loading, manifest, onFitChange }: P
                     draggable={false}
                   />
                 </div>
-                <span className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400">Page {index + 1}</span>
+                <span className="text-[10px] font-medium text-ink-muted">Page {index + 1}</span>
               </section>
             ))}
           </div>
         ) : (
           <div
-            className="mx-auto flex items-center justify-center bg-white text-sm text-zinc-400 dark:text-zinc-500 shadow-[0_2px_10px_rgb(24_24_27/0.16)]"
+            className="mx-auto flex items-center justify-center bg-paper text-sm text-ink-faint shadow-[0_2px_10px_rgb(24_24_27/0.16)]"
             style={{ width: A4_WIDTH_PX * zoom, aspectRatio: "210 / 297" }}
           >
             {loading ? "Rendering PDF preview..." : "Edit your résumé to load the preview"}

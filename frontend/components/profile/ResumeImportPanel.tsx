@@ -20,7 +20,7 @@ type ResumeImportDraft = {
 
 type Stage = "idle" | "parsing" | "extracting" | "deduplicating" | "done"
 
-export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?: () => void; onApplyingChange?: (busy: boolean) => void }) {
+export function ResumeImportPanel({ onApplied, onApplyingChange, inputId, compact = false }: { onApplied?: () => void; onApplyingChange?: (busy: boolean) => void; inputId?: string; compact?: boolean }) {
   const queryClient = useQueryClient()
   const { confirmLeave } = useProfileChanges()
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -141,10 +141,9 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
   const isPending = importMutation.isPending
   const showExpanded = mobileExpanded || isPending || draft !== null || error !== null
 
-  return (
-    <fieldset disabled={applyMutation.isPending} aria-busy={isPending || applyMutation.isPending} aria-label="Import résumé PDFs" className="min-w-0 border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:p-4">
-      {/* Hidden file input */}
+  const fileInput = (
       <input
+        id={inputId}
         ref={inputRef}
         type="file"
         accept="application/pdf,.pdf"
@@ -162,18 +161,25 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
           event.target.value = ""
         }}
       />
+  )
+
+  if (compact && !isPending && draft === null && error === null) return fileInput
+
+  return (
+    <fieldset disabled={applyMutation.isPending} aria-busy={isPending || applyMutation.isPending} aria-label="Import résumé PDFs" className={`min-w-0 ${compact ? "soft-card space-y-3 p-4" : "soft-inset p-3 md:p-4"}`}>
+      {fileInput}
 
       {/* Mobile Collapsed Trigger Bar */}
-      <div className="flex items-center justify-between gap-2 md:hidden">
+      {!compact && <div className="flex items-center justify-between gap-2 md:hidden">
         <button
           type="button"
           onClick={() => setMobileExpanded(!mobileExpanded)}
           aria-expanded={showExpanded}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left font-black uppercase tracking-tight text-zinc-800 dark:text-zinc-200"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left font-bold tracking-tight text-ink"
         >
           <FileUp size={16} className="shrink-0 text-[#ff4e26]" />
           <span className="truncate text-xs">Import from PDF Résumés</span>
-          {showExpanded ? <ChevronUp size={14} className="shrink-0 text-zinc-400" /> : <ChevronDown size={14} className="shrink-0 text-zinc-400" />}
+          {showExpanded ? <ChevronUp size={14} className="shrink-0 text-ink-faint" /> : <ChevronDown size={14} className="shrink-0 text-ink-faint" />}
         </button>
         <Button
           type="button"
@@ -184,15 +190,14 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
         >
           {isPending ? <Loader2 className="animate-spin" size={12} /> : <><Upload size={12} /> Upload</>}
         </Button>
-      </div>
+      </div>}
 
       {/* Desktop Header & Mobile Expanded Body */}
-      <div className={`${showExpanded ? "mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800 md:mt-0 md:pt-0 md:border-0" : "hidden"} md:block`}>
+      {!compact && <div className={`${showExpanded ? "mt-3 pt-3 border-t border-line md:mt-0 md:pt-0 md:border-0" : "hidden"} md:block`}>
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Fast import</p>
-            <h2 className="text-base font-extrabold uppercase tracking-tight text-zinc-900 dark:text-zinc-100 md:text-lg">Upload old résumés</h2>
-            <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 md:text-sm">PDF only. Max 5 files, 5MB each. We stage results before saving.</p>
+                        <h2 className="text-base font-bold tracking-tight text-ink md:text-lg">Upload old résumés</h2>
+            <p className="text-xs font-medium text-ink-muted md:text-sm">PDF only. Max 5 files, 5MB each. We stage results before saving.</p>
           </div>
           <div className="hidden md:flex md:gap-2">
             <Button type="button" onClick={() => inputRef.current?.click()} disabled={isPending}>
@@ -200,24 +205,24 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
             </Button>
           </div>
         </div>
-      </div>
+      </div>}
       {/* Stage progress indicator */}
       {isPending && (
-        <div className="space-y-1.5 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
+        <div className="space-y-1.5 border border-line bg-ink/[0.03] p-3 rounded-md">
           <div className="flex items-center gap-2">
             <div className="flex gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${stage === "parsing" || stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"}`} />
-              <span className={`h-2 w-2 rounded-full ${stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"}`} />
-              <span className={`h-2 w-2 rounded-full ${stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "parsing" || stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-ink/10"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "extracting" || stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-ink/10"}`} />
+              <span className={`h-2 w-2 rounded-full ${stage === "deduplicating" ? "bg-[#ff4e26]" : "bg-ink/10"}`} />
             </div>
-            <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{stageLabel}</p>
+            <p className="text-xs font-semibold text-ink">{stageLabel}</p>
           </div>
-          {stageHint && <p className="text-xs text-zinc-500 dark:text-zinc-400">{stageHint}</p>}
+          {stageHint && <p className="text-xs text-ink-muted">{stageHint}</p>}
         </div>
       )}
 
       {error && (
-        <div className="flex flex-col gap-2 border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 p-3">
+        <div className="flex flex-col gap-2 border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 p-3 rounded-md">
           <div className="flex items-start gap-2">
             <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
             <p className="text-xs font-bold text-red-700 dark:text-red-300 flex-1 min-w-0 break-words">{error}</p>
@@ -230,21 +235,21 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
               description="Import error is prefilled. Add file details and what went wrong."
               variant="outline"
               size="xs"
-              className="border-red-300 text-red-700 hover:bg-red-100 bg-white font-black uppercase tracking-wider text-[11px]"
+              className="border-red-300 text-red-700 hover:bg-red-100 bg-paper font-bold text-[11px]"
             >
               Report this issue
             </ReportIssueButton>
-            <Button variant="ghost" size="xs" onClick={() => setError(null)} className="font-bold uppercase tracking-wider text-[11px]">Dismiss</Button>
+            <Button variant="ghost" size="xs" onClick={() => setError(null)} className="font-bold text-[11px]">Dismiss</Button>
           </div>
         </div>
       )}
 
       {draft && (
-        <div className="space-y-3 border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-3">
+        <div className="space-y-3 border border-line bg-ink/[0.03] p-3 rounded-md">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-extrabold uppercase text-zinc-900 dark:text-zinc-100">Review import draft</p>
-              <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">{counts.join(" • ")}</p>
+              <p className="text-sm font-bold text-ink">Review import draft</p>
+              <p className="text-xs font-semibold text-ink-muted">{counts.join(" • ")}</p>
             </div>
             <Button type="button" variant="ghost" size="icon-sm" aria-label="Discard import draft" onClick={() => { if (window.confirm("Discard this import draft?")) { setDraft(null); setStage("idle") } }} className="border-transparent">
               <X size={14} />
@@ -252,7 +257,7 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
           </div>
 
           {(draft.warnings?.filter(w => w.scope === "general").length ?? 0) > 0 && (
-            <div className="flex items-start gap-2 border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50 dark:bg-yellow-950/40 p-2">
+            <div className="flex items-start gap-2 border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50 dark:bg-yellow-950/40 p-2 rounded-md">
               <AlertCircle size={14} className="mt-0.5 shrink-0 text-yellow-700 dark:text-yellow-400" />
               <div className="space-y-0.5">
                 {draft.warnings?.filter(w => w.scope === "general").map((w, i) => (
@@ -263,8 +268,8 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
           )}
 
           {(draft.duplicate_candidates?.length ?? 0) > 0 && (
-            <div className="space-y-1 border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50 dark:bg-yellow-950/40 p-2">
-              <p className="text-xs font-extrabold uppercase text-yellow-800 dark:text-yellow-300">Duplicates detected</p>
+            <div className="space-y-1 border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50 dark:bg-yellow-950/40 p-2 rounded-md">
+              <p className="text-xs font-bold text-yellow-800 dark:text-yellow-300">Duplicates detected</p>
               {draft.duplicate_candidates?.slice(0, 4).map((dup, index) => (
                 <p key={index} className="text-xs font-semibold text-yellow-900 dark:text-yellow-200">
                   {dup.imported_type}: {dup.reason} ({Math.round(dup.confidence * 100)}%, {dup.suggested_action})
@@ -274,10 +279,10 @@ export function ResumeImportPanel({ onApplied, onApplyingChange }: { onApplied?:
           )}
 
           {(draft.warnings?.filter(w => w.scope !== "general").length ?? 0) > 0 && (
-            <div className="space-y-1 border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2">
-              <p className="text-xs font-extrabold uppercase text-zinc-700 dark:text-zinc-300">Warnings</p>
+            <div className="space-y-1 border border-line bg-paper p-2 rounded-md">
+              <p className="text-sm font-semibold text-ink">Warnings</p>
               {draft.warnings?.filter(w => w.scope !== "general").slice(0, 4).map((warning, index) => (
-                <p key={index} className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">{warning.scope}: {warning.message}</p>
+                <p key={index} className="text-xs font-semibold text-ink-muted">{warning.scope}: {warning.message}</p>
               ))}
             </div>
           )}

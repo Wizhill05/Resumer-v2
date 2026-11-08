@@ -99,15 +99,15 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+        className="absolute inset-0 bg-[rgb(35_10_4/38%)] dark:bg-black/60 backdrop-blur-xs transition-opacity"
         onClick={handleDismiss}
       />
 
       {/* Modal Container */}
-      <div className="relative z-10 w-full max-w-md border-3 border-black dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 sm:p-8 shadow-[8px_8px_0px_#000000] dark:shadow-[8px_8px_0px_#ff4e26] animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative z-10 w-full max-w-md border border-line-strong bg-paper p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 shadow-soft rounded-md">
         <button
           onClick={handleDismiss}
-          className="absolute top-4 right-4 p-1 text-zinc-500 hover:text-black dark:hover:text-white transition-colors"
+          className="absolute top-4 right-4 p-1 text-ink-muted hover:text-ink dark:hover:text-white transition-colors"
           aria-label="Close"
         >
           <X size={20} />
@@ -115,25 +115,25 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
 
         {submitted ? (
           <div className="py-6 text-center space-y-4">
-            <div className="mx-auto w-14 h-14 bg-emerald-500 text-white rounded-full flex items-center justify-center border-2 border-black shadow-[2px_2px_0px_#000]">
+            <div className="mx-auto w-14 h-14 bg-emerald-500 text-white rounded-full flex items-center justify-center border border-line-strong shadow-soft">
               <Check size={32} />
             </div>
-            <h3 className="text-xl font-extrabold uppercase tracking-tight">Thank You!</h3>
-            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">
+            <h3 className="text-xl font-bold tracking-tight">Thank You!</h3>
+            <p className="text-sm font-medium text-ink-muted">
               Your feedback helps us make Résumer even better.
             </p>
           </div>
         ) : (
           <div className="space-y-6">
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#ff4e26]/10 dark:bg-[#ff4e26]/15 text-[#ff4e26] border border-[#ff4e26] text-xs font-black uppercase tracking-wider">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#ff4e26]/10 dark:bg-[#ff4e26]/15 text-[#ff4e26] border border-[#ff4e26] text-xs font-bold rounded-md">
                 <HeartHandshake size={14} />
                 <span>Feedback & Rating</span>
               </div>
-              <h2 className="text-2xl font-extrabold uppercase tracking-tight md:text-3xl">
+              <h2 className="text-2xl font-bold tracking-tight md:text-3xl">
                 Tell us about your experience
               </h2>
-              <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <p className="text-xs font-medium text-ink-muted">
                 How satisfied are you with your generated résumé?
               </p>
             </div>
@@ -149,14 +149,14 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(0)}
                     onClick={() => setRating(star)}
-                    className="p-1.5 text-zinc-300 dark:text-zinc-700 hover:scale-110 active:scale-95 transition-all"
+                    className="p-1.5 text-ink-faint hover:scale-110 active:scale-95 transition-all"
                   >
                     <Star
                       size={36}
                       className={
                         active
-                          ? "fill-[#ff4e26] dark:fill-[#ff4e26] text-[#ff4e26] drop-shadow-[2px_2px_0px_#000]"
-                          : "text-zinc-300 dark:text-zinc-700"
+                          ? "fill-ember text-ember drop-shadow-[0_4px_10px_rgb(255_78_38/40%)]"
+                          : "text-ink-faint"
                       }
                     />
                   </button>
@@ -166,7 +166,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
 
             {/* Comment textarea */}
             <div className="space-y-2">
-              <label htmlFor="comment" className="text-xs font-extrabold uppercase tracking-widest text-zinc-500">
+              <label htmlFor="comment" className="text-xs font-bold text-ink-muted">
                 Any quick thoughts or suggestions? (Optional)
               </label>
               <Textarea
@@ -175,7 +175,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="What did you love or where can we improve?"
-                className="border-2 border-black dark:border-zinc-700 font-sans text-sm shadow-[2px_2px_0px_#000000]"
+                className="border border-line-strong font-sans text-sm shadow-soft rounded-md"
               />
             </div>
 
@@ -188,7 +188,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                 type="button"
                 variant="outline"
                 onClick={onClose}
-                className="flex-1 border-2 border-black font-extrabold uppercase text-xs"
+                className="flex-1 border border-line-strong font-bold text-xs rounded-md"
               >
                 Skip
               </Button>
@@ -196,7 +196,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                 type="button"
                 onClick={handleSubmit}
                 disabled={isSubmitting || rating === 0}
-                className="flex-1 bg-[#ff4e26] hover:bg-[#e03d16] dark:hover:bg-[#e03d16] text-white font-extrabold uppercase text-xs border-2 border-black shadow-[3px_3px_0px_#000000] disabled:opacity-50"
+                className="flex-1 bg-[#ff4e26] hover:bg-[#e03d16] dark:hover:bg-[#e03d16] text-white font-bold text-xs border border-line-strong disabled:opacity-50 shadow-soft rounded-md"
               >
                 {isSubmitting ? "Submitting..." : "Submit Rating"}
               </Button>

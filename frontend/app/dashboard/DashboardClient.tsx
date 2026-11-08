@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
-import { Clock, UserRound } from "lucide-react"
+import { ArrowUpRight, History, UserRound } from "lucide-react"
 import { clearGuestDraft, loadGuestDraft } from "@/lib/guest-storage"
 
 type Profile = {
@@ -15,10 +15,6 @@ type Profile = {
 
 type Entry = { id: string }
 
-const sections = [
-  { key: "profile", label: "Profile Section", href: "/profile", icon: UserRound, desc: "Edit info, experience, projects, education, and activities." },
-  { key: "history", label: "History Section", href: "/dashboard/history", icon: Clock, desc: "Open past generations and downloads." },
-]
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -49,6 +45,11 @@ export function DashboardClient() {
   const { data: extracurriculars = [], isLoading: loadingExtra } = useQuery<Entry[]>({
     queryKey: ["extracurriculars"],
     queryFn: () => getJson("/api/backend/profile/extracurriculars"),
+  })
+
+  const { data: history = [] } = useQuery<{ id: string; created_at: string; job_title?: string | null; company?: string | null }[]>({
+    queryKey: ["history"],
+    queryFn: () => getJson("/api/backend/generate"),
   })
 
   const isLoading = loadingProfile || loadingExp || loadingProjects || loadingEducation || loadingExtra
@@ -142,81 +143,118 @@ export function DashboardClient() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4 md:space-y-5">
-        <div className="soft-skeleton h-28" />
-        <div className="grid gap-3 md:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="soft-skeleton h-28" />)}
+      <div className="space-y-5">
+        <div className="grid gap-5 md:grid-cols-2">
+          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="soft-skeleton h-44" />)}
         </div>
       </div>
     )
   }
 
+  const latest = history[0]
+  const latestDate = latest
+    ? new Date(latest.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : null
+
+  const tiles = [
+    {
+      key: "profile",
+      title: "Profile",
+      desc: "Source material for every résumé.",
+      href: "/profile",
+      icon: UserRound,
+      stats: [
+        [experiences.length, "experience"],
+        [projects.length, "projects"],
+        [education.length, "education"],
+        [extracurriculars.length, "activities"],
+      ] as [number | string, string][],
+    },
+    {
+      key: "history",
+      title: "History",
+      desc: "Past builds, previews and PDFs.",
+      href: "/dashboard/history",
+      icon: History,
+      stats: [
+        [history.length, history.length === 1 ? "résumé" : "résumés"],
+        ...(latestDate ? [[latestDate, "latest"] as [string, string]] : []),
+        ...(latest?.company ? [[latest.company, "company"] as [string, string]] : []),
+      ] as [number | string, string][],
+    },
+  ]
+
   return (
-    <div className="space-y-6 sm:space-y-8 pixel-enter">
+    <div className="space-y-6 pixel-enter sm:space-y-8">
       {importMessage && (
-        <div className="panel border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+        <div className="rounded-md border border-ok/30 bg-ok/10 p-4 text-sm font-semibold text-ok">
           {importMessage}
         </div>
       )}
+
       {!profileComplete && (
-        <section className="panel-strong overflow-hidden">
-          <div className="h-1.5 bg-[#ff4e26]" />
-          <div className="grid gap-4 p-5 sm:p-6 md:gap-5 md:grid-cols-[1fr_auto] md:items-center">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile needed</p>
-              <h2 className="text-lg font-extrabold uppercase tracking-tight md:text-xl dark:text-white">Import source material first</h2>
-              <p className="mt-1.5 text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
-                Missing: {missing.join(", ")}. Upload old résumés or paste GitHub project links to fill this faster.
-              </p>
-            </div>
-            <Link href="/onboarding" className="w-full md:w-auto">
-              <Button size="lg" className="w-full md:w-auto">Finish Onboarding</Button>
-            </Link>
+        <section className="soft-card flex flex-col gap-4 p-5 sm:p-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-ink md:text-xl">Finish your profile first</h2>
+            <p className="mt-1 text-sm text-ink-muted">
+              Missing: {missing.join(", ")}. Upload old résumés or paste GitHub links to fill it faster.
+            </p>
           </div>
+          <Link href="/onboarding" className="w-full md:w-auto">
+            <Button size="lg" className="w-full md:w-auto">Finish profile</Button>
+          </Link>
         </section>
       )}
 
-      {profileComplete && (
-        <section className="panel-strong overflow-hidden">
-          <div className="h-1.5 bg-[#ff4e26]" />
-          <div className="grid gap-4 p-5 sm:p-6 md:gap-5 md:grid-cols-[1fr_auto] md:items-center md:p-7">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">Profile ready</p>
-              <h2 className="text-xl font-extrabold uppercase tracking-tight md:text-4xl dark:text-white">Generate résumé now</h2>
-              <p className="mt-2 max-w-2xl text-xs font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400 md:text-sm">
-                You have source material in every profile section. Paste job post and choose focus next.
-              </p>
-            </div>
-            <Link href="/dashboard/generate" className="w-full md:w-auto">
-              <Button size="lg" className="w-full md:w-auto text-base">Generate Résumé</Button>
-            </Link>
-          </div>
-        </section>
-      )}
-
-      <div className="grid gap-5 sm:gap-6 md:grid-cols-2">
-        {sections.map((section) => {
-          const Icon = section.icon
+      <div className="grid gap-5 md:grid-cols-2">
+        {tiles.map((tile) => {
+          const Icon = tile.icon
           return (
-            <Link key={section.key} href={section.href} className="group block">
-              <section className="compact-card h-full p-6 sm:p-7">
-                <div className="mb-4 flex h-11 w-11 items-center justify-center border border-zinc-900 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-black dark:text-white group-hover:bg-zinc-950 group-hover:text-white">
-                  <Icon size={18} />
+            <Link key={tile.key} href={tile.href} className="group block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember">
+              <section className="soft-card soft-hover flex h-full flex-col gap-5 p-6 sm:p-7">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-ember-tint text-ember">
+                      <Icon size={18} aria-hidden="true" />
+                    </span>
+                    <h2 className="text-xl font-bold tracking-tight text-ink">{tile.title}</h2>
+                    <p className="mt-1 text-sm text-ink-muted">{tile.desc}</p>
+                  </div>
+                  <ArrowUpRight size={18} aria-hidden="true" className="text-ink-faint transition-transform group-hover:text-ember" />
                 </div>
-                <h3 className="text-base font-extrabold uppercase tracking-tight dark:text-white">{section.label}</h3>
-                <p className="mt-2.5 text-sm font-semibold leading-relaxed text-zinc-600 dark:text-zinc-400">
-                  {section.desc}
-                </p>
+                <dl className="mt-auto grid grid-flow-col auto-cols-fr border-t border-line pt-4">
+                  {tile.stats.map(([value, label], i) => (
+                    <div key={label} className={`min-w-0 ${i ? "border-l border-line pl-4" : ""} pr-2`}>
+                      <dd className="truncate text-xl font-semibold tracking-tight text-ink">{value}</dd>
+                      <dt className="text-xs text-ink-muted">{label}</dt>
+                    </div>
+                  ))}
+                </dl>
               </section>
             </Link>
           )
         })}
       </div>
 
-      <div className="panel flex flex-col gap-2.5 p-4 sm:p-5 text-xs font-bold text-zinc-600 dark:text-zinc-400 md:flex-row md:items-center md:justify-between md:px-5">
-        <span className="uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Typical generation time</span>
-        <span>5-10 minutes. Safe to close tab after starting.</span>
-      </div>
+      <section className="grid gap-6 border-t border-line pt-7 md:grid-cols-[17rem_1fr_1fr_1fr] md:gap-0">
+        <div className="md:pr-6">
+          <h2 className="text-lg font-bold tracking-tight text-ink">How a build runs</h2>
+          <p className="mt-1.5 text-sm text-ink-muted">Usually 5–10 minutes. It&apos;s safe to close the tab once it starts.</p>
+        </div>
+        {[
+          ["01", "Paste the job", "The full post, requirements included."],
+          ["02", "Pick a mode", "Proper, LARP or Super LARP."],
+          ["03", "Get the PDF", "We email you when it's ready."],
+        ].map(([n, title, desc]) => (
+          <div key={n} className="flex gap-3.5 md:pl-6">
+            <span className="text-4xl font-light leading-none tracking-tight text-ink/40">{n}</span>
+            <div className="border-l border-line pl-3.5 pt-1">
+              <h3 className="text-sm font-semibold text-ink">{title}</h3>
+              <p className="mt-0.5 text-sm text-ink-muted">{desc}</p>
+            </div>
+          </div>
+        ))}
+      </section>
     </div>
   )
 }

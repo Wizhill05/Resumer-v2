@@ -39,20 +39,20 @@ export function TemplatePreviewDialog({
   return (
     <dialog ref={dialog} aria-labelledby={titleId} onClose={() => { if (!dialog.current?.open) onClose() }}
       onClick={(event) => { if (event.target === event.currentTarget) dialog.current?.close() }}
-      className="fixed inset-0 m-auto max-h-[92dvh] w-[min(92vw,42rem)] max-w-none overflow-visible rounded-lg border-0 bg-transparent p-0 backdrop:bg-black/60">
+      className="fixed inset-0 m-auto max-h-[92dvh] w-[min(92vw,42rem)] max-w-none overflow-visible rounded-lg border-0 bg-transparent p-0 backdrop:bg-[rgb(35_10_4/38%)] dark:bg-black/60">
       <h2 id={titleId} className="sr-only">{templateName} template preview</h2>
       <div className="relative pt-12">
         <button type="button" onClick={() => dialog.current?.close()} aria-label="Close template preview" autoFocus
-          className="absolute right-0 top-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-zinc-900/80 text-white shadow-sm hover:bg-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
+          className="absolute right-0 top-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[#230a04]/80 text-white shadow-sm hover:bg-[#230a04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
           <X size={20} aria-hidden="true" />
         </button>
-        <div className="max-h-[calc(92dvh-3rem)] overflow-y-auto overscroll-contain bg-white">
+        <div className="max-h-[calc(92dvh-3rem)] overflow-y-auto overscroll-contain bg-paper">
           {data ? data.page_images.map((src, index) => (
-            <div key={index} className="relative aspect-[210/297] w-full bg-white">
+            <div key={index} className="relative aspect-[210/297] w-full bg-paper">
               <Image unoptimized src={src} fill sizes="(max-width: 768px) 92vw, 672px"
                 alt={`${templateName} sample resume, page ${index + 1}`} className="object-contain" draggable={false} />
             </div>
-          )) : <div className="flex min-h-80 items-center justify-center px-8 text-center text-sm text-zinc-500">
+          )) : <div className="flex min-h-80 items-center justify-center px-8 text-center text-sm text-ink-muted">
             {isError ? <div role="alert"><p>Could not load the preview.</p><button type="button" onClick={() => refetch()} className="mt-3 min-h-11 px-3 font-medium text-[#ff4e26] underline">Retry</button></div> : <p role="status">Preparing preview…</p>}
           </div>}
         </div>

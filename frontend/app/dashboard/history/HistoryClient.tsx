@@ -155,13 +155,13 @@ function JobDescriptionPeek({ text }: { text: string }) {
           e.stopPropagation()
           setIsOpen(true)
         }}
-        className="inline-flex cursor-pointer items-center text-[11px] font-semibold text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white underline underline-offset-2 transition-colors"
+        className="inline-flex cursor-pointer items-center text-[11px] font-semibold text-ink-muted hover:text-ink dark:hover:text-white underline underline-offset-2 transition-colors"
       >
         See job description
       </button>
       {isOpen && typeof document !== "undefined" && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(35_10_4/38%)] dark:bg-black/60 p-4 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
           aria-label="Job Description"
@@ -171,19 +171,19 @@ function JobDescriptionPeek({ text }: { text: string }) {
           }}
         >
           <div
-            className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col border-3 border-black dark:border-zinc-600 bg-white dark:bg-zinc-900 shadow-[8px_8px_0_#000] dark:shadow-[8px_8px_0_#3f3f46] transition-all"
+            className="relative z-10 flex max-h-[85vh] w-full max-w-xl flex-col rounded-lg border border-line bg-paper shadow-soft-lg"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 px-4 py-3">
-              <span className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
+            <div className="flex items-center justify-between border-b border-line px-4 py-3">
+              <span className="text-sm font-semibold text-ink">
                 Job Description
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={copy}
-                  className="flex min-h-9 cursor-pointer touch-manipulation items-center gap-1 border border-zinc-200 dark:border-zinc-600 px-2 py-1 text-[10px] font-bold uppercase dark:text-zinc-300 active:border-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-700 sm:hover:border-zinc-900 dark:sm:hover:border-zinc-400 sm:hover:bg-zinc-50 dark:sm:hover:bg-zinc-800"
+                  className="flex min-h-9 cursor-pointer touch-manipulation items-center gap-1 rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-ink-soft transition-colors active:bg-ink/5 sm:hover:border-ember/50 sm:hover:text-ember"
                 >
                   <Copy size={12} />
                   {copied ? "Copied!" : "Copy"}
@@ -191,7 +191,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className="flex min-h-9 min-w-9 cursor-pointer touch-manipulation items-center justify-center border border-zinc-200 dark:border-zinc-600 p-1 dark:text-zinc-300 active:border-zinc-900 active:bg-zinc-100 dark:active:bg-zinc-700 sm:hover:border-zinc-900 dark:sm:hover:border-zinc-400 sm:hover:bg-zinc-50 dark:sm:hover:bg-zinc-800"
+                  className="flex min-h-9 min-w-9 cursor-pointer touch-manipulation items-center justify-center rounded-md border border-line p-1 text-ink-muted transition-colors active:bg-ink/5 sm:hover:border-ember/50 sm:hover:text-ember"
                   aria-label="Close modal"
                 >
                   <X size={14} />
@@ -200,7 +200,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap select-text">
+            <div className="flex-1 overflow-y-auto p-4 text-[11px] leading-relaxed text-ink whitespace-pre-wrap select-text">
               {text || "No job description text available."}
             </div>
           </div>
@@ -243,8 +243,8 @@ function LiveProgressRow({
           window.location.href = `/dashboard/history/${run.id}/remake`
         }
       }}
-      className={`flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group bg-zinc-50/50 dark:bg-zinc-800/50 ${
-        run.status === "remaking_project" ? "cursor-pointer hover:bg-zinc-100/60 dark:hover:bg-zinc-800/80" : ""
+      className={`flex items-center justify-between gap-4 px-5 py-3.5 transition-all duration-150 group bg-ink/[0.03] ${
+        run.status === "remaking_project" ? "cursor-pointer hover:bg-ink/5 dark:hover:bg-ink/[0.06]" : ""
       }`}
     >
       {/* Left: dot + info */}
@@ -252,26 +252,26 @@ function LiveProgressRow({
         <StatusDot status="in_progress" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-100">
+            <span className="text-sm font-semibold leading-snug text-ink">
               {run.job_title || "Tailored Résumé"}
             </span>
             {run.company && (
-              <span className="text-sm text-zinc-400 dark:text-zinc-500 font-normal truncate">
+              <span className="text-sm text-ink-faint font-normal truncate">
                 at {run.company}
               </span>
             )}
           </div>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+          <p className="text-xs text-ink-faint mt-0.5">
             {date}
-            <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
+            <span className="mx-1.5 text-ink-faint">·</span>
             {run.template_id}
-            <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
+            <span className="mx-1.5 text-ink-faint">·</span>
             <span className="text-amber-500 font-medium">{stepLabel} ({percent}%)</span>
           </p>
           <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
           
           {/* Progress bar */}
-          <div className="w-full bg-zinc-100 dark:bg-zinc-700 h-1 mt-2 rounded-full overflow-hidden">
+          <div className="w-full bg-ink/5 h-1 mt-2 rounded-full overflow-hidden">
             <div
               className="bg-[#ff4e26] h-full transition-all duration-500 ease-out"
               style={{ width: `${percent}%` }}
@@ -283,7 +283,7 @@ function LiveProgressRow({
       {/* Right: delete */}
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-        className="shrink-0 rounded p-1.5 text-zinc-400 transition-colors active:text-red-500 md:text-zinc-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+        className="shrink-0 rounded p-1.5 text-ink-faint transition-colors active:text-red-500 md:text-ink-faint md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
         aria-label="Delete"
       >
         <Trash2 size={14} />
@@ -313,18 +313,18 @@ function LiveProgressGridCard({
           window.location.href = `/dashboard/history/${run.id}/remake`
         }
       }}
-      className={`bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 overflow-hidden flex flex-col group hover:border-gray-400 dark:hover:border-zinc-500 transition-colors ${
+      className={`bg-paper border border-line overflow-hidden flex flex-col group hover:border-gray-400 dark:hover:border-ember/50 transition-colors rounded-md ${
         run.status === "remaking_project" ? "cursor-pointer" : ""
       }`}
     >
       {/* Thumbnail placeholder with progress */}
-      <div className="relative border-b border-gray-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800" style={{ aspectRatio: "210/297" }}>
+      <div className="relative border-b border-line bg-ink/[0.03]" style={{ aspectRatio: "210/297" }}>
         <div className="w-full h-full flex flex-col items-center justify-center p-4 gap-3">
-          <FileText size={28} className="text-zinc-300 dark:text-zinc-600" />
+          <FileText size={28} className="text-ink-faint" />
           <span className="text-xs text-amber-500 font-medium">{stepLabel}… {percent}%</span>
           
           {/* Progress bar */}
-          <div className="w-2/3 bg-zinc-200 dark:bg-zinc-700 h-1 rounded-full overflow-hidden">
+          <div className="w-2/3 bg-ink/10 h-1 rounded-full overflow-hidden">
             <div
               className="bg-[#ff4e26] h-full transition-all duration-500 ease-out"
               style={{ width: `${percent}%` }}
@@ -335,7 +335,7 @@ function LiveProgressGridCard({
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-          className="absolute top-2 right-2 rounded border border-gray-200 dark:border-zinc-600 bg-white/90 dark:bg-zinc-800/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+          className="absolute top-2 right-2 rounded border border-line bg-paper/90 p-1.5 text-ink-muted transition-colors active:border-red-300 active:text-red-500 md:text-ink-faint md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
           aria-label="Delete"
         >
           <Trash2 size={13} />
@@ -346,11 +346,11 @@ function LiveProgressGridCard({
       <div className="px-3 py-3">
         <div className="flex items-start gap-1.5">
           <StatusDot status="in_progress" />
-          <span className="text-sm font-semibold leading-snug truncate text-zinc-900 dark:text-zinc-100">
+          <span className="text-sm font-semibold leading-snug truncate text-ink">
             {run.job_title || "Tailored Résumé"}
           </span>
         </div>
-        <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 truncate pl-3.5">
+        <p className="text-xs text-ink-faint mt-0.5 truncate pl-3.5">
           {run.company ? `${run.company} · ` : ""}{date}
         </p>
         <div className="mt-2 pl-3.5"><JobDescriptionPeek text={run.job_description} /></div>
@@ -429,7 +429,7 @@ function FullscreenResumeOverlay({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-zinc-950/95 backdrop-blur-md text-white animate-fade-in"
+      className="fixed inset-0 z-50 flex flex-col bg-app/95 backdrop-blur-md text-ink animate-fade-in"
       role="dialog"
       aria-modal="true"
       aria-label="Résumé Preview"
@@ -438,21 +438,21 @@ function FullscreenResumeOverlay({
       }}
     >
       {/* Top Action Header Bar */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-2 sm:px-4 sm:py-3 md:px-6">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-paper/75 px-3 py-2 backdrop-blur-xl sm:px-4 sm:py-3 md:px-6">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={onClose}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded bg-zinc-900 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-md border border-line bg-paper/80 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ember/50 hover:text-ember cursor-pointer"
             title="Back to History (Esc)"
           >
             <ArrowLeft size={14} />
             <span className="hidden sm:inline">Back</span>
           </button>
           <div className="min-w-0">
-            <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-tight truncate text-white">
+            <h3 className="text-xs sm:text-sm font-bold tracking-tight truncate text-ink">
               {run.job_title || "Tailored Résumé"}
             </h3>
-            <p className="text-[11px] font-semibold text-zinc-400 truncate">
+            <p className="text-[11px] font-medium text-ink-muted truncate">
               {run.company ? `${run.company} • ` : ""}{date} • {run.template_id}
             </p>
           </div>
@@ -460,21 +460,21 @@ function FullscreenResumeOverlay({
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Zoom controls (desktop only) */}
-          <div className="hidden sm:flex items-center gap-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5">
+          <div className="hidden sm:flex items-center gap-1 rounded-md border border-line bg-paper/80 px-1 py-0.5">
             <button
               onClick={() => setZoom((value) => Math.max(0.3, Number((value - 0.1).toFixed(2))))}
-              className="cursor-pointer rounded p-1 text-zinc-400 hover:text-white transition-colors"
+              className="cursor-pointer rounded p-1 text-ink-muted hover:text-ember transition-colors"
               title="Zoom out"
               aria-label="Zoom out"
             >
               <ZoomOut size={13} />
             </button>
-            <span className="w-8 text-center font-mono text-[10px] font-bold text-zinc-300">
+            <span className="w-8 text-center text-[10px] font-semibold text-ink-muted">
               {Math.round(zoom * 100)}%
             </span>
             <button
               onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(2))))}
-              className="cursor-pointer rounded p-1 text-zinc-400 hover:text-white transition-colors"
+              className="cursor-pointer rounded p-1 text-ink-muted hover:text-ember transition-colors"
               title="Zoom in"
               aria-label="Zoom in"
             >
@@ -487,7 +487,7 @@ function FullscreenResumeOverlay({
             onClick={() => {
               window.location.href = `/dashboard/history/${run.id}/edit`
             }}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold uppercase tracking-wider border border-zinc-700 hover:border-zinc-500 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-md border border-line bg-paper/80 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ember/50 hover:text-ember cursor-pointer"
           >
             <Pencil size={13} />
             <span>Edit</span>
@@ -501,14 +501,14 @@ function FullscreenResumeOverlay({
             rel="noreferrer"
             download
           >
-            <button className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold uppercase tracking-wider bg-[#ff4e26] hover:bg-[#e03d16] text-white rounded transition-colors cursor-pointer shadow-sm">
+            <button className="flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)]">
               <Download size={13} />
               <span className="hidden sm:inline">Download PDF</span>
             </button>
           </a>
           <button
             onClick={onClose}
-            className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition-colors cursor-pointer"
+            className="p-1.5 text-ink-muted hover:text-ink rounded-md hover:bg-ink/5 transition-colors cursor-pointer"
             aria-label="Close fullscreen preview"
           >
             <X size={18} />
@@ -517,18 +517,18 @@ function FullscreenResumeOverlay({
       </div>
 
       {/* Fullscreen A4 Preview Canvas */}
-      <div className="flex-1 overflow-auto bg-zinc-900/90 p-3 sm:p-6 md:p-8 flex items-start justify-center">
+      <div className="flex-1 overflow-auto p-3 sm:p-6 md:p-8 flex items-start justify-center">
         {loading ? (
-          <div className="my-auto flex flex-col items-center justify-center gap-3 text-zinc-400">
-            <Loader2 className="animate-spin text-[#ff4e26]" size={32} />
-            <span className="text-xs font-mono">Loading PDF pages...</span>
+          <div className="my-auto flex flex-col items-center justify-center gap-3 text-ink-muted">
+            <Loader2 className="animate-spin text-ember" size={32} />
+            <span className="text-xs">Loading PDF pages...</span>
           </div>
         ) : pageImages.length > 0 ? (
           <div className="mx-auto flex w-max flex-col items-center gap-6 sm:gap-8 my-auto">
             {pageImages.map((img, idx) => (
               <section key={idx} className="flex flex-col items-center gap-2">
                 <div
-                  className="overflow-hidden bg-white shadow-2xl ring-1 ring-zinc-700"
+                  className="overflow-hidden rounded-[3px] bg-white shadow-soft-lg ring-1 ring-line"
                   style={{ width: A4_WIDTH_PX * zoom }}
                 >
                   <img
@@ -539,7 +539,7 @@ function FullscreenResumeOverlay({
                   />
                 </div>
                 {pageImages.length > 1 && (
-                  <span className="text-[10px] font-mono text-zinc-400">
+                  <span className="text-[10px] text-ink-muted">
                     Page {idx + 1} of {pageImages.length}
                   </span>
                 )}
@@ -547,13 +547,13 @@ function FullscreenResumeOverlay({
             ))}
           </div>
         ) : (
-          <div className="my-auto flex flex-col items-center justify-center gap-4 text-center max-w-sm bg-zinc-950 p-6 border border-zinc-800 rounded">
-            <FileText size={48} className="text-zinc-500" />
-            <p className="text-sm font-semibold text-zinc-300">
+          <div className="soft-card my-auto flex flex-col items-center justify-center gap-4 text-center max-w-sm p-6">
+            <FileText size={48} className="text-ink-muted" />
+            <p className="text-sm font-medium text-ink-muted">
               {error || "Could not load preview pages"}
             </p>
             <a href={`/api/backend/generate/${run.id}/download`} target="_blank" rel="noreferrer">
-              <button className="flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase bg-[#ff4e26] hover:bg-[#e03d16] text-white rounded transition-colors cursor-pointer">
+              <button className="flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer">
                 <Download size={14} /> Download PDF File
               </button>
             </a>
@@ -573,10 +573,10 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
   const failed = run.status === "failed"
 
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 overflow-hidden flex flex-col group hover:border-gray-400 dark:hover:border-zinc-500 transition-colors">
+    <div className="soft-card soft-hover group flex flex-col overflow-hidden">
       {/* Thumbnail */}
       <div
-        className={`relative border-b border-gray-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 ${completed ? "cursor-pointer" : ""}`}
+        className={`relative border-b border-line bg-ink/[0.03] ${completed ? "cursor-pointer" : ""}`}
         style={{ aspectRatio: "210/297" }}
         onClick={() => completed && onPreview ? onPreview(run) : (completed && (window.location.href = `/api/backend/generate/${run.id}/download`))}
       >
@@ -589,7 +589,7 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center gap-2">
-            <FileText size={28} className="text-zinc-300 dark:text-zinc-600" />
+            <FileText size={28} className="text-ink-faint" />
             {failed && <span className="text-xs text-red-400 font-medium">Failed</span>}
             {!completed && !failed && (
               <span className="text-xs text-amber-500 font-medium">Processing…</span>
@@ -599,7 +599,7 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
         {/* Delete overlay button */}
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(run.id) }}
-          className="absolute top-2 right-2 rounded border border-gray-200 dark:border-zinc-600 bg-white/90 dark:bg-zinc-800/90 p-1.5 text-zinc-500 transition-colors active:border-red-300 active:text-red-500 md:text-zinc-400 md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+          className="absolute top-2 right-2 rounded border border-line bg-paper/90 p-1.5 text-ink-muted transition-colors active:border-red-300 active:text-red-500 md:text-ink-faint md:hover:border-red-300 md:hover:text-red-500 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
           aria-label="Delete"
         >
           <Trash2 size={13} />
@@ -608,18 +608,18 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
 
       {/* Footer */}
       <div
-        className={`px-3 py-3 ${completed ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.date-p]:text-zinc-200" : ""} transition-all duration-150`}
+        className={`px-3 py-3 ${completed ? "cursor-pointer hover:bg-ember-tint/50 hover:[&_.title-span]:text-ember" : ""} transition-all duration-150`}
         onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
       >
         <div className="flex items-start gap-1.5">
           <StatusDot status={run.status} />
-          <span className={`title-span text-sm font-semibold leading-snug truncate transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
+          <span className={`title-span text-sm font-semibold leading-snug truncate transition-colors duration-150 ${failed ? "text-ink-faint line-through" : "text-ink"}`}>
             {run.job_title || "Tailored Résumé"}
           </span>
           {completed && (
             <button
               onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-              className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors"
+              className="ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border border-line text-ink-muted bg-paper hover:border-ink/30 rounded-md transition-colors"
               aria-label="Edit résumé"
             >
               <Pencil size={11} />
@@ -636,14 +636,14 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
                 description="Run ID is prefilled. Add what you pasted as job description."
                 variant="outline"
                 size="xs"
-                className="h-6 px-2 text-[10px] font-black uppercase tracking-wider border-red-300 text-red-600 hover:bg-red-50"
+                className="h-6 px-2 text-[10px] font-bold border-red-300 text-red-600 hover:bg-red-50"
               >
                 Report
               </ReportIssueButton>
             </span>
           )}
         </div>
-        <p className="date-p text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 truncate pl-3.5 transition-colors duration-150">
+        <p className="date-p text-xs text-ink-faint mt-0.5 truncate pl-3.5 transition-colors duration-150">
           {run.company ? `${run.company} · ` : ""}{date}
         </p>
         {failed && (
@@ -739,13 +739,13 @@ export function HistoryClient() {
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 divide-y divide-gray-100 dark:divide-zinc-800">
+      <div className="soft-card divide-y divide-line">
         {[...Array(3)].map((_, i) => (
           <div key={i} className="px-5 py-4 flex items-start gap-3">
-            <div className="w-2 h-2 rounded-full bg-gray-200 dark:bg-zinc-700 mt-[5px] shrink-0" />
+            <div className="w-2 h-2 rounded-full bg-ink/10 mt-[5px] shrink-0" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 bg-gray-200 dark:bg-zinc-700 rounded w-48 animate-pulse" />
-              <div className="h-3 bg-gray-100 dark:bg-zinc-800 rounded w-64 animate-pulse" />
+              <div className="h-4 bg-ink/10 rounded w-48 animate-pulse" />
+              <div className="h-3 bg-ink/5 rounded w-64 animate-pulse" />
             </div>
           </div>
         ))}
@@ -755,34 +755,34 @@ export function HistoryClient() {
 
   if (error) {
     return (
-      <div className="px-5 py-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400">
+      <div className="px-5 py-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400 rounded-md">
         {error instanceof Error ? error.message : "Failed to load history"}
       </div>
     )
   }
 
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 pixel-enter">
+    <div className="soft-card overflow-hidden pixel-enter">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-zinc-800">
-        <span role="status" className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-line">
+        <span role="status" className="text-xs font-semibold text-ink-faint">
           {trimmedQuery
             ? `${filteredRuns.length} of ${runs.length} ${runs.length === 1 ? "generation" : "generations"}`
             : `${runs.length} ${runs.length === 1 ? "generation" : "generations"}`}
         </span>
         <div className="flex items-center gap-2">
           {/* View toggle — desktop only */}
-          <div className="hidden md:flex items-center gap-0.5 border border-gray-200 dark:border-zinc-700 rounded p-0.5">
+          <div className="hidden md:flex items-center gap-0.5 rounded-md border border-line bg-ink/[0.04] p-0.5">
             <button
               onClick={() => setView("list")}
-              className={`p-1 rounded transition-colors ${view === "list" ? "bg-zinc-900 dark:bg-zinc-200 text-white dark:text-zinc-900" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"}`}
+              className={`p-1 rounded transition-colors ${view === "list" ? "bg-paper text-ink shadow-soft" : "text-ink-faint hover:text-ink"}`}
               aria-label="List view"
             >
               <LayoutList size={14} />
             </button>
             <button
               onClick={() => setView("grid")}
-              className={`p-1 rounded transition-colors ${view === "grid" ? "bg-zinc-900 dark:bg-zinc-200 text-white dark:text-zinc-900" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"}`}
+              className={`p-1 rounded transition-colors ${view === "grid" ? "bg-paper text-ink shadow-soft" : "text-ink-faint hover:text-ink"}`}
               aria-label="Grid view"
             >
               <LayoutGrid size={14} />
@@ -794,7 +794,7 @@ export function HistoryClient() {
               refetch()
             }}
             disabled={isFetching}
-            className="flex items-center gap-1.5 text-xs font-semibold text-zinc-600 hover:text-black dark:text-zinc-300 dark:hover:text-white transition-colors py-1 px-2.5 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 cursor-pointer"
+            className="flex cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-paper px-2.5 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
           >
             <RefreshCw size={12} className={isFetching ? "animate-spin text-[#ff4e26]" : ""} />
             <span>{isFetching ? "Refreshing..." : "Refresh"}</span>
@@ -803,12 +803,12 @@ export function HistoryClient() {
       </div>
 
       {/* Search Bar */}
-      <div className="p-3 sm:px-5 sm:py-2.5 border-b border-gray-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20">
+      <div className="border-b border-line p-3 sm:px-5 sm:py-3">
         <div className="relative">
           <Search
             size={15}
             aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
           />
           <input
             ref={searchRef}
@@ -827,14 +827,14 @@ export function HistoryClient() {
                 setVisibleCount(PAGE_SIZE)
               }
             }}
-            className="h-9 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 pl-9 pr-9 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-zinc-900 dark:focus:border-zinc-400 transition-colors rounded"
+            className="h-10 w-full rounded-md border border-line-strong bg-paper pl-9 pr-9 text-sm text-ink placeholder:text-ink-faint transition-[border-color,box-shadow] focus:border-ember focus:outline-none focus:ring-3 focus:ring-ember/15"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={clearSearch}
               aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer rounded"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-ink-faint hover:text-ink-muted dark:hover:text-ink cursor-pointer rounded"
             >
               <X size={14} aria-hidden="true" />
             </button>
@@ -844,22 +844,22 @@ export function HistoryClient() {
 
       {runs.length === 0 && !trimmedQuery ? (
         <div className="px-5 py-16 text-center">
-          <p className="text-sm font-semibold text-zinc-400 dark:text-zinc-500">No generations yet</p>
-          <p className="text-xs text-zinc-300 dark:text-zinc-600 mt-1">Your tailored résumés will appear here</p>
+          <p className="text-sm font-semibold text-ink-faint">No generations yet</p>
+          <p className="text-xs text-ink-faint mt-1">Your tailored résumés will appear here</p>
         </div>
       ) : filteredRuns.length === 0 ? (
         <div className="px-5 py-16 text-center space-y-3">
-          <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+          <p className="text-sm font-semibold text-ink-muted">
             No generations match &ldquo;{trimmedQuery}&rdquo;
           </p>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500">
+          <p className="text-xs text-ink-faint">
             Try searching for a different company name or job role
           </p>
           <div>
             <button
               type="button"
               onClick={clearSearch}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#ff4e26] hover:text-[#e03d16] border border-[#ff4e26]/30 hover:border-[#ff4e26] rounded transition-colors cursor-pointer bg-white dark:bg-zinc-800"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#ff4e26] hover:text-[#e03d16] border border-[#ff4e26]/30 hover:border-[#ff4e26] rounded transition-colors cursor-pointer bg-paper"
             >
               Clear search
             </button>
@@ -878,10 +878,10 @@ export function HistoryClient() {
             ))}
           </div>
           {visibleCount < filteredRuns.length && (
-            <div ref={sentinelRef} className="p-4 text-center border-t border-gray-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+            <div ref={sentinelRef} className="p-4 text-center border-t border-line bg-ink/[0.03]">
               <button
                 onClick={() => setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))}
-                className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2 rounded cursor-pointer transition-colors"
+                className="cursor-pointer rounded-md border border-line-strong bg-paper px-4 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
               >
                 Load more ({filteredRuns.length - visibleCount} remaining)
               </button>
@@ -891,7 +891,7 @@ export function HistoryClient() {
       ) : (
         /* ── List view ── */
         <>
-          <div className="divide-y divide-gray-100 dark:divide-zinc-800">
+          <div className="divide-y divide-line">
             {visibleRuns.map((run) => {
               if (run.status === "in_progress" || run.status === "pending" || run.status === "remaking_project") {
                 return (
@@ -917,9 +917,9 @@ export function HistoryClient() {
                   className={[
                     "flex items-center justify-between gap-3 px-3.5 py-3 md:px-5 md:py-3.5 transition-all duration-150 group",
                     completed
-                      ? "cursor-pointer hover:bg-[#ff4e26] hover:[&_.title-span]:text-white hover:[&_.at-span]:text-zinc-200 hover:[&_.date-p]:text-zinc-200 hover:[&_.dot-span]:text-zinc-200 hover:[&_.delete-btn]:text-zinc-200 md:hover:scale-[1.012] md:hover:shadow-sm md:hover:z-10 md:hover:relative"
+                      ? "cursor-pointer hover:bg-ember-tint/50 hover:[&_.title-span]:text-ember"
                       : failed
-                      ? "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                      ? "hover:bg-ink/[0.03]"
                       : "",
                   ].join(" ")}
                 >
@@ -928,21 +928,21 @@ export function HistoryClient() {
                     <StatusDot status={run.status} />
                     <div className="min-w-0">
                       <div className="flex items-baseline gap-1.5 flex-wrap md:gap-2">
-                        <span className={`title-span text-xs font-extrabold uppercase tracking-tight md:text-sm transition-colors duration-150 ${failed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"}`}>
+                        <span className={`title-span text-xs font-bold tracking-tight md:text-sm transition-colors duration-150 ${failed ? "text-ink-faint line-through" : "text-ink"}`}>
                           {run.job_title || "Tailored Résumé"}
                         </span>
                         {run.company && (
-                          <span className="at-span text-xs text-zinc-400 dark:text-zinc-500 font-semibold truncate transition-colors duration-150">
+                          <span className="at-span text-xs text-ink-faint font-semibold truncate transition-colors duration-150">
                             at {run.company}
                           </span>
                         )}
                       </div>
-                      <p className="date-p text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 transition-colors duration-150">
+                      <p className="date-p text-[11px] text-ink-faint mt-0.5 transition-colors duration-150">
                         {date}
-                        <span className="dot-span mx-1 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span>
+                        <span className="dot-span mx-1 text-ink-faint transition-colors duration-150">·</span>
                         {run.template_id}
                         {failed && (
-                          <><span className="dot-span mx-1 text-zinc-300 dark:text-zinc-600 transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
+                          <><span className="dot-span mx-1 text-ink-faint transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
                         )}
                       </p>
                       <div className="mt-1.5"><JobDescriptionPeek text={run.job_description} /></div>
@@ -961,7 +961,7 @@ export function HistoryClient() {
                           description="Run ID is prefilled. Just describe the job description you used."
                           variant="outline"
                           size="sm"
-                          className="hidden sm:inline-flex font-black uppercase tracking-wider border-red-200 text-red-600 hover:bg-red-50 h-8"
+                          className="hidden sm:inline-flex font-bold border-red-200 text-red-600 hover:bg-red-50 h-8"
                         >
                           <Bug size={13} /> Report
                         </ReportIssueButton>
@@ -982,7 +982,7 @@ export function HistoryClient() {
                       <>
                         <button
                           onClick={(e) => { e.stopPropagation(); setFullscreenRun(run) }}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors cursor-pointer"
+                          className="flex cursor-pointer items-center gap-1 rounded-md border border-line-strong bg-paper px-2.5 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
                           aria-label="Preview"
                           title="Fullscreen Preview"
                         >
@@ -991,7 +991,7 @@ export function HistoryClient() {
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); window.location.href = `/dashboard/history/${run.id}/edit` }}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:border-zinc-400 rounded transition-colors cursor-pointer"
+                          className="flex cursor-pointer items-center gap-1 rounded-md border border-line-strong bg-paper px-2.5 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
                           aria-label="Edit"
                           title="Edit Résumé"
                         >
@@ -1002,7 +1002,7 @@ export function HistoryClient() {
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteRun(run.id) }}
-                      className="delete-btn shrink-0 p-2 text-zinc-400 hover:text-red-600 md:text-zinc-300 md:hover:!text-white rounded transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 cursor-pointer"
+                      className="delete-btn shrink-0 cursor-pointer rounded-md p-2 text-ink-faint opacity-100 transition-colors hover:bg-red-500/10 hover:text-red-600 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
                       aria-label="Delete"
                     >
                       <Trash2 size={15} />
@@ -1013,10 +1013,10 @@ export function HistoryClient() {
             })}
           </div>
           {visibleCount < filteredRuns.length && (
-            <div ref={sentinelRef} className="p-4 text-center border-t border-gray-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+            <div ref={sentinelRef} className="p-4 text-center border-t border-line bg-ink/[0.03]">
               <button
                 onClick={() => setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))}
-                className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-300 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2 rounded cursor-pointer transition-colors"
+                className="cursor-pointer rounded-md border border-line-strong bg-paper px-4 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
               >
                 Load more ({filteredRuns.length - visibleCount} remaining)
               </button>

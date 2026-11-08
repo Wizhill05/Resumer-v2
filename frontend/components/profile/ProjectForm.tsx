@@ -378,10 +378,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
         })}
         className="profile-entry-form space-y-4"
       >
-        <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
+        <div className="mb-1 flex items-center justify-between border-b border-line pb-3">
           <div className="flex items-center gap-3">
-            <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
-              {activeRecordId ? "Edit Project" : "Add Project"}
+            <h3 className="text-lg font-bold tracking-tight text-ink md:text-xl">
+              {activeRecordId ? "Edit project" : "Add project"}
             </h3>
             <SaveStatusBadge status={!activeRecordId && !isDirty && !saveMutation.isError ? "draft" : status} onSaveNow={isDirty ? () => performSave() : undefined} />
           </div>
@@ -391,7 +391,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
             aria-label="Close editor"
             size="sm"
             onClick={requestClose}
-            className="h-9 w-9 p-0 border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
+            className="h-9 w-9 p-0 border-transparent text-ink-muted hover:text-ink dark:hover:text-white"
           >
             <X size={18} />
           </Button>
@@ -467,7 +467,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
           />
         </div>
 
-        <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
+        <div className="flex gap-3 border-t border-line pt-3">
           <Button type="submit" disabled={saveMutation.isPending} className="flex-1 md:flex-none">
             {saveMutation.isPending ? (
               <>
@@ -498,7 +498,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       <div className="flex justify-center p-8">
         <div className="flex gap-2">
           <span className="loading-dot bg-[#ff4e26]" />
-          <span className="loading-dot bg-yellow-400" />
+          <span className="loading-dot bg-[#ffb199]" />
           <span className="loading-dot bg-[#ff4e26]" />
         </div>
       </div>
@@ -515,18 +515,23 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       {deleteMutation.isPending && <p role="status" className="text-sm">Deleting entry...</p>}
       {deleteMutation.isError && <QueryError message="Could not delete the entry. Please try deleting it again." onRetry={() => { if (deleteMutation.variables) deleteMutation.mutate(deleteMutation.variables) }} />}
 
+      <h2 className="flex items-center gap-2.5 pb-1 text-xl font-bold tracking-tight text-ink md:text-2xl">
+        Projects
+        <span className="rounded bg-ink/5 px-1.5 py-0.5 text-xs font-semibold text-ink-soft">{projects.length}</span>
+      </h2>
+
       {(
-        <div className="border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:border-zinc-950 md:bg-white md:p-4 md:shadow-[4px_4px_0px_#18181b] md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:shadow-[4px_4px_0px_#3f3f46] space-y-3">
+        <div className="soft-card space-y-3 p-4 md:p-5">
           {/* Mobile Collapsible Header */}
           <div className="flex items-center justify-between gap-2 md:hidden">
             <button
               type="button"
               onClick={() => setMobileGithubExpanded(!mobileGithubExpanded)}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left font-black uppercase tracking-tight text-zinc-800 dark:text-zinc-200"
+              className="flex min-w-0 flex-1 items-center gap-2 text-left font-bold tracking-tight text-ink"
             >
               <FolderGit2 size={16} className="shrink-0 text-[#ff4e26]" />
               <span className="truncate text-xs">Import from GitHub</span>
-              {showGithubExpanded ? <ChevronUp size={14} className="shrink-0 text-zinc-400" /> : <ChevronDown size={14} className="shrink-0 text-zinc-400" />}
+              {showGithubExpanded ? <ChevronUp size={14} className="shrink-0 text-ink-faint" /> : <ChevronDown size={14} className="shrink-0 text-ink-faint" />}
             </button>
             <Button
               onClick={() => {
@@ -557,13 +562,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
           {/* Desktop Title Header */}
           <div className="hidden md:flex md:flex-row md:items-start md:justify-between md:gap-3">
             <div className="space-y-1">
-              <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
-                Project import
-              </p>
-              <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-zinc-100 flex items-center gap-2">
-                <FolderGit2 className="text-[#ff4e26]" size={22} /> Import using GitHub
+              <h3 className="flex items-center gap-2 text-lg font-bold tracking-tight text-ink">
+                <FolderGit2 className="text-ember" size={20} aria-hidden="true" /> Import from GitHub
               </h3>
-              <p className="max-w-xl text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+              <p className="max-w-xl text-sm text-ink-muted">
                 Choose a repository from your GitHub projects dropdown menu below, or enter a username &amp; repository. We extract metadata, README, and stage your project for review.
               </p>
             </div>
@@ -589,26 +591,26 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               size="sm"
               variant="outline"
             >
-              <Plus size={16} /> Add Project Manually
+              <Plus size={16} /> Add manually
             </Button>
           </div>
 
-          <div className={`${showGithubExpanded ? "block" : "hidden"} md:block space-y-3 pt-2 md:pt-0 border-t border-zinc-200 dark:border-zinc-800 md:border-t-0`}>
+          <div className={`${showGithubExpanded ? "block" : "hidden"} md:block space-y-3 pt-2 md:pt-0 border-t border-line md:border-t-0`}>
 
           {/* GitHub Linked Username Header */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+          <div className="flex flex-wrap items-center justify-between gap-2 border border-line bg-ink/[0.03] p-3 text-xs font-semibold text-ink rounded-md">
             {effectiveUsername ? (
               <div className="flex items-center gap-2">
-                <svg className="h-4 w-4 fill-current text-zinc-900 dark:text-zinc-100" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 fill-current text-ink" viewBox="0 0 24 24">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
                 <span>
-                  GitHub Profile Linked: <strong className="text-black dark:text-white">@{effectiveUsername}</strong>
+                  GitHub Profile Linked: <strong className="text-ink">@{effectiveUsername}</strong>
                 </span>
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+              <div className="flex items-center gap-2 text-ink-muted">
                 <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
@@ -619,27 +621,27 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
           {/* Repositories Dropdown (Always visible when a username is present) */}
           {effectiveUsername && (
-            <div className="space-y-2 border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-3">
+            <div className="space-y-2 border border-line bg-ink/[0.03] p-3 rounded-md">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-extrabold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+                <Label className="text-sm font-semibold text-ink">
                   Select a repository to import ({isLoadingRepos ? "Loading..." : `${userRepos.length} public repos found`})
                 </Label>
                 <button
                   type="button"
                   onClick={() => refetchRepos()}
                   disabled={isLoadingRepos}
-                  className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white disabled:opacity-50"
+                  className="flex items-center gap-1 text-[11px] font-bold text-ink-muted hover:text-ink dark:hover:text-white disabled:opacity-50"
                 >
                   <RefreshCw size={11} className={isLoadingRepos ? "animate-spin" : ""} /> Refresh
                 </button>
               </div>
 
               {isLoadingRepos ? (
-                <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-ink-muted">
                   <Loader2 className="animate-spin" size={16} /> Fetching public repositories for @{effectiveUsername}...
                 </div>
               ) : isReposError ? (
-                <div className="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400">
+                <div className="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400 rounded-md">
                   <span>Failed to load repositories. Please try again.</span>
                   <Button
                     type="button"
@@ -652,7 +654,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   </Button>
                 </div>
               ) : userRepos.length === 0 ? (
-                <div className="py-3 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                <div className="py-3 text-center text-xs font-semibold text-ink-muted">
                   No public repositories found for @{effectiveUsername}.
                 </div>
               ) : (
@@ -665,7 +667,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                         setGithubUrl(e.target.value);
                       }
                     }}
-                    className="w-full h-11 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-hidden focus:ring-2 focus:ring-[#ff4e26]"
+                    className="w-full h-11 border border-line bg-paper px-3 text-sm font-semibold text-ink focus:outline-hidden focus:ring-2 focus:ring-[#ff4e26] rounded-md"
                   >
                     <option value="">-- Choose a repository from your list --</option>
                     {userRepos.map((repo) => (
@@ -697,17 +699,17 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
           {/* Manual Input Controls Mode Selector */}
           <div className="space-y-3 pt-1">
-            <div className="flex gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-2">
+            <div className="flex gap-4 border-b border-line pb-2">
               <button
                 type="button"
                 onClick={() => {
                   setGithubInputMode("fields");
                   setSelectedRepoUrl("");
                 }}
-                className={`text-xs font-extrabold uppercase tracking-wide transition-colors ${
+                className={`text-xs font-bold transition-colors ${
                   githubInputMode === "fields" && !selectedRepoUrl
-                    ? "text-[#ff4e26] border-b-2 border-[#ff4e26] pb-1"
-                    : "text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+                    ? "text-[#ff4e26] border-b border-[#ff4e26] pb-1"
+                    : "text-ink-muted hover:text-ink dark:hover:text-white"
                 }`}
               >
                 Username &amp; Repo Name
@@ -718,10 +720,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   setGithubInputMode("url");
                   setSelectedRepoUrl("");
                 }}
-                className={`text-xs font-extrabold uppercase tracking-wide transition-colors ${
+                className={`text-xs font-bold transition-colors ${
                   githubInputMode === "url" && !selectedRepoUrl
-                    ? "text-[#ff4e26] border-b-2 border-[#ff4e26] pb-1"
-                    : "text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+                    ? "text-[#ff4e26] border-b border-[#ff4e26] pb-1"
+                    : "text-ink-muted hover:text-ink dark:hover:text-white"
                 }`}
               >
                 Full Link / Shorthand
@@ -731,7 +733,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
             {githubInputMode === "fields" && !selectedRepoUrl ? (
               <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-[1fr_1fr_auto]">
                 <div>
-                  <Label htmlFor="githubOwner" className="text-xs font-bold text-zinc-600 dark:text-zinc-400">
+                  <Label htmlFor="githubOwner" className="text-xs font-bold text-ink-muted">
                     GitHub Username
                   </Label>
                   <Input
@@ -743,7 +745,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="githubRepoName" className="text-xs font-bold text-zinc-600 dark:text-zinc-400">
+                  <Label htmlFor="githubRepoName" className="text-xs font-bold text-ink-muted">
                     Repository Name
                   </Label>
                   <Input
@@ -802,7 +804,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
             ) : null}
           </div>
 
-          <div className="flex flex-wrap gap-2 text-[11px] font-extrabold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <div className="flex flex-wrap gap-2 text-[11px] font-bold text-ink-muted">
             <span>{projects.length} saved projects</span>
             <span>README aware</span>
             <span>Duplicate checks</span>
@@ -811,7 +813,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
           {githubMessage && (
             <div className="space-y-2">
-              <p className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-2.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
+              <p className="border border-line bg-ink/[0.03] p-2.5 text-xs font-bold text-ink rounded-md">
                 {githubMessage}
               </p>
               {(githubMessage.toLowerCase().includes("failed") || githubMessage.toLowerCase().includes("could not") || githubMessage.toLowerCase().includes("error")) && (
@@ -822,7 +824,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   description="Import input is prefilled. Add repo URL and what failed."
                   variant="outline"
                   size="xs"
-                  className="font-black uppercase tracking-wider text-[11px] border-zinc-900"
+                  className="font-bold text-[11px] border-line-strong"
                 >
                   Report import issue
                 </ReportIssueButton>
@@ -835,15 +837,15 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
       {importPreview && <ProfileDialog label="Review imported project" busy={saveMutation.isPending} onRequestClose={() => setImportPreview(null)}>
             <div className="profile-entry-form space-y-4">
-              <div className="mb-4 flex items-start justify-between gap-3 border-b border-zinc-200 dark:border-zinc-700 pb-3">
+              <div className="mb-4 flex items-start justify-between gap-3 border-b border-line pb-3">
                 <div>
-                  <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
+                  <p className="text-xs font-bold text-[#ff4e26]">
                     GitHub import staged
                   </p>
-                  <h3 className="text-lg font-extrabold uppercase tracking-tight text-black dark:text-zinc-100">
+                  <h3 className="text-lg font-bold tracking-tight text-ink">
                     {importPreview.name || "Untitled project"}
                   </h3>
-                  <p className="mt-1 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+                  <p className="mt-1 text-sm font-semibold text-ink-muted">
                     Review these extracted details and save directly, or edit the form below.
                   </p>
                 </div>
@@ -859,16 +861,16 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                <div className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                <div className="border border-line bg-ink/[0.03] p-3 rounded-md">
+                  <p className="text-xs font-bold text-ink-muted">
                     Description added
                   </p>
-                  <p className="mt-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                  <p className="mt-1 text-sm font-semibold text-ink">
                     {importPreview.description || "No description found."}
                   </p>
                 </div>
-                <div className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                <div className="border border-line bg-ink/[0.03] p-3 rounded-md">
+                  <p className="text-xs font-bold text-ink-muted">
                     Tech added
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -878,32 +880,32 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     ).map((tech) => (
                       <span
                         key={tech}
-                        className="border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 px-2 py-0.5 text-[10px] font-extrabold uppercase text-zinc-700 dark:text-zinc-200"
+                        className="border border-line bg-paper px-2 py-0.5 text-[10px] font-bold text-ink rounded-md"
                       >
                         {tech}
                       </span>
                     ))}
                   </div>
                 </div>
-                <div className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3 md:col-span-2">
-                  <p className="text-xs font-extrabold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                <div className="border border-line bg-ink/[0.03] p-3 md:col-span-2 rounded-md">
+                  <p className="text-xs font-bold text-ink-muted">
                     Impact bullets added
                   </p>
                   {importPreview.bullet_points?.length ? (
-                    <ul className="mt-2 list-inside list-disc space-y-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                    <ul className="mt-2 list-inside list-disc space-y-1 text-sm font-semibold text-ink">
                       {importPreview.bullet_points.map((bullet, index) => (
                         <li key={index}>{bullet}</li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-1 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
+                    <p className="mt-1 text-sm font-semibold text-ink-muted">
                       No bullets found.
                     </p>
                   )}
                 </div>
                 {importPreview.duplicate_candidates?.[0] && (
-                  <div className="border border-yellow-300 dark:border-yellow-700/60 bg-yellow-50 dark:bg-yellow-950/40 p-3 md:col-span-2">
-                    <p className="text-xs font-extrabold uppercase tracking-wide text-yellow-900 dark:text-yellow-300">
+                  <div className="border border-yellow-300 dark:border-yellow-700/60 bg-yellow-50 dark:bg-yellow-950/40 p-3 md:col-span-2 rounded-md">
+                    <p className="text-xs font-bold text-yellow-900 dark:text-yellow-300">
                       Possible duplicate
                     </p>
                     <p className="mt-1 text-sm font-bold text-yellow-950 dark:text-yellow-200">
@@ -918,7 +920,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                 )}
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-200 dark:border-zinc-700 pt-3">
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
                 <Button
                   type="button"
                   onClick={handleDirectSaveImport}
@@ -944,12 +946,12 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
       {isAdding && !editingId && !importPreview && renderForm()}
 
-      <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:divide-y-0 md:space-y-3">
+      <div className="space-y-3">
         {projects.map((proj) => (
-          <div key={proj.id} className="py-2.5 md:py-0">
-            <div className="flex items-start justify-between gap-3 rounded-none border-0 bg-transparent p-1 transition-colors md:border md:border-zinc-200 md:bg-white md:p-4 md:hover:border-zinc-400 md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:hover:border-zinc-500">
+          <div key={proj.id} className="">
+            <div className="flex items-start justify-between gap-3 rounded-md border border-line bg-paper p-4 shadow-soft transition-colors hover:border-ember/40 md:px-6 md:py-5">
               <div className="min-w-0 space-y-1">
-                <h4 className="text-sm font-extrabold uppercase tracking-tight text-black dark:text-zinc-100 md:text-base">
+                <h4 className="text-base font-bold tracking-tight text-ink md:text-[17px]">
                   {proj.name}
                 </h4>
                 {proj.technologies && proj.technologies.length > 0 && (
@@ -957,24 +959,24 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     {proj.technologies.map((t: string) => (
                       <span
                         key={t}
-                        className="border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-1.5 py-0.5 text-[9px] font-bold uppercase text-zinc-600 dark:text-zinc-300"
+                        className="border border-line bg-ink/[0.03] px-1.5 py-0.5 text-[9px] font-bold text-ink-muted rounded-md"
                       >
                         {t}
                       </span>
                     ))}
                   </div>
                 )}
-                <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1 ">
+                <p className="text-xs font-semibold text-ink mt-1 ">
                   {proj.description}
                 </p>
                 {proj.bullet_points && proj.bullet_points.length > 0 && (
-                  <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  <ul className="mt-1 list-outside list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-ink/85 marker:text-ember/60">
                     {proj.bullet_points.map((b: string, i: number) => (
                       <li key={i}>{b}</li>
                     ))}
                   </ul>
                 )}
-                <div className="flex gap-3 mt-2 text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
+                <div className="flex gap-3 mt-2 text-xs font-bold text-ink-muted">
                   {proj.github_url && (
                     <a
                       href={proj.github_url}
@@ -1002,10 +1004,10 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                   size="icon-sm"
                   variant="ghost"
                   onClick={() => startEdit(proj)}
-                  className="h-9 w-9 p-0 border-transparent hover:border-black dark:hover:border-zinc-400"
+                  className="h-9 w-9 p-0 border-transparent hover:border-ink/40 dark:hover:border-ember/50"
                   title="Edit project"
                 >
-                  <Edit2 size={15} className="text-zinc-700 dark:text-zinc-200" />
+                  <Edit2 size={15} className="text-ink" />
                 </Button>
                 <Button
                   size="icon-sm"

@@ -46,7 +46,7 @@ export function useProfileDraft<T extends FieldValues>({ kind, recordId, active,
     } catch {}
   }
   const restore = () => { if (recovered) form.reset(recovered, { keepDefaultValues: true }) }
-  const notice = recovered ? <div className="flex flex-wrap items-center gap-3 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100" role="status">
+  const notice = recovered ? <div className="flex flex-wrap items-center gap-3 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100 rounded-md" role="status">
     <p>You have an unsaved draft from this browser session.</p>
     <Button size="sm" variant="outline" onClick={restore}>Restore draft</Button>
     <Button size="sm" variant="ghost" onClick={clear}>Discard draft</Button>

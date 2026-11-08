@@ -187,10 +187,10 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
         })}
         className="profile-entry-form space-y-4"
       >
-        <div className="mb-1 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2">
+        <div className="mb-1 flex items-center justify-between border-b border-line pb-3">
           <div className="flex items-center gap-3">
-            <h3 className="font-extrabold text-black dark:text-zinc-100 uppercase tracking-tight text-sm md:text-base">
-              {activeRecordId ? "Edit Activity / Achievement" : "Add Activity / Achievement"}
+            <h3 className="text-lg font-bold tracking-tight text-ink md:text-xl">
+              {activeRecordId ? "Edit activity / achievement" : "Add activity / achievement"}
             </h3>
             <SaveStatusBadge status={!activeRecordId && !isDirty && !saveMutation.isError ? "draft" : status} onSaveNow={isDirty ? () => performSave() : undefined} />
           </div>
@@ -200,7 +200,7 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
             aria-label="Close editor"
             size="sm"
             onClick={requestClose}
-            className="h-9 w-9 p-0 border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
+            className="h-9 w-9 p-0 border-transparent text-ink-muted hover:text-ink dark:hover:text-white"
           >
             <X size={18} />
           </Button>
@@ -258,7 +258,7 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
           />
         </div>
 
-        <div className="flex gap-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
+        <div className="flex gap-3 border-t border-line pt-3">
           <Button type="submit" disabled={saveMutation.isPending} className="flex-1 md:flex-none">
             {saveMutation.isPending ? (
               <>
@@ -289,7 +289,7 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
       <div className="flex justify-center p-8">
         <div className="flex gap-2">
           <span className="loading-dot bg-[#ff4e26]" />
-          <span className="loading-dot bg-yellow-400" />
+          <span className="loading-dot bg-[#ffb199]" />
           <span className="loading-dot bg-[#ff4e26]" />
         </div>
       </div>
@@ -302,10 +302,8 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
       {deleteMutation.isError && <QueryError message="Could not delete the entry. Please try deleting it again." onRetry={() => { if (deleteMutation.variables) deleteMutation.mutate(deleteMutation.variables) }} />}
 
       {(
-        <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-2.5 dark:border-zinc-800 md:border md:border-zinc-200 md:bg-zinc-50 md:p-3 md:dark:border-zinc-700 md:dark:bg-zinc-900/50">
-          <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 sm:text-sm">
-            {extracurriculars.length} activities & achievements
-          </h3>
+        <div className="flex items-center justify-between gap-3 pb-1">
+          <h2 className="flex items-center gap-2.5 text-xl font-bold tracking-tight text-ink md:text-2xl">Extracurriculars<span className="rounded bg-ink/5 px-1.5 py-0.5 text-xs font-semibold text-ink-soft">{extracurriculars.length}</span></h2>
           <Button
             onClick={() => {
               saveMutation.reset()
@@ -330,31 +328,31 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
 
       {isAdding && !editingId && renderForm()}
 
-      <div className="divide-y divide-zinc-200 dark:divide-zinc-800 md:divide-y-0 md:space-y-3">
+      <div className="space-y-3">
         {extracurriculars.map((ex) => (
-          <div key={ex.id} className="py-2.5 md:py-0">
-            <div className="flex items-start justify-between gap-3 rounded-none border-0 bg-transparent p-1 transition-colors md:border md:border-zinc-200 md:bg-white md:p-4 md:hover:border-zinc-400 md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:hover:border-zinc-500">
+          <div key={ex.id} className="">
+            <div className="flex items-start justify-between gap-3 rounded-md border border-line bg-paper p-4 shadow-soft transition-colors hover:border-ember/40 md:px-6 md:py-5">
               <div className="min-w-0 space-y-1">
-                <h4 className="text-sm font-extrabold uppercase tracking-tight text-black dark:text-zinc-100 md:text-base">
+                <h4 className="text-base font-bold tracking-tight text-ink md:text-[17px]">
                   {ex.title}
                 </h4>
                 {ex.organization && (
-                  <p className="text-xs font-bold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+                  <p className="text-sm font-semibold text-ink">
                     {ex.organization}
                   </p>
                 )}
                 {(ex.start_date || ex.end_date) && (
-                  <p className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase">
+                  <p className="inline-flex rounded bg-ink/5 px-1.5 py-0.5 text-xs font-medium text-ink-soft">
                     {ex.start_date || "Start N/A"} &rarr; {ex.end_date || "Present"}
                   </p>
                 )}
                 {ex.description && (
-                  <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300 mt-1">
+                  <p className="text-xs font-medium text-ink-muted mt-1">
                     {ex.description}
                   </p>
                 )}
                 {ex.bullet_points && ex.bullet_points.length > 0 && (
-                  <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                  <ul className="mt-1 list-outside list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-ink/85 marker:text-ember/60">
                     {ex.bullet_points.map((b: string, i: number) => (
                       <li key={i}>{b}</li>
                     ))}
@@ -366,10 +364,10 @@ export function ExtracurricularForm({ onDirtyChange }: ExtracurricularFormProps)
                   size="icon-sm"
                   variant="ghost"
                   onClick={() => startEdit(ex)}
-                  className="h-9 w-9 p-0 border-transparent hover:border-black dark:hover:border-zinc-400"
+                  className="h-9 w-9 p-0 border-transparent hover:border-ink/40 dark:hover:border-ember/50"
                   title="Edit activity"
                 >
-                  <Edit2 size={15} className="text-zinc-700 dark:text-zinc-200" />
+                  <Edit2 size={15} className="text-ink" />
                 </Button>
                 <Button
                   size="icon-sm"

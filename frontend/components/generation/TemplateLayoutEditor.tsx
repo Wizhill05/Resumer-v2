@@ -343,24 +343,24 @@ export function TemplateLayoutEditor({
 
   return createPortal(
     <div ref={dialogRef} id={dialogId} role="dialog" aria-modal="true" aria-labelledby={titleId}
-      className="fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden bg-white text-zinc-900 [color-scheme:light] dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]">
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 px-4 py-3 sm:px-6 dark:border-zinc-800">
+      className="fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden bg-paper text-ink [color-scheme:light] dark:[color-scheme:dark]">
+      <header className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 sm:px-6">
         <div className="min-w-0 flex-1">
           <h2 id={titleId} className="text-base font-semibold sm:text-lg">Edit template</h2>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{templateName}</p>
+          <p className="mt-0.5 text-xs text-ink-muted">{templateName}</p>
         </div>
         <button type="button" data-autofocus="true" onClick={handleClose} disabled={isSaving}
           aria-label="Close template layout editor"
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:bg-ink/5 dark:hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-[#ff4e26]">
           <X size={21} aria-hidden="true" />
         </button>
       </header>
-      <div className="flex shrink-0 border-b border-zinc-200 px-4 md:hidden dark:border-zinc-800" role="tablist" aria-label="Template editor views">
+      <div className="flex shrink-0 border-b border-line px-4 md:hidden" role="tablist" aria-label="Template editor views">
         {(["sections", "preview"] as const).map((tab) => (
           <button key={tab} id={`${dialogId}-${tab}-tab`} type="button" role="tab" aria-selected={mobileTab === tab}
             aria-controls={`${dialogId}-${tab}`} onClick={() => setMobileTab(tab)}
             onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); const next = tab === "sections" ? "preview" : "sections"; setMobileTab(next); document.getElementById(`${dialogId}-${next}-tab`)?.focus() } }}
-            className={`flex min-h-12 flex-1 items-center justify-center gap-2 border-b-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-[#ff4e26] ${mobileTab === tab ? "border-[#ff4e26] text-[#ff4e26]" : "border-transparent text-zinc-500"}`}>
+            className={`flex min-h-12 flex-1 items-center justify-center gap-2 border-b text-sm font-medium focus-visible:outline-2 focus-visible:outline-[#ff4e26] ${mobileTab === tab ? "border-[#ff4e26] text-[#ff4e26]" : "border-transparent text-ink-muted"}`}>
             {tab === "sections" ? <LayoutList size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
             {tab === "sections" ? "Sections" : "Preview"}
           </button>
@@ -382,12 +382,12 @@ export function TemplateLayoutEditor({
       )}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <section id={`${dialogId}-sections`} aria-label="Section order" data-section-scroll
-          className={`min-h-0 w-full overflow-y-auto overscroll-contain px-4 py-5 md:w-[42%] md:max-w-lg md:border-r md:px-6 md:py-6 dark:border-zinc-800 ${mobileTab === "preview" ? "hidden md:block" : "block"}`}>
+          className={`min-h-0 w-full overflow-y-auto overscroll-contain px-4 py-5 md:w-[42%] md:max-w-lg md:border-r md:px-6 md:py-6 dark:border-line ${mobileTab === "preview" ? "hidden md:block" : "block"}`}>
           <h3 className="hidden md:block text-base font-semibold">Make it your order</h3>
-          <p className="mb-4 text-sm leading-relaxed text-zinc-500 md:mt-1 dark:text-zinc-400">Drag the left grip to move a section, or use the arrows.</p>
-          {isLoading && !hasAttemptedLoad ? <p className="py-8 text-sm text-zinc-500" role="status">Loading your layout…</p> :
+          <p className="mb-4 text-sm leading-relaxed text-ink-muted md:mt-1">Drag the left grip to move a section, or use the arrows.</p>
+          {isLoading && !hasAttemptedLoad ? <p className="py-8 text-sm text-ink-muted" role="status">Loading your layout…</p> :
             <SectionOrderList items={draftOrder} onChange={handleDraftChange} onHoverSection={setHoveredSection} disabled={isSaving} />}
-          <p className="mt-5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">Empty sections are skipped. This layout applies to future resumes; existing resumes keep their order.</p>
+          <p className="mt-5 text-xs leading-relaxed text-ink-muted">Empty sections are skipped. This layout applies to future resumes; existing resumes keep their order.</p>
         </section>
         <section id={`${dialogId}-preview`} aria-label="Template preview" className={`min-h-0 min-w-0 flex-1 ${mobileTab === "sections" ? "hidden md:block" : "block"}`}>
           {(!isLoading || hasAttemptedLoad) && (
@@ -401,13 +401,13 @@ export function TemplateLayoutEditor({
           )}
         </section>
       </div>
-      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 dark:border-zinc-800 dark:bg-zinc-950">
+      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-line bg-paper px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
         <button type="button" onClick={handleResetToDefault} disabled={isSaving || (isLoading && !hasAttemptedLoad)}
-          className="flex min-h-11 items-center gap-2 rounded-lg px-1 sm:px-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800">
+          className="flex min-h-11 items-center gap-2 rounded-lg px-1 sm:px-2 text-sm font-medium text-ink-muted hover:bg-ink/5 disabled:opacity-40 dark:hover:bg-ink/[0.06]">
           <RotateCcw size={16} aria-hidden="true" />Reset
         </button>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={handleClose} disabled={isSaving} className="min-h-11 rounded-lg border border-zinc-200 px-2.5 sm:px-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900">Cancel</button>
+          <button type="button" onClick={handleClose} disabled={isSaving} className="min-h-11 rounded-lg border border-line px-2.5 sm:px-3 text-sm font-medium hover:bg-ink/5 dark:hover:bg-ink/[0.06]">Cancel</button>
           <button type="button" onClick={handleSave} disabled={isSaving || (isLoading && !hasAttemptedLoad) || !isDirty}
             className="flex min-h-11 items-center gap-2 rounded-lg bg-[#ff4e26] px-3 sm:px-4 whitespace-nowrap text-sm font-semibold text-white hover:bg-[#e6411e] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
             <Check size={17} aria-hidden="true" />{isSaving ? "Saving…" : "Save layout"}

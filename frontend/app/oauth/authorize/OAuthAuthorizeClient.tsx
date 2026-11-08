@@ -4,6 +4,7 @@ import { useState } from "react"
 import { signInGithub, signInGoogle } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { EmailAuthForm } from "@/components/EmailAuthForm"
+import { FluidField } from "@/components/landing/FluidField"
 
 interface OAuthAuthorizeClientProps {
   clientName: string
@@ -14,18 +15,16 @@ export function OAuthAuthorizeClient({ clientName, callbackUrl }: OAuthAuthorize
   const [showEmail, setShowEmail] = useState(false)
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#fbfbf3] p-4 text-black dark:bg-zinc-950 dark:text-white">
-      <div className="w-full max-w-md border-3 border-black bg-white p-6 shadow-[8px_8px_0px_#000000] sm:p-8 dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-[8px_8px_0px_#3f3f46]">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-app p-4 text-ink">
+      <FluidField sheen={false} />
+      <div className="relative w-full max-w-md rounded-lg border border-line bg-paper/85 p-6 shadow-soft-lg backdrop-blur-xl sm:p-8">
         {/* Header */}
         <div className="mb-6 text-center">
-          <span className="inline-block border-2 border-black bg-[#ff4e26] px-2.5 py-0.5 text-xs font-black uppercase tracking-wider text-white shadow-[2px_2px_0px_#000000]">
-            OAuth 2.1 Connection
-          </span>
-          <h1 className="mt-3 text-2xl font-black uppercase tracking-tight md:text-3xl">
+          <h1 className="text-2xl font-bold tracking-[-0.03em] md:text-3xl">
             Connect to Résumer
           </h1>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            Sign in to grant <span className="font-bold text-[#ff4e26]">{clientName}</span> access to your tailored résumés and profile.
+          <p className="mt-2 text-sm text-ink-muted">
+            Sign in to grant <span className="font-semibold text-ember">{clientName}</span> access to your tailored résumés and profile.
           </p>
         </div>
 
@@ -37,7 +36,7 @@ export function OAuthAuthorizeClient({ clientName, callbackUrl }: OAuthAuthorize
                 <input type="hidden" name="callbackUrl" value={callbackUrl} />
                 <Button
                   type="submit"
-                  className="flex w-full items-center justify-center gap-3 border-2 border-black bg-white py-6 text-sm font-black uppercase text-black shadow-[4px_4px_0px_#000000] transition-all hover:bg-zinc-100 hover:shadow-[5px_5px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[2px_2px_0px_#000000] dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700 cursor-pointer"
+                  className="flex w-full cursor-pointer items-center justify-center gap-3 rounded-md border border-line bg-paper py-6 text-sm font-semibold text-ink shadow-soft transition-colors hover:border-ember/50 hover:bg-paper"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24">
                     <path
@@ -65,7 +64,7 @@ export function OAuthAuthorizeClient({ clientName, callbackUrl }: OAuthAuthorize
                 <input type="hidden" name="callbackUrl" value={callbackUrl} />
                 <Button
                   type="submit"
-                  className="flex w-full items-center justify-center gap-3 border-2 border-black bg-[#24292e] py-6 text-sm font-black uppercase text-white shadow-[4px_4px_0px_#000000] transition-all hover:bg-[#1b1f23] hover:shadow-[5px_5px_0px_#000000] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[2px_2px_0px_#000000] cursor-pointer"
+                  className="flex w-full cursor-pointer items-center justify-center gap-3 rounded-md border border-transparent bg-ink py-6 text-sm font-semibold text-paper shadow-soft transition-colors hover:bg-ink/90"
                 >
                   <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
                     <path
@@ -83,9 +82,9 @@ export function OAuthAuthorizeClient({ clientName, callbackUrl }: OAuthAuthorize
               <button
                 type="button"
                 onClick={() => setShowEmail(true)}
-                className="text-xs font-bold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-4 transition-colors cursor-pointer"
+                className="cursor-pointer text-xs font-semibold text-ink-muted underline underline-offset-4 transition-colors hover:text-ember"
               >
-                Use Email Instead
+                Use email instead
               </button>
             </div>
           </>
@@ -97,7 +96,7 @@ export function OAuthAuthorizeClient({ clientName, callbackUrl }: OAuthAuthorize
         )}
 
         {/* Footer */}
-        <p className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-500">
+        <p className="mt-6 text-center text-xs text-ink-muted">
           Your credentials and résumés remain private and secure.
         </p>
       </div>

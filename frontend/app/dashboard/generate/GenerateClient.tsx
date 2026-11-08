@@ -1,5 +1,6 @@
 "use client"
 
+import { FluidField } from "@/components/landing/FluidField"
 import { useState, useMemo, useEffect, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info, Eye } from "lucide-react"
+import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info, Eye, Wand2, Layers, Mail, Sparkles, Bell } from "lucide-react"
 import Link from "next/link"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
@@ -357,15 +358,7 @@ export function GenerateClient() {
     }
   }, [step, createdRunId, isGenerationComplete, queryClient, selectedTemplate])
 
-  const pageHeader = (
-    <div className="page-header space-y-0.5 max-md:border-l-0 max-md:p-0">
-      <h1 className="text-xl font-extrabold uppercase tracking-tight md:text-2xl">Generate Résumé</h1>
-      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 md:text-sm">
-        <span className="md:hidden">{step === "input" ? "Start with the job. Your saved defaults are ready." : "Target any job description in seconds."}</span>
-        <span className="hidden md:inline">Target any job description in seconds.</span>
-      </p>
-    </div>
-  )
+  const pageHeader = null
 
   if (isLoadingTemplates) {
     return (
@@ -451,7 +444,7 @@ export function GenerateClient() {
             description="Prefilled with your template and content split. Just add what happened before the error."
             variant="outline"
             size="sm"
-            className="shrink-0 bg-white dark:bg-zinc-900 border-red-300 text-red-700 hover:bg-red-50 text-xs font-black uppercase tracking-wider h-8"
+            className="shrink-0 bg-paper border-red-300 text-red-700 hover:bg-red-50 text-xs font-bold h-8"
           />
         </div>
       )}
@@ -477,23 +470,47 @@ export function GenerateClient() {
           profileExperiences={numProfileExperiences}
           sectionOrder={sectionOrderToSend}
         />
-        <form onSubmit={handleGenerate} className="hidden space-y-4 pixel-enter md:block">
+        <form onSubmit={handleGenerate} className="hidden pixel-enter md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:items-start md:gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="min-w-0 space-y-10">
+          {/* 2. Job Description */}
+          <div className="space-y-3.5">
+              <div className="flex items-end gap-3">
+                <span aria-hidden="true" className="text-3xl font-light leading-none tracking-tight text-ink/40">01</span>
+                <div>
+                  <label htmlFor="jobDescription" className="block text-lg font-bold tracking-tight text-ink">Job description</label>
+                  <p className="text-sm text-ink-muted">The full post, including responsibilities and requirements.</p>
+                </div>
+              </div>
+            <Textarea
+              id="jobDescription"
+              required
+              rows={9}
+              value={jobDescription}
+              onChange={(e) => setJobDescription(e.target.value)}
+              placeholder="Paste the job description…"
+              className="min-h-52 resize-y px-4 py-3 text-[15px] leading-relaxed shadow-soft"
+            />
+          </div>
+
           {/* 1. Template Selection */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">1. Select Template</Label>
-              <span className="text-[11px] font-mono text-zinc-400">ATS Optimized</span>
-            </div>
+          <div className="space-y-3.5">
+              <div className="flex items-end gap-3">
+                <span aria-hidden="true" className="text-3xl font-light leading-none tracking-tight text-ink/40">02</span>
+                <div>
+                  <h2 className="text-lg font-bold tracking-tight text-ink">Template</h2>
+                  <p className="text-sm text-ink-muted">Both are single-column and ATS-safe.</p>
+                </div>
+              </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {templates.map((tpl) => {
                 const selected = selectedTemplate === tpl.id
                 return (
                   <div
                     key={tpl.id}
-                    className={`flex flex-col justify-between overflow-hidden rounded-lg border transition-colors ${
+                    className={`flex flex-col justify-between overflow-hidden rounded-md border transition-[border-color,box-shadow] ${
                       selected
-                        ? "border-[#ff4e26] bg-white shadow-sm dark:bg-zinc-900"
-                        : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:border-zinc-600"
+                        ? "border-ember bg-ember-tint/40 shadow-[0_10px_28px_-14px_rgb(255_78_38/45%)] ring-1 ring-ember/40"
+                        : "border-line bg-paper shadow-soft hover:border-ember/40"
                     }`}
                   >
                     <button
@@ -504,17 +521,17 @@ export function GenerateClient() {
                     >
                       <FileText
                         size={22}
-                        className={`mt-0.5 shrink-0 ${selected ? "text-[#ff4e26]" : "text-zinc-400"}`}
+                        className={`mt-0.5 shrink-0 ${selected ? "text-[#ff4e26]" : "text-ink-faint"}`}
                         aria-hidden="true"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                          <span className="text-sm font-semibold text-ink">
                             {tpl.name}
                           </span>
                         </div>
                         {tpl.description ? (
-                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                          <p className="mt-1 text-xs text-ink-muted leading-relaxed">
                             {tpl.description}
                           </p>
                         ) : null}
@@ -524,13 +541,13 @@ export function GenerateClient() {
                         className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
                           selected
                             ? "border-[#ff4e26]"
-                            : "border-zinc-300 dark:border-zinc-600"
+                            : "border-line"
                         }`}
                       >
                         {selected && <span className="h-2 w-2 rounded-full bg-[#ff4e26]" />}
                       </span>
                     </button>
-                    <div className="flex items-center gap-5 px-4 pb-3 pt-1 border-t border-zinc-100 dark:border-zinc-800/60 mt-auto">
+                    <div className="flex items-center gap-5 px-4 pb-3 pt-1 border-t border-line mt-auto">
                       <button
                         type="button"
                         onClick={() => {
@@ -538,7 +555,7 @@ export function GenerateClient() {
                           setIsLayoutEditorOpen(true)
                         }}
                         aria-label={`Edit ${tpl.name} layout`}
-                        className="inline-flex min-h-11 items-center gap-2 px-1 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]"
+                        className="inline-flex min-h-11 items-center gap-2 px-1 text-sm font-medium text-ink hover:text-[#ff4e26] focus-visible:outline-2 focus-visible:outline-[#ff4e26]"
                       >
                         <Pencil size={16} aria-hidden="true" />
                         <span>Edit template</span>
@@ -547,7 +564,7 @@ export function GenerateClient() {
                         type="button"
                         onClick={() => setPreviewTemplate(tpl)}
                         aria-label={`Preview ${tpl.name}`}
-                        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-zinc-700 hover:text-[#ff4e26] dark:text-zinc-300 focus-visible:outline-2 focus-visible:outline-[#ff4e26]"
+                        className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-ink hover:text-[#ff4e26] focus-visible:outline-2 focus-visible:outline-[#ff4e26]"
                       >
                         <Eye size={17} aria-hidden="true" />
                         <span>Preview</span>
@@ -560,7 +577,7 @@ export function GenerateClient() {
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               {isLoadingLayout && !verifiedLayoutOrder ? (
-                <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 dark:text-zinc-500">
+                <div className="flex items-center gap-1.5 text-[11px] text-ink-faint">
                   <Loader2 size={12} className="animate-spin text-[#ff4e26]" aria-hidden="true" />
                   <span>Loading layout preference...</span>
                 </div>
@@ -580,8 +597,8 @@ export function GenerateClient() {
                   </button>
                 </div>
               ) : displaySectionOrder ? (
-                <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
-                  <span className="text-zinc-400 dark:text-zinc-500">Order:</span>
+                <div className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+                  <span className="text-ink-faint">Order:</span>
                   <span className="truncate max-w-[220px] sm:max-w-xs font-sans">
                     {displaySectionOrder.map((id) => SECTION_METADATA[id]?.label || id).join(" → ")}
                   </span>
@@ -590,54 +607,50 @@ export function GenerateClient() {
             </div>
           </div>
 
-          {/* 2. Job Description */}
-          <div className="space-y-2">
-            <Label htmlFor="jobDescription" className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
-              2. Job Description <span className="text-red-500">*</span>
-            </Label>
-            <Textarea
-              id="jobDescription"
-              required
-              rows={6}
-              value={jobDescription}
-              onChange={(e) => setJobDescription(e.target.value)}
-              placeholder="Paste full job description..."
-              className="font-mono text-xs"
+          <div className="space-y-3.5">
+              <div className="flex items-end gap-3">
+                <span aria-hidden="true" className="text-3xl font-light leading-none tracking-tight text-ink/40">03</span>
+                <div>
+                  <h2 className="text-lg font-bold tracking-tight text-ink">Generation mode</h2>
+                  <p className="text-sm text-ink-muted">How far Résumer may stretch your story.</p>
+                </div>
+              </div>
+            <CreativityModeSelector
+              value={creativityMode}
+              onChange={(mode) => setCreativityMode(mode)}
+              showLabel={false}
             />
           </div>
 
-          {/* 3. Creativity Mode */}
-          <CreativityModeSelector
-            value={creativityMode}
-            onChange={(mode) => setCreativityMode(mode)}
-          />
-
           {/* Advanced Options Accordion */}
-          <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden bg-white dark:bg-zinc-900">
+          <div className="border-y border-line">
             <button
               type="button"
               onClick={() => setAdvancedExpanded((prev) => !prev)}
               aria-expanded={advancedExpanded}
               aria-controls="generation-advanced-options"
-              className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+              className="flex w-full cursor-pointer items-center justify-between py-4 text-left transition-colors hover:text-ember"
             >
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal size={14} className="text-[#ff4e26]" />
-                <span>Advanced Tailoring Controls</span>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+                  <SlidersHorizontal size={16} className="text-ink-soft" aria-hidden="true" />
+                  Advanced tailoring
+                </span>
+                <span className="text-sm text-ink-muted">Keywords, instructions, project &amp; experience counts</span>
               </div>
               {advancedExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
 
             {advancedExpanded && (
-              <div id="generation-advanced-options" className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4 bg-zinc-50/50 dark:bg-zinc-950/50">
+              <div id="generation-advanced-options" className="space-y-5 pb-5">
                 {/* Content Distribution (Split) Override */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                        Content Slot Distribution
+                      <Label className="text-sm font-semibold text-ink">
+                        Content slot distribution
                       </Label>
-                      <p className="text-[11px] text-zinc-500">
+                      <p className="text-[11px] text-ink-muted">
                         Total items targeted for the 1-page layout. Minimum 1 per category.
                       </p>
                     </div>
@@ -657,12 +670,12 @@ export function GenerateClient() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div className="flex items-center justify-between p-2.5 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                    <div className="flex items-center justify-between p-2.5 rounded border border-line bg-paper">
                       <div className="flex items-center gap-2">
-                        <FolderGit2 size={16} className="text-zinc-500" />
+                        <FolderGit2 size={16} className="text-ink-muted" />
                         <div>
                           <p className="text-xs font-semibold">Projects</p>
-                          <p className="text-[10px] text-zinc-400">1 – 3</p>
+                          <p className="text-[10px] text-ink-faint">1 – 3</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -670,17 +683,17 @@ export function GenerateClient() {
                           type="button"
                           onClick={() => handleProjectsChange(-1)}
                           disabled={projectsCount <= 1}
-                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          className="w-7 h-7 flex items-center justify-center rounded border border-line hover:bg-ink/5 dark:hover:bg-ink/[0.06] disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
                           aria-label="Decrease projects"
                         >
                           <Minus size={12} />
                         </button>
-                        <span className="w-5 text-center text-xs font-mono font-bold">{projectsCount}</span>
+                        <span className="w-5 text-center text-xs font-bold">{projectsCount}</span>
                         <button
                           type="button"
                           onClick={() => handleProjectsChange(1)}
                           disabled={projectsCount >= 3}
-                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          className="w-7 h-7 flex items-center justify-center rounded border border-line hover:bg-ink/5 dark:hover:bg-ink/[0.06] disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
                           aria-label="Increase projects"
                         >
                           <Plus size={12} />
@@ -688,12 +701,12 @@ export function GenerateClient() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between p-2.5 rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                    <div className="flex items-center justify-between p-2.5 rounded border border-line bg-paper">
                       <div className="flex items-center gap-2">
-                        <Briefcase size={16} className="text-zinc-500" />
+                        <Briefcase size={16} className="text-ink-muted" />
                         <div>
                           <p className="text-xs font-semibold">Experience</p>
-                          <p className="text-[10px] text-zinc-400">1 – 3</p>
+                          <p className="text-[10px] text-ink-faint">1 – 3</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -701,17 +714,17 @@ export function GenerateClient() {
                           type="button"
                           onClick={() => handleExperienceChange(-1)}
                           disabled={experienceCount <= 1}
-                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          className="w-7 h-7 flex items-center justify-center rounded border border-line hover:bg-ink/5 dark:hover:bg-ink/[0.06] disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
                           aria-label="Decrease experience"
                         >
                           <Minus size={12} />
                         </button>
-                        <span className="w-5 text-center text-xs font-mono font-bold">{experienceCount}</span>
+                        <span className="w-5 text-center text-xs font-bold">{experienceCount}</span>
                         <button
                           type="button"
                           onClick={() => handleExperienceChange(1)}
                           disabled={experienceCount >= 3}
-                          className="w-7 h-7 flex items-center justify-center rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
+                          className="w-7 h-7 flex items-center justify-center rounded border border-line hover:bg-ink/5 dark:hover:bg-ink/[0.06] disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold"
                           aria-label="Increase experience"
                         >
                           <Plus size={12} />
@@ -729,10 +742,10 @@ export function GenerateClient() {
                 </div>
 
                 {/* Keywords & Instructions */}
-                <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                <div className="space-y-3 pt-2 border-t border-line">
                   <div className="space-y-1">
                     <Label htmlFor="keywords" className="text-xs font-semibold">
-                      Target Keywords (comma-separated)
+                      Target keywords (comma-separated)
                     </Label>
                     <Input
                       id="keywords"
@@ -745,7 +758,7 @@ export function GenerateClient() {
 
                   <div className="space-y-1">
                     <Label htmlFor="instructions" className="text-xs font-semibold">
-                      Custom Pipeline Instructions
+                      Custom instructions
                     </Label>
                     <Textarea
                       id="instructions"
@@ -753,29 +766,29 @@ export function GenerateClient() {
                       value={instructions}
                       onChange={(e) => setInstructions(e.target.value)}
                       placeholder="e.g. Focus on technical contributions rather than team leadership"
-                      className="text-xs font-mono"
+                      className="text-xs"
                     />
                   </div>
                 </div>
 
                 {/* Email toggle */}
-                <div className="space-y-1.5 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                  <Label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Email notification</Label>
+                <div className="space-y-1.5 pt-2 border-t border-line">
+                  <Label className="text-sm font-semibold text-ink">Email notification</Label>
                   <div className="grid grid-cols-3 gap-1.5 text-xs font-bold">
                     {[
                       { val: null, label: "Default" },
-                      { val: true, label: "Send Email" },
-                      { val: false, label: "No Email" },
+                      { val: true, label: "Send email" },
+                      { val: false, label: "No email" },
                     ].map((opt) => (
                       <button
                         key={opt.label}
                         type="button"
                         onClick={() => setSendEmail(opt.val)}
                         aria-pressed={sendEmail === opt.val}
-                        className={`border py-1.5 text-center transition-colors cursor-pointer ${
+                        className={`border py-1.5 text-center transition-colors cursor-pointer rounded-md ${
                           sendEmail === opt.val
-                            ? "border-zinc-950 dark:border-zinc-400 bg-zinc-950 dark:bg-zinc-700 text-white"
-                            : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                            ? "border-ember/50 bg-ember-tint text-ember"
+                            : "border-line bg-paper text-ink"
                         }`}
                       >
                         {opt.label}
@@ -787,7 +800,31 @@ export function GenerateClient() {
             )}
           </div>
 
-          {/* Missing Material Warning Banner */}
+          </div>
+
+          <aside className="space-y-4 md:sticky md:top-24">
+            <div className="soft-card overflow-hidden">
+              <div className="relative overflow-hidden border-b border-line px-5 py-4">
+                <FluidField variant="banner" sheen={false} />
+                <h2 className="relative text-lg font-bold tracking-tight text-[var(--fluid-ink)]">Build summary</h2>
+              </div>
+              <dl className="divide-y divide-line text-sm">
+                {[
+                  { icon: FileText, label: "Template", value: activeTemplate?.name ?? "—" },
+                  { icon: Wand2, label: "Mode", value: (creativityMode === "super_larp" ? "Super LARP" : creativityMode === "larp" ? "LARP" : "Proper") },
+                  { icon: Layers, label: "Projects · Experience", value: `${projectsCount} · ${experienceCount}` },
+                  { icon: Mail, label: "Email when done", value: sendEmail === null ? "Default" : sendEmail ? "On" : "Off" },
+                ].map(({ icon: Icon, label, value }) => (
+                  <div key={label} className="flex items-center justify-between gap-3 px-5 py-3">
+                    <dt className="flex items-center gap-2.5 text-ink-muted">
+                      <Icon size={15} aria-hidden="true" className="text-ink-faint" />
+                      {label}
+                    </dt>
+                    <dd className="truncate font-semibold text-ink">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="space-y-2.5 border-t border-line p-5">
           {isMissingMaterial && (
             <div className="flex items-start gap-2.5 p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-900 dark:text-amber-200 text-xs">
               <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
@@ -802,21 +839,32 @@ export function GenerateClient() {
             </div>
           )}
 
-          {/* Submit Button */}
-          <Button
-            type="submit"
-            disabled={isSubmitting || !jobDescription.trim()}
-            className="w-full bg-[#ff4e26] hover:bg-[#e0431f] text-white py-6 text-sm font-extrabold uppercase tracking-wider shadow-md hover:shadow-lg transition-all"
-          >
-            {isSubmitting ? (
-              <span className="flex items-center gap-2">
-                <Loader2 size={16} className="animate-spin" />
-                Initializing Pipeline...
-              </span>
-            ) : (
-              "Generate Tailored Résumé"
-            )}
-          </Button>
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={isSubmitting || !jobDescription.trim()}
+                  className="h-12 w-full text-[15px]"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                      Starting…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={16} aria-hidden="true" />
+                      Generate résumé
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-ink-muted">Free beta · 5 builds per day · usually 5–10 min</p>
+              </div>
+            </div>
+            <p className="flex gap-2.5 rounded-md border border-line bg-paper/60 px-4 py-3 text-xs leading-relaxed text-ink-soft">
+              <Bell size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+              You can close this tab after starting. Check progress in History anytime.
+            </p>
+          </aside>
         </form>
         </>
       )}
@@ -824,13 +872,13 @@ export function GenerateClient() {
       {/* Waiting Screen with Live Animated Progress Bar */}
       {step === "submitted" && (
         <div className="mx-auto max-w-xl space-y-5 py-6 md:py-8 pixel-enter">
-          <div className="border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 md:p-7">
+          <div className="border border-line bg-paper p-5 shadow-xs md:p-7 rounded-md">
             <div className="mb-4 text-center">
-              <p className="text-xs font-extrabold uppercase tracking-widest text-[#ff4e26]">
+              <p className="text-xs font-bold text-[#ff4e26]">
                 {isGenerationComplete ? liveStepLabel === "Generation failed" ? "Failed" : "Complete" : "Processing"}
               </p>
-              <h3 className="text-xl font-extrabold uppercase tracking-tight text-black dark:text-white md:text-2xl">
-                {isGenerationComplete ? liveStepLabel === "Generation failed" ? "Generation failed" : "Your Résumé is Ready" : "Tailoring Your Résumé"}
+              <h3 className="text-xl font-bold tracking-tight text-ink md:text-2xl">
+                {isGenerationComplete ? liveStepLabel === "Generation failed" ? "Generation failed" : "Your résumé is ready" : "Tailoring your résumé"}
               </h3>
               <p className="mt-1 text-xs font-medium text-amber-500 dark:text-amber-400 md:text-sm">
                 {liveStepLabel} ({livePercent}%)
@@ -839,11 +887,11 @@ export function GenerateClient() {
 
             {/* Live Progress Bar */}
             <div className="space-y-2">
-              <div className="flex justify-between font-mono text-xs font-bold text-zinc-600 dark:text-zinc-400">
+              <div className="flex justify-between text-xs font-bold text-ink-muted">
                 <span>Progress</span>
                 <span>{livePercent}%</span>
               </div>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <div className="h-3 w-full overflow-hidden rounded-full bg-ink/5 border border-line">
                 <div
                   className="h-full bg-[#ff4e26] transition-all duration-500 ease-out"
                   style={{ width: `${livePercent}%` }}
@@ -853,13 +901,13 @@ export function GenerateClient() {
 
             {/* Safe to close & Notification note */}
             {!isGenerationComplete && (
-              <p className="mt-4 text-center text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
+              <p className="mt-4 text-center text-xs font-medium leading-relaxed text-ink-muted">
                 It is safe to close this window as this might take some time.{" "}
                 {sendEmail === true || (sendEmail === null && (profileData?.notify_on_completion ?? true)) ? (
                   profileData?.email ? (
                     <>
                       You&apos;ll get an email at{" "}
-                      <strong className="text-zinc-800 dark:text-zinc-200">
+                      <strong className="text-ink">
                         {profileData.email}
                       </strong>{" "}
                       when done.
@@ -874,8 +922,8 @@ export function GenerateClient() {
             )}
             {/* Actions once complete or failed */}
             {isGenerationComplete && createdRunId && liveStepLabel === "Generation failed" && (
-              <div className="mt-6 space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                <div className="flex items-start gap-2 border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3">
+              <div className="mt-6 space-y-3 pt-4 border-t border-line">
+                <div className="flex items-start gap-2 border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3 rounded-md">
                   <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600" />
                   <p className="text-xs font-bold leading-relaxed text-red-800 dark:text-red-300">
                     Generation failed. Your input is saved — you can report this and we will check logs for run {createdRunId.slice(0, 8)}.
@@ -891,12 +939,12 @@ export function GenerateClient() {
                     description="Run ID and context are prefilled. Add a sentence about the job description and expected result."
                     variant="outline"
                     size="sm"
-                    className="flex-1 font-black uppercase tracking-wider"
+                    className="flex-1 font-bold"
                   >
                     Report this failure
                   </ReportIssueButton>
                   <Link href="/support" className="flex-1">
-                    <Button variant="outline" className="w-full font-bold uppercase tracking-wider text-xs">
+                    <Button variant="outline" className="w-full font-bold text-xs">
                       Open support
                     </Button>
                   </Link>
@@ -904,7 +952,7 @@ export function GenerateClient() {
               </div>
             )}
             {isGenerationComplete && createdRunId && liveStepLabel !== "Generation failed" && (
-              <div className="mt-6 flex flex-col gap-2.5 sm:flex-row pt-4 border-t border-zinc-200 dark:border-zinc-800">
+              <div className="mt-6 flex flex-col gap-2.5 sm:flex-row pt-4 border-t border-line">
                 <a
                   href={`/api/backend/generate/${createdRunId}/download`}
                   className="flex-1"
@@ -918,7 +966,7 @@ export function GenerateClient() {
                   className="flex-1"
                 >
                   <Button variant="outline" className="w-full">
-                    <Pencil size={16} /> Open Editor
+                    <Pencil size={16} /> Open editor
                   </Button>
                 </Link>
               </div>
@@ -928,7 +976,7 @@ export function GenerateClient() {
           <div className="flex flex-col gap-2.5 sm:flex-row sm:justify-center">
             <Link href="/dashboard/history" className="w-full sm:w-auto">
               <Button variant="outline" className="w-full">
-                View All History
+                View history
               </Button>
             </Link>
             <Button
@@ -943,7 +991,7 @@ export function GenerateClient() {
               }}
               className="w-full sm:w-auto"
             >
-              <RotateCcw size={14} /> Generate Another
+              <RotateCcw size={14} /> Generate another
             </Button>
           </div>
         </div>
@@ -952,19 +1000,19 @@ export function GenerateClient() {
 
       {/* Insufficient Profile Material Modal */}
       {showErrorModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="panel max-w-md w-full bg-white dark:bg-zinc-900 border-red-200 dark:border-red-900 p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(35_10_4/38%)] dark:bg-black/60 p-4">
+          <div className="panel max-w-md w-full bg-paper border-red-200 dark:border-red-900 p-6 space-y-4">
             <div className="flex items-center gap-3 text-red-600">
               <AlertCircle size={24} />
-              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                Insufficient Profile Data
+              <h3 className="text-base font-bold text-ink">
+                Not enough profile material
               </h3>
             </div>
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              Your requested split targets <span className="font-bold text-zinc-900 dark:text-zinc-100">{projectsCount} projects</span> and <span className="font-bold text-zinc-900 dark:text-zinc-100">{experienceCount} experiences</span>, but your profile does not have enough entries to satisfy this layout.
+            <p className="text-xs text-ink-muted leading-relaxed">
+              Your requested split targets <span className="font-bold text-ink">{projectsCount} projects</span> and <span className="font-bold text-ink">{experienceCount} experiences</span>, but your profile does not have enough entries to satisfy this layout.
             </p>
 
-            <div className="space-y-1 text-xs font-mono bg-zinc-100 dark:bg-zinc-800 p-3 rounded">
+            <div className="space-y-1 text-xs bg-ink/5 p-3 rounded">
               <div className="flex justify-between">
                 <span>Projects:</span>
                 <span>{profileProjects.length} available / {projectsCount} needed</span>
@@ -977,7 +1025,7 @@ export function GenerateClient() {
 
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <Link href="/profile" className="flex-1">
-                <Button className="w-full">Update Profile</Button>
+                <Button className="w-full">Update profile</Button>
               </Link>
               <Button variant="outline" type="button" onClick={() => setShowErrorModal(false)} className="flex-1">
                 Close

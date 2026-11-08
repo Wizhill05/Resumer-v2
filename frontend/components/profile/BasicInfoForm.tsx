@@ -182,17 +182,17 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
   return (
     <form
       onSubmit={(event) => { event.preventDefault(); void performSave() }}
-      className="space-y-4 md:space-y-5 pixel-enter"
+      className="pixel-enter"
     >
-      <fieldset disabled={mutation.isPending} className="contents">
-      <div className="flex flex-wrap gap-3 items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-700">
-        <h2 className="text-sm font-extrabold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
-          Basic Details
-        </h2>
-        <SaveStatusBadge
-          status={status}
-          onSaveNow={isDirty ? performSave : undefined}
-        />
+      <fieldset disabled={mutation.isPending} className="min-w-0 space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-bold tracking-tight text-ink md:text-2xl">Basic info</h2>
+        {status === "error" && (
+          <SaveStatusBadge
+            status={status}
+            onSaveNow={isDirty ? performSave : undefined}
+          />
+        )}
       </div>
 
       {draftNotice}
@@ -268,12 +268,12 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
       </div>
 
       {/* Email Notification Default Toggle */}
-      <div className="flex items-start justify-between gap-4 border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60 md:border-2 md:border-black md:bg-white md:p-4 md:shadow-[2px_2px_0px_#000] md:dark:border-zinc-700 md:dark:bg-zinc-900 md:dark:shadow-[2px_2px_0px_#3f3f46]">
+      <div className="flex items-start justify-between gap-4 rounded-md border border-line bg-paper p-4 shadow-soft">
         <div className="space-y-1">
-          <Label className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 text-zinc-900 dark:text-zinc-100">
-            <Mail size={14} className="text-[#ff4e26]" /> Receive Completion Emails
+          <Label className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <Mail size={14} className="text-ember" /> Email me when a résumé is ready
           </Label>
-          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          <p className="text-xs font-medium text-ink-muted">
             Automatically send an email with the PDF attachment when a résumé generation completes.
           </p>
         </div>
@@ -290,13 +290,13 @@ export function BasicInfoForm({ onDirtyChange }: BasicInfoFormProps) {
                 const newVal = !(field.value ?? true)
                 field.onChange(newVal)
               }}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center border-2 border-black transition-colors ${
-                field.value ?? true ? "bg-[#ff4e26]" : "bg-zinc-300 dark:bg-zinc-700"
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors ${
+                field.value ?? true ? "bg-[#ff4e26]" : "bg-ink/20"
               }`}
             >
               <span
-                className={`pointer-events-none inline-block h-4 w-4 bg-white border border-black transition-transform ${
-                  field.value ?? true ? "translate-x-5" : "translate-x-0.5"
+                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                  field.value ?? true ? "translate-x-[1.375rem]" : "translate-x-0.5"
                 }`}
               />
             </button>
