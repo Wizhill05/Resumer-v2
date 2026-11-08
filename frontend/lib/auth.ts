@@ -9,6 +9,10 @@ const BACKEND_INTERNAL_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   "http://localhost:8000"
 
+function isAllowedHost(hostname: string, domain: string) {
+  return hostname === domain || hostname.endsWith(`.${domain}`)
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
@@ -73,7 +77,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const parsed = new URL(url)
         if (
           parsed.origin === baseUrl ||
-          parsed.hostname.endsWith("aryansingh.space") ||
+          isAllowedHost(parsed.hostname, "aryansingh.space") ||
+          isAllowedHost(parsed.hostname, "resumer.buzz") ||
           parsed.hostname.endsWith("trycloudflare.com") ||
           parsed.hostname.endsWith("vercel.app") ||
           parsed.hostname === "localhost" ||

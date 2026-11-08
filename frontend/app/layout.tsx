@@ -3,7 +3,7 @@ import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
-const siteUrl = "https://resumer.aryansingh.space";
+const siteUrl = "https://resumer.buzz";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",

@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     "*.trycloudflare.com",
     "lanes-advisor-claims-purple.trycloudflare.com",
     "*.aryansingh.space",
+    "*.resumer.buzz",
     "20.219.118.144",
     "localhost",
     "100.122.152.101",

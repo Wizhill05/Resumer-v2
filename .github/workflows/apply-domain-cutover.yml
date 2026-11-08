@@ -1,0 +1,95 @@
+name: Apply resumer.buzz domain cutover on VPS
+
+# One-shot, manually dispatched. Syncs the two production-only settings that live
+# in /opt/resumer (outside the repo) with the resumer.buzz rename:
+#   1. cloudflared/config.yml  -> adds the api.resumer.buzz ingress rule and keeps
+#      the legacy aryansingh.space hostnames serving.
+#   2. backend/.env            -> FRONTEND_URL and BACKEND_URL only (no other keys touched).
+# Backups of both files are written next to the originals before any change.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    name: Update tunnel routing and public URLs
+    runs-on: [self-hosted, resumer-vps]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out deployment source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Back up production config
+        working-directory: /opt/resumer
+        run: |
+          set -euo pipefail
+          stamp=$(date +%Y%m%d-%H%M%S)
+          cp -p cloudflared/config.yml "cloudflared/config.yml.bak-$stamp"
+          cp -p backend/.env "backend/.env.bak-$stamp"
+          echo "Backups written with suffix .bak-$stamp"
+
+      - name: Sync tunnel ingress from the repo
+        working-directory: /opt/resumer
+        run: |
+          set -euo pipefail
+          # The repo copy holds hostnames only, never credentials.
+          diff -u cloudflared/config.yml "$GITHUB_WORKSPACE/cloudflared/config.yml" || true
+          cp "$GITHUB_WORKSPACE/cloudflared/config.yml" cloudflared/config.yml
+          grep -q 'hostname: api.resumer.buzz' cloudflared/config.yml
+          grep -q 'hostname: resumer-backend.aryansingh.space' cloudflared/config.yml
+
+      - name: Point backend public URLs at resumer.buzz
+        working-directory: /opt/resumer
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          path = "backend/.env"
+          wanted = {
+              "FRONTEND_URL": "https://resumer.buzz",
+              "BACKEND_URL": "https://api.resumer.buzz",
+          }
+          text = open(path).read()
+          for key, value in wanted.items():
+              pattern = re.compile(rf'^{key}=.*$', re.MULTILINE)
+              line = f'{key}="{value}"'
+              if pattern.search(text):
+                  text = pattern.sub(line, text)
+              else:
+                  text = text.rstrip("\n") + "\n" + line + "\n"
+              print("set", key, "->", value)
+          open(path, "w").write(text)
+          PY
+
+      - name: Restart tunnel and backend
+        working-directory: /opt/resumer
+        run: |
+          set -euo pipefail
+          docker compose up -d --no-build --no-deps --force-recreate backend cloudflared
+
+      - name: Verify new and legacy hostnames
+        run: |
+          set +e
+          ok=1
+          for i in $(seq 1 20); do
+            sleep 3
+            new=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://api.resumer.buzz/openapi.json)
+            old=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 https://resumer-backend.aryansingh.space/openapi.json)
+            echo "attempt $i -> api.resumer.buzz=$new resumer-backend.aryansingh.space=$old"
+            if [ "$new" = "200" ] && [ "$old" = "200" ]; then ok=0; break; fi
+          done
+          if [ $ok -ne 0 ]; then
+            echo "Routing check failed. Restore from the .bak-* files in /opt/resumer and re-run docker compose up -d."
+            docker logs resumer-cloudflared-1 --tail 30
+            exit 1
+          fi
+          echo "Both hostnames healthy."

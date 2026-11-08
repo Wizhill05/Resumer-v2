@@ -661,7 +661,7 @@ class MCPAuthMiddleware:
                 scheme = "http" if (is_local and (proto == "http" or not proto)) else "https"
                 base_url = f"{scheme}://{host}".rstrip("/")
             else:
-                base_url = getattr(settings, "BACKEND_URL", "").strip().rstrip("/") or "https://resumer-backend.aryansingh.space"
+                base_url = getattr(settings, "BACKEND_URL", "").strip().rstrip("/") or "https://api.resumer.buzz"
 
             response = Response(
                 content=json.dumps({

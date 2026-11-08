@@ -100,7 +100,7 @@ def build_resume_file_link(
 
     base = (base_url or getattr(settings, "BACKEND_URL", "") or "").strip().rstrip("/")
     if not base:
-        base = "https://resumer-backend.aryansingh.space"
+        base = "https://api.resumer.buzz"
 
     url = f"{base}/files/gen/{gen_id_str}/resume.pdf?t={token}"
     if force_download:

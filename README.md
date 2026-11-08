@@ -5,7 +5,7 @@
     Build your profile once. Paste a job description. Generate clean, ATS-aware PDFs that feel tailored instead of templated.
   </p>
   <p>
-    <a href="https://resumer.aryansingh.space"><strong>Live App</strong></a>
+    <a href="https://resumer.buzz"><strong>Live App</strong></a>
     <span> / </span>
     <a href="#features"><strong>Features</strong></a>
     <span> / </span>
@@ -14,7 +14,7 @@
     <a href="#local-development"><strong>Run Locally</strong></a>
   </p>
   <p>
-  <img alt="Live" src="https://img.shields.io/badge/Live-resumer.aryansingh.space-111827?style=plastic" />
+  <img alt="Live" src="https://img.shields.io/badge/Live-resumer.buzz-111827?style=plastic" />
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-000000?style=plastic&logo=nextdotjs" />
   <img alt="React" src="https://img.shields.io/badge/React-19-149eca?style=plastic&logo=react&logoColor=white" />
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.138-009688?style=plastic&logo=fastapi&logoColor=white" />
@@ -29,7 +29,7 @@
 
 ## Preview
 
-Resumer is already deployed at **[resumer.aryansingh.space](https://resumer.aryansingh.space)**.
+Resumer is already deployed at **[resumer.buzz](https://resumer.buzz)**.
 
 ```text
 Profile data + target job
@@ -203,7 +203,7 @@ docker compose up --build
 
 ## Deployment
 
-Current production deployment uses **Vercel for the frontend and AWS EC2 with Docker for the backend** with the live domain at **resumer.aryansingh.space**.
+Current production deployment uses **Vercel for the frontend and AWS EC2 with Docker for the backend** with the live domain at **resumer.buzz**.
 
 | Service | Deployment role |
 | --- | --- |
