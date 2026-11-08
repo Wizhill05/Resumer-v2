@@ -82,3 +82,99 @@ export async function precheckEmailLoginAction({
     return { success: false, error: "Failed to connect to authentication server." }
   }
 }
+
+export async function startEmailRegistrationAction({
+  email,
+  password,
+  name,
+}: {
+  email: string
+  password: string
+  name: string
+}) {
+  const backendUrl =
+    process.env.BACKEND_INTERNAL_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    "http://localhost:8000"
+
+  try {
+    const res = await fetch(`${backendUrl}/auth/email/register/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, name }),
+      cache: "no-store",
+    })
+
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { success: false, error: data.detail || "Registration failed." }
+    }
+    return {
+      success: true,
+      email: typeof data.email === "string" ? data.email : email,
+      resendAfter: typeof data.resend_after === "number" ? data.resend_after : 60,
+    }
+  } catch (err) {
+    console.error("startEmailRegistrationAction error:", err)
+    return { success: false, error: "Failed to connect to authentication server." }
+  }
+}
+
+export async function verifyEmailRegistrationAction({
+  email,
+  code,
+}: {
+  email: string
+  code: string
+}) {
+  const backendUrl =
+    process.env.BACKEND_INTERNAL_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    "http://localhost:8000"
+
+  try {
+    const res = await fetch(`${backendUrl}/auth/email/register/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code }),
+      cache: "no-store",
+    })
+
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { success: false, error: data.detail || "Verification failed." }
+    }
+    return { success: true, user: data }
+  } catch (err) {
+    console.error("verifyEmailRegistrationAction error:", err)
+    return { success: false, error: "Failed to connect to authentication server." }
+  }
+}
+
+export async function resendEmailCodeAction({ email }: { email: string }) {
+  const backendUrl =
+    process.env.BACKEND_INTERNAL_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    "http://localhost:8000"
+
+  try {
+    const res = await fetch(`${backendUrl}/auth/email/register/resend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      cache: "no-store",
+    })
+
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { success: false, error: data.detail || "Could not resend the code." }
+    }
+    return {
+      success: true,
+      resendAfter: typeof data.resend_after === "number" ? data.resend_after : 60,
+    }
+  } catch (err) {
+    console.error("resendEmailCodeAction error:", err)
+    return { success: false, error: "Failed to connect to authentication server." }
+  }
+}
