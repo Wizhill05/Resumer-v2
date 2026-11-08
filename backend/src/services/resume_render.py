@@ -172,10 +172,18 @@ def fit_and_render_pdf(
 # ── Orphan Detection ──────────────────────────────────────────────────────────
 
 
+# A two-line bullet is "filled" when its last line is at least this fraction of the
+# line width (0.80 == 1.80 rendered lines). Repairs aim for the window below, which
+# stays under 2.0 lines: one more character wraps onto a 3rd line.
+ORPHAN_FILL_FLOOR = 0.80
+REPAIR_TARGET_LINES_MIN = 1.84
+REPAIR_TARGET_LINES_MAX = 1.95
+
+
 def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
     """Inspect WeasyPrint formatted line boxes to detect awkward single-word terminal line breaks.
 
-    Identifies 2-line bullets where the second line has < 75% width of the first line,
+    Identifies 2-line bullets where the second line has < ORPHAN_FILL_FLOOR (80%) of the first line's width,
     indicating an 'orphan' word or short fragment that wastes vertical space.
     """
     if not doc or not getattr(doc, "pages", None):
@@ -361,14 +369,14 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                 else:
                     chars_per_line = 90
 
-                if line_count == 2 and last_line_fill < 0.75:
-                    target_min = int(chars_per_line * 1.80)
-                    target_max = int(chars_per_line * 1.95)
+                if line_count == 2 and last_line_fill < ORPHAN_FILL_FLOOR:
+                    target_min = int(chars_per_line * REPAIR_TARGET_LINES_MIN)
+                    target_max = int(chars_per_line * REPAIR_TARGET_LINES_MAX)
                     chars_to_add_min = max(0, target_min - len(text))
                     chars_to_add_max = max(0, target_max - len(text))
                     suggestion = (
                         f"Last line is an orphan ({int(last_line_fill * 100)}% width). "
-                        f"Expand by ~{chars_to_add_min}-{chars_to_add_max} chars to fill line 2 (>=75% width), "
+                        f"Expand by ~{chars_to_add_min}-{chars_to_add_max} chars to fill line 2 (>={round(ORPHAN_FILL_FLOOR * 100)}% width), "
                         f"or trim by ~{max(0, len(text) - chars_per_line)} chars to fit on 1 line."
                     )
                     orphan_data.append({
@@ -386,7 +394,7 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                         "charsToAddMax": chars_to_add_max,
                         "lineWidths": [round(float(w), 2) for w in widths],
                         "lastLineFillPercent": round(last_line_fill * 100, 1),
-                        "minimumLastLineFill": 75,
+                        "minimumLastLineFill": round(ORPHAN_FILL_FLOOR * 100),
                         "measuredAtFontSize": getattr(getattr(lines[0][0], "style", None), "font_size", None),
                         "suggestion": suggestion,
                     })
@@ -394,7 +402,7 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                     # Keep oversize findings visible so a repair that regresses
                     # from two lines to three can be rolled back. The repair
                     # node only acts on these when they have repair history.
-                    target_max = int(chars_per_line * 1.95)
+                    target_max = int(chars_per_line * REPAIR_TARGET_LINES_MAX)
                     orphan_data.append({
                         "fix_type": "oversize",
                         "section": section,
@@ -404,7 +412,7 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                         "currentChars": len(text),
                         "renderedLines": line_count,
                         "charsPerLine": chars_per_line,
-                        "targetCharsMin": int(chars_per_line * 1.80),
+                        "targetCharsMin": int(chars_per_line * REPAIR_TARGET_LINES_MIN),
                         "targetCharsMax": target_max,
                         "suggestion": (
                             f"Bullet spans {line_count} lines. Preserve the original if this was introduced by repair; "
@@ -542,7 +550,7 @@ def detect_resume_orphans(
         actionable = (
             f"CRITICAL: Detected {len(orphans)} orphan/oversize bullet(s). "
             f"Review each item in 'orphans' array above. Adjust the bullet wording in resume_json "
-            f"according to the suggestions (expand to >=75% line fill or shorten), then call render_resume."
+            f"according to the suggestions (expand to >={round(ORPHAN_FILL_FLOOR * 100)}% line fill or shorten), then call render_resume."
         )
     elif not fits_target:
         actionable = (

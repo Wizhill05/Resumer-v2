@@ -14,6 +14,7 @@ from src.pipeline.nodes import (
     orphan_repair_node,
     content_reduction_node,
     save_artifacts_node,
+    finalize_layout_node,
 )
 
 
@@ -67,6 +68,12 @@ async def wrap_render(state: ResumeGraphState, config: RunnableConfig):
     return await render_node(state, db, gen_id)
 
 
+async def wrap_finalize_layout(state: ResumeGraphState, config: RunnableConfig):
+    db = config["configurable"]["db"]
+    gen_id = config["configurable"]["gen_id"]
+    return await finalize_layout_node(state, db, gen_id)
+
+
 async def wrap_save_artifacts(state: ResumeGraphState, config: RunnableConfig):
     db = config["configurable"]["db"]
     gen_id = config["configurable"]["gen_id"]
@@ -100,6 +107,7 @@ def compile_graph():
     builder.add_node("render", wrap_render)
     builder.add_node("orphan_repair", wrap_orphan_repair)
     builder.add_node("content_reduction", wrap_content_reduction)
+    builder.add_node("finalize_layout", wrap_finalize_layout)
     builder.add_node("save_artifacts", wrap_save_artifacts)
 
     # Define flow edges
@@ -132,17 +140,18 @@ def compile_graph():
             if state.get("content_reduction_step", 0) < 2:
                 return "content_reduction"
             # Exhausted reductions, save with whatever we have
-            return "save_artifacts"
+            return "finalize_layout"
 
         # Priority 2: orphan line-wrap fixes
         if state.get("orphans") and state.get("repair_attempts", 0) < 2:
             return "orphan_repair"
 
-        return "save_artifacts"
+        return "finalize_layout"
 
     builder.add_conditional_edges("render", route_after_render)
     builder.add_edge("orphan_repair", "assembly")
     builder.add_edge("content_reduction", "assembly")
+    builder.add_edge("finalize_layout", "save_artifacts")
     builder.add_edge("save_artifacts", END)
 
     return builder.compile()

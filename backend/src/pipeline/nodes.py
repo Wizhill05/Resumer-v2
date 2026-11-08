@@ -2,6 +2,7 @@ import copy
 import asyncio
 import ast
 import gc
+import itertools
 import json
 import re
 import time
@@ -27,6 +28,9 @@ from src.services.resume_render import (
     build_resume_markdown,
     check_horizontal_overflow,
     detect_orphans_in_weasyprint,
+    ORPHAN_FILL_FLOOR,
+    REPAIR_TARGET_LINES_MAX,
+    REPAIR_TARGET_LINES_MIN,
 )
 from src.pipeline.state import ResumeGraphState
 from src.core.skill_categories import merge_skill_categories, skill_category_display
@@ -896,6 +900,173 @@ async def summary_skills_node(
     return {"summary_draft": summary_draft}
 
 
+# ── Writer prompts: metric-dense bullets ──────────────────────────────────────
+# One source for the code defaults and the stored prompt_configs rows (stored rows
+# override these defaults). No literal braces: the system prompt is .format()-ed.
+
+_BULLET_STYLE_RULES = (
+    "- Bold each number together with its unit as one short span, and each named tool, framework, language, or model. "
+    "Never bold generic fields (Machine Learning, AI, Data Analytics) or spans longer than 4 words.\n"
+    "- Line-fit: write each bullet to fill about 1.8-1.9 rendered lines (two nearly full lines), about 175-200 visible characters. "
+    "HARD LIMIT 205 characters: a bullet over 205 wraps onto a third line and is cut, so stay clearly under it and cut a clause "
+    "rather than run over. Never leave a short second line.\n"
+    "- ATS-readable: standard tool names, digits for numbers, no emojis or arrows. No periods required.\n"
+)
+
+_LARP_METRIC_RULES = (
+    "- Bullet formula: action verb + what was built + bold tools + how + bold measured result.\n"
+    "- Every bullet: at least 2 bold metrics and at least 2 bold technologies.\n"
+    "- Metrics are outcomes or scale in varied units: % change, ms/s latency, x speedup, K/M records or requests, QPS, $ cost, "
+    "GB, accuracy/F1/AUC, hours saved. First place every number listed under Source metrics into that entry's bullets, exactly as "
+    "given; only then invent further metrics, which must look measured, not round (avoid 30%, 50%, 10x). "
+    "Never use headcounts (team size, reviewers, attendees) as a metric. Never repeat a number in your output.\n"
+)
+
+_PROPER_METRIC_RULES = (
+    "- Bullet formula: action verb + what was built + bold tools + how + result (bold and measured when the input states a number).\n"
+    "- Every bullet: at least 2 bold technologies supported by the input (1 if the entry names only one).\n"
+    "- Quantify only with numbers stated in that entry's input (listed under Source metrics); keep each one exact and bold, "
+    "and lead with it. If an entry has none, show concrete scope (named systems, data sources, tools) instead of vague adjectives.\n"
+)
+
+_METRIC_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9.])(?!(?:19|20)\d\d\b)[$<>~]?\d[\d,.]*\s?(?:%|x|ms|s|[kKMB]|\+)?(?![A-Za-z])"
+)
+_BOLD_SPAN = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _source_metrics(texts: list[str]) -> list[str]:
+    """Distinct numbers stated in the source text, in order (years and version-like tokens excluded)."""
+    found: list[str] = []
+    for text in texts:
+        for match in _METRIC_TOKEN.finditer(text or ""):
+            token = match.group(0).strip(" .,")
+            if token and token not in found:
+                found.append(token)
+    return found[:12]
+
+
+def _source_metrics_line(*texts: Any) -> str:
+    flat: list[str] = []
+    for item in texts:
+        if isinstance(item, (list, tuple)):
+            flat.extend(str(x) for x in item if x)
+        elif item:
+            flat.append(str(item))
+    metrics = _source_metrics(flat)
+    return f"Source metrics: {', '.join(metrics) if metrics else 'none'}\n"
+
+
+def _is_metric_span(span: str) -> bool:
+    span = span.strip()
+    return bool(
+        re.match(r"^[<>~$+\-]?\s?\d", span)
+        or re.search(r"\d\s?(?:%|x\b|ms\b|s\b|[KMB]\b|\+)", span)
+    )
+
+
+def bullet_density(text: str) -> tuple[int, int]:
+    """(bold metric spans, bold technology spans) in a bullet."""
+    spans = _BOLD_SPAN.findall(text or "")
+    metrics = sum(1 for s in spans if _is_metric_span(s))
+    return metrics, len(spans) - metrics
+
+
+def _density_summary(bullets: list[str]) -> str:
+    dense = sum(1 for b in bullets if (lambda m, t: m >= 2 and t >= 2)(*bullet_density(b)))
+    with_metric = sum(1 for b in bullets if bullet_density(b)[0] >= 1)
+    return (
+        f"Density: {dense}/{len(bullets)} bullets have >=2 bold metrics and >=2 bold tools; "
+        f"{with_metric}/{len(bullets)} have a metric."
+    )
+
+
+def experience_writer_default_prompts(mode: str) -> tuple[str, str]:
+    if mode == "proper":
+        truth_rule = "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence.\n"
+        variety_rule = "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact.\n"
+        metric_rules = _PROPER_METRIC_RULES
+    else:
+        truth_rule = (
+            "- LARP MODE: you may embellish freely within the existing role/company. Add job-required features, tools, and "
+            "plausible metrics/scale the candidate did not state, as long as role, organization, and dates stay intact. "
+            "Never create a new employer or role, but do not be afraid to claim the job's stack.\n"
+        )
+        variety_rule = (
+            "- Each bullet proves a different JD requirement through a technical result; fold documentation, collaboration, "
+            "or communication requirements into a technical bullet, never a standalone one. Vary verbs and sentence shapes. "
+            "Foreground exact JD keywords and technologies.\n"
+        )
+        metric_rules = _LARP_METRIC_RULES
+    system = (
+        "ROLE: Senior technical resume writer.\n"
+        "TASK: Rewrite selected experience entries to prove fit for the target job while preserving truth.\n"
+        "OUTPUT CONTRACT: Return only the structured TailoredExperienceBatch object with entries. "
+        "Return EXACTLY {batch_len} entries in input order.\n"
+        "RULES:\n"
+        "- Preserve role, organization, dates, and location unless input is missing.\n"
+        "- Each entry must contain 2-3 bullet_points (hard limit: never more than 3), limited by available source material.\n"
+        "- Start every bullet with a strong past-tense action verb.\n"
+        + variety_rule + truth_rule + metric_rules + _BULLET_STYLE_RULES +
+        "- No prose outside the structured output."
+    )
+    user = "INPUT: Job Analysis\n{job_analysis}\n\nINPUT: Experience Entries To Rewrite\n{entries}"
+    return system, user
+
+
+def projects_writer_default_prompts(mode: str) -> tuple[str, str]:
+    if mode == "proper":
+        tech_rule = "- technologies: normalized list of technologies from input plus clearly supported technologies only.\n"
+        depth_rule = "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported.\n"
+        invent_rule = "- Do not invent metrics, deployments, users, awards, or technologies not supported by input.\n"
+        metric_rules = _PROPER_METRIC_RULES
+    else:
+        tech_rule = "- technologies: normalized list that MUST foreground the job's required stack; add missing JD technologies even if absent from input.\n"
+        depth_rule = "- Emphasize architecture and implementation depth; vary phrasing per job so outputs do not look templated.\n"
+        invent_rule = (
+            "- LARP MODE: you may add plausible JD-aligned features, integrations, and metrics to the existing project "
+            "(e.g. claim the missing feature because it fits the job). Never invent a wholly new project here — "
+            "that is reserved for Super LARP slot 1 — but do not be afraid to stretch details.\n"
+        )
+        metric_rules = _LARP_METRIC_RULES
+    system = (
+        "ROLE: Senior technical resume writer specializing in project sections.\n"
+        "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
+        "OUTPUT CONTRACT: Return only the structured TailoredProjectBatch object with entries. "
+        "Return EXACTLY {batch_len} entries in input order.\n"
+        "RULES:\n"
+        "- Preserve project name unless spelling cleanup is needed.\n"
+        "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
+        "- description: one concise sentence explaining what the project does and why it matters.\n"
+        + tech_rule +
+        "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
+        + depth_rule + invent_rule + metric_rules + _BULLET_STYLE_RULES +
+        "- No prose outside the structured output."
+    )
+    user = "INPUT: Job Analysis\n{job_analysis}\n\nINPUT: Project Entries To Rewrite\n{entries}"
+    return system, user
+
+
+def synthetic_project_default_prompts() -> tuple[str, str]:
+    system = (
+        "ROLE: Senior engineer inventing a single hyper-relevant portfolio project for a resume.\n"
+        "TASK: Invent ONE project that mirrors the target job description as closely as possible.\n"
+        "OUTPUT CONTRACT: Return only the structured TailoredProject object.\n"
+        "RULES:\n"
+        "- Name: realistic, specific, not a copy of the job title (e.g. 'Realtime Fraud Scoring API').\n"
+        "- project_summary: 2-4 words, e.g. 'ML Scoring Service'.\n"
+        "- description: one sentence on what it does and why it matters for this job.\n"
+        "- technologies: the job's core stack (normalize names), 4-8 items.\n"
+        "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3) starting with strong action verbs, "
+        "each embedding JD keywords and plausible architecture.\n"
+        + _LARP_METRIC_RULES + _BULLET_STYLE_RULES +
+        "- Keep it believable as a personal project; no employer claims, no awards.\n"
+        "- No prose outside the structured output."
+    )
+    user = "INPUT: Job Analysis\n{job_analysis}\n\nInvent the single most job-aligned project for this role."
+    return system, user
+
+
 async def experience_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -919,44 +1090,16 @@ async def experience_node(
             f"\n--- Entry {i} ---\n"
             f"Role: {exp['role']}\nCompany: {exp['organization']}\n"
             f"Bullet Points:\n" + "\n".join(exp.get("bullet_points") or []) + "\n"
+            + _source_metrics_line(exp.get("bullet_points"))
         )
 
     mode = _creativity_mode(state)
-    if mode == "proper":
-        truth_rule = "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence."
-        variety_rule = "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact."
-    else:
-        truth_rule = (
-            "- LARP MODE: you may embellish freely within the existing role/company. Add job-required features, tools, and "
-            "plausible metrics/scale the candidate did not state, as long as role, organization, and dates stay intact. "
-            "Never create a new employer or role, but do not be afraid to claim the job's stack."
-        )
-        variety_rule = (
-            "- Rewrite creatively so no two resumes read the same: vary verbs, structures, and which JD requirements each bullet proves. "
-            "Foreground exact JD keywords, technologies, and responsibilities in every entry."
-        )
+    default_system, default_user = experience_writer_default_prompts(mode)
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         _prompt_name("experience_writer", mode),
-        default_system=(
-            "ROLE: Senior technical resume writer.\n"
-            "TASK: Rewrite selected experience entries to prove fit for the target job while preserving truth.\n"
-            "OUTPUT CONTRACT: Return only the structured TailoredExperienceBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
-            "RULES:\n"
-            "- Preserve role, organization, dates, and location unless input is missing.\n"
-            "- Each entry must contain 2-3 bullet_points (hard limit: never more than 3), limited by available source material.\n"
-            "- Start every bullet with a strong past-tense action verb.\n"
-            f"{variety_rule}\n"
-            f"{truth_rule}\n"
-            "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks, e.g. **35%**, **FastAPI**, **400ms**.\n"
-            "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
-            "- Keep bullets concise, specific, and ATS-readable. No periods required.\n"
-            "- No prose outside the structured output."
-        ),
-        default_user=(
-            "INPUT: Job Analysis\n{job_analysis}\n\n"
-            "INPUT: Experience Entries To Rewrite\n{entries}"
-        )
+        default_system=default_system,
+        default_user=default_user,
     )
     sys_prompt += _professional_sans_policy(state, "experience")
     prompt = ChatPromptTemplate.from_messages(
@@ -1023,6 +1166,10 @@ async def experience_node(
             tailored_exps.append(copy.deepcopy(original))
 
     await log_progress(db, gen_id, "experience_writer", "Finished tailoring all experience entries.")
+    await log_progress(
+        db, gen_id, "experience_writer",
+        _density_summary([b for e in tailored_exps for b in e.get("bullet_points") or []]),
+    )
     return {"experience_draft": tailored_exps}
 
 
@@ -1051,47 +1198,16 @@ async def project_node(
             f"Description: {proj.get('description') or ''}\n"
             f"Technologies: {', '.join(proj.get('technologies') or [])}\n"
             f"Bullet Points:\n" + "\n".join(proj.get("bullet_points") or []) + "\n"
+            + _source_metrics_line(proj.get("description"), proj.get("bullet_points"))
         )
 
     mode = _creativity_mode(state)
-    if mode == "proper":
-        tech_rule = "- technologies: normalized list of technologies from input plus clearly supported technologies only."
-        depth_rule = "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported."
-        invent_rule = "- Do not invent metrics, deployments, users, awards, or technologies not supported by input."
-    else:
-        tech_rule = "- technologies: normalized list that MUST foreground the job's required stack; add missing JD technologies even if absent from input."
-        depth_rule = (
-            "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact. "
-            "Vary phrasing per job so outputs do not look templated."
-        )
-        invent_rule = (
-            "- LARP MODE: you may add plausible JD-aligned features, integrations, and metrics to the existing project "
-            "(e.g. claim the missing feature because it fits the job). Never invent a wholly new project here — "
-            "that is reserved for Super LARP slot 1 — but do not be afraid to stretch details."
-        )
+    default_system, default_user = projects_writer_default_prompts(mode)
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         _prompt_name("projects_writer", mode),
-        default_system=(
-            "ROLE: Senior technical resume writer specializing in project sections.\n"
-            "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
-            "OUTPUT CONTRACT: Return only the structured TailoredProjectBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
-            "RULES:\n"
-            "- Preserve project name unless spelling cleanup is needed.\n"
-            "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
-            "- description: one concise sentence explaining what the project does and why it matters.\n"
-            f"{tech_rule}\n"
-            "- bullet_points: 2-3 concise achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
-            f"{depth_rule}\n"
-            f"{invent_rule}\n"
-            "- Bold every number, statistic, percentage, metric, and key technology with markdown asterisks.\n"
-            "- Line-fit: each bullet should fit on one line or fill 1.75-1.95 rendered lines. Avoid short orphan second lines.\n"
-            "- No prose outside the structured output."
-        ),
-        default_user=(
-            "INPUT: Job Analysis\n{job_analysis}\n\n"
-            "INPUT: Project Entries To Rewrite\n{entries}"
-        )
+        default_system=default_system,
+        default_user=default_user,
     )
     sys_prompt += _professional_sans_policy(state, "project")
     prompt = ChatPromptTemplate.from_messages(
@@ -1160,33 +1276,22 @@ async def project_node(
             tailored_projs.append(copy.deepcopy(original))
 
     await log_progress(db, gen_id, "projects_writer", "Finished tailoring all project entries.")
+    await log_progress(
+        db, gen_id, "projects_writer",
+        _density_summary([b for p in tailored_projs for b in p.get("bullet_points") or []]),
+    )
     if mode == "super_larp" and tailored_projs:
         await log_progress(
             db, gen_id, "projects_writer",
             "Super LARP: replacing first project with JD-hyper-focused synthetic project...",
         )
         try:
+            synth_default_system, synth_default_user = synthetic_project_default_prompts()
             synth_sys, _ = await get_prompt_config(
                 db,
                 "synthetic_project_super_larp",
-                default_system=(
-                    "ROLE: Senior engineer inventing a single hyper-relevant portfolio project for a resume.\n"
-                    "TASK: Invent ONE project that mirrors the target job description as closely as possible.\n"
-                    "OUTPUT CONTRACT: Return only the structured TailoredProject object.\n"
-                    "RULES:\n"
-                    "- Name: realistic, specific, not a copy of the job title (e.g. 'Realtime Fraud Scoring API').\n"
-                    "- project_summary: 2-4 words, e.g. 'ML Scoring Service'.\n"
-                    "- description: one sentence on what it does and why it matters for this job.\n"
-                    "- technologies: the job's core stack (normalize names), 4-8 items.\n"
-                    "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3) starting with strong action verbs, each embedding JD keywords, "
-                    "plausible architecture, scale, and metrics. Bold numbers and key tech with **.\n"
-                    "- Keep it believable as a personal project; no employer claims, no awards.\n"
-                    "- No prose outside the structured output."
-                ),
-                default_user=(
-                    "INPUT: Job Analysis\n{job_analysis}\n\n"
-                    "Invent the single most job-aligned project for this role."
-                ),
+                default_system=synth_default_system,
+                default_user=synth_default_user,
             )
             synth_sys += _professional_sans_policy(state, "synthetic_project")
             synth_prompt = ChatPromptTemplate.from_messages(
@@ -1568,6 +1673,189 @@ async def render_node(
     }
 
 
+# ── Layout guard: no bullet may be saved on 3+ lines ──────────────────────────
+# The LLM repair is probabilistic. This last step is deterministic: whatever the
+# final render still shows on 3+ lines is trimmed (lowest-value clauses first, never
+# a bold metric before plain filler), re-rendered at the final font size, and
+# verified. A 3-line bullet cannot reach the saved PDF.
+
+FINAL_TRIM_MAX_ITER = 6
+
+# Clause boundaries only where a clause can stand or fall on its own: after ; or :, after a comma that
+# introduces a gerund clause (", cutting ..."), or before a participial connector. Never inside a
+# comma-separated list of tools, and never before a preposition (by, to, for, across): that would split
+# a verb from its metric ("cutting latency | by 30%") or break a list, leaving a dangling fragment.
+_CLAUSE_BREAK = re.compile(
+    r"(?<=[;:])\s+"
+    r"|(?<=,)\s+(?=\w+ing\b)"
+    r"|\s+(?=(?:with|using|while|enabling|ensuring|allowing|leveraging|via|plus|yielding|achieving|"
+    r"delivering|saving|resulting|driving|improving)\b)",
+    re.I,
+)
+_DANGLING_TAIL = re.compile(
+    r"[\s,;:\-–—]*(?:\b(?:and|or|with|using|while|to|for|by|via|in|on|of|the|a|an|plus|so|that|which|across|through|"
+    r"enabling|ensuring|allowing|leveraging)\b[\s,;:]*)+$",
+    re.I,
+)
+
+
+def _tidy_trimmed(text: str) -> str:
+    if text.count("**") % 2:
+        cut = text.rfind("**")
+        text = text[:cut] + text[cut + 2:]
+    return _DANGLING_TAIL.sub("", text).rstrip(" ,;:-–—")
+
+
+# Tail cuts may happen at any preposition or connector: removing everything after such a word always
+# leaves a grammatical prefix ("... by 30% across X" -> "... by 30%").
+_TAIL_BREAK = re.compile(
+    r"(?<=[;:])\s+"
+    r"|(?<=,)\s+(?=\w+ing\b)"
+    r"|\s+(?=(?:with|using|while|enabling|ensuring|allowing|leveraging|via|plus|yielding|achieving|"
+    r"delivering|saving|resulting|driving|improving|across|for|to|by|at|in|on|and|or|through|into|from)\b)",
+    re.I,
+)
+
+
+def _trim_bullet(text: str, max_visible: int) -> str:
+    """Shorten text to at most max_visible visible characters without breaking its grammar.
+
+    Two safe operations are considered: dropping whole clauses (strict boundaries, the action clause is
+    always kept) and cutting the tail at a preposition or connector. Whichever candidate that fits keeps the
+    most bold spans (metrics and technologies) wins, then the longest. If nothing fits, the action clause is
+    cut at a word boundary.
+    """
+    if _visible_len(text) <= max_visible:
+        return text
+    candidates: list[str] = []
+    segments = [s for s in _CLAUSE_BREAK.split(text) if s and s.strip()]
+    removable = list(range(1, len(segments)))[:10]
+    for drop_count in range(1, len(removable) + 1):
+        for dropped in itertools.combinations(removable, drop_count):
+            candidates.append(" ".join(seg for i, seg in enumerate(segments) if i not in dropped))
+    candidates.extend(text[: m.start()] for m in _TAIL_BREAK.finditer(text) if m.start() > 0)
+
+    best: tuple[int, int, str] | None = None
+    for candidate in candidates:
+        tidy = _tidy_trimmed(candidate)
+        length = _visible_len(tidy)
+        if not tidy or length > max_visible:
+            continue
+        score = (len(_BOLD_SPAN.findall(tidy)), length, tidy)
+        if best is None or score[:2] > best[:2]:
+            best = score
+    out = best[2] if best else segments[0]
+    if _visible_len(out) > max_visible:
+        words = out.split(" ")
+        while words and _visible_len(" ".join(words)) > max_visible:
+            words.pop()
+        out = _tidy_trimmed(" ".join(words))
+    return out
+
+
+def _render_pdf_at(state: ResumeGraphState, resume: dict[str, Any], font_size: float) -> tuple[bytes, int, list[dict[str, Any]]]:
+    """Render at a fixed font size (no re-fit): (pdf bytes, page count, detector findings)."""
+    from weasyprint import HTML
+
+    manifest = state["template_manifest"]
+    template_id = manifest["id"]
+    html = TemplateRegistryService.render_template(
+        template_id,
+        {
+            "profile": state["profile"],
+            "resume": resume,
+            "font_size": font_size,
+            "page_margin_mm": manifest.get("page_margin_mm", 15),
+            "section_order": state.get("section_order"),
+        },
+    )
+    doc = HTML(string=html, base_url=str(settings.TEMPLATES_DIR / template_id)).render()
+    try:
+        return doc.write_pdf(), len(doc.pages), detect_orphans_in_weasyprint(doc)
+    finally:
+        del doc
+        gc.collect()
+
+
+def _resume_bullet_ref(resume: dict[str, Any], finding: dict[str, Any]) -> tuple[list, int, str] | None:
+    """(container, index, key) addressing the text of a detector finding inside the resume."""
+    section = _SECTION_ALIASES.get(finding.get("section") or "")
+    entry, bullet = finding.get("entry_idx"), finding.get("bullet_idx")
+    if section is None or entry is None:
+        return None
+    try:
+        if section == "experience":
+            return resume["experiences"][entry]["bullet_points"], bullet, ""
+        if section == "projects":
+            return resume["projects"][entry]["bullet_points"], bullet, ""
+        return resume["extracurriculars"], entry, "description"
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+async def finalize_layout_node(state: ResumeGraphState, db: AsyncSession, gen_id: str) -> dict[str, Any]:
+    oversize = [o for o in (state.get("orphans") or []) if o.get("fix_type") == "oversize"]
+    resume_in = state.get("tailored_resume")
+    if not oversize or not resume_in:
+        return {}
+
+    resume = copy.deepcopy(resume_in)
+    font_size = state.get("font_size") or state["template_manifest"].get("max_font_size", 10.0)
+    shrink = 1.0
+    trimmed: dict[tuple, tuple[str, str]] = {}
+    pdf_bytes, pages, found = b"", state.get("page_count", 1), oversize
+    current = oversize
+
+    for _ in range(FINAL_TRIM_MAX_ITER):
+        for finding in current:
+            ref = _resume_bullet_ref(resume, finding)
+            if ref is None:
+                continue
+            container, index, key = ref
+            original = container[index][key] if key else container[index]
+            limit = int((finding.get("targetCharsMax") or _visible_len(original)) * shrink)
+            shorter = _trim_bullet(original, limit)
+            if shorter and shorter != original:
+                if key:
+                    container[index][key] = shorter
+                else:
+                    container[index] = shorter
+                ident = (finding.get("section"), finding.get("entry_idx"), finding.get("bullet_idx"))
+                trimmed[ident] = (trimmed.get(ident, (original, shorter))[0], shorter)
+        try:
+            pdf_bytes, pages, found = _render_pdf_at(state, resume, font_size)
+        except Exception as exc:
+            await log_progress(db, gen_id, "renderer", f"Layout guard could not re-render ({exc}); keeping previous render.", "warning")
+            return {}
+        current = [o for o in found if o.get("fix_type") == "oversize"]
+        if not current:
+            break
+        shrink *= 0.93
+
+    if current:
+        await log_progress(
+            db, gen_id, "renderer",
+            f"Layout guard: {len(current)} bullet(s) still render on 3+ lines after trimming.",
+            "warning",
+        )
+    await log_progress(
+        db, gen_id, "renderer",
+        f"Layout guard: trimmed {len(trimmed)} bullet(s) that wrapped onto 3+ lines "
+        f"(removed {sum(_visible_len(a) - _visible_len(b) for a, b in trimmed.values())} characters).",
+        "warning",
+    )
+    remaining = [o for o in found if o.get("fix_type") == "expand"]
+    return {
+        "tailored_resume": resume,
+        "pdf_bytes": pdf_bytes,
+        "page_count": pages,
+        "markdown": build_resume_markdown(
+            profile=state["profile"], resume=resume, section_order=state.get("section_order")
+        ),
+        "orphans": remaining or None,
+    }
+
+
 async def content_reduction_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -1730,6 +2018,325 @@ async def save_artifacts_node(
     }
 
 
+# ── Orphan repair helpers ─────────────────────────────────────────────────────
+
+# The model cannot see rendered line widths, so a single pass often lands a few
+# characters over the two-line limit (a 3rd line) or short of the fill target.
+# Each round is verified with a real render; only the bullets that missed are
+# sent back, along with the measured result.
+ORPHAN_REPAIR_MAX_ROUNDS = 4
+ORPHAN_REPAIR_TIME_BUDGET_S = 200.0
+# Aim for the middle of the target window. An overshoot is caught by the verify-and-revert
+# step and costs one round, while aiming low made weaker models (which land ~5% under the
+# number they are given) stall just below the fill floor. Measured on gemini-3.5-flash-lite
+# over 4 runs: aim 0.35 left 1-9 short bullets per resume, aim 0.50 left 0-1, both with 0%
+# first-round overshoot.
+_REPAIR_AIM_FRACTION = 0.5
+
+
+class _VerifyUnavailable(Exception):
+    """The verification render cannot run (missing template/profile or empty HTML)."""
+
+
+def _clean_bullet_text(s: str) -> str:
+    s = re.sub(r"[*_`]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _visible_len(text: str) -> int:
+    return len(text.replace("**", ""))
+
+
+_SECTION_ALIASES = {
+    "experience": "experience", "experiences": "experience",
+    "project": "projects", "projects": "projects",
+    "extracurricular": "extracurriculars", "extracurriculars": "extracurriculars",
+}
+
+
+def _repair_length_window(orphan: dict[str, Any], current_text: str) -> dict[str, int] | None:
+    """Visible-character window that renders as a well-filled 2-line bullet."""
+    lo, hi = orphan.get("targetCharsMin"), orphan.get("targetCharsMax")
+    if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+        cpl = orphan.get("charsPerLine")
+        if not isinstance(cpl, (int, float)) or cpl <= 0:
+            return None
+        lo, hi = cpl * REPAIR_TARGET_LINES_MIN, cpl * REPAIR_TARGET_LINES_MAX
+    lo, hi = int(lo), int(hi)
+    current = _visible_len(current_text)
+    if hi <= lo:
+        return None
+    if orphan.get("fix_type") == "oversize":
+        return {"min": lo, "max": hi, "aim": lo + round((hi - lo) * _REPAIR_AIM_FRACTION), "current": current}
+    if current >= hi - 4:
+        return None
+    aim = max(lo + round((hi - lo) * _REPAIR_AIM_FRACTION), current + 8)
+    return {"min": lo, "max": hi, "aim": min(aim, hi - 2), "current": current}
+
+
+def _repair_block(
+    prompt_index: int,
+    context: str,
+    base_md: str,
+    orphan: dict[str, Any],
+    is_larp: bool,
+    failure: dict[str, Any] | None = None,
+) -> str:
+    min_fill = int(orphan.get("minimumLastLineFill", round(ORPHAN_FILL_FLOOR * 100)))
+    current_fill = int(orphan.get("lastLineFillPercent", 0))
+    detail = (
+        "plausible, job-relevant detail or embellishment" if is_larp else "truthful, job-relevant detail"
+    )
+    window = _repair_length_window(orphan, base_md)
+    shorten = orphan.get("fix_type") == "oversize"
+    if shorten:
+        lines = [
+            f"  FIX: SHORTEN this bullet; it currently renders on {orphan.get('renderedLines', 3)} lines and must fit on exactly two.",
+            "  Cut filler, repeated ideas and low-value clauses first. Keep every bold metric and tool; never drop a number.",
+        ]
+    else:
+        lines = [
+            "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.",
+            f"  It currently renders on 2 lines and the final line is {current_fill}% full.",
+            f"  Add {detail} until the final rendered line is at least {min_fill}% full.",
+        ]
+    if window and shorten:
+        lines.append(
+            f"  LENGTH TARGET: the replacement must be between {window['min']} and {window['max']} visible "
+            f"characters (not counting ** markers); aim for about {window['aim']}. The original is "
+            f"{window['current']} characters, so remove roughly {max(window['current'] - window['aim'], 0)}. "
+            f"Going over {window['max']} wraps onto another line, which is a failure; under {window['min']} leaves an orphan. "
+            "Count carefully."
+        )
+    elif window:
+        lines.append(
+            f"  LENGTH TARGET: the replacement must be between {window['min']} and {window['max']} visible "
+            f"characters (not counting ** markers); aim for about {window['aim']}. The original is "
+            f"{window['current']} characters, so keep its wording and add roughly {window['aim'] - window['current']} "
+            f"characters (a short clause); do not rewrite it shorter. "
+            f"Going over {window['max']} wraps onto a 3rd line, which is a failure and discards the bullet; "
+            f"falling under {window['min']} leaves an orphan. Count carefully."
+        )
+    elif shorten:
+        lines.append("  Rewrite it so it renders on exactly two lines.")
+    else:
+        lines.append(
+            "  The renderer will measure the result, so do not estimate character counts or line length."
+        )
+    if failure:
+        kind = failure.get("kind")
+        chars = failure.get("chars", 0)
+        if kind == "long":
+            cut = f" Cut about {max(chars - window['aim'], 1)} characters (target about {window['aim']}, limit {window['max']})." if window else ""
+            lines.append(
+                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {chars} characters "
+                f"and rendered on {failure['lines']} lines.{cut} Make it shorter than that attempt."
+            )
+        elif kind == "overflow":
+            cut = f" Cut about {max(chars - window['aim'], 1)} characters (target about {window['aim']}, limit {window['max']})." if window else ""
+            lines.append(
+                f"  PREVIOUS ATTEMPT FAILED (too long): \"{failure['text']}\" was {chars} characters "
+                f"and pushed the resume past its page limit.{cut} Make it shorter than that attempt."
+            )
+        elif kind == "short":
+            if window and chars < window["current"]:
+                fix = (
+                    f" It was SHORTER than the original ({window['current']} characters). Never shorten: keep the original "
+                    f"wording and add about {max(window['aim'] - window['current'], 1)} characters."
+                )
+            elif window:
+                fix = f" Add about {max(window['aim'] - chars, 1)} more characters (target about {window['aim']})."
+            else:
+                fix = " Make it longer than that attempt."
+            lines.append(
+                f"  PREVIOUS ATTEMPT FAILED (too short): \"{failure['text']}\" was {chars} characters "
+                f"and left the last line only {failure['fill']}% full (needed {min_fill}%).{fix}"
+            )
+        elif kind == "unchanged":
+            lines.append("  PREVIOUS ROUND: you returned this bullet unchanged. Expand it.")
+        elif kind == "missing":
+            lines.append("  PREVIOUS ROUND: this bullet was missing from your response. Return it.")
+    if is_larp and not shorten:
+        metrics, _ = bullet_density(base_md)
+        if metrics < 2:
+            lines.append(
+                f"  This bullet has {metrics} bold metric(s): the added words must include a new bold metric."
+            )
+    return f"Bullet {prompt_index}:\n  {context}\n  Original: \"{base_md}\"\n" + "\n".join(lines)
+
+
+def _entry_text(experiences: list, projects: list, extracurriculars: list, entry: dict[str, Any]) -> str:
+    section, item, bullet = entry["section_key"], entry["item_idx"], entry["bullet_idx"]
+    if section == "experience":
+        return experiences[item]["bullet_points"][bullet]
+    if section == "projects":
+        return projects[item]["bullet_points"][bullet]
+    return extracurriculars[item]["description"]
+
+
+def _set_entry_text(
+    experiences: list, projects: list, extracurriculars: list, entry: dict[str, Any], text: str
+) -> None:
+    section, item, bullet = entry["section_key"], entry["item_idx"], entry["bullet_idx"]
+    if section == "experience":
+        experiences[item]["bullet_points"][bullet] = text
+    elif section == "projects":
+        projects[item]["bullet_points"][bullet] = text
+    else:
+        extracurriculars[item]["description"] = text
+
+
+def _match_orphan(entry: dict[str, Any], orphans: list[dict[str, Any]], current_text: str) -> dict[str, Any] | None:
+    """Find the detector finding for a repaired bullet: stable identity first, then text."""
+    clean = _clean_bullet_text(current_text)
+    for found in orphans:
+        if (
+            found.get("section") is not None
+            and found.get("entry_idx") is not None
+            and found.get("bullet_idx") is not None
+        ):
+            if (
+                _SECTION_ALIASES.get(found["section"]) == entry["section_key"]
+                and found["entry_idx"] == entry["item_idx"]
+                and found["bullet_idx"] == entry["bullet_idx"]
+            ):
+                return found
+        elif _clean_bullet_text(found.get("text", "")) == clean:
+            return found
+    return None
+
+
+def _parse_repair_response(raw_text: str) -> dict[int, str]:
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+    if fenced:
+        json_text = fenced.group(1).strip()
+    else:
+        start, end = raw_text.find("{"), raw_text.rfind("}")
+        json_text = raw_text[start:end + 1] if start != -1 and end != -1 else raw_text
+    bullets = json.loads(json_text).get("bullets", [])
+    replacements: dict[int, str] = {}
+    for item in bullets:
+        if not isinstance(item, dict):
+            continue
+        try:
+            index = int(item.get("index"))
+        except (TypeError, ValueError):
+            continue
+        text = item.get("replacement")
+        if isinstance(text, str) and text.strip():
+            replacements[index] = text.strip()
+    if bullets and not replacements:
+        raise ValueError("response used an incompatible schema; expected a non-empty 'replacement' per bullet")
+    return replacements
+
+
+def _render_for_verification(
+    state: ResumeGraphState, experiences: list, projects: list, extracurriculars: list
+) -> tuple[int, list[dict[str, Any]]]:
+    """Render the candidate at the current font size; return (page_count, orphans)."""
+    manifest = state.get("template_manifest") or {}
+    profile = state.get("profile") or {}
+    template_id = manifest.get("id") or state.get("template_id")
+    if not (template_id and profile):
+        raise _VerifyUnavailable("missing template or profile")
+
+    from weasyprint import HTML as _VerifyHTML  # type: ignore[import-untyped]
+
+    base_resume = dict(state.get("tailored_resume") or {})
+    if not base_resume:
+        summary_draft = state.get("summary_draft") or {}
+        base_resume = {
+            "summary": summary_draft.get("summary"),
+            "skills": summary_draft.get("skills"),
+            "education": state.get("education") or [],
+        }
+    candidate = dict(base_resume)
+    candidate["experiences"] = experiences
+    candidate["projects"] = projects
+    candidate["extracurriculars"] = extracurriculars
+
+    html = TemplateRegistryService.render_template(
+        template_id,
+        {
+            "profile": profile,
+            "resume": candidate,
+            "font_size": state.get("font_size") or manifest.get("max_font_size", 10.0),
+            "page_margin_mm": manifest.get("page_margin_mm", 15),
+            "section_order": state.get("section_order"),
+        },
+    )
+    if not html:
+        raise _VerifyUnavailable("verification render is empty")
+    doc = _VerifyHTML(string=html, base_url=str(settings.TEMPLATES_DIR / template_id)).render()
+    try:
+        return len(doc.pages), detect_orphans_in_weasyprint(doc)
+    finally:
+        del doc
+        gc.collect()
+
+
+_REPAIR_BUDGET_RULES = (
+    "HOW THE CHARACTER BUDGET WORKS:\n"
+    "- Every bullet has its own LENGTH TARGET: a window of visible characters (** markers excluded), measured from how that "
+    "bullet actually rendered. Budgets differ per bullet because wording changes how much fits on a line.\n"
+    "- Write about the \"aim for about\" value. MAX is a hard ceiling: one more character wraps onto a 3rd line and the bullet "
+    "is discarded. Below MIN the last line stays an orphan.\n"
+    "- A bullet marked PREVIOUS ATTEMPT FAILED was already rendered; its numbers are real. Move toward the aim value.\n"
+    "- A bullet with no LENGTH TARGET has no measured budget: expand it by one short clause, do not pad, never shorten it.\n"
+)
+
+
+def orphan_repair_default_prompts(is_larp: bool) -> tuple[str, str]:
+    """Default (system, user) prompts for orphan repair; also what the DB rows are seeded with."""
+    if is_larp:
+        default_system = (
+            "ROLE: Precise resume line-wrap repair editor.\n"
+            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
+            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
+            "QUALITY BAR: Embellish creatively to fit layout constraints while preserving role, company, and JD alignment."
+        )
+        truth_rule = (
+            "- LARP MODE: you may embellish freely with plausible JD-aligned metrics, tools, and scale; never new employers or roles; never shorten a bullet marked EXPAND."
+        )
+    else:
+        default_system = (
+            "ROLE: Precise resume line-wrap repair editor.\n"
+            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
+            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
+            "QUALITY BAR: Preserve meaning and truth while meeting layout constraints."
+        )
+        truth_rule = (
+            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet marked EXPAND.\n"
+            "- Keep the core meaning and factual claims of the original; do not invent unsupported metrics or facts."
+        )
+
+    default_user = (
+        "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
+        "{\n"
+        '  "bullets": [\n'
+        '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
+        '    {"index": 2, "replacement": "..."}\n'
+        "  ]\n"
+        "}\n\n"
+        "INPUT: Rendering Context\n"
+        "Font: Proportional font. Every bullet has its own measured character budget.\n\n"
+        f"{_REPAIR_BUDGET_RULES}\n"
+        "RULES:\n"
+        "- Return one replacement for every Bullet listed below, using same index values.\n"
+        "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
+        "- Start every bullet with a strong action verb.\n"
+        "- Keep every bold metric and tool already in the bullet. Bold each new number with its unit and each tool name.\n"
+        "- A bullet marked SHORTEN loses filler and repeated ideas, never a metric or a tool.\n"
+        "- Fill with substance (a metric, a tool, a scale), never filler such as seamlessly, robust, reliably, comprehensive, today, in practice.\n"
+        f"{truth_rule}\n"
+        "- No emojis, no trailing explanations, no omitted bullets.\n\n"
+        "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
+        "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
+        "Return only the raw JSON object."
+    )
+    return default_system, default_user
+
+
 async def orphan_repair_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -1752,14 +2359,11 @@ async def orphan_repair_node(
     # Keys: "section:item_idx:bullet_idx" → original text before first repair.
     repair_history = dict(state.get("repair_history") or {})
 
-    def clean_text(s: str) -> str:
-        s = re.sub(r"[*_`]", "", s)
-        return re.sub(r"\s+", " ", s).strip()
+    clean_text = _clean_bullet_text
 
     def history_key(section, item_idx, bullet_idx):
         return f"{section}:{item_idx}:{bullet_idx}"
 
-    bullet_blocks = []
     mapping = []
     reverted = 0
 
@@ -1852,11 +2456,6 @@ async def orphan_repair_node(
         section_key, item_idx, bullet_idx, original_md = match
         hkey = history_key(section_key, item_idx, bullet_idx)
 
-        # Oversize bullets are only actionable when they correspond to a
-        # previous repair; otherwise leave them to page-fit/content reduction.
-        if orphan.get("fix_type") == "oversize" and hkey not in repair_history:
-            continue
-
         # ── Rollback check: if this bullet was repaired before and is now >2 lines,
         #    revert to the pre-repair original instead of trying again.
         if hkey in repair_history and orphan.get("renderedLines", 0) > 2:
@@ -1886,35 +2485,9 @@ async def orphan_repair_node(
         else:
             context = "Extracurricular activity"
 
-        if orphan.get("fix_type") != "expand":
+        if orphan.get("fix_type") not in ("expand", "oversize"):
             continue
 
-        min_fill = int(orphan.get("minimumLastLineFill", 75))
-        current_fill = int(orphan.get("lastLineFillPercent", 0))
-        mode = _creativity_mode(state)
-        is_larp = mode in ("larp", "super_larp")
-        if is_larp:
-            instruction = (
-                "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
-                f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
-                f"  Add plausible, job-relevant detail or embellishment until the final rendered line is at least {min_fill}% full.\n"
-                "  The renderer will measure the result, so do not estimate character counts or line length."
-            )
-        else:
-            instruction = (
-                "  FIX: EXPAND this bullet only; never shorten it or force it onto one line.\n"
-                f"  It currently renders on 2 lines and the final line is {current_fill}% full.\n"
-                f"  Add truthful, job-relevant detail until the final rendered line is at least {min_fill}% full.\n"
-                "  The renderer will measure the result, so do not estimate character counts or line length."
-            )
-
-        block = (
-            f"Bullet {idx}:\n"
-            f"  {context}\n"
-            f"  Original: \"{original_md}\"\n"
-            f"{instruction}"
-        )
-        bullet_blocks.append(block)
         mapping.append({
             "prompt_index": idx,
             "section_key": section_key,
@@ -1922,6 +2495,8 @@ async def orphan_repair_node(
             "bullet_idx": bullet_idx,
             "original_md": original_md,
             "history_key": hkey,
+            "context": context,
+            "orphan": orphan,
         })
 
     if reverted:
@@ -1930,7 +2505,7 @@ async def orphan_repair_node(
             f"Reverted {reverted} bullet(s) to pre-repair originals due to >2 line regression.",
         )
 
-    if not bullet_blocks:
+    if not mapping:
         return {
             "experience_draft": experiences,
             "projects_draft": projects,
@@ -1945,60 +2520,11 @@ async def orphan_repair_node(
     except Exception:
         kw_text = "N/A"
 
-    pre_repair_experiences = copy.deepcopy(experiences)
-    pre_repair_projects = copy.deepcopy(projects)
-    pre_repair_extracurriculars = copy.deepcopy(extracurriculars_draft)
-    pre_repair_history = copy.deepcopy(repair_history)
-
     mode = _creativity_mode(state)
     is_larp = mode in ("larp", "super_larp")
     prompt_name = _prompt_name("orphan_repair", mode)
 
-    if is_larp:
-        default_system = (
-            "ROLE: Precise resume line-wrap repair editor.\n"
-            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
-            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
-            "QUALITY BAR: Embellish creatively to fit layout constraints while preserving role, company, and JD alignment."
-        )
-        truth_rule = (
-            "- LARP MODE: you may embellish freely with plausible JD-aligned technical detail, tools, and metrics to fill the line; never shorten or compress a bullet.\n"
-            "- Expand by adding plausible features, stack tools, or scale that prove the job requirements, without creating new employers or roles."
-        )
-    else:
-        default_system = (
-            "ROLE: Precise resume line-wrap repair editor.\n"
-            "TASK: Rewrite only specified bullets so rendered PDF line lengths fit constraints.\n"
-            "OUTPUT CONTRACT: Return only one raw JSON object with key 'bullets'. No markdown fences, no prose, no comments.\n"
-            "QUALITY BAR: Preserve meaning and truth while meeting layout constraints."
-        )
-        truth_rule = (
-            "- Expand only by adding job-relevant supported technical detail; never shorten or compress a bullet.\n"
-            "- Keep the core meaning and factual claims of the original; do not invent unsupported metrics or facts."
-        )
-
-    default_user = (
-        "OUTPUT FORMAT - MANDATORY RAW JSON ONLY:\n"
-        "{\n"
-        '  "bullets": [\n'
-        '    {"index": 1, "replacement": "Rewritten bullet text here."},\n'
-        '    {"index": 2, "replacement": "..."}\n'
-        "  ]\n"
-        "}\n\n"
-        "INPUT: Rendering Context\n"
-        "Font: Proportional font. Each bullet has exact visible-character target range.\n\n"
-        "RULES:\n"
-        "- Return one replacement for every Bullet listed below, using same index values.\n"
-        "- Character counts are visible characters only. Markdown bold markers (**) do not count.\n"
-        "- Start every bullet with a strong action verb.\n"
-        "- Bold all numbers, statistics, percentages, key technologies, and metrics, e.g. **35%**, **FastAPI**, **400ms**.\n"
-        f"{truth_rule}\n"
-        "- The renderer, not character count, determines whether the replacement fits.\n"
-        "- No emojis, no trailing explanations, no omitted bullets.\n\n"
-        "INPUT: Job-Relevant Keywords\n{kw_text}\n\n"
-        "INPUT: Bullets To Repair\n{bullet_blocks}\n\n"
-        "Return only the raw JSON object."
-    )
+    default_system, default_user = orphan_repair_default_prompts(is_larp)
 
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
@@ -2008,306 +2534,247 @@ async def orphan_repair_node(
     )
     sys_prompt += _professional_sans_policy(state, "orphan_repair")
 
-    formatted_usr_prompt = _replace_prompt_vars(
-        usr_prompt,
-        {
-            "kw_text": kw_text,
-            "bullet_blocks": "\n\n".join(bullet_blocks),
-        },
-    )
+    target_pages = (state.get("template_manifest") or {}).get("target_pages", 1)
+    pre_repair_pages = state.get("page_count", 1)
 
-    raw_response = ""
-    try:
-        from langchain_core.messages import SystemMessage, HumanMessage
-        messages = [
-            SystemMessage(content=sys_prompt),
-            HumanMessage(content=formatted_usr_prompt)
-        ]
-        # invoke_with_fallback expects a chain_factory; for raw message invoke, wrap accordingly.
-        resp = await invoke_with_fallback(
-            lambda llm, p: llm,
-            messages,
-            timeout=40.0,
-            node_name="orphan_repair",
-            gen_id=gen_id,
-            is_pro=state.get("is_pro", False),
-        )
-        content = resp.content
-        if isinstance(content, list):
-            text_parts = []
-            for part in content:
-                if isinstance(part, str):
-                    text_parts.append(part)
-                elif isinstance(part, dict) and part.get("type") == "text":
-                    text_parts.append(part.get("text", ""))
-            raw_response = "".join(text_parts).strip()
-        else:
-            raw_response = str(content).strip()
-    except Exception as e:
-        await log_progress(
-            db,
-            gen_id,
-            "orphan_repair",
-            f"Error calling LLM for orphan repair: {e}",
-            "error",
-        )
-        return {
-            "orphans": None,
-            "repair_attempts": state.get("repair_attempts", 0) + 1,
-            "repair_history": repair_history,
-        }
+    pending = [dict(entry, base_md=entry["original_md"], failure=None) for entry in mapping]
+    fixed_keys: set[str] = set()   # bullets that now render as a well-filled 2-line bullet
+    rounds_run = 0
+    started = time.monotonic()
 
-    def extract_json(raw_text):
-        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
-        if fenced:
-            return fenced.group(1).strip()
-        start = raw_text.find("{")
-        end = raw_text.rfind("}")
-        if start != -1 and end != -1:
-            return raw_text[start:end+1]
-        return raw_text
-
-    applied = 0
-    applied_entries: list[dict[str, Any]] = []
-    try:
-        json_text = extract_json(raw_response)
-        result = json.loads(json_text)
-        replacements = result.get("bullets", [])
-        if replacements and not any(
-            isinstance(item, dict) and item.get("replacement")
-            for item in replacements
-        ):
+    for round_no in range(1, ORPHAN_REPAIR_MAX_ROUNDS + 1):
+        if not pending:
+            break
+        if round_no > 1 and time.monotonic() - started > ORPHAN_REPAIR_TIME_BUDGET_S:
             await log_progress(
-                db,
-                gen_id,
-                "orphan_repair",
-                "Repair response used an incompatible schema; expected a non-empty 'replacement' for each bullet.",
+                db, gen_id, "orphan_repair",
+                f"Repair time budget reached; leaving {len(pending)} bullet(s) as they are.",
                 "warning",
             )
+            break
+        rounds_run = round_no
+        if round_no > 1:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                f"Round {round_no}/{ORPHAN_REPAIR_MAX_ROUNDS}: re-asking for {len(pending)} bullet(s) with measured feedback...",
+            )
 
-        for repl in replacements:
-            idx = repl.get("index")
-            new_text = repl.get("replacement", "").strip()
-            if not idx or not new_text:
-                continue
-            entry = next((m for m in mapping if m["prompt_index"] == idx), None)
-            if entry is None:
-                continue
-
-            section_key = entry["section_key"]
-            item_idx = entry["item_idx"]
-            bullet_idx = entry["bullet_idx"]
-            hkey = entry["history_key"]
-
-            # Save original to repair_history BEFORE overwriting (only first time).
-            if hkey not in repair_history:
-                repair_history[hkey] = entry["original_md"]
-
-            if section_key == "experience":
-                experiences[item_idx]["bullet_points"][bullet_idx] = new_text
-            elif section_key == "projects":
-                projects[item_idx]["bullet_points"][bullet_idx] = new_text
-            elif section_key == "extracurriculars":
-                extracurriculars_draft[item_idx]["description"] = new_text
-
-            applied += 1
-            applied_entries.append(entry)
-
-        await log_progress(
-            db,
-            gen_id,
-            "orphan_repair",
-            f"Successfully repaired and applied {applied}/{len(mapping)} bullet point(s).",
+        for number, entry in enumerate(pending, start=1):
+            entry["prompt_index"] = number
+        bullet_blocks = [
+            _repair_block(e["prompt_index"], e["context"], e["base_md"], e["orphan"], is_larp, e["failure"])
+            for e in pending
+        ]
+        formatted_usr_prompt = _replace_prompt_vars(
+            usr_prompt,
+            {"kw_text": kw_text, "bullet_blocks": "\n\n".join(bullet_blocks)},
         )
-    except Exception as e:
-        await log_progress(
-            db,
-            gen_id,
-            "orphan_repair",
-            f"Error parsing LLM repair response: {e}. Raw response:\n{raw_response}",
-            "error",
-        )
-        experiences = pre_repair_experiences
-        projects = pre_repair_projects
-        extracurriculars_draft = pre_repair_extracurriculars
-        repair_history = pre_repair_history
-        applied_entries = []
 
-    # ── Fallback verification: never let an expansion grow lines or break page fit ──
-    # The expand repair adds text, so it can overshoot (2 lines → 3) or push a tight
-    # 1-page resume to 2 pages. The graph routes overflow → content_reduction (not
-    # back to repair), so a bad expansion would otherwise never be reverted — the
-    # next render diverts to point deletion while the over-long expansion stays.
-    # Verify locally with WeasyPrint and fall back to the pre-repair original:
-    #   1. Page-overflow guard: if verification overflows but pre-repair fit, revert all.
-    #   2. Per-bullet guard: if a repaired bullet grew to 3+ lines, revert just it.
-    if applied_entries:
+        raw_response = ""
         try:
-            _manifest = state.get("template_manifest") or {}
-            _profile = state.get("profile") or {}
-            _template_id = _manifest.get("id") or state.get("template_id")
-            if not (_template_id and _profile):
+            from langchain_core.messages import SystemMessage, HumanMessage
+            # invoke_with_fallback only bounds a single attempt, so cap the whole call
+            # (attempts x fallback targets) by what is left of the node's time budget.
+            remaining = ORPHAN_REPAIR_TIME_BUDGET_S - (time.monotonic() - started)
+            resp = await asyncio.wait_for(
+                invoke_with_fallback(
+                    lambda llm, p: llm,
+                    [SystemMessage(content=sys_prompt), HumanMessage(content=formatted_usr_prompt)],
+                    node_name="orphan_repair",
+                    gen_id=gen_id,
+                    is_pro=state.get("is_pro", False),
+                ),
+                timeout=max(remaining, 1.0),
+            )
+            content = resp.content
+            if isinstance(content, list):
+                raw_response = "".join(
+                    part if isinstance(part, str) else part.get("text", "")
+                    for part in content
+                    if isinstance(part, str) or (isinstance(part, dict) and part.get("type") == "text")
+                ).strip()
+            else:
+                raw_response = str(content).strip()
+        except Exception as e:
+            await log_progress(
+                db, gen_id, "orphan_repair", f"Error calling LLM for orphan repair: {e or type(e).__name__}", "error",
+            )
+            if round_no == 1:
+                return {
+                    "orphans": None,
+                    "repair_attempts": state.get("repair_attempts", 0) + 1,
+                    "repair_history": repair_history,
+                }
+            break
+
+        try:
+            replacements = _parse_repair_response(raw_response)
+        except Exception as e:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                f"Error parsing LLM repair response: {e}. Raw response:\n{raw_response}",
+                "error",
+            )
+            continue
+
+        round_snapshot = (
+            copy.deepcopy(experiences),
+            copy.deepcopy(projects),
+            copy.deepcopy(extracurriculars_draft),
+            copy.deepcopy(repair_history),
+        )
+
+        def _revert_entries(entries: list[dict[str, Any]]) -> None:
+            for item in entries:
+                _set_entry_text(experiences, projects, extracurriculars_draft, item, item["base_md"])
+                if item["added_history"]:
+                    repair_history.pop(item["history_key"], None)
+
+        applied: list[dict[str, Any]] = []
+        for entry in pending:
+            new_text = replacements.get(entry["prompt_index"])
+            if not new_text:
+                entry["failure"] = entry["failure"] or {"kind": "missing"}
+                continue
+            if new_text == entry["base_md"].strip():
+                # Unchanged: nothing to verify. Keep any measured feedback from an earlier round.
+                entry["failure"] = entry["failure"] or {"kind": "unchanged"}
+                continue
+            entry["added_history"] = entry["history_key"] not in repair_history
+            if entry["added_history"]:
+                repair_history[entry["history_key"]] = entry["original_md"]
+            _set_entry_text(experiences, projects, extracurriculars_draft, entry, new_text)
+            entry["new_text"] = new_text
+            applied.append(entry)
+
+        if not applied:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                "Repair round returned no changed bullets; stopping.",
+                "warning",
+            )
+            break
+
+        # ── Verify with a real render; keep what fits, revert only what does not ──
+        outcomes: dict[str, str] = {}
+        failure_text: dict[str, str] = {}
+        try:
+            pages, found = _render_for_verification(state, experiences, projects, extracurriculars_draft)
+
+            def _still_too_long(entry: dict[str, Any]) -> bool:
+                m = _match_orphan(entry, found, _entry_text(experiences, projects, extracurriculars_draft, entry))
+                if not m or m.get("renderedLines", 0) <= 2:
+                    return False
+                # A shortened bullet that lost lines is progress even if still over two.
+                before = entry["orphan"].get("renderedLines", 2) if entry["orphan"].get("fix_type") == "oversize" else 2
+                return m["renderedLines"] >= before
+
+            grown = [e for e in applied if _still_too_long(e)]
+            if grown:
+                for e in grown:
+                    outcomes[e["history_key"]] = "long"
+                    failure_text[e["history_key"]] = e["new_text"]
+                    e["failure_lines"] = (_match_orphan(
+                        e, found, e["new_text"]) or {}).get("renderedLines", 3)
+                _revert_entries(grown)
                 await log_progress(
-                    db,
-                    gen_id,
-                    "orphan_repair",
-                    "Verification cannot be performed (missing template or profile); rolling back repairs to pre-repair originals.",
+                    db, gen_id, "orphan_repair",
+                    f"Verification: {len(grown)} repaired bullet(s) grew to 3+ lines after filling. "
+                    "Reverted to pre-repair originals.",
                     "warning",
                 )
-                experiences = pre_repair_experiences
-                projects = pre_repair_projects
-                extracurriculars_draft = pre_repair_extracurriculars
-                repair_history = pre_repair_history
-                applied = 0
-            else:
-                from weasyprint import HTML as _VerifyHTML  # type: ignore[import-untyped]
+                # Re-measure without the overshooting bullets before judging page fit.
+                pages, found = _render_for_verification(state, experiences, projects, extracurriculars_draft)
 
-                _target_pages = _manifest.get("target_pages", 1)
-                _pre_repair_pages = state.get("page_count", 1)
-                _verify_fs = state.get("font_size") or _manifest.get("max_font_size", 10.0)
-                _margin = _manifest.get("page_margin_mm", 15)
-
-                _base_resume = dict(state.get("tailored_resume") or {})
-                if not _base_resume:
-                    _summary_draft = state.get("summary_draft") or {}
-                    _base_resume = {
-                        "summary": _summary_draft.get("summary"),
-                        "skills": _summary_draft.get("skills"),
-                        "education": state.get("education") or [],
-                    }
-                _candidate = dict(_base_resume)
-                _candidate["experiences"] = experiences
-                _candidate["projects"] = projects
-                _candidate["extracurriculars"] = extracurriculars_draft
-
-                _html = TemplateRegistryService.render_template(
-                    _template_id,
-                    {
-                        "profile": _profile,
-                        "resume": _candidate,
-                        "font_size": _verify_fs,
-                        "page_margin_mm": _margin,
-                        "section_order": state.get("section_order"),
-                    },
+            if pages > target_pages and pre_repair_pages <= target_pages:
+                survivors = [e for e in applied if e["history_key"] not in outcomes]
+                for e in survivors:
+                    outcomes[e["history_key"]] = "overflow"
+                    failure_text[e["history_key"]] = e["new_text"]
+                _revert_entries(survivors)
+                await log_progress(
+                    db, gen_id, "orphan_repair",
+                    f"Verification: expansion pushed resume to {pages} page(s) (target {target_pages}). "
+                    f"Reverted {len(survivors)} repair(s) to pre-repair originals to preserve page fit.",
+                    "warning",
                 )
-                _verify_doc = None
-                if _html:
-                    _font_base = str(settings.TEMPLATES_DIR / _template_id)
-                    _verify_doc = _VerifyHTML(string=_html, base_url=_font_base).render()
-
-                if _verify_doc is None:
-                    await log_progress(
-                        db,
-                        gen_id,
-                        "orphan_repair",
-                        "Verification render is None; rolling back repairs to pre-repair originals.",
-                        "warning",
+            else:
+                for e in applied:
+                    if e["history_key"] in outcomes:
+                        continue
+                    still = _match_orphan(
+                        e, found, _entry_text(experiences, projects, extracurriculars_draft, e)
                     )
-                    experiences = pre_repair_experiences
-                    projects = pre_repair_projects
-                    extracurriculars_draft = pre_repair_extracurriculars
-                    repair_history = pre_repair_history
-                    applied = 0
-                else:
-                    _new_pages = len(_verify_doc.pages)
-                    _new_orphans = detect_orphans_in_weasyprint(_verify_doc)
-
-                    def _current_text(_entry: dict[str, Any]) -> str:
-                        _sk = _entry["section_key"]
-                        _ii = _entry["item_idx"]
-                        _bi = _entry["bullet_idx"]
-                        if _sk == "experience":
-                            return experiences[_ii]["bullet_points"][_bi]
-                        if _sk == "projects":
-                            return projects[_ii]["bullet_points"][_bi]
-                        return extracurriculars_draft[_ii]["description"]
-
-                    def _revert(_entry: dict[str, Any]) -> None:
-                        _sk = _entry["section_key"]
-                        _ii = _entry["item_idx"]
-                        _bi = _entry["bullet_idx"]
-                        _hk = _entry["history_key"]
-                        _orig = _entry["original_md"]
-                        if _sk == "experience":
-                            experiences[_ii]["bullet_points"][_bi] = _orig
-                        elif _sk == "projects":
-                            projects[_ii]["bullet_points"][_bi] = _orig
-                        else:
-                            extracurriculars_draft[_ii]["description"] = _orig
-                        repair_history.pop(_hk, None)
-
-                    # Guard 1: expansion broke page fit — revert everything.
-                    if _new_pages > _target_pages and _pre_repair_pages <= _target_pages:
-                        experiences = pre_repair_experiences
-                        projects = pre_repair_projects
-                        extracurriculars_draft = pre_repair_extracurriculars
-                        repair_history = pre_repair_history
-                        applied = 0
-                        await log_progress(
-                            db,
-                            gen_id,
-                            "orphan_repair",
-                            f"Verification: expansion pushed resume to {_new_pages} page(s) "
-                            f"(target {_target_pages}). Reverted {len(applied_entries)} "
-                            "repair(s) to pre-repair originals to preserve 1-page fit.",
-                            "warning",
-                        )
+                    if still is None:
+                        outcomes[e["history_key"]] = "ok"
+                    elif still.get("fix_type") == "oversize":
+                        outcomes[e["history_key"]] = "short"
+                        e["next_orphan"] = still
+                    elif still.get("lastLineFillPercent", 0) <= e["orphan"].get("lastLineFillPercent", 0):
+                        # Still an orphan and no fuller than before: not an improvement.
+                        outcomes[e["history_key"]] = "worse"
+                        failure_text[e["history_key"]] = e["new_text"]
+                        e["failure_fill"] = still.get("lastLineFillPercent", 0)
                     else:
-                        # Guard 2: per-bullet line growth — revert only grown bullets.
-                        def _is_entry_oversize(entry):
-                            sec = entry["section_key"]
-                            item_idx = entry["item_idx"]
-                            bullet_idx = entry["bullet_idx"]
-                            txt = clean_text(_current_text(entry))
-                            for _o in _new_orphans:
-                                if _o.get("renderedLines", 0) > 2:
-                                    if (
-                                        _o.get("section") is not None
-                                        and _o.get("entry_idx") is not None
-                                        and _o.get("bullet_idx") is not None
-                                    ):
-                                        o_sec = _o["section"]
-                                        matched_sec = (
-                                            (sec == "experience" and o_sec in ("experience", "experiences"))
-                                            or (sec == "projects" and o_sec in ("project", "projects"))
-                                            or (sec == "extracurriculars" and o_sec in ("extracurricular", "extracurriculars"))
-                                        )
-                                        if matched_sec and _o["entry_idx"] == item_idx and _o["bullet_idx"] == bullet_idx:
-                                            return True
-                                    elif clean_text(_o.get("text", "")) == txt:
-                                        return True
-                            return False
-
-                        _grown_reverts = 0
-                        for _entry in applied_entries:
-                            if _is_entry_oversize(_entry):
-                                _revert(_entry)
-                                _grown_reverts += 1
-                        if _grown_reverts:
-                            applied -= _grown_reverts
-                            await log_progress(
-                                db,
-                                gen_id,
-                                "orphan_repair",
-                                f"Verification: {_grown_reverts} repaired bullet(s) grew to 3+ "
-                                "lines after filling. Reverted to pre-repair originals.",
-                                "warning",
-                            )
-                    del _verify_doc
-                    gc.collect()
+                        outcomes[e["history_key"]] = "short"
+                        e["next_orphan"] = still
+        except _VerifyUnavailable as ve:
+            await log_progress(
+                db, gen_id, "orphan_repair",
+                f"Verification cannot be performed ({ve}); rolling back repairs to pre-repair originals.",
+                "warning",
+            )
+            experiences, projects, extracurriculars_draft, repair_history = round_snapshot
+            break
         except Exception as ve:
             await log_progress(
-                db,
-                gen_id,
-                "orphan_repair",
+                db, gen_id, "orphan_repair",
                 f"Verification error ({ve}); rolling back repairs to pre-repair originals.",
                 "warning",
             )
-            experiences = pre_repair_experiences
-            projects = pre_repair_projects
-            extracurriculars_draft = pre_repair_extracurriculars
-            repair_history = pre_repair_history
-            applied = 0
+            experiences, projects, extracurriculars_draft, repair_history = round_snapshot
+            break
+
+        next_pending: list[dict[str, Any]] = []
+        for entry in pending:
+            key = entry["history_key"]
+            outcome = outcomes.get(key)
+            if outcome == "ok":
+                fixed_keys.add(key)
+                continue
+            if outcome == "short":
+                # Text stays (it is fuller than before); ask again from the new text.
+                entry["base_md"] = entry["new_text"]
+                entry["orphan"] = entry.pop("next_orphan")
+                entry["failure"] = None
+            elif outcome == "worse":
+                _revert_entries([entry])
+                entry["failure"] = {
+                    "kind": "short",
+                    "text": failure_text[key],
+                    "chars": _visible_len(failure_text[key]),
+                    "fill": entry.get("failure_fill", 0),
+                }
+            elif outcome in ("long", "overflow"):
+                entry["failure"] = {
+                    "kind": "long" if outcome == "long" else "overflow",
+                    "text": failure_text[key],
+                    "chars": _visible_len(failure_text[key]),
+                    "lines": entry.get("failure_lines", 3),
+                }
+            next_pending.append(entry)
+        pending = next_pending
+
+    kept = sum(
+        1 for e in mapping
+        if e["history_key"] in repair_history
+        and _entry_text(experiences, projects, extracurriculars_draft, e) != repair_history[e["history_key"]]
+    )
+    await log_progress(
+        db, gen_id, "orphan_repair",
+        f"Successfully repaired and applied {kept}/{len(mapping)} bullet point(s); "
+        f"{len(fixed_keys)} now fill their last line, after {rounds_run} round(s).",
+    )
 
     return {
         "experience_draft": experiences,
