@@ -1,3 +1,5 @@
+import html
+
 from src.core.config import settings
 from src.core.file_links import format_resume_filename, resolve_resume_username
 
@@ -411,3 +413,148 @@ def send_support_resolved_email(to_email: str, report_id: str, admin_note: str) 
         })
     except Exception as e:
         print(f"[notify] send_support_resolved_email failed: {e}")
+
+
+def send_verification_code_email(to_email: str, name: str, code: str) -> None:
+    """Send the 6-digit sign-up verification code via Resend.
+
+    Unlike the completion/stub helpers above, failures raise so the caller
+    can return a 503. When RESEND_API_KEY is unset:
+    - non-production: log ``[dev] verification code for <email>: <code>`` so
+      local testing works without a real send.
+    - production (``ENVIRONMENT == "production"``): raise so the endpoint
+      returns 503. Codes are never logged in production.
+    """
+    display_name = (name or "").strip() or "there"
+    safe_name = html.escape(display_name)
+
+    if not settings.RESEND_API_KEY:
+        if settings.ENVIRONMENT == "production":
+            raise RuntimeError("Email sending is unavailable (RESEND_API_KEY is not set).")
+        print(f"[dev] verification code for {to_email}: {code}")
+        return
+
+    subject = f"Your Résumer code: {code}"
+    html_body = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Résumer code</title>
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      color: #0f172a;
+      background-color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }}
+    .wrapper {{
+      width: 100%;
+      background-color: #f8fafc;
+      padding: 40px 0;
+    }}
+    .container {{
+      max-width: 580px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+    }}
+    .header {{
+      background-color: #ff4e26;
+      padding: 32px 24px;
+      text-align: center;
+    }}
+    .header h1 {{
+      color: #ffffff;
+      font-size: 22px;
+      margin: 0;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+    }}
+    .content {{
+      padding: 40px 32px;
+    }}
+    .salutation {{
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }}
+    .message {{
+      font-size: 15px;
+      color: #334155;
+      margin-bottom: 24px;
+    }}
+    .code {{
+      display: block;
+      text-align: center;
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      color: #0f172a;
+      background-color: #f1f5f9;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px 16px;
+      margin: 24px 0;
+    }}
+    .footer {{
+      padding: 24px 32px;
+      background-color: #f1f5f9;
+      border-top: 1px solid #e2e8f0;
+      font-size: 12px;
+      color: #64748b;
+      text-align: center;
+      line-height: 1.5;
+    }}
+    .footer p {{
+      margin: 4px 0;
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <h1>Résumer</h1>
+      </div>
+      <div class="content">
+        <div class="salutation">Hi {safe_name},</div>
+        <div class="message">
+          Use this code to finish creating your account:
+        </div>
+        <span class="code">{html.escape(code)}</span>
+        <div class="message">
+          This code expires in 15 minutes.
+        </div>
+      </div>
+      <div class="footer">
+        <p>If you didn't try to sign up, ignore this email.</p>
+        <p>This is an automated email from Résumer. Please do not reply directly.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+    text_body = (
+        f"Hi {display_name},\n\n"
+        f"Use this code to finish creating your account: {code}\n\n"
+        "This code expires in 15 minutes.\n\n"
+        "If you didn't try to sign up, ignore this email.\n"
+    )
+
+    import resend  # imported lazily so the dep is optional in dev
+
+    resend.api_key = settings.RESEND_API_KEY
+    resend.Emails.send({
+        "from": settings.NOTIFICATION_FROM_EMAIL,
+        "to": to_email,
+        "subject": subject,
+        "html": html_body,
+        "text": text_body,
+    })
