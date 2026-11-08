@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -16,8 +18,7 @@ async def _lookup_user(db: AsyncSession, payload: dict) -> User | None:
     if sub:
         try:
             uid = sub if isinstance(sub, str) else str(sub)
-            import uuid as _uuid
-            parsed = _uuid.UUID(str(uid))
+            parsed = uuid.UUID(str(uid))
         except Exception:
             return None
         result = await db.execute(select(User).where(User.id == parsed))

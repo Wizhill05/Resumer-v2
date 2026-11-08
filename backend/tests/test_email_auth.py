@@ -159,3 +159,24 @@ async def test_email_login_social_account_without_password(client: AsyncClient, 
     )
     assert reg_res.status_code == 409
     assert "Google" in reg_res.json()["detail"]
+
+
+async def test_email_register_null_provider_cannot_get_password(client: AsyncClient, async_db: AsyncSession):
+    user = User(
+        email="legacy@example.com",
+        name="Legacy",
+        provider=None,
+        hashed_password=None,
+    )
+    async_db.add(user)
+    await async_db.commit()
+
+    res = await client.post(
+        "/auth/email/register",
+        json={"email": "legacy@example.com", "password": "NewPassword123!"},
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"] == "An account with this email already exists. Sign in instead."
+    await async_db.refresh(user)
+    assert user.hashed_password is None
+    assert user.provider is None

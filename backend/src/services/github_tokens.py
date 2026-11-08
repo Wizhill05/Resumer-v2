@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -8,6 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.token_crypto import decrypt_token, encrypt_token
 from src.models.identity import GithubToken, UserIdentity
+
+
+@dataclass
+class SyncToken:
+    id: uuid.UUID
+    token: str
+    scopes: str
+    oauth_app: str
 
 
 async def upsert_github_token(
@@ -39,7 +48,7 @@ async def upsert_github_token(
     return token
 
 
-async def get_sync_token(db: AsyncSession, user_id: uuid.UUID) -> tuple[str, str] | None:
+async def get_sync_token(db: AsyncSession, user_id: uuid.UUID) -> SyncToken | None:
     for oauth_app in ("connect", "login"):
         result = await db.execute(
             select(GithubToken)
@@ -51,7 +60,7 @@ async def get_sync_token(db: AsyncSession, user_id: uuid.UUID) -> tuple[str, str
         token = result.scalar_one_or_none()
         if token is not None:
             try:
-                return decrypt_token(token.access_token_encrypted), token.scopes
+                return SyncToken(id=token.id, token=decrypt_token(token.access_token_encrypted), scopes=token.scopes, oauth_app=token.oauth_app)
             except Exception:
                 continue
     return None

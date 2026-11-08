@@ -81,7 +81,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (provider !== "google" && provider !== "github") return true
 
       const email = (profile?.email || user.email || "").toString().trim().toLowerCase()
-      if (!email || !account.providerAccountId) return false
+      if (!email || !account.providerAccountId) return `/?auth_error=email_not_verified&provider=${encodeURIComponent(provider)}`
 
       let emailVerified = false
       if (provider === "google") {
@@ -105,6 +105,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             image: profile?.picture ?? profile?.avatar_url ?? user.image ?? null,
             access_token: provider === "github" ? account.access_token ?? null : undefined,
             provider_login: provider === "github" ? ((profile as { login?: string } | undefined)?.login ?? null) : undefined,
+            scopes: provider === "github" ? (account.scope ?? null) : undefined,
           }),
           cache: "no-store",
         })
@@ -158,9 +159,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (trigger === "update" && session && typeof session === "object") {
         if ("needsWelcome" in session) {
           token.needsWelcome = Boolean((session as { needsWelcome?: boolean }).needsWelcome)
-        }
-        if ("provider" in session) {
-          token.provider = (session as { provider?: string }).provider
         }
       }
       if (account) {
