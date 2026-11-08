@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth"
-import { signBackendToken } from "@/lib/jwt"
+import { backendTokenForSession } from "@/lib/jwt"
 import { redirect } from "next/navigation"
 import { OAuthAuthorizeClient } from "./OAuthAuthorizeClient"
 
@@ -43,31 +43,7 @@ export default async function OAuthAuthorizePage({
 
   // If user is logged into NextAuth on frontend
   if (session?.user?.email) {
-    let provider = "oauth-session"
-    let githubUsername: string | null = null
-    let githubAccessToken: string | null = null
-
-    if (session && typeof session === "object") {
-      if ("githubUsername" in session && typeof session.githubUsername === "string") {
-        githubUsername = session.githubUsername
-      }
-      if ("githubAccessToken" in session && typeof session.githubAccessToken === "string") {
-        githubAccessToken = session.githubAccessToken
-      }
-      if ("token" in session && session.token && typeof session.token === "object" && "provider" in session.token && typeof session.token.provider === "string") {
-        provider = session.token.provider
-      }
-    }
-
-    const tokenPayload = {
-      email: session.user.email,
-      name: session.user.name ?? null,
-      picture: session.user.image ?? null,
-      provider,
-      github_username: githubUsername,
-      github_access_token: githubAccessToken,
-    }
-    const backendToken = await signBackendToken(tokenPayload)
+    const backendToken = await backendTokenForSession(session)
     queryParams.set("token", backendToken)
     redirect(`${cleanBackendUrl}/oauth/authorize?${queryParams.toString()}`)
   }

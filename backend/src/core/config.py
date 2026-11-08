@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://user:pass@localhost/resumer"
     JWT_SECRET: str = "changeme"
     JWT_ALGORITHM: str = "HS256"
+    INTERNAL_API_SECRET: str = ""
+    GITHUB_TOKEN_KEY: str = ""
 
     R2_ENDPOINT_URL: str = ""
     R2_ACCESS_KEY_ID: str = ""

@@ -152,16 +152,10 @@ async def test_email_login_social_account_without_password(client: AsyncClient, 
     assert res.status_code == 401
     assert "Google" in res.json()["detail"]
 
-    # Registering should allow them to set a password
+    # Registering must NOT attach a password to a social account
     reg_res = await client.post(
         "/auth/email/register",
         json={"email": "socialuser@example.com", "password": "NewEmailPassword123!"},
     )
-    assert reg_res.status_code == 200
-
-    # Now login with the newly set password succeeds
-    login_res = await client.post(
-        "/auth/email/login",
-        json={"email": "socialuser@example.com", "password": "NewEmailPassword123!"},
-    )
-    assert login_res.status_code == 200
+    assert reg_res.status_code == 409
+    assert "Google" in reg_res.json()["detail"]

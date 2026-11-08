@@ -1,20 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { signBackendToken } from "@/lib/jwt"
-import { z } from "zod"
-
-const sessionClaims = z.object({
-  provider: z.string().nullish(),
-  githubUsername: z.string().nullish(),
-  githubAccessToken: z.string().nullish(),
-  token: z
-    .object({
-      provider: z.string().nullish(),
-      githubUsername: z.string().nullish(),
-      githubAccessToken: z.string().nullish()
-    })
-    .optional()
-})
+import { backendTokenForSession } from "@/lib/jwt"
 
 async function handleSupport(
   req: NextRequest,
@@ -33,10 +19,9 @@ async function handleSupport(
   const contentType = req.headers.get("content-type")
   if (contentType) headers.set("Content-Type", contentType)
   if (session?.user?.email) {
-    const claims = sessionClaims.parse(session)
     headers.set(
       "Authorization",
-      `Bearer ${await signBackendToken({ email: session.user.email, name: session.user.name, picture: session.user.image, provider: claims.provider ?? claims.token?.provider ?? "unknown", github_username: claims.githubUsername ?? claims.token?.githubUsername ?? null, github_access_token: claims.githubAccessToken ?? claims.token?.githubAccessToken ?? null })}`
+      `Bearer ${await backendTokenForSession(session)}`
     )
   }
   const query = new URLSearchParams()
