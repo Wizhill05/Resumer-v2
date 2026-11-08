@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.analytics import shutdown_analytics
-from src.api import profile, generation, system, imports, guest, admin, feedback, oauth, files, auth, admin_llm, internal_auth
+from src.api import profile, generation, system, imports, guest, admin, feedback, oauth, files, auth, admin_llm, internal_auth, integrations_github
 from src.core.oauth import ensure_oauth_schema
 from src.core.database import AsyncSessionLocal
 from src.services.llm_config import ensure_llm_schema, llm_config_service
@@ -94,6 +94,7 @@ app.include_router(oauth.router)
 app.include_router(files.router)
 app.include_router(auth.router)
 app.include_router(internal_auth.router)
+app.include_router(integrations_github.router)
 
 # Remote MCP Sub-application (Streamable HTTP + SSE)
 app.mount("", get_mcp_app())
