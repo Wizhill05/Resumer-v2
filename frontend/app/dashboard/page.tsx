@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { needsWelcome } from "@/lib/welcome-gate"
 import { Nav } from "@/components/Nav"
 import { DashboardClient } from "./DashboardClient"
 import { Footer } from "@/components/Footer"
@@ -11,6 +12,7 @@ import { ArrowRight, History } from "lucide-react"
 export default async function DashboardPage() {
   const session = await auth()
   if (!session) redirect("/")
+  if (needsWelcome(session)) redirect("/welcome")
 
   const firstName = session.user?.name?.split(" ")[0] ?? "there"
 
