@@ -43,14 +43,35 @@ function useInvalidateGithub() {
   };
 }
 
+type MutationResult = { ok: boolean; reconnect_required?: boolean };
+
+async function throwWithDetail(res: Response, fallback: string): Promise<never> {
+  let message = fallback;
+  try {
+    const body: unknown = await res.clone().json();
+    if (
+      body &&
+      typeof body === "object" &&
+      "detail" in body &&
+      typeof (body as { detail?: unknown }).detail === "string" &&
+      (body as { detail: string }).detail
+    ) {
+      message = (body as { detail: string }).detail;
+    }
+  } catch {
+    // Fall through to fallback message when body is not JSON.
+  }
+  throw new Error(message);
+}
+
 export function useDisconnectGithub() {
   const invalidate = useInvalidateGithub();
-  return useMutation({
+  return useMutation<MutationResult>({
     mutationFn: async () => {
       const res = await fetch("/api/backend/integrations/github", {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("Failed to disconnect GitHub");
+      if (!res.ok) await throwWithDetail(res, "Failed to disconnect GitHub");
       return res.json();
     },
     onSuccess: invalidate,
@@ -59,12 +80,12 @@ export function useDisconnectGithub() {
 
 export function useRemovePrivateAccess() {
   const invalidate = useInvalidateGithub();
-  return useMutation({
+  return useMutation<MutationResult>({
     mutationFn: async () => {
       const res = await fetch("/api/backend/integrations/github/private", {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("Failed to remove private repo access");
+      if (!res.ok) await throwWithDetail(res, "Failed to remove private repo access");
       return res.json();
     },
     onSuccess: invalidate,

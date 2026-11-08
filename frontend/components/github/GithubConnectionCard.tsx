@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { AlertTriangle, FolderGit2, Loader2, Lock } from "lucide-react";
 import { signInGithub } from "@/app/actions";
 import {
@@ -26,6 +26,7 @@ type Notice = { type: "success" | "error"; message: string } | null;
 
 export function GithubConnectionCard() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [notice] = useState<Notice>(() => {
     const github = searchParams.get("github");
@@ -49,8 +50,13 @@ export function GithubConnectionCard() {
 
   useEffect(() => {
     if (!searchParams.get("github")) return;
-    router.replace("/account", { scroll: false });
-  }, [searchParams, router]);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("github");
+    params.delete("reason");
+    const qs = params.toString();
+    const base = pathname ?? "/account";
+    router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   const mutationError =
     disconnect.error instanceof Error
@@ -187,12 +193,21 @@ export function GithubConnectionCard() {
                   type="button"
                   disabled={busy}
                   onClick={() => {
+                    const isLink = integration.kind === "link";
                     if (
                       window.confirm(
-                        "Remove private repo access? Public repos keep syncing.",
+                        isLink
+                          ? "This disconnects GitHub, then asks you to connect again without private repos."
+                          : "Remove private repo access? Public repos keep syncing.",
                       )
                     ) {
-                      removePrivate.mutate();
+                      removePrivate.mutate(undefined, {
+                        onSuccess: (result) => {
+                          if (result?.reconnect_required) {
+                            window.location.assign(GITHUB_CONNECT_URL);
+                          }
+                        },
+                      });
                     }
                   }}
                   className="inline-flex h-9 cursor-pointer items-center rounded-md border border-line-strong bg-paper px-3.5 text-sm font-semibold text-ink transition-colors hover:border-ink/30 disabled:opacity-50"
