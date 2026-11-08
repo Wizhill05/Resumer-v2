@@ -28,9 +28,8 @@ function handler(session, routeFile = "../app/api/support/[[...path]]/route.ts")
       if (name === "@/lib/auth") return { auth: async () => session }
       if (name === "@/lib/jwt")
         return {
-          signBackendToken: async (payload) => {
-            assert.equal(payload.email, "admin@example.test")
-            assert.equal(payload.github_username, null)
+          backendTokenForSession: async (session) => {
+            assert.equal(session.user.email, "admin@example.test")
             return "signed-admin-session"
           }
         }

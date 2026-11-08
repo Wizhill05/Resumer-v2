@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { signBackendToken } from "@/lib/jwt"
+import { backendTokenForSession } from "@/lib/jwt"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000"
 
@@ -14,15 +14,7 @@ async function handleProxy(
   }
 
   // Generate internal signed JWT for FastAPI backend
-  const tokenPayload = {
-    email: session.user.email,
-    name: session.user.name,
-    picture: session.user.image,
-    provider: (session as { token?: { provider?: string } }).token?.provider ?? "unknown",
-    github_username: (session as { githubUsername?: string; token?: { githubUsername?: string } }).githubUsername ?? (session as { token?: { githubUsername?: string } }).token?.githubUsername ?? null,
-    github_access_token: (session as { githubAccessToken?: string; token?: { githubAccessToken?: string } }).githubAccessToken ?? (session as { token?: { githubAccessToken?: string } }).token?.githubAccessToken ?? null,
-  }
-  const backendToken = await signBackendToken(tokenPayload)
+  const backendToken = await backendTokenForSession(session)
 
   // Construct target URL
   const resolvedParams = await params

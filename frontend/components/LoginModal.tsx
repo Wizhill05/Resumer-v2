@@ -1,11 +1,44 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { signInGithub, signInGoogle } from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { EmailAuthForm } from "@/components/EmailAuthForm"
 import { X } from "lucide-react"
+
+function readAuthError(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return authErrorMessage(params.get("auth_error"), params.get("provider"))
+  } catch {
+    return null
+  }
+}
+
+function useAuthError(): string | null {
+  return useSyncExternalStore(() => () => {}, readAuthError, () => null)
+}
+
+function authErrorMessage(error: string | null, provider: string | null): string | null {
+  if (!error) return null
+  if (error === "provider_mismatch") {
+    const label = provider === "github" ? "GitHub" : "Google"
+    return `This email is registered with ${label}. Sign in with ${label}.`
+  }
+  if (error === "linked_not_login") {
+    const label = provider === "github" ? "GitHub" : "Google"
+    return `This GitHub account is connected to a Résumer account that signs in with ${label}. Sign in with ${label}.`
+  }
+  if (error === "email_not_verified") {
+    const label = provider === "github" ? "GitHub" : "Google"
+    return `Your ${label} email isn't verified.`
+  }
+  if (error === "unavailable") {
+    return "Sign-in is unavailable right now. Try again."
+  }
+  return null
+}
 
 export function LoginModal({
   triggerClassName,
@@ -19,6 +52,7 @@ export function LoginModal({
 }) {
   const [open, setOpen] = useState(false)
   const [showEmail, setShowEmail] = useState(false)
+  const authError = useAuthError()
 
   const handleClose = () => {
     setOpen(false)
@@ -64,6 +98,12 @@ export function LoginModal({
         </Button>
       )}
 
+      {!open && authError && (
+        <p role="alert" className="mt-2 text-center text-sm font-semibold text-red-600 dark:text-red-400">
+          {authError}
+        </p>
+      )}
+
       {open && typeof document !== "undefined" && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -99,6 +139,11 @@ export function LoginModal({
               <p className="mt-2 text-base font-semibold text-ink-muted">
                 Choose a provider to get started
               </p>
+              {authError && (
+                <p role="alert" className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">
+                  {authError}
+                </p>
+              )}
             </div>
 
             {/* Login options */}

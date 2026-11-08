@@ -31,6 +31,11 @@ class AuthUserResponse(BaseModel):
     name: str | None = None
     image: str | None = None
     provider: str | None = None
+    needs_welcome: bool = False
+
+
+def _provider_label(provider: str | None) -> str:
+    return {"google": "Google", "github": "GitHub"}.get(provider or "", provider or "social login")
 
 
 def normalize_email(email: str) -> str:
@@ -61,14 +66,20 @@ async def register_email_user(
     existing_user = result.scalar_one_or_none()
 
     if existing_user:
+        if existing_user.provider and existing_user.provider != "credentials":
+            label = _provider_label(existing_user.provider)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This email is registered with {label}. Sign in with {label}.",
+            )
         if existing_user.hashed_password:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An account with this email already exists. Please sign in instead.",
             )
-        # Account exists from social login (Google/GitHub) without a password.
-        # Allow attaching an email password so the user can log in via both methods.
+        # Legacy row with no provider: allow creating credentials account data.
         existing_user.hashed_password = hash_password(password)
+        existing_user.provider = "credentials"
         if payload.name and not existing_user.name:
             existing_user.name = payload.name.strip()
         await db.commit()
@@ -79,6 +90,7 @@ async def register_email_user(
             name=existing_user.name,
             image=existing_user.image,
             provider=existing_user.provider,
+            needs_welcome=existing_user.signup_completed_at is None,
         )
 
     # Create new user
@@ -99,6 +111,7 @@ async def register_email_user(
         name=new_user.name,
         image=new_user.image,
         provider=new_user.provider,
+        needs_welcome=new_user.signup_completed_at is None,
     )
 
 
@@ -120,10 +133,10 @@ async def login_email_user(
         )
 
     if not user.hashed_password:
-        social_provider = user.provider.capitalize() if user.provider else "social login"
+        label = _provider_label(user.provider)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"This account was registered using {social_provider}. Please continue with {social_provider} or register a password.",
+            detail=f"This email is registered with {label}. Sign in with {label}.",
         )
 
     if not verify_password(password, user.hashed_password):
@@ -138,4 +151,5 @@ async def login_email_user(
         name=user.name,
         image=user.image,
         provider=user.provider,
+        needs_welcome=user.signup_completed_at is None,
     )
