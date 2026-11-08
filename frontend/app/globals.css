@@ -1207,3 +1207,51 @@
 
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ---- PageHero actions on phones ----
+   Unlayered so it wins over the Button/utility classes. Every hero button
+   (primary, outline, ink) becomes the same quiet glass chip, so the title
+   leads and the buttons read as one tidy row. Desktop keeps its styles. */
+@media (max-width: 767.98px) {
+  .page-hero-actions :is(button, label):not([role="status"] *) {
+    height: 2.25rem;
+    padding-inline: 0.8rem;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--fluid-ink);
+    background: rgb(255 255 255 / 45%);
+    border: 1px solid rgb(130 61 40 / 20%);
+    box-shadow: none;
+    backdrop-filter: blur(12px) saturate(130%);
+    -webkit-backdrop-filter: blur(12px) saturate(130%);
+  }
+  .page-hero-actions :is(button, label):not([role="status"] *):hover {
+    background: rgb(255 255 255 / 65%);
+    border-color: rgb(130 61 40 / 35%);
+  }
+  .page-hero-actions [aria-expanded="true"] {
+    border-color: rgb(130 61 40 / 45%);
+  }
+  .page-hero-actions :is(button, label):not([role="status"] *) svg {
+    width: 15px;
+    height: 15px;
+  }
+  :is(.dark) .page-hero-actions :is(button, label):not([role="status"] *) {
+    color: #fff2ef;
+    background: rgb(65 32 24 / 45%);
+    border-color: rgb(255 255 255 / 16%);
+  }
+  :is(.dark) .page-hero-actions :is(button, label):not([role="status"] *):hover {
+    background: rgb(65 32 24 / 62%);
+    border-color: rgb(255 255 255 / 30%);
+  }
+  :is(.dark) .page-hero-actions [aria-expanded="true"] {
+    border-color: rgb(255 255 255 / 40%);
+  }
+  .page-hero-actions [role="status"] {
+    color: var(--fluid-ink-soft);
+  }
+  :is(.dark) .page-hero-actions [role="status"] {
+    color: rgb(255 242 239 / 80%);
+  }
+}

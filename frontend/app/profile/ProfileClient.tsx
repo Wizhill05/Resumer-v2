@@ -113,7 +113,7 @@ function ProfileEditor() {
         subtitle="Everything Résumer draws from when it tailors a résumé."
         actions={
           <>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 aria-expanded={defaultsOpen}

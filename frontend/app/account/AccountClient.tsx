@@ -64,7 +64,7 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
     <>
       <PageHero
         title={
-          <span className="flex items-center gap-4 md:gap-5">
+          <span className="flex flex-col items-center gap-3 md:flex-row md:gap-5">
             {image ? (
               <img
                 src={image}
@@ -82,11 +82,11 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
                 {initials(name, email)}
               </span>
             )}
-            <span className="min-w-0 truncate">{name ?? "Account"}</span>
+            <span className="min-w-0 max-w-full truncate">{name ?? "Account"}</span>
           </span>
         }
         subtitle={
-          <span className="flex flex-wrap items-center gap-2">
+          <span className="flex flex-wrap items-center justify-center gap-2 md:justify-start">
             {email && <span className="break-all">{email}</span>}
             <span className="rounded border border-line bg-paper/70 px-1.5 py-0.5 text-xs font-semibold text-ink-soft">
               {providerLabel(provider)}

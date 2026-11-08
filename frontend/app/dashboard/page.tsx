@@ -22,7 +22,7 @@ export default async function DashboardPage() {
         title={`Hey, ${firstName}.`}
         subtitle="Paste a job post and Résumer tailors your profile into a one-page, ATS-safe PDF."
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <Link href="/dashboard/history">
               <Button variant="outline" size="lg">
                 <History size={16} aria-hidden="true" />
