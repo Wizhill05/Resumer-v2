@@ -94,7 +94,7 @@ def test_larp_demands_metrics_and_proper_does_not_invent():
 @pytest.mark.parametrize("mode", MODES)
 def test_line_fit_tells_writers_the_new_target(mode):
     system, _ = nodes_mod.experience_writer_default_prompts(mode)
-    assert "1.85-1.95" in system and "1.75" not in system
+    assert "1.8-1.9" in system and "HARD LIMIT 205" in system and "1.75" not in system
     assert not re.search(r"\*\*35%\*\*", system)  # example values leak into outputs
 
 

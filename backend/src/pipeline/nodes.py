@@ -2,6 +2,7 @@ import copy
 import asyncio
 import ast
 import gc
+import itertools
 import json
 import re
 import time
@@ -906,8 +907,9 @@ async def summary_skills_node(
 _BULLET_STYLE_RULES = (
     "- Bold each number together with its unit as one short span, and each named tool, framework, language, or model. "
     "Never bold generic fields (Machine Learning, AI, Data Analytics) or spans longer than 4 words.\n"
-    "- Line-fit: write each bullet to fill about 1.85-1.95 rendered lines (two nearly full lines), roughly 190-215 visible characters; "
-    "over 215 wraps onto a third line, so cut a clause rather than run over. Never leave a short second line.\n"
+    "- Line-fit: write each bullet to fill about 1.8-1.9 rendered lines (two nearly full lines), about 175-200 visible characters. "
+    "HARD LIMIT 205 characters: a bullet over 205 wraps onto a third line and is cut, so stay clearly under it and cut a clause "
+    "rather than run over. Never leave a short second line.\n"
     "- ATS-readable: standard tool names, digits for numbers, no emojis or arrows. No periods required.\n"
 )
 
@@ -1668,6 +1670,189 @@ async def render_node(
         "orphans": orphans if orphans else None,
         "fits_target": fit_result.fits_target,
         "has_horizontal_overflow": fit_result.has_horizontal_overflow,
+    }
+
+
+# ── Layout guard: no bullet may be saved on 3+ lines ──────────────────────────
+# The LLM repair is probabilistic. This last step is deterministic: whatever the
+# final render still shows on 3+ lines is trimmed (lowest-value clauses first, never
+# a bold metric before plain filler), re-rendered at the final font size, and
+# verified. A 3-line bullet cannot reach the saved PDF.
+
+FINAL_TRIM_MAX_ITER = 6
+
+# Clause boundaries only where a clause can stand or fall on its own: after ; or :, after a comma that
+# introduces a gerund clause (", cutting ..."), or before a participial connector. Never inside a
+# comma-separated list of tools, and never before a preposition (by, to, for, across): that would split
+# a verb from its metric ("cutting latency | by 30%") or break a list, leaving a dangling fragment.
+_CLAUSE_BREAK = re.compile(
+    r"(?<=[;:])\s+"
+    r"|(?<=,)\s+(?=\w+ing\b)"
+    r"|\s+(?=(?:with|using|while|enabling|ensuring|allowing|leveraging|via|plus|yielding|achieving|"
+    r"delivering|saving|resulting|driving|improving)\b)",
+    re.I,
+)
+_DANGLING_TAIL = re.compile(
+    r"[\s,;:\-–—]*(?:\b(?:and|or|with|using|while|to|for|by|via|in|on|of|the|a|an|plus|so|that|which|across|through|"
+    r"enabling|ensuring|allowing|leveraging)\b[\s,;:]*)+$",
+    re.I,
+)
+
+
+def _tidy_trimmed(text: str) -> str:
+    if text.count("**") % 2:
+        cut = text.rfind("**")
+        text = text[:cut] + text[cut + 2:]
+    return _DANGLING_TAIL.sub("", text).rstrip(" ,;:-–—")
+
+
+# Tail cuts may happen at any preposition or connector: removing everything after such a word always
+# leaves a grammatical prefix ("... by 30% across X" -> "... by 30%").
+_TAIL_BREAK = re.compile(
+    r"(?<=[;:])\s+"
+    r"|(?<=,)\s+(?=\w+ing\b)"
+    r"|\s+(?=(?:with|using|while|enabling|ensuring|allowing|leveraging|via|plus|yielding|achieving|"
+    r"delivering|saving|resulting|driving|improving|across|for|to|by|at|in|on|and|or|through|into|from)\b)",
+    re.I,
+)
+
+
+def _trim_bullet(text: str, max_visible: int) -> str:
+    """Shorten text to at most max_visible visible characters without breaking its grammar.
+
+    Two safe operations are considered: dropping whole clauses (strict boundaries, the action clause is
+    always kept) and cutting the tail at a preposition or connector. Whichever candidate that fits keeps the
+    most bold spans (metrics and technologies) wins, then the longest. If nothing fits, the action clause is
+    cut at a word boundary.
+    """
+    if _visible_len(text) <= max_visible:
+        return text
+    candidates: list[str] = []
+    segments = [s for s in _CLAUSE_BREAK.split(text) if s and s.strip()]
+    removable = list(range(1, len(segments)))[:10]
+    for drop_count in range(1, len(removable) + 1):
+        for dropped in itertools.combinations(removable, drop_count):
+            candidates.append(" ".join(seg for i, seg in enumerate(segments) if i not in dropped))
+    candidates.extend(text[: m.start()] for m in _TAIL_BREAK.finditer(text) if m.start() > 0)
+
+    best: tuple[int, int, str] | None = None
+    for candidate in candidates:
+        tidy = _tidy_trimmed(candidate)
+        length = _visible_len(tidy)
+        if not tidy or length > max_visible:
+            continue
+        score = (len(_BOLD_SPAN.findall(tidy)), length, tidy)
+        if best is None or score[:2] > best[:2]:
+            best = score
+    out = best[2] if best else segments[0]
+    if _visible_len(out) > max_visible:
+        words = out.split(" ")
+        while words and _visible_len(" ".join(words)) > max_visible:
+            words.pop()
+        out = _tidy_trimmed(" ".join(words))
+    return out
+
+
+def _render_pdf_at(state: ResumeGraphState, resume: dict[str, Any], font_size: float) -> tuple[bytes, int, list[dict[str, Any]]]:
+    """Render at a fixed font size (no re-fit): (pdf bytes, page count, detector findings)."""
+    from weasyprint import HTML
+
+    manifest = state["template_manifest"]
+    template_id = manifest["id"]
+    html = TemplateRegistryService.render_template(
+        template_id,
+        {
+            "profile": state["profile"],
+            "resume": resume,
+            "font_size": font_size,
+            "page_margin_mm": manifest.get("page_margin_mm", 15),
+            "section_order": state.get("section_order"),
+        },
+    )
+    doc = HTML(string=html, base_url=str(settings.TEMPLATES_DIR / template_id)).render()
+    try:
+        return doc.write_pdf(), len(doc.pages), detect_orphans_in_weasyprint(doc)
+    finally:
+        del doc
+        gc.collect()
+
+
+def _resume_bullet_ref(resume: dict[str, Any], finding: dict[str, Any]) -> tuple[list, int, str] | None:
+    """(container, index, key) addressing the text of a detector finding inside the resume."""
+    section = _SECTION_ALIASES.get(finding.get("section") or "")
+    entry, bullet = finding.get("entry_idx"), finding.get("bullet_idx")
+    if section is None or entry is None:
+        return None
+    try:
+        if section == "experience":
+            return resume["experiences"][entry]["bullet_points"], bullet, ""
+        if section == "projects":
+            return resume["projects"][entry]["bullet_points"], bullet, ""
+        return resume["extracurriculars"], entry, "description"
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+async def finalize_layout_node(state: ResumeGraphState, db: AsyncSession, gen_id: str) -> dict[str, Any]:
+    oversize = [o for o in (state.get("orphans") or []) if o.get("fix_type") == "oversize"]
+    resume_in = state.get("tailored_resume")
+    if not oversize or not resume_in:
+        return {}
+
+    resume = copy.deepcopy(resume_in)
+    font_size = state.get("font_size") or state["template_manifest"].get("max_font_size", 10.0)
+    shrink = 1.0
+    trimmed: dict[tuple, tuple[str, str]] = {}
+    pdf_bytes, pages, found = b"", state.get("page_count", 1), oversize
+    current = oversize
+
+    for _ in range(FINAL_TRIM_MAX_ITER):
+        for finding in current:
+            ref = _resume_bullet_ref(resume, finding)
+            if ref is None:
+                continue
+            container, index, key = ref
+            original = container[index][key] if key else container[index]
+            limit = int((finding.get("targetCharsMax") or _visible_len(original)) * shrink)
+            shorter = _trim_bullet(original, limit)
+            if shorter and shorter != original:
+                if key:
+                    container[index][key] = shorter
+                else:
+                    container[index] = shorter
+                ident = (finding.get("section"), finding.get("entry_idx"), finding.get("bullet_idx"))
+                trimmed[ident] = (trimmed.get(ident, (original, shorter))[0], shorter)
+        try:
+            pdf_bytes, pages, found = _render_pdf_at(state, resume, font_size)
+        except Exception as exc:
+            await log_progress(db, gen_id, "renderer", f"Layout guard could not re-render ({exc}); keeping previous render.", "warning")
+            return {}
+        current = [o for o in found if o.get("fix_type") == "oversize"]
+        if not current:
+            break
+        shrink *= 0.93
+
+    if current:
+        await log_progress(
+            db, gen_id, "renderer",
+            f"Layout guard: {len(current)} bullet(s) still render on 3+ lines after trimming.",
+            "warning",
+        )
+    await log_progress(
+        db, gen_id, "renderer",
+        f"Layout guard: trimmed {len(trimmed)} bullet(s) that wrapped onto 3+ lines "
+        f"(removed {sum(_visible_len(a) - _visible_len(b) for a, b in trimmed.values())} characters).",
+        "warning",
+    )
+    remaining = [o for o in found if o.get("fix_type") == "expand"]
+    return {
+        "tailored_resume": resume,
+        "pdf_bytes": pdf_bytes,
+        "page_count": pages,
+        "markdown": build_resume_markdown(
+            profile=state["profile"], resume=resume, section_order=state.get("section_order")
+        ),
+        "orphans": remaining or None,
     }
 
 
