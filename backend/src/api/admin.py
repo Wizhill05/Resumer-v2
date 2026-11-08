@@ -1,8 +1,9 @@
 import asyncio
 import json
+import logging
 import uuid
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -30,8 +31,11 @@ from src.models.generation import (
 from src.models.user import User
 from src.services.support import ReplyCreate
 from src.pipeline.nodes import invoke_with_fallback
+from src.services import posthog_insights
 from src.services.llm_config import llm_config_service
 from src.template_registry.service import TemplateRegistryService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -240,6 +244,121 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
             "recorded_calls": metric_count or 0,
         },
     }
+
+
+def _overview_days(days: int) -> int:
+    return max(7, min(days, posthog_insights.MAX_DAYS))
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def build_product_overview(
+    user_created: list[datetime],
+    generations: list[tuple[datetime, str, bool, Any]],
+    total_users: int,
+    pro_users: int,
+    days: int,
+    today: date,
+) -> dict[str, Any]:
+    """Bucket users and generations per UTC day. Pure so it can be tested without a database."""
+    dates = [today - timedelta(days=offset) for offset in range(days - 1, -1, -1)]
+    index = {day: i for i, day in enumerate(dates)}
+    signups = [0] * days
+    for created in user_created:
+        i = index.get(_as_utc(created).date())
+        if i is not None:
+            signups[i] += 1
+
+    completed = [0] * days
+    failed = [0] * days
+    other = [0] * days
+    guest = [0] * days
+    builders: list[set[Any]] = [set() for _ in range(days)]
+    for created, gen_status, is_guest, user_id in generations:
+        i = index.get(_as_utc(created).date())
+        if i is None:
+            continue
+        if gen_status == "completed":
+            completed[i] += 1
+        elif gen_status == "failed":
+            failed[i] += 1
+        else:
+            other[i] += 1
+        if is_guest:
+            guest[i] += 1
+        else:
+            builders[i].add(user_id)
+
+    # Walk backwards from today's total so the series ends on the authoritative count.
+    users_total = [0] * days
+    running = total_users
+    for i in range(days - 1, -1, -1):
+        users_total[i] = running
+        running -= signups[i]
+
+    totals = [c + f + o for c, f, o in zip(completed, failed, other)]
+    return {
+        "days": days,
+        "dates": [day.isoformat() for day in dates],
+        "kpis": {
+            "total_users": total_users,
+            "pro_users": pro_users,
+            "new_users_today": signups[-1],
+            "new_users_7d": sum(signups[-7:]),
+            "new_users_prev_7d": sum(signups[-14:-7]),
+            "generations_today": totals[-1],
+            "generations_7d": sum(totals[-7:]),
+            "generations_prev_7d": sum(totals[-14:-7]),
+            "builders_today": len(builders[-1]),
+        },
+        "signups": signups,
+        "users_total": users_total,
+        "generations": {"completed": completed, "failed": failed, "other": other, "guest": guest, "total": totals},
+        "builders": [len(group) for group in builders],
+    }
+
+
+@router.get("/overview/product", dependencies=[Depends(get_current_admin)])
+async def get_overview_product(days: int = 30, db: AsyncSession = Depends(get_db)):
+    days = _overview_days(days)
+    today = datetime.now(timezone.utc).date()
+    start = datetime.combine(today - timedelta(days=days - 1), datetime.min.time(), tzinfo=timezone.utc)
+    total_users = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    pro_users = (await db.execute(select(func.count(User.id)).where(User.is_pro == True))).scalar() or 0  # noqa: E712
+    user_rows = (await db.execute(select(User.created_at).where(User.created_at >= start))).scalars().all()
+    gen_rows = (
+        await db.execute(
+            select(Generation.created_at, Generation.status, Generation.is_guest, Generation.user_id).where(
+                Generation.created_at >= start
+            )
+        )
+    ).all()
+    return build_product_overview(
+        list(user_rows),
+        [(row[0], row[1], bool(row[2]), row[3]) for row in gen_rows],
+        total_users,
+        pro_users,
+        days,
+        today,
+    )
+
+
+@router.get("/overview/posthog", dependencies=[Depends(get_current_admin)])
+async def get_overview_posthog(days: int = 30):
+    days = _overview_days(days)
+    base = {"configured": posthog_insights.is_configured(), "project_url": posthog_insights.project_url(), "days": days}
+    if not base["configured"]:
+        return {**base, "error": None, "data": None}
+    try:
+        data = await posthog_insights.get_overview(days)
+    except posthog_insights.PostHogQueryError as exc:
+        return {**base, "error": str(exc), "data": None}
+    except Exception:
+        logger.warning("[admin/overview] PostHog overview failed", exc_info=True)
+        return {**base, "error": "PostHog overview could not be loaded.", "data": None}
+    return {**base, "error": None, "data": data}
 
 
 @router.get("/metrics/summary", dependencies=[Depends(get_current_admin)])

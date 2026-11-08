@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     POSTHOG_PROJECT_TOKEN: str = ""
     POSTHOG_HOST: str = "https://us.i.posthog.com"
     POSTHOG_ENVIRONMENT: str = "development"
+    # Read access for the admin overview. A personal API key (scope: query:read) and the
+    # numeric project id; the project token above can only send events.
+    POSTHOG_PERSONAL_API_KEY: str = ""
+    POSTHOG_PROJECT_ID: str = ""
+    POSTHOG_API_HOST: str = ""
 
     # Feature flags
     ENABLE_RESUME_EDITOR: bool = True

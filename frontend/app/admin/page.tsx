@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { Nav } from "@/components/Nav"
+import { parseAdminTab } from "@/components/admin/types"
 import { AdminClient } from "./AdminClient"
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -12,7 +13,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <main className="min-h-screen flex flex-col bg-[#fbfbf3] dark:bg-zinc-900 text-black dark:text-white">
       <Nav />
       <div className="flex-1 flex flex-col">
-        <AdminClient initialTab={tab === "feedback" ? "feedback" : "analytics"} />
+        <AdminClient initialTab={parseAdminTab(tab)} />
       </div>
     </main>
   )
