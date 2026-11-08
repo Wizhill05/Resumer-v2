@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useRef } from "react"
+import { useEffect, useId, useRef, type CSSProperties } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Image from "next/image"
 import { X } from "lucide-react"
@@ -41,12 +41,16 @@ export function TemplatePreviewDialog({
       onClick={(event) => { if (event.target === event.currentTarget) dialog.current?.close() }}
       className="fixed inset-0 m-auto h-fit max-h-none w-fit max-w-none overflow-visible border-0 bg-transparent p-0 backdrop:bg-[rgb(35_10_4/45%)] backdrop:backdrop-blur-[2px]">
       <h2 id={titleId} className="sr-only">{templateName} template preview</h2>
-      {/* One page at its real A4 ratio, sized to fit the screen whole (no scrolling),
-          with the close button beside it on the right. */}
-      <div className="flex items-start gap-2 sm:gap-3">
+      {/* One page at its real A4 ratio, sized to fit the screen whole (no scrolling).
+          Phones: close button centered below the page, within thumb reach.
+          Wider screens: close button beside the page on the right. */}
+      <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
         <div
-          className="relative aspect-[210/297] shrink-0 overflow-hidden rounded-[3px] bg-white shadow-[0_24px_60px_-20px_rgb(35_10_4/55%)]"
-          style={{ width: "min(calc(100vw - 4.75rem), 42rem, calc((100dvh - 2rem) * 210 / 297))" }}
+          className="relative aspect-[210/297] w-[var(--page-w-phone)] shrink-0 overflow-hidden rounded-[3px] bg-white shadow-[0_24px_60px_-20px_rgb(35_10_4/55%)] sm:w-[var(--page-w-wide)]"
+          style={{
+            "--page-w-phone": "min(calc(100vw - 2rem), calc((100dvh - 5.5rem) * 210 / 297))",
+            "--page-w-wide": "min(calc(100vw - 4.75rem), 42rem, calc((100dvh - 2rem) * 210 / 297))",
+          } as CSSProperties}
         >
           {data?.page_images[0] ? (
             <Image unoptimized src={data.page_images[0]} fill sizes="(max-width: 768px) 92vw, 672px"
@@ -56,7 +60,7 @@ export function TemplatePreviewDialog({
           </div>}
         </div>
         <button type="button" onClick={() => dialog.current?.close()} aria-label="Close template preview" autoFocus
-          className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line bg-paper text-ink shadow-soft-lg transition-colors hover:border-ember/50 hover:text-ember focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
+          className="flex h-11 w-11 shrink-0 cursor-pointer sm:h-10 sm:w-10 items-center justify-center rounded-full border border-line bg-paper text-ink shadow-soft-lg transition-colors hover:border-ember/50 hover:text-ember focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
           <X size={18} aria-hidden="true" />
         </button>
       </div>
