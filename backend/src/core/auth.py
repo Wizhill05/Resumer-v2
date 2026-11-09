@@ -3,7 +3,7 @@ import uuid
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -14,22 +14,20 @@ bearer = HTTPBearer(auto_error=False)
 
 
 async def _lookup_user(db: AsyncSession, payload: dict) -> User | None:
+    """Resolve the user from the token's `sub`, which must be a user UUID.
+
+    Every backend JWT producer (frontend `backendTokenForSession`, OAuth access tokens) sets
+    `sub`; email-only tokens are rejected so identity never depends on a mutable email match.
+    """
     sub = payload.get("sub")
-    if sub:
-        try:
-            uid = sub if isinstance(sub, str) else str(sub)
-            parsed = uuid.UUID(str(uid))
-        except Exception:
-            return None
-        result = await db.execute(select(User).where(User.id == parsed))
-        return result.scalar_one_or_none()
-    email = payload.get("email")
-    if email:
-        result = await db.execute(
-            select(User).where(func.lower(User.email) == str(email).strip().lower())
-        )
-        return result.scalar_one_or_none()
-    return None
+    if not sub:
+        return None
+    try:
+        parsed = uuid.UUID(str(sub))
+    except (ValueError, AttributeError, TypeError):
+        return None
+    result = await db.execute(select(User).where(User.id == parsed))
+    return result.scalar_one_or_none()
 
 
 async def get_optional_user(
@@ -41,13 +39,10 @@ async def get_optional_user(
     if credentials:
         token = credentials.credentials
     elif request:
-        # Check cookies
+        # Check cookies. Auth.js session cookies are deliberately not read here: they are
+        # encrypted JWEs (never valid HS256 JWTs) and are not sent to this host anyway.
         for cookie_name in [
             "auth_token",
-            "authjs.session-token",
-            "__Secure-authjs.session-token",
-            "next-auth.session-token",
-            "__Secure-next-auth.session-token",
             "token",
         ]:
             if cookie_name in request.cookies:

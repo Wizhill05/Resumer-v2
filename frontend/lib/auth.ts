@@ -14,9 +14,35 @@ function isAllowedHost(hostname: string, domain: string) {
   return hostname === domain || hostname.endsWith(`.${domain}`)
 }
 
+// Custom session cookie name. Renaming it from the Auth.js default (`authjs.session-token`)
+// invalidated every pre-existing session at deploy: old sessions have no `uid`, never went
+// through /internal/auth/resolve and could carry the wrong provider. Auth.js uses the cookie
+// name as the JWT salt, so anything that decodes the session cookie must use this name too.
+// Keep the secure decision explicit so the cookie name and its `secure` flag cannot disagree.
+const authUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL
+const useSecureCookies = authUrl
+  ? authUrl.startsWith("https:")
+  : Boolean(process.env.VERCEL) || process.env.NODE_ENV === "production"
+
+export const SESSION_COOKIE_NAME = useSecureCookies
+  ? "__Secure-resumer.session-token"
+  : "resumer.session-token"
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+  useSecureCookies,
+  cookies: {
+    sessionToken: {
+      name: SESSION_COOKIE_NAME,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
+  },
   providers: [
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID || process.env.GITHUB_CLIENT_ID || process.env.GITHUB_ID || "",

@@ -24,6 +24,21 @@ from src.models.identity import EmailVerification
 from src.models.user import Base, User
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
+TEST_INTERNAL = "test-internal-secret"
+
+
+def internal_headers() -> dict:
+    token = jose_jwt.encode(
+        {"aud": "internal", "exp": datetime.now(timezone.utc).timestamp() + 60},
+        TEST_INTERNAL,
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(autouse=True)
+def _internal_secret(monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_API_SECRET", TEST_INTERNAL)
 
 
 @pytest.fixture(autouse=True)
@@ -51,6 +66,20 @@ async def async_db():
 
 @pytest.fixture
 async def client(async_db: AsyncSession):
+    """Client that behaves like the Next.js server: sends a valid internal token."""
+    async def override_get_db():
+        yield async_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver", headers=internal_headers()) as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def anon_client(async_db: AsyncSession):
+    """Client that calls the backend directly, without an internal token."""
     async def override_get_db():
         yield async_db
 
@@ -415,25 +444,19 @@ async def test_different_emails_same_host_not_blocked(client: AsyncClient, sent_
         assert res.status_code == 200
 
 
-async def test_client_ip_without_valid_token_is_ignored(client: AsyncClient, sent_codes):
+async def test_invalid_internal_token_is_rejected(anon_client: AsyncClient, sent_codes):
     headers = {"X-Client-IP": "203.0.113.1", "Authorization": "Bearer invalid-token"}
-    for i in range(11):
-        res = await client.post(
-            "/auth/email/register/start",
-            json={"email": f"user{i}@example.com", "password": "Password123!", "name": "User"},
-            headers=headers,
-        )
-        assert res.status_code == 200
+    res = await anon_client.post(
+        "/auth/email/register/start",
+        json={"email": "user@example.com", "password": "Password123!", "name": "User"},
+        headers=headers,
+    )
+    assert res.status_code == 401
+    assert sent_codes == []
 
 
 async def test_per_ip_limit_with_valid_internal_token(client: AsyncClient, sent_codes, monkeypatch):
-    monkeypatch.setattr(settings, "INTERNAL_API_SECRET", "test-internal-secret")
-    token = jose_jwt.encode(
-        {"aud": "internal", "exp": datetime.now(timezone.utc).timestamp() + 60},
-        "test-internal-secret",
-        algorithm="HS256",
-    )
-    headers = {"Authorization": f"Bearer {token}", "X-Client-IP": "203.0.113.1"}
+    headers = {**internal_headers(), "X-Client-IP": "203.0.113.1"}
 
     for i in range(10):
         res = await client.post(
@@ -449,3 +472,71 @@ async def test_per_ip_limit_with_valid_internal_token(client: AsyncClient, sent_
         headers=headers,
     )
     assert res11.status_code == 429
+
+
+# --- internal token required on the public registration endpoints ---
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/auth/email/register/start", {"email": "direct@example.com", "password": "Password123!", "name": "Direct"}),
+        ("/auth/email/register/resend", {"email": "direct@example.com"}),
+        ("/auth/email/register/verify", {"email": "direct@example.com", "code": "123456", "password": "Password123!"}),
+    ],
+)
+async def test_register_endpoints_require_internal_token(
+    anon_client: AsyncClient, async_db: AsyncSession, sent_codes, path, body
+):
+    res = await anon_client.post(path, json=body)
+    assert res.status_code == 401
+    assert sent_codes == []
+    pending = (await async_db.execute(select(EmailVerification))).scalars().all()
+    assert pending == []
+    users = (await async_db.execute(select(User))).scalars().all()
+    assert users == []
+
+
+async def test_register_endpoints_reject_user_jwt_as_internal_token(anon_client: AsyncClient, sent_codes):
+    token = jose_jwt.encode({"sub": "abc", "email": "a@b.com"}, settings.JWT_SECRET, algorithm="HS256")
+    res = await anon_client.post(
+        "/auth/email/register/start",
+        json={"email": "direct@example.com", "password": "Password123!", "name": "Direct"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 401
+    assert sent_codes == []
+
+
+# --- case-insensitive email lookups (legacy mixed-case rows) ---
+
+async def test_login_matches_mixed_case_stored_email(client: AsyncClient, async_db: AsyncSession):
+    async_db.add(
+        User(
+            email="Mixed.Case@Example.com",
+            name="Mixed",
+            hashed_password=hash_password("Password123!"),
+            provider="credentials",
+        )
+    )
+    await async_db.commit()
+    res = await client.post(
+        "/auth/email/login",
+        json={"email": "mixed.case@example.com", "password": "Password123!"},
+    )
+    assert res.status_code == 200
+    assert res.json()["email"] == "Mixed.Case@Example.com"
+
+
+async def test_register_start_conflicts_with_mixed_case_stored_email(client: AsyncClient, async_db: AsyncSession, sent_codes):
+    async_db.add(
+        User(
+            email="Legacy.User@Example.com",
+            name="Legacy",
+            hashed_password=hash_password("Password123!"),
+            provider="credentials",
+        )
+    )
+    await async_db.commit()
+    res = await _start(client, email="legacy.user@example.com")
+    assert res.status_code == 409
+    assert sent_codes == []

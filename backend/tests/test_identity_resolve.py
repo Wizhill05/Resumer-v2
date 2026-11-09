@@ -286,15 +286,30 @@ async def test_get_current_user_by_sub(async_db):
     assert got.id == user.id
 
 
-async def test_get_current_user_no_sub_falls_back_to_email(async_db):
+async def test_get_current_user_no_sub_rejected(async_db):
+    from fastapi import HTTPException
     from fastapi.security import HTTPAuthorizationCredentials
 
     from src.core.auth import get_current_user
 
-    user = await _create_user(async_db, "fallback@example.com", provider="google")
+    await _create_user(async_db, "fallback@example.com", provider="google")
     token = jose_jwt.encode({"email": "fallback@example.com"}, settings.JWT_SECRET, algorithm="HS256")
-    got = await get_current_user(credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token), db=async_db)
-    assert got.id == user.id
+    with pytest.raises(HTTPException) as exc:
+        await get_current_user(credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token), db=async_db)
+    assert exc.value.status_code == 401
+
+
+async def test_get_current_user_non_uuid_sub_rejected(async_db):
+    from fastapi import HTTPException
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    from src.core.auth import get_current_user
+
+    await _create_user(async_db, "baduid@example.com", provider="google")
+    token = jose_jwt.encode({"sub": "not-a-uuid", "email": "baduid@example.com"}, settings.JWT_SECRET, algorithm="HS256")
+    with pytest.raises(HTTPException) as exc:
+        await get_current_user(credentials=HTTPAuthorizationCredentials(scheme="Bearer", credentials=token), db=async_db)
+    assert exc.value.status_code == 401
 
 
 async def test_unknown_user_not_auto_created(async_db):

@@ -7,6 +7,14 @@ import { internalToken } from "@/lib/jwt"
 
 async function backendHeaders(): Promise<Record<string, string>> {
   const extra: Record<string, string> = {}
+  if (!process.env.INTERNAL_API_SECRET) {
+    // Not fatal here (callers report their own failure), but the backend rejects the
+    // email sign-up endpoints without an internal token, so sign-up cannot work.
+    console.error(
+      "INTERNAL_API_SECRET is not set: the backend will reject email sign-up requests (401). Set it on the frontend and backend."
+    )
+    return extra
+  }
   try {
     const token = await internalToken()
     extra.Authorization = `Bearer ${token}`
@@ -15,9 +23,8 @@ async function backendHeaders(): Promise<Record<string, string>> {
     if (firstHop) {
       extra["X-Client-IP"] = firstHop
     }
-  } catch {
-    // No INTERNAL_API_SECRET or no request context: send without the
-    // internal headers; the backend then applies only the per-email limit.
+  } catch (err) {
+    console.error("backendHeaders: failed to build internal request headers:", err)
   }
   return extra
 }
