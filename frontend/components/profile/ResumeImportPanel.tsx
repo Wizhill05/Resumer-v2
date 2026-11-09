@@ -133,7 +133,7 @@ export function ResumeImportPanel({ onApplied, onApplyingChange, inputId, compac
     stage === "parsing"
       ? "Parsing document text"
       : stage === "extracting"
-      ? "Running AI extraction — takes ~10s per file"
+      ? "Running AI extraction, takes ~10s per file"
       : stage === "deduplicating"
       ? "Comparing with existing entries"
       : ""

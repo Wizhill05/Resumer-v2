@@ -107,7 +107,7 @@ export function EditorClient({ payload }: Props) {
       })
 
       if (res.status === 409) {
-        setSaveError("Revision conflict — another save happened. Reload to continue.")
+        setSaveError("Revision conflict: another save happened. Reload to continue.")
         return
       }
       if (!res.ok) {
@@ -208,7 +208,7 @@ export function EditorClient({ payload }: Props) {
     return () => window.removeEventListener("keydown", onKey)
   }, [parsedResume, profile, jsonError, revision]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const title = [payload.job_title, payload.company].filter(Boolean).join(" — ") || "Résumé Editor"
+  const title = [payload.job_title, payload.company].filter(Boolean).join(" · ") || "Résumé Editor"
 
   return (
     <div className="flex flex-col h-screen h-[100dvh] max-h-[100dvh] bg-paper overflow-hidden">
@@ -324,7 +324,7 @@ export function EditorClient({ payload }: Props) {
 
       {/* Split pane / Content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden relative">
-        {/* Left — Editor (Full on mobile, 45% on desktop; hidden on mobile if in preview mode) */}
+        {/* Left - Editor (Full on mobile, 45% on desktop; hidden on mobile if in preview mode) */}
         <div
           className={`w-full md:w-[45%] min-w-0 min-h-0 md:border-r border-line flex flex-col overflow-hidden bg-paper ${
             editorMode === "preview" ? "hidden md:flex" : "flex"

@@ -1026,7 +1026,7 @@ function Input(props: React.ComponentProps<"input">) {
   return (
     <input
       {...props}
-      className="w-full h-8 text-xs font-semibold px-2 border border-line rounded focus:border-ember/50 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all placeholder:text-ink-muted bg-paper dark:text-ink"
+      className="w-full h-8 text-xs font-semibold px-2 border border-line rounded focus:border-ember/50ff4e26]/5#ff4e26]/5 outline-none transition-all placeholder:text-ink-muted bg-paper dark:text-ink"
     />
   )
 }
@@ -1035,7 +1035,7 @@ function Textarea({ className = "", ...props }: React.ComponentProps<"textarea">
   return (
     <textarea
       {...props}
-      className={`w-full p-2 text-xs font-semibold border border-line rounded focus:border-ember/50 dark:focus:border-ember/50 focus:ring-1 focus:ring-[#ff4e26]/5 outline-none transition-all resize-y placeholder:text-ink-muted dark:placeholder:text-ink-muted bg-paper dark:text-ink ${className}`}
+      className={`w-full p-2 text-xs font-semibold border border-line rounded focus:border-ember/50 dark:focus:border-ember/50ff4e26]/5#ff4e26]/5 outline-none transition-all resize-y placeholder:text-ink-muted dark:placeholder:text-ink-muted bg-paper dark:text-ink ${className}`}
     />
   )
 }

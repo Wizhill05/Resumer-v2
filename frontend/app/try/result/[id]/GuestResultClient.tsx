@@ -106,7 +106,7 @@ export function GuestResultClient({ id }: { id: string }) {
         <div className="h-3 overflow-hidden border border-line-strong bg-paper rounded-md">
           <div className="h-full bg-[#ff4e26] transition-all duration-500" style={{ width: `${status === "completed" ? 100 : percent}%` }} />
         </div>
-        {/* Login nudge during generation — prompts user to sign in so the resume saves to their history */}
+        {/* Login nudge during generation - prompts user to sign in so the resume saves to their history */}
         {status !== "completed" && status !== "failed" && (
           <div className="flex items-center justify-between gap-3 border border-line bg-ink/[0.03] px-3 py-2.5 rounded-md">
             <p className="text-xs font-semibold text-ink-muted">

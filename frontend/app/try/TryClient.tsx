@@ -185,7 +185,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
     importStage === "parsing"
       ? "Parsing document text"
       : importStage === "extracting"
-      ? "Running AI extraction — ~10s per file"
+      ? "Running AI extraction, ~10s per file"
       : importStage === "deduplicating"
       ? "Comparing and merging sections"
       : ""
@@ -775,7 +775,7 @@ function GeneratePanel({
           <div key={item.label} className="flex items-center gap-2">
             <span className={item.ok ? "text-emerald-500" : "text-red-400"}>{item.ok ? "✓" : "✗"}</span>
             <span className={item.ok ? "text-ink-muted" : "text-ink-muted"}>{item.label}</span>
-            {!item.ok && <span className="text-ink-faint">— {item.hint}</span>}
+            {!item.ok && <span className="text-ink-faint">({item.hint})</span>}
           </div>
         ))}
       </div>
@@ -947,7 +947,7 @@ export function TryClient() {
             )}
           </div>
 
-          {/* Sticky generate bar — always visible */}
+          {/* Sticky generate bar - always visible */}
           <div className="shrink-0 border-t border-line bg-paper px-5 py-3">
             <div className="flex items-center gap-3">
               <Button

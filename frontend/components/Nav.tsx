@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
-import { Menu, X, Sun, Moon, LayoutDashboard, Sparkles, User, History, LifeBuoy, ChevronRight } from "lucide-react"
+import { Menu, X, Sun, Moon, LayoutDashboard, FilePlus2, User, History, LifeBuoy, ChevronRight } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useSession } from "next-auth/react"
 import { useGenerationStats } from "@/components/useGenerationStats"
@@ -12,7 +12,7 @@ import { AccountMenu } from "@/components/AccountMenu"
 
 const defaultLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/generate", label: "Generate", icon: Sparkles },
+  { href: "/dashboard/generate", label: "Generate", icon: FilePlus2 },
   { href: "/profile", label: "Profile", icon: User },
   { href: "/dashboard/history", label: "History", icon: History },
   { href: "/support", label: "Support", icon: LifeBuoy },
@@ -56,7 +56,7 @@ export function Nav() {
     ? accountUser.name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")
     : (accountUser?.email?.trim()[0]?.toUpperCase() ?? "?")
 
-  // Main navbar links — Admin lives in the AccountMenu dropdown only.
+  // Main navbar links - Admin lives in the AccountMenu dropdown only.
   const links = defaultLinks
 
   useEffect(() => {
@@ -219,7 +219,7 @@ export function Nav() {
           {/* Navigation Links Area */}
           <div className="flex-1 overflow-y-auto px-4 py-5 flex flex-col justify-between">
             <div className="space-y-1.5">
-              {/* Account — identity entry, opens /account */}
+              {/* Account - identity entry, opens /account */}
               {accountUser && (
                 <div
                   className={closing ? "mobile-nav-item-exit" : "mobile-nav-item"}

@@ -19,15 +19,15 @@ const MODE_HINTS: Record<CreativityMode, string> = {
 
 export const MODE_INFO: { title: string; body: string }[] = [
   {
-    title: "Proper — strictly your profile",
+    title: "Proper: strictly your profile",
     body: "Writes only what your profile supports. Skills come from your profile; a job skill is included only if you plausibly demonstrate it. No invented tools, metrics, or features.",
   },
   {
-    title: "LARP — embellish to match the job",
+    title: "LARP: embellish to match the job",
     body: "Keeps your real roles, companies, and project names, but freely adds job-required features, tools, and plausible metrics inside them. The skills section starts from the job's required skills so nothing the posting asks for is missing. Each run is written creatively so résumés don't all read the same.",
   },
   {
-    title: "Super LARP — plus an invented hero project",
+    title: "Super LARP: plus an invented hero project",
     body: "Everything LARP does, and the first project slot is replaced with a brand-new project invented to mirror the job description as closely as possible. Remaining slots still use your real projects.",
   },
 ]

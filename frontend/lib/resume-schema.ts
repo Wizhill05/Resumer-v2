@@ -1,5 +1,5 @@
 /**
- * resume-schema.ts — Types and Zod validation for the tailored resume JSON
+ * resume-schema.ts - Types and Zod validation for the tailored resume JSON
  * stored in render_metadata.tailored_resume. Mirrors the backend pipeline schema.
  */
 

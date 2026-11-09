@@ -14,7 +14,7 @@ export function StoryClosing() {
         </h2>
         <p className="mx-auto mt-5 max-w-md text-sm leading-relaxed text-[var(--fluid-ink-soft)] sm:text-base">
           Nothing is stored. Nothing is used to train anything. You leave with
-          one ATS-safe PDF &mdash; that&rsquo;s the whole deal.
+          one ATS-safe PDF. That&rsquo;s the whole deal.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
           <LoginModal

@@ -6,7 +6,7 @@ export function StoryTransformation() {
           The same experience, in their words
         </h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-[var(--fluid-ink-soft)]">
-          A generic bullet becomes a tailored one &mdash; your impact in
+          A generic bullet becomes a tailored one: your impact in
           numbers, matching the job&rsquo;s keywords.
         </p>
       </div>

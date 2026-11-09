@@ -1,4 +1,4 @@
-import { FileText, Sparkles, Download } from "lucide-react"
+import { FileText, Target, Download } from "lucide-react"
 
 const STEPS = [
   {
@@ -9,9 +9,9 @@ const STEPS = [
   },
   {
     n: "02",
-    icon: Sparkles,
+    icon: Target,
     title: "Watch it become relevant",
-    body: "Your experience is rewritten in the job\u2019s own language \u2014 metrics, keywords, structure.",
+    body: "Your experience is rewritten in the job\u2019s own language: metrics, keywords, structure.",
   },
   {
     n: "03",

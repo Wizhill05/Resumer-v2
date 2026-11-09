@@ -17,7 +17,7 @@ export function StoryOverture() {
           <div className="text-center lg:col-span-5 lg:border-l lg:border-black/10 lg:pl-8 lg:text-left dark:lg:border-white/10">
             <p className="mx-auto max-w-md text-sm leading-relaxed text-[var(--fluid-ink-soft)] sm:text-base lg:mx-0">
               Résumer takes what you&rsquo;ve already done and writes it the way
-              hiring software reads &mdash; so the right person finally sees it.
+              hiring software reads, so the right person finally sees it.
             </p>
           </div>
         </div>

@@ -71,7 +71,7 @@ export function DashboardClient() {
   useEffect(() => {
     if (searchParams.get("importGuestDraft") !== "1" || isLoading) return
 
-    // Always claim guest generations when redirected from /try — safe and idempotent
+    // Always claim guest generations when redirected from /try - safe and idempotent
     const claimKey = "resumer_guest_claimed_v1"
     if (!window.sessionStorage.getItem(claimKey)) {
       window.sessionStorage.setItem(claimKey, "1")
@@ -188,7 +188,7 @@ export function DashboardClient() {
             ...(latestDate ? [[latestDate, "latest"] as [string, string]] : []),
             ...(latest?.company ? [[latest.company, "company"] as [string, string]] : []),
           ]
-        : [["—", "résumés"]]) as [number | string, string][],
+        : [["-", "résumés"]]) as [number | string, string][],
     },
   ]
 

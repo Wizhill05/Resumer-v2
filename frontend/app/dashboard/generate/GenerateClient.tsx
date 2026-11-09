@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info, Eye, Wand2, Layers, Mail, Sparkles, Bell } from "lucide-react"
+import { AlertCircle, AlertTriangle, FileText, FolderGit2, Briefcase, Loader2, SlidersHorizontal, ChevronDown, ChevronUp, Download, Pencil, RotateCcw, Plus, Minus, Info, Eye, Wand2, Layers, Mail, FilePlus2, Bell } from "lucide-react"
 import Link from "next/link"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
@@ -509,7 +509,7 @@ export function GenerateClient() {
                     key={tpl.id}
                     className={`flex flex-col justify-between overflow-hidden rounded-md border transition-[border-color,box-shadow] ${
                       selected
-                        ? "border-ember bg-ember-tint/40 shadow-[0_10px_28px_-14px_rgb(255_78_38/45%)] ring-1 ring-ember/40"
+                        ? "border-ember bg-ember-tint/40 shadow-soft ring-1 ring-ember/40"
                         : "border-line bg-paper shadow-soft hover:border-ember/40"
                     }`}
                   >
@@ -810,7 +810,7 @@ export function GenerateClient() {
               </div>
               <dl className="divide-y divide-line text-sm">
                 {[
-                  { icon: FileText, label: "Template", value: activeTemplate?.name ?? "—" },
+                  { icon: FileText, label: "Template", value: activeTemplate?.name ?? "-" },
                   { icon: Wand2, label: "Mode", value: (creativityMode === "super_larp" ? "Super LARP" : creativityMode === "larp" ? "LARP" : "Proper") },
                   { icon: Layers, label: "Projects · Experience", value: `${projectsCount} · ${experienceCount}` },
                   { icon: Mail, label: "Email when done", value: sendEmail === null ? "Default" : sendEmail ? "On" : "Off" },
@@ -852,7 +852,7 @@ export function GenerateClient() {
                     </>
                   ) : (
                     <>
-                      <Sparkles size={16} aria-hidden="true" />
+                      <FilePlus2 size={16} aria-hidden="true" />
                       Generate résumé
                     </>
                   )}
@@ -926,7 +926,7 @@ export function GenerateClient() {
                 <div className="flex items-start gap-2 border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 p-3 rounded-md">
                   <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-600" />
                   <p className="text-xs font-bold leading-relaxed text-red-800 dark:text-red-300">
-                    Generation failed. Your input is saved — you can report this and we will check logs for run {createdRunId.slice(0, 8)}.
+                    Generation failed. Your input is saved. You can report this and we will check logs for run {createdRunId.slice(0, 8)}.
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
