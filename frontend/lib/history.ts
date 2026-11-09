@@ -8,6 +8,8 @@ export type HistoryRun = {
   model_used: string
   job_description: string
   thumb_storage_key?: string
+  /** Bumped by the backend on every editor save; keys the on-device PDF cache. */
+  pdf_version?: number
 }
 
 export const HISTORY_PAGE_SIZE = 12

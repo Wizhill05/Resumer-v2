@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from typing import Literal
 
 CreativityMode = Literal["proper", "larp", "super_larp"]
@@ -55,6 +55,18 @@ class GenerationOut(BaseModel):
     send_email: bool | None = None
     creativity_mode: CreativityMode | None = None
     section_order: list[str] | None = None
+    # Read only to derive pdf_version; never sent to the client.
+    render_metadata: dict | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def pdf_version(self) -> int:
+        """Changes whenever the stored PDF is re-rendered (each editor save).
+
+        The frontend keys its on-device PDF cache on this, so an edit
+        invalidates any copy cached before it.
+        """
+        return int((self.render_metadata or {}).get("editor_revision") or 0)
 
     model_config = {"from_attributes": True}
 

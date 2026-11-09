@@ -4,9 +4,11 @@ import { captureDownload } from "@/lib/posthog"
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useEffect, useRef, useMemo } from "react"
-import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, ZoomIn, ZoomOut, Loader2, Bug, Search } from "lucide-react"
+import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, Loader2, Bug, Search } from "lucide-react"
 import { filterHistoryRuns, type HistoryRun, HISTORY_PAGE_SIZE as PAGE_SIZE } from "@/lib/history"
 import { createPortal } from "react-dom"
+import { PdfViewer } from "@/components/pdf/PdfViewer"
+import { downloadResumePdf, forgetResumePdf, getResumePdf, saveBlob, type ResumePdf } from "@/lib/resume-pdf-cache"
 import { FeedbackModal } from "@/components/FeedbackModal"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 
@@ -216,6 +218,7 @@ function useDeleteRun() {
   return async (id: string) => {
     if (!window.confirm("Delete this résumé from history?")) return
     await fetch(`/api/backend/generate/${id}`, { method: "DELETE" })
+    void forgetResumePdf(id)
     queryClient.setQueryData<HistoryRun[]>(["history"], (old) =>
       (old ?? []).filter((r) => r.id !== id)
     )
@@ -359,8 +362,6 @@ function LiveProgressGridCard({
   )
 }
 
-const A4_WIDTH_PX = (210 / 25.4) * 96 // ~794px
-
 function FullscreenResumeOverlay({
   run,
   onClose,
@@ -368,10 +369,13 @@ function FullscreenResumeOverlay({
   run: HistoryRun
   onClose: () => void
 }) {
-  const [zoom, setZoom] = useState(0.8)
-  const [pageImages, setPageImages] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const version = run.pdf_version ?? 0
+  const loadKey = `${run.id}:${version}:${attempt}`
+  const [loaded, setLoaded] = useState<{ key: string; pdf?: ResumePdf; error?: string } | null>(null)
+  const pdf = loaded?.key === loadKey ? loaded.pdf ?? null : null
+  const error = loaded?.key === loadKey ? loaded.error ?? null : null
+  const closeRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -379,63 +383,43 @@ function FullscreenResumeOverlay({
     }
     window.addEventListener("keydown", handler)
     document.body.style.overflow = "hidden"
+    closeRef.current?.focus()
     return () => {
       window.removeEventListener("keydown", handler)
       document.body.style.overflow = ""
     }
   }, [onClose])
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 768) {
-      const mobileZoom = Math.min(0.48, (window.innerWidth - 32) / A4_WIDTH_PX)
-      setZoom(mobileZoom)
-    }
-  }, [])
-
+  // Fetch the real PDF once; it is kept on the device so Download is instant.
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setError(null)
-
-    fetch(`/api/backend/generate/${run.id}/pdf-pages`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then((data) => {
-        if (active && data.page_images && data.page_images.length > 0) {
-          setPageImages(data.page_images)
-        } else if (active) {
-          setError("No pages available")
-        }
-      })
+    getResumePdf(run.id, version)
+      .then((result) => { if (active) setLoaded({ key: loadKey, pdf: result }) })
       .catch((err) => {
-        if (active) setError(err instanceof Error ? err.message : "Failed to load preview")
+        if (active) setLoaded({ key: loadKey, error: err instanceof Error ? err.message : "Could not load the PDF" })
       })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
+    return () => { active = false }
+  }, [run.id, version, loadKey])
 
-    return () => {
-      active = false
-    }
-  }, [run.id])
+  const download = () => {
+    captureDownload(run.id, "history")
+    if (pdf) saveBlob(pdf)
+    else void downloadResumePdf(run.id, version)
+  }
 
   const date = new Date(run.created_at).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
   })
+  const title = run.job_title || "Tailored Résumé"
 
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex flex-col bg-app/95 backdrop-blur-md text-ink animate-fade-in"
       role="dialog"
       aria-modal="true"
-      aria-label="Résumé Preview"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
+      aria-label={`${title} preview`}
     >
       {/* Top Action Header Bar */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-paper/75 px-3 py-2 backdrop-blur-xl sm:px-4 sm:py-3 md:px-6">
@@ -450,7 +434,7 @@ function FullscreenResumeOverlay({
           </button>
           <div className="min-w-0">
             <h3 className="text-xs sm:text-sm font-bold tracking-tight truncate text-ink">
-              {run.job_title || "Tailored Résumé"}
+              {title}
             </h3>
             <p className="text-[11px] font-medium text-ink-muted truncate">
               {run.company ? `${run.company} • ` : ""}{date} • {run.template_id}
@@ -459,30 +443,6 @@ function FullscreenResumeOverlay({
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Zoom controls (desktop only) */}
-          <div className="hidden sm:flex items-center gap-1 rounded-md border border-line bg-paper/80 px-1 py-0.5">
-            <button
-              onClick={() => setZoom((value) => Math.max(0.3, Number((value - 0.1).toFixed(2))))}
-              className="cursor-pointer rounded p-1 text-ink-muted hover:text-ember transition-colors"
-              title="Zoom out"
-              aria-label="Zoom out"
-            >
-              <ZoomOut size={13} />
-            </button>
-            <span className="w-8 text-center text-[10px] font-semibold text-ink-muted">
-              {Math.round(zoom * 100)}%
-            </span>
-            <button
-              onClick={() => setZoom((value) => Math.min(1.6, Number((value + 0.1).toFixed(2))))}
-              className="cursor-pointer rounded p-1 text-ink-muted hover:text-ember transition-colors"
-              title="Zoom in"
-              aria-label="Zoom in"
-            >
-              <ZoomIn size={13} />
-            </button>
-          </div>
-
-          {/* Edit button (visible on mobile and desktop) */}
           <button
             onClick={() => {
               window.location.href = `/dashboard/history/${run.id}/edit`
@@ -492,71 +452,54 @@ function FullscreenResumeOverlay({
             <Pencil size={13} />
             <span>Edit</span>
           </button>
-
-          {/* Download button */}
-          <a
-            href={`/api/backend/generate/${run.id}/download`}
-            onClick={() => captureDownload(run.id, "history")}
-            target="_blank"
-            rel="noreferrer"
-            download
-          >
-            <button className="flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)]">
-              <Download size={13} />
-              <span className="hidden sm:inline">Download PDF</span>
-            </button>
-          </a>
           <button
+            onClick={download}
+            className="flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)]"
+            aria-label="Download PDF"
+          >
+            <Download size={13} />
+            <span className="hidden sm:inline">Download PDF</span>
+          </button>
+          <button
+            ref={closeRef}
             onClick={onClose}
-            className="p-1.5 text-ink-muted hover:text-ink rounded-md hover:bg-ink/5 transition-colors cursor-pointer"
-            aria-label="Close fullscreen preview"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-ink/5 transition-colors cursor-pointer"
+            aria-label="Close preview"
           >
             <X size={18} />
           </button>
         </div>
       </div>
 
-      {/* Fullscreen A4 Preview Canvas */}
-      <div className="flex-1 overflow-auto p-3 sm:p-6 md:p-8 flex items-start justify-center">
-        {loading ? (
-          <div className="my-auto flex flex-col items-center justify-center gap-3 text-ink-muted">
-            <Loader2 className="animate-spin text-ember" size={32} />
-            <span className="text-xs">Loading PDF pages...</span>
-          </div>
-        ) : pageImages.length > 0 ? (
-          <div className="mx-auto flex w-max flex-col items-center gap-6 sm:gap-8 my-auto">
-            {pageImages.map((img, idx) => (
-              <section key={idx} className="flex flex-col items-center gap-2">
-                <div
-                  className="overflow-hidden rounded-[3px] bg-white shadow-soft-lg ring-1 ring-line"
-                  style={{ width: A4_WIDTH_PX * zoom }}
+      {/* PDF canvas: scroll / pinch to zoom, drag to move */}
+      <div className="relative min-h-0 flex-1">
+        {pdf ? (
+          <PdfViewer key={loadKey} data={pdf.blob} title={title} />
+        ) : error ? (
+          <div className="flex h-full items-center justify-center p-6">
+            <div className="soft-card flex max-w-sm flex-col items-center gap-4 p-6 text-center" role="alert">
+              <FileText size={48} className="text-ink-muted" />
+              <p className="text-sm font-medium text-ink-muted">{error}</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button
+                  onClick={() => setAttempt((n) => n + 1)}
+                  className="flex items-center gap-2 rounded-md border border-line bg-paper px-4 py-2 text-xs font-semibold text-ink transition-colors hover:border-ember/50 cursor-pointer"
                 >
-                  <img
-                    src={img}
-                    alt={`${run.job_title || "Résumé"} Page ${idx + 1}`}
-                    className="block h-auto w-full select-none"
-                    draggable={false}
-                  />
-                </div>
-                {pageImages.length > 1 && (
-                  <span className="text-[10px] text-ink-muted">
-                    Page {idx + 1} of {pageImages.length}
-                  </span>
-                )}
-              </section>
-            ))}
+                  <RefreshCw size={14} /> Try again
+                </button>
+                <button
+                  onClick={download}
+                  className="flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer"
+                >
+                  <Download size={14} /> Download PDF
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="soft-card my-auto flex flex-col items-center justify-center gap-4 text-center max-w-sm p-6">
-            <FileText size={48} className="text-ink-muted" />
-            <p className="text-sm font-medium text-ink-muted">
-              {error || "Could not load preview pages"}
-            </p>
-            <a href={`/api/backend/generate/${run.id}/download`} target="_blank" rel="noreferrer">
-              <button className="flex items-center gap-2 rounded-md px-4 py-2 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer">
-                <Download size={14} /> Download PDF File
-              </button>
-            </a>
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-ink-muted">
+            <Loader2 className="animate-spin text-ember" size={32} />
+            <span className="text-xs" role="status">Loading PDF…</span>
           </div>
         )}
       </div>
@@ -578,7 +521,7 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
       <div
         className={`relative border-b border-line bg-ink/[0.03] ${completed ? "cursor-pointer" : ""}`}
         style={{ aspectRatio: "210/297" }}
-        onClick={() => completed && onPreview ? onPreview(run) : (completed && (window.location.href = `/api/backend/generate/${run.id}/download`))}
+        onClick={() => completed && onPreview ? onPreview(run) : (completed && void downloadResumePdf(run.id, run.pdf_version ?? 0))}
       >
         {completed && run.thumb_storage_key ? (
           <img
@@ -609,7 +552,7 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
       {/* Footer */}
       <div
         className={`px-3 py-3 ${completed ? "cursor-pointer hover:bg-ember-tint/50 hover:[&_.title-span]:text-ember" : ""} transition-all duration-150`}
-        onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
+        onClick={() => completed && void downloadResumePdf(run.id, run.pdf_version ?? 0)}
       >
         <div className="flex items-start gap-1.5">
           <StatusDot status={run.status} />
@@ -913,7 +856,7 @@ export function HistoryClient() {
               return (
                 <div
                   key={run.id}
-                  onClick={() => completed && (window.location.href = `/api/backend/generate/${run.id}/download`)}
+                  onClick={() => completed && void downloadResumePdf(run.id, run.pdf_version ?? 0)}
                   className={[
                     "flex items-center justify-between gap-3 px-3.5 py-3 md:px-5 md:py-3.5 transition-all duration-150 group",
                     completed

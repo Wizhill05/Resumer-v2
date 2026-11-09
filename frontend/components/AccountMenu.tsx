@@ -13,6 +13,7 @@ import {
   Check,
 } from "lucide-react"
 import { signOutAction } from "@/app/actions"
+import { clearResumePdfCache } from "@/lib/resume-pdf-cache"
 import { LoginModal } from "@/components/LoginModal"
 import { useIsAdmin } from "@/components/useIsAdmin"
 
@@ -207,7 +208,7 @@ export function AccountMenu() {
 
           {/* Sign out */}
           <div className="border-t border-line p-1.5">
-            <form action={signOutAction}>
+            <form action={signOutAction} onSubmit={() => { void clearResumePdfCache() }}>
               <button
                 type="submit"
                 role="menuitem"

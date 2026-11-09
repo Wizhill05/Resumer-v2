@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useId, useRef } from "react"
+import { useEffect, useId, useRef, type CSSProperties } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Image from "next/image"
 import { X } from "lucide-react"
@@ -39,23 +39,30 @@ export function TemplatePreviewDialog({
   return (
     <dialog ref={dialog} aria-labelledby={titleId} onClose={() => { if (!dialog.current?.open) onClose() }}
       onClick={(event) => { if (event.target === event.currentTarget) dialog.current?.close() }}
-      className="fixed inset-0 m-auto max-h-[92dvh] w-[min(92vw,42rem)] max-w-none overflow-visible rounded-lg border-0 bg-transparent p-0 backdrop:bg-[rgb(35_10_4/38%)] dark:bg-black/60">
+      className="fixed inset-0 m-auto h-fit max-h-none w-fit max-w-none overflow-visible border-0 bg-transparent p-0 backdrop:bg-[rgb(35_10_4/45%)] backdrop:backdrop-blur-[2px]">
       <h2 id={titleId} className="sr-only">{templateName} template preview</h2>
-      <div className="relative pt-12">
-        <button type="button" onClick={() => dialog.current?.close()} aria-label="Close template preview" autoFocus
-          className="absolute right-0 top-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[#230a04]/80 text-white shadow-sm hover:bg-[#230a04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
-          <X size={20} aria-hidden="true" />
-        </button>
-        <div className="max-h-[calc(92dvh-3rem)] overflow-y-auto overscroll-contain bg-paper">
-          {data ? data.page_images.map((src, index) => (
-            <div key={index} className="relative aspect-[210/297] w-full bg-paper">
-              <Image unoptimized src={src} fill sizes="(max-width: 768px) 92vw, 672px"
-                alt={`${templateName} sample resume, page ${index + 1}`} className="object-contain" draggable={false} />
-            </div>
-          )) : <div className="flex min-h-80 items-center justify-center px-8 text-center text-sm text-ink-muted">
+      {/* One page at its real A4 ratio, sized to fit the screen whole (no scrolling).
+          Phones: close button centered below the page, within thumb reach.
+          Wider screens: close button beside the page on the right. */}
+      <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
+        <div
+          className="relative aspect-[210/297] w-[var(--page-w-phone)] shrink-0 overflow-hidden rounded-[3px] bg-white shadow-[0_24px_60px_-20px_rgb(35_10_4/55%)] sm:w-[var(--page-w-wide)]"
+          style={{
+            "--page-w-phone": "min(calc(100vw - 2rem), calc((100dvh - 5.5rem) * 210 / 297))",
+            "--page-w-wide": "min(calc(100vw - 4.75rem), 42rem, calc((100dvh - 2rem) * 210 / 297))",
+          } as CSSProperties}
+        >
+          {data?.page_images[0] ? (
+            <Image unoptimized src={data.page_images[0]} fill sizes="(max-width: 768px) 92vw, 672px"
+              alt={`${templateName} sample resume`} className="object-contain" draggable={false} />
+          ) : <div className="flex h-full w-full items-center justify-center bg-paper px-8 text-center text-sm text-ink-muted">
             {isError ? <div role="alert"><p>Could not load the preview.</p><button type="button" onClick={() => refetch()} className="mt-3 min-h-11 px-3 font-medium text-[#ff4e26] underline">Retry</button></div> : <p role="status">Preparing preview…</p>}
           </div>}
         </div>
+        <button type="button" onClick={() => dialog.current?.close()} aria-label="Close template preview" autoFocus
+          className="flex h-11 w-11 shrink-0 cursor-pointer sm:h-10 sm:w-10 items-center justify-center rounded-full border border-line bg-paper text-ink shadow-soft-lg transition-colors hover:border-ember/50 hover:text-ember focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff4e26]">
+          <X size={18} aria-hidden="true" />
+        </button>
       </div>
     </dialog>
   )

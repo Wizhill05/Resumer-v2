@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -28,6 +30,68 @@ from src.models.oauth import OAuthAuthorizationCode, OAuthClient, OAuthRefreshTo
 from src.models.user import User
 
 router = APIRouter(tags=["OAuth 2.1"])
+
+# Callback URLs of the AI connectors (ChatGPT, Gemini, Claude) that reach this flow with
+# a client_id we have never registered. Unknown client_ids are auto-provisioned ONLY for
+# these exact redirect URIs; anything else needs /oauth/register (exact-match per client).
+ALLOWED_CONNECTOR_REDIRECT_URIS: tuple[str, ...] = (
+    "https://chatgpt.com/oauth/callback",
+    "https://chat.openai.com/oauth/callback",
+    "https://gemini.google.com/auth/callback",
+    "https://chatgpt.com/connector_platform_oauth_redirect",
+    "https://platform.openai.com/apps-manage/oauth",
+    "https://claude.ai/api/mcp/auth_callback",
+    "https://claude.com/api/mcp/auth_callback",
+)
+
+# ChatGPT GPT Actions use a per-GPT callback: https://chatgpt.com/aip/g-<id>/oauth/callback
+_GPT_ACTION_CALLBACK_RE = re.compile(r"^https://(?:chat\.openai\.com|chatgpt\.com)/aip/g-[A-Za-z0-9]+/oauth/callback$")
+
+
+def _is_connector_callback(redirect_uri: str) -> bool:
+    return redirect_uri in ALLOWED_CONNECTOR_REDIRECT_URIS or bool(_GPT_ACTION_CALLBACK_RE.fullmatch(redirect_uri))
+
+
+DEFAULT_CLIENT_SCOPE = "profile:read profile:write resume:generate resume:edit offline_access"
+
+
+def _bad_request(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+async def _resolve_client(
+    db: AsyncSession, client_id: str, redirect_uri: str, scope: str | None
+) -> OAuthClient:
+    """Load the client and verify redirect_uri. Raises a plain 400 (never a redirect)."""
+    result = await db.execute(select(OAuthClient).where(OAuthClient.client_id == client_id))
+    client = result.scalar_one_or_none()
+    if client is None:
+        if not _is_connector_callback(redirect_uri):
+            raise _bad_request("Unknown client_id or unregistered redirect_uri")
+        uris = list(ALLOWED_CONNECTOR_REDIRECT_URIS)
+        if redirect_uri not in uris:
+            uris.append(redirect_uri)
+        client = OAuthClient(
+            client_id=client_id,
+            client_name=f"{client_id.capitalize()} Connector",
+            redirect_uris=uris,
+            grant_types=["authorization_code", "refresh_token"],
+            response_types=["code"],
+            scope=scope or DEFAULT_CLIENT_SCOPE,
+            is_confidential=False,
+        )
+        db.add(client)
+        await db.commit()
+        await db.refresh(client)
+        return client
+    if redirect_uri not in (client.redirect_uris or []):
+        if not _is_connector_callback(redirect_uri):
+            raise _bad_request("Mismatching redirect_uri")
+        # A known connector callback (exact URL or strict GPT Action pattern) can only
+        # deliver codes to OpenAI/Google/Anthropic, so remembering it is safe.
+        client.redirect_uris = list(client.redirect_uris or []) + [redirect_uri]
+        await db.commit()
+    return client
 
 
 def is_expired(expires_at: datetime) -> bool:
@@ -181,33 +245,8 @@ async def oauth_authorize_get(
     if code_challenge_method != "S256":
         raise HTTPException(status_code=400, detail="code_challenge_method must be S256.")
 
-    # 3. Validate or auto-provision client
-    result = await db.execute(select(OAuthClient).where(OAuthClient.client_id == client_id))
-    client = result.scalar_one_or_none()
-    if not client:
-        client = OAuthClient(
-            client_id=client_id,
-            client_name=f"{client_id.capitalize()} Connector",
-            redirect_uris=[redirect_uri, "https://chatgpt.com/oauth/callback", "https://chat.openai.com/oauth/callback", "https://gemini.google.com/auth/callback"],
-            grant_types=["authorization_code", "refresh_token"],
-            response_types=["code"],
-            scope=scope or "profile:read profile:write resume:generate resume:edit offline_access",
-            is_confidential=False,
-        )
-        db.add(client)
-        await db.commit()
-        await db.refresh(client)
-
-    # 4. Validate redirect_uri
-    if redirect_uri not in client.redirect_uris:
-        valid = any(redirect_uri.startswith(allowed.rstrip("*")) for allowed in client.redirect_uris)
-        if not valid and any(domain in redirect_uri for domain in ["chatgpt.com", "openai.com", "google.com", "localhost", "127.0.0.1"]):
-            # Dynamically register incoming client callback
-            client.redirect_uris = list(client.redirect_uris) + [redirect_uri]
-            await db.commit()
-            valid = True
-        if not valid:
-            raise HTTPException(status_code=400, detail="Mismatching redirect_uri")
+    # 3. Validate client and redirect_uri (plain 400 on failure, never a redirect)
+    client = await _resolve_client(db, client_id, redirect_uri, scope)
 
     base_url = get_base_url(request)
     frontend_url = settings.FRONTEND_URL.rstrip("/")
@@ -222,14 +261,23 @@ async def oauth_authorize_get(
             status_code=status.HTTP_302_FOUND,
         )
     # If user is authenticated
-    provider_name = (current_user.provider or "Account").capitalize()
+    provider_name = html.escape((current_user.provider or "Account").capitalize())
     token_param = request.query_params.get("token") or ""
+    esc = lambda v: html.escape(v, quote=True)  # noqa: E731
+    e_client_name = esc(client.client_name)
+    e_user_label = esc(current_user.name or current_user.email)
+    e_user_email = esc(current_user.email)
+    cancel_url = esc(
+        urlunparse(
+            urlparse(redirect_uri)._replace(query=urlencode({"error": "access_denied", "state": state}))
+        )
+    )
 
     consent_html = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Authorize {client.client_name} - Resumer</title>
+    <title>Authorize {e_client_name} - Resumer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #09090b; color: #f4f4f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }}
@@ -255,12 +303,12 @@ async def oauth_authorize_get(
 <body>
     <div class="card">
         <div class="logo">Resumer</div>
-        <p class="subtitle"><span class="client-name">{client.client_name}</span> is requesting permission to access your Resumer account.</p>
+        <p class="subtitle"><span class="client-name">{e_client_name}</span> is requesting permission to access your Resumer account.</p>
         
         <div class="user-box">
             <div class="user-info">
-                <span class="user-name">{current_user.name or current_user.email}</span>
-                <span class="user-email">{current_user.email}</span>
+                <span class="user-name">{e_user_label}</span>
+                <span class="user-email">{e_user_email}</span>
             </div>
             <span class="provider-badge">{provider_name}</span>
         </div>
@@ -273,16 +321,15 @@ async def oauth_authorize_get(
         </div>
 
         <form method="POST" action="/oauth/authorize">
-            <input type="hidden" name="client_id" value="{client_id}">
-            <input type="hidden" name="redirect_uri" value="{redirect_uri}">
-            <input type="hidden" name="scope" value="{scope}">
-            <input type="hidden" name="state" value="{state}">
-            <input type="hidden" name="code_challenge" value="{code_challenge}">
-            <input type="hidden" name="code_challenge_method" value="{code_challenge_method}">
-            <input type="hidden" name="user_id" value="{current_user.id}">
-            <input type="hidden" name="token" value="{token_param}">
-            <button type="submit" class="btn-submit">Authorize {client.client_name}</button>
-            <a href="{redirect_uri}?error=access_denied&state={state}" class="btn-cancel">Cancel</a>
+            <input type="hidden" name="client_id" value="{esc(client_id)}">
+            <input type="hidden" name="redirect_uri" value="{esc(redirect_uri)}">
+            <input type="hidden" name="scope" value="{esc(scope)}">
+            <input type="hidden" name="state" value="{esc(state)}">
+            <input type="hidden" name="code_challenge" value="{esc(code_challenge)}">
+            <input type="hidden" name="code_challenge_method" value="{esc(code_challenge_method)}">
+            <input type="hidden" name="token" value="{esc(token_param)}">
+            <button type="submit" class="btn-submit">Authorize {e_client_name}</button>
+            <a href="{cancel_url}" class="btn-cancel">Cancel</a>
         </form>
     </div>
 </body>
@@ -311,33 +358,17 @@ async def oauth_authorize_post(
     state: str = Form(...),
     code_challenge: str = Form(...),
     code_challenge_method: str = Form("S256"),
-    user_id: str | None = Form(None),
     token: str | None = Form(None),
-    email: str | None = Form(None),
     current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. Validate or auto-provision client
-    result = await db.execute(select(OAuthClient).where(OAuthClient.client_id == client_id))
-    client = result.scalar_one_or_none()
-    if not client:
-        client = OAuthClient(
-            client_id=client_id,
-            client_name=f"{client_id.capitalize()} Connector",
-            redirect_uris=[redirect_uri, "https://chatgpt.com/oauth/callback", "https://chat.openai.com/oauth/callback", "https://gemini.google.com/auth/callback"],
-            grant_types=["authorization_code", "refresh_token"],
-            response_types=["code"],
-            scope=scope or "profile:read profile:write resume:generate resume:edit offline_access",
-            is_confidential=False,
-        )
-        db.add(client)
-        await db.commit()
-        await db.refresh(client)
+    # 1. Validate client and redirect_uri (plain 400 on failure, never a redirect)
+    if code_challenge_method != "S256":
+        raise _bad_request("code_challenge_method must be S256.")
+    await _resolve_client(db, client_id, redirect_uri, scope)
 
-    # 2. Resolve authenticated user
-    user: User | None = None
-    if current_user:
-        user = current_user
+    # 2. Resolve authenticated user: ONLY from a verified session or a signed token.
+    user: User | None = current_user
 
     if not user and token:
         try:
@@ -348,26 +379,6 @@ async def oauth_authorize_post(
                 user = u_res.scalar_one_or_none()
         except JWTError:
             pass
-
-    if not user and user_id:
-        try:
-            u_res = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
-            user = u_res.scalar_one_or_none()
-        except ValueError:
-            pass
-
-    if not user and email:
-        u_res = await db.execute(select(User).where(User.email == email.strip().lower()))
-        user = u_res.scalar_one_or_none()
-        if not user:
-            user = User(
-                email=email.strip().lower(),
-                name=email.split("@")[0].capitalize(),
-                provider="oauth-mcp",
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
 
     if not user:
         raise HTTPException(
@@ -499,6 +510,13 @@ async def oauth_token(
                 status_code=400,
                 detail="Authorization code expired. Please reconnect the connector to request a new session.",
             )
+
+        # Bind the code to the client and redirect_uri it was issued for (RFC 6749 4.1.3)
+        if client_id and client_id != auth_code_obj.client_id:
+            raise HTTPException(status_code=400, detail="client_id does not match the authorization code.")
+        # OAuth 2.1 clients may omit redirect_uri here (PKCE binds the code); if sent, it must match.
+        if redirect_uri and redirect_uri != auth_code_obj.redirect_uri:
+            raise HTTPException(status_code=400, detail="redirect_uri does not match the authorization request.")
 
         # Verify PKCE
         if not verify_pkce(code_verifier, auth_code_obj.code_challenge, auth_code_obj.code_challenge_method):
