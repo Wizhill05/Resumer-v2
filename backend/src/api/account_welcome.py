@@ -136,6 +136,11 @@ async def post_welcome(
     current_user.name = full_name
     profile.full_name = full_name
 
+    # Seed the contact email from the account email, but never overwrite one the
+    # user (or an import) already set.
+    if not _clean(profile.email) and _clean(current_user.email):
+        profile.email = current_user.email.strip()
+
     if not skip:
         if subtitle is not None:
             profile.subtitle = subtitle
