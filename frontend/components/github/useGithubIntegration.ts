@@ -15,8 +15,12 @@ export const GITHUB_CONNECT_URL =
   "/api/integrations/github/start?private=0&returnTo=/account";
 export const GITHUB_PRIVATE_START_URL =
   "/api/integrations/github/start?private=1&returnTo=/account";
+// returnTo is the encoded path "/profile?tab=projects" so users land back on the
+// Projects tab (ProfileClient reads `tab`).
 export const GITHUB_PROFILE_CONNECT_URL =
-  "/api/integrations/github/start?private=0&returnTo=/profile";
+  "/api/integrations/github/start?private=0&returnTo=%2Fprofile%3Ftab%3Dprojects";
+export const GITHUB_PROFILE_PRIVATE_START_URL =
+  "/api/integrations/github/start?private=1&returnTo=%2Fprofile%3Ftab%3Dprojects";
 
 export function isGithubConnectedActive(
   integration: GithubIntegration | undefined,

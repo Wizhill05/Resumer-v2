@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { AlertTriangle, FolderGit2, Loader2, Lock } from "lucide-react";
 import { signInGithub } from "@/app/actions";
 import {
@@ -11,53 +9,14 @@ import {
   useGithubIntegration,
   useRemovePrivateAccess,
 } from "./useGithubIntegration";
-
-const REASON_MESSAGES: Record<string, string> = {
-  already_linked:
-    "This GitHub account is already connected to another Résumer account.",
-  different_account:
-    "You authorized a different GitHub account than the one you sign in with.",
-  denied: "GitHub access was cancelled.",
-  expired: "That link expired. Try again.",
-  failed: "Couldn't connect GitHub. Try again.",
-  sign_in_again: "Sign out and sign in with GitHub once more, then try again.",
-};
-
-type Notice = { type: "success" | "error"; message: string } | null;
+import { GithubNoticeBanner, useGithubReturnNotice } from "./GithubReturnNotice";
 
 export function GithubConnectionCard() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [notice] = useState<Notice>(() => {
-    const github = searchParams.get("github");
-    if (github === "connected") {
-      return { type: "success", message: "GitHub connected." };
-    }
-    if (github === "error") {
-      const reason = searchParams.get("reason") ?? "";
-      return {
-        type: "error",
-        message:
-          REASON_MESSAGES[reason] ?? "Couldn't connect GitHub. Try again.",
-      };
-    }
-    return null;
-  });
+  const notice = useGithubReturnNotice("/account");
   const { data: integration, isLoading, isError, refetch } =
     useGithubIntegration();
   const disconnect = useDisconnectGithub();
   const removePrivate = useRemovePrivateAccess();
-
-  useEffect(() => {
-    if (!searchParams.get("github")) return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("github");
-    params.delete("reason");
-    const qs = params.toString();
-    const base = pathname ?? "/account";
-    router.replace(qs ? `${base}?${qs}` : base, { scroll: false });
-  }, [searchParams, router, pathname]);
 
   const mutationError =
     disconnect.error instanceof Error
@@ -83,16 +42,9 @@ export function GithubConnectionCard() {
       </h2>
 
       {notice && (
-        <p
-          role={notice.type === "error" ? "alert" : "status"}
-          className={
-            notice.type === "error"
-              ? "mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"
-              : "mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700"
-          }
-        >
-          {notice.message}
-        </p>
+        <div className="mt-3">
+          <GithubNoticeBanner notice={notice} />
+        </div>
       )}
 
       {isLoading ? (

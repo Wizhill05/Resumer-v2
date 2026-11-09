@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { GithubMark } from "@/components/icons/GithubMark";
 import {
   GITHUB_PROFILE_CONNECT_URL,
+  GITHUB_PROFILE_PRIVATE_START_URL,
   isGithubConnectedActive,
   useGithubIntegration,
 } from "@/components/github/useGithubIntegration";
@@ -435,6 +436,24 @@ export function GithubImportCard({
           >
             Connect
           </a>
+        </div>
+      )}
+
+      {integration && isConnected && !integration.private_access && (
+        <div className="space-y-1 text-[13px] text-ink-muted">
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              <Lock size={14} className="shrink-0" aria-hidden="true" />
+              <span>Showing public repos only</span>
+            </span>
+            <a
+              href={GITHUB_PROFILE_PRIVATE_START_URL}
+              className="shrink-0 font-semibold text-ember underline-offset-4 hover:underline"
+            >
+              Include private
+            </a>
+          </div>
+          <p className="pl-[22px] text-xs text-ink-faint">GitHub asks for full repo access; Résumer only reads.</p>
         </div>
       )}
 

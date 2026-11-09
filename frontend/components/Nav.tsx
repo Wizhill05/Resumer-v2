@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
-import { Menu, X, Sun, Moon, LayoutDashboard, FilePlus2, User, History, LifeBuoy, ChevronRight } from "lucide-react"
+import { Menu, X, Sun, Moon, LayoutDashboard, FilePlus2, User, History, LifeBuoy, ChevronRight, Settings } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useSession } from "next-auth/react"
 import { useGenerationStats } from "@/components/useGenerationStats"
@@ -43,14 +43,19 @@ function AccountStatsLine() {
   )
 }
 
-export function Nav() {
+/**
+ * `signedIn` is the server's verdict (pages that already ran `auth()`). It keeps
+ * the Account entry reachable even if the client `useSession()` hasn't loaded
+ * or failed. Leave it unset on public pages so signed-out visitors never see it.
+ */
+export function Nav({ signedIn = false }: { signedIn?: boolean } = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
   const accountUser = session?.user
   const accountInitials = accountUser?.name?.trim()
     ? accountUser.name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")
@@ -155,7 +160,7 @@ export function Nav() {
             </button>
 
             {/* Sign Out Button -> Account section */}
-            <AccountMenu />
+            <AccountMenu signedIn={signedIn} />
           </div>
           {/* Mobile hamburger + theme toggle (account lives inside the menu) */}
           <div className="flex items-center gap-1 md:hidden">
@@ -267,6 +272,41 @@ export function Nav() {
                     </span>
                     <ChevronRight size={15} className="text-zinc-400 dark:text-zinc-600 shrink-0" />
                   </button>
+                </div>
+              )}
+              {!accountUser && signedIn && (
+                <div className={closing ? "mobile-nav-item-exit" : "mobile-nav-item"}>
+                  <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-2 px-2">
+                    Account
+                  </p>
+                  {sessionStatus === "loading" ? (
+                    <div
+                      aria-label="Loading account"
+                      className="flex w-full items-center gap-3 p-3.5 rounded border border-zinc-200/60 dark:border-zinc-800/60 bg-white/70 dark:bg-zinc-900/70"
+                    >
+                      <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                      <span className="min-w-0 flex-1 space-y-2">
+                        <span className="block h-3 w-1/2 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+                        <span className="block h-2.5 w-3/4 animate-pulse rounded bg-zinc-200 dark:bg-zinc-800" />
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleNavigate("/account")}
+                      className={`w-full flex items-center justify-between p-3.5 rounded border transition-all duration-150 active:scale-[0.98] cursor-pointer text-left ${
+                        pathname === "/account"
+                          ? "border-[#ff4e26] bg-[#ff4e26]/10 text-[#ff4e26] font-black shadow-2xs"
+                          : "border-zinc-200/60 dark:border-zinc-800/60 bg-white/70 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-700 font-bold"
+                      }`}
+                    >
+                      <span className="flex items-center gap-3 min-w-0">
+                        <Settings size={18} className={pathname === "/account" ? "text-[#ff4e26]" : "text-zinc-400 dark:text-zinc-500"} />
+                        <span className="text-base uppercase tracking-tight truncate">Account</span>
+                      </span>
+                      <ChevronRight size={15} className="text-zinc-400 dark:text-zinc-600 shrink-0" />
+                    </button>
+                  )}
                 </div>
               )}
               <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-2 px-2">

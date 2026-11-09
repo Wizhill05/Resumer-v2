@@ -2,10 +2,16 @@
 
 import { captureDownload } from "@/lib/posthog"
 
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query"
 import { useState, useEffect, useRef, useMemo } from "react"
 import { RefreshCw, LayoutList, LayoutGrid, Trash2, FileText, Pencil, X, Copy, Eye, Download, ArrowLeft, Loader2, Bug, Search } from "lucide-react"
-import { filterHistoryRuns, type HistoryRun, HISTORY_PAGE_SIZE as PAGE_SIZE } from "@/lib/history"
+import {
+  fetchHistoryPage,
+  HISTORY_LIST_KEY,
+  HISTORY_SUMMARY_KEY,
+  type HistoryPage,
+  type HistoryRun,
+} from "@/lib/history"
 import { createPortal } from "react-dom"
 import { PdfViewer } from "@/components/pdf/PdfViewer"
 import { downloadResumePdf, forgetResumePdf, getResumePdf, saveBlob, type ResumePdf } from "@/lib/resume-pdf-cache"
@@ -125,9 +131,23 @@ function StatusDot({ status }: { status: string }) {
   return <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-[5px]" />
 }
 
-function JobDescriptionPeek({ text }: { text: string }) {
+function JobDescriptionPeek({ runId }: { runId: string }) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // The list payload omits the (large) job description; load it when the
+  // modal is first opened. It never changes after creation, so cache it.
+  const { data: text, isPending, isError, refetch } = useQuery<string>({
+    queryKey: ["generation-job-description", runId],
+    queryFn: async () => {
+      const res = await fetch(`/api/backend/generate/${runId}`)
+      if (!res.ok) throw new Error("Failed to load job description")
+      const gen = (await res.json()) as { job_description?: string }
+      return gen.job_description ?? ""
+    },
+    enabled: isOpen,
+    staleTime: Infinity,
+  })
 
   useEffect(() => {
     if (!isOpen) return
@@ -144,6 +164,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
 
   const copy = async (event: React.MouseEvent) => {
     event.stopPropagation()
+    if (text === undefined) return
     await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 1600)
@@ -185,6 +206,7 @@ function JobDescriptionPeek({ text }: { text: string }) {
                 <button
                   type="button"
                   onClick={copy}
+                  disabled={text === undefined}
                   className="flex min-h-9 cursor-pointer touch-manipulation items-center gap-1 rounded-md border border-line px-2.5 py-1 text-xs font-semibold text-ink-soft transition-colors active:bg-ink/5 sm:hover:border-ember/50 sm:hover:text-ember"
                 >
                   <Copy size={12} />
@@ -203,7 +225,18 @@ function JobDescriptionPeek({ text }: { text: string }) {
 
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-4 text-[11px] leading-relaxed text-ink whitespace-pre-wrap select-text">
-              {text || "No job description text available."}
+              {isPending
+                ? "Loading…"
+                : isError
+                ? (
+                  <>
+                    Couldn&apos;t load the job description.{" "}
+                    <button type="button" onClick={() => void refetch()} className="underline">
+                      Retry
+                    </button>
+                  </>
+                )
+                : text || "No job description text available."}
             </div>
           </div>
         </div>,
@@ -219,9 +252,24 @@ function useDeleteRun() {
     if (!window.confirm("Delete this résumé from history?")) return
     await fetch(`/api/backend/generate/${id}`, { method: "DELETE" })
     void forgetResumePdf(id)
-    queryClient.setQueryData<HistoryRun[]>(["history"], (old) =>
-      (old ?? []).filter((r) => r.id !== id)
+    // Drop the row from every cached search/page and keep the counts honest,
+    // without refetching all loaded pages.
+    queryClient.setQueriesData<InfiniteData<HistoryPage, string | null>>(
+      { queryKey: HISTORY_LIST_KEY },
+      (old) => {
+        if (!old || !old.pages.some((page) => page.items.some((r) => r.id === id))) return old
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((r) => r.id !== id),
+            total: page.total - 1,
+            unfiltered_total: page.unfiltered_total - 1,
+          })),
+        }
+      }
     )
+    void queryClient.invalidateQueries({ queryKey: HISTORY_SUMMARY_KEY })
   }
 }
 
@@ -271,7 +319,7 @@ function LiveProgressRow({
             <span className="mx-1.5 text-ink-faint">·</span>
             <span className="text-amber-500 font-medium">{stepLabel} ({percent}%)</span>
           </p>
-          <div className="mt-2"><JobDescriptionPeek text={run.job_description} /></div>
+          <div className="mt-2"><JobDescriptionPeek runId={run.id} /></div>
           
           {/* Progress bar */}
           <div className="w-full bg-ink/5 h-1 mt-2 rounded-full overflow-hidden">
@@ -356,7 +404,7 @@ function LiveProgressGridCard({
         <p className="text-xs text-ink-faint mt-0.5 truncate pl-3.5">
           {run.company ? `${run.company} · ` : ""}{date}
         </p>
-        <div className="mt-2 pl-3.5"><JobDescriptionPeek text={run.job_description} /></div>
+        <div className="mt-2 pl-3.5"><JobDescriptionPeek runId={run.id} /></div>
       </div>
     </div>
   )
@@ -601,55 +649,67 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
 
 export function HistoryClient() {
   const queryClient = useQueryClient()
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+  const trimmedQuery = searchQuery.trim()
 
-  const { data: runs = [], isLoading, isFetching, error, refetch } = useQuery<HistoryRun[]>({
-    queryKey: ["history"],
-    queryFn: async () => {
-      const res = await fetch("/api/backend/generate")
-      if (!res.ok) throw new Error("Failed to load history")
-      return res.json()
-    },
+  // Search runs on the server (the list is paginated, so the client no longer
+  // holds every run). Debounce typing; clearing applies on the next tick.
+  const [appliedQuery, setAppliedQuery] = useState("")
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedQuery(trimmedQuery), trimmedQuery ? 250 : 0)
+    return () => clearTimeout(timer)
+  }, [trimmedQuery])
+
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    error,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: [...HISTORY_LIST_KEY, appliedQuery],
+    queryFn: ({ pageParam }) => fetchHistoryPage(appliedQuery, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
+    // Keep the old rows on screen while a new search is in flight.
+    placeholderData: keepPreviousData,
   })
+  const runs = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data])
+  const lastPage = data?.pages[data.pages.length - 1]
+  const total = lastPage?.total ?? 0
+  const unfilteredTotal = lastPage?.unfiltered_total ?? 0
+
   const [view, setView] = useState<ViewMode>("list")
   const [activeGenForFeedback, setActiveGenForFeedback] = useState<string | null>(null)
   const [fullscreenRun, setFullscreenRun] = useState<HistoryRun | null>(null)
   const deleteRun = useDeleteRun()
-  const [searchQuery, setSearchQuery] = useState("")
-  const trimmedQuery = searchQuery.trim()
   const clearSearch = () => {
     setSearchQuery("")
-    setVisibleCount(PAGE_SIZE)
     searchRef.current?.focus()
   }
 
-  const filteredRuns = useMemo(() => {
-    return filterHistoryRuns(runs, searchQuery)
-  }, [runs, searchQuery])
-
-  // Lazy loading infinite scroll observer
+  // Infinite scroll: load the next page when the sentinel nears the viewport.
   useEffect(() => {
     const el = sentinelRef.current
-    if (!el || visibleCount >= filteredRuns.length) return
+    if (!el || !hasNextPage || isFetchingNextPage) return
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))
-        }
+        if (entries[0]?.isIntersecting) void fetchNextPage()
       },
       { rootMargin: "350px" }
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [filteredRuns.length, visibleCount, view])
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, runs.length, view])
 
-  const visibleRuns = useMemo(
-    () => filteredRuns.slice(0, visibleCount),
-    [filteredRuns, visibleCount]
-  )
+  const remaining = Math.max(0, total - runs.length)
+  const isRefreshing = isFetching && !isFetchingNextPage
 
   const hasActive = runs.some((r) => r.status === "pending" || r.status === "in_progress")
   useEffect(() => {
@@ -709,9 +769,9 @@ export function HistoryClient() {
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-line">
         <span role="status" className="text-xs font-semibold text-ink-faint">
-          {trimmedQuery
-            ? `${filteredRuns.length} of ${runs.length} ${runs.length === 1 ? "generation" : "generations"}`
-            : `${runs.length} ${runs.length === 1 ? "generation" : "generations"}`}
+          {appliedQuery
+            ? `${total} of ${unfilteredTotal} ${unfilteredTotal === 1 ? "generation" : "generations"}`
+            : `${total} ${total === 1 ? "generation" : "generations"}`}
         </span>
         <div className="flex items-center gap-2">
           {/* View toggle - desktop only */}
@@ -734,13 +794,12 @@ export function HistoryClient() {
           <button
             onClick={() => {
               queryClient.invalidateQueries({ queryKey: ["history"] })
-              refetch()
             }}
-            disabled={isFetching}
+            disabled={isRefreshing}
             className="flex cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-paper px-2.5 py-1.5 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
           >
-            <RefreshCw size={12} className={isFetching ? "animate-spin text-[#ff4e26]" : ""} />
-            <span>{isFetching ? "Refreshing..." : "Refresh"}</span>
+            <RefreshCw size={12} className={isRefreshing ? "animate-spin text-[#ff4e26]" : ""} />
+            <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
           </button>
         </div>
       </div>
@@ -760,14 +819,10 @@ export function HistoryClient() {
             aria-label="Search generations by company or job role"
             placeholder="Search by company or job role..."
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              setVisibleCount(PAGE_SIZE)
-            }}
+            onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape" && searchQuery) {
                 setSearchQuery("")
-                setVisibleCount(PAGE_SIZE)
               }
             }}
             className="h-10 w-full rounded-md border border-line-strong bg-paper pl-9 pr-9 text-sm text-ink placeholder:text-ink-faint transition-[border-color] focus:border-ember focus:outline-none"
@@ -785,15 +840,15 @@ export function HistoryClient() {
         </div>
       </div>
 
-      {runs.length === 0 && !trimmedQuery ? (
+      {runs.length === 0 && !appliedQuery && !trimmedQuery ? (
         <div className="px-5 py-16 text-center">
           <p className="text-sm font-semibold text-ink-faint">No generations yet</p>
           <p className="text-xs text-ink-faint mt-1">Your tailored résumés will appear here</p>
         </div>
-      ) : filteredRuns.length === 0 ? (
+      ) : runs.length === 0 ? (
         <div className="px-5 py-16 text-center space-y-3">
           <p className="text-sm font-semibold text-ink-muted">
-            No generations match &ldquo;{trimmedQuery}&rdquo;
+            No generations match &ldquo;{appliedQuery || trimmedQuery}&rdquo;
           </p>
           <p className="text-xs text-ink-faint">
             Try searching for a different company name or job role
@@ -812,7 +867,7 @@ export function HistoryClient() {
         /* ── Grid view ── */
         <>
           <div className="p-4 grid grid-cols-2 lg:grid-cols-3 gap-4">
-            {visibleRuns.map((run) => (
+            {runs.map((run) => (
               run.status === "in_progress" || run.status === "pending" || run.status === "remaking_project" ? (
                 <LiveProgressGridCard key={run.id} run={run} onDelete={deleteRun} refetch={refetch} />
               ) : (
@@ -820,13 +875,14 @@ export function HistoryClient() {
               )
             ))}
           </div>
-          {visibleCount < filteredRuns.length && (
+          {hasNextPage && (
             <div ref={sentinelRef} className="p-4 text-center border-t border-line bg-ink/[0.03]">
               <button
-                onClick={() => setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))}
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
                 className="cursor-pointer rounded-md border border-line-strong bg-paper px-4 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
               >
-                Load more ({filteredRuns.length - visibleCount} remaining)
+                {isFetchingNextPage ? "Loading..." : `Load more (${remaining} remaining)`}
               </button>
             </div>
           )}
@@ -835,7 +891,7 @@ export function HistoryClient() {
         /* ── List view ── */
         <>
           <div className="divide-y divide-line">
-            {visibleRuns.map((run) => {
+            {runs.map((run) => {
               if (run.status === "in_progress" || run.status === "pending" || run.status === "remaking_project") {
                 return (
                   <LiveProgressRow
@@ -888,7 +944,7 @@ export function HistoryClient() {
                           <><span className="dot-span mx-1 text-ink-faint transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
                         )}
                       </p>
-                      <div className="mt-1.5"><JobDescriptionPeek text={run.job_description} /></div>
+                      <div className="mt-1.5"><JobDescriptionPeek runId={run.id} /></div>
                     </div>
                   </div>
 
@@ -955,13 +1011,14 @@ export function HistoryClient() {
               )
             })}
           </div>
-          {visibleCount < filteredRuns.length && (
+          {hasNextPage && (
             <div ref={sentinelRef} className="p-4 text-center border-t border-line bg-ink/[0.03]">
               <button
-                onClick={() => setVisibleCount((prev) => Math.min(filteredRuns.length, prev + PAGE_SIZE))}
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
                 className="cursor-pointer rounded-md border border-line-strong bg-paper px-4 py-2 text-xs font-semibold text-ink transition-colors hover:border-ink/30"
               >
-                Load more ({filteredRuns.length - visibleCount} remaining)
+                {isFetchingNextPage ? "Loading..." : `Load more (${remaining} remaining)`}
               </button>
             </div>
           )}

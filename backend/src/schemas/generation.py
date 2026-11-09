@@ -71,6 +71,46 @@ class GenerationOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GenerationListItem(BaseModel):
+    """One History row. Deliberately excludes job_description, content_split,
+    section_order, render_metadata and other heavy columns; fetch the full
+    record via GET /generate/{id} when needed."""
+    id: uuid.UUID
+    template_id: str
+    job_title: str | None = None
+    company: str | None = None
+    status: str
+    created_at: datetime
+    thumb_storage_key: str | None = None
+    # editor_revision; keys the frontend's on-device PDF cache.
+    pdf_version: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class GenerationListPage(BaseModel):
+    """GET /generate/list response (keyset-paginated)."""
+    items: list[GenerationListItem]
+    # Opaque; pass back as ?cursor= for the next page. None on the last page.
+    next_cursor: str | None = None
+    # Rows matching the current `q` filter.
+    total: int
+    # All of the user's rows regardless of `q` (what the header shows as "of N").
+    unfiltered_total: int
+
+
+class GenerationSummary(BaseModel):
+    """GET /generate/summary response: dashboard tile + usage stats."""
+    total: int
+    latest_created_at: datetime | None = None
+    latest_company: str | None = None
+    latest_job_title: str | None = None
+    # Generations created in the last 24h (rolling window).
+    used_today: int
+    # Generations created on/after `month_start` (default: start of the UTC month).
+    this_month: int
+
+
 # ── User default preferences ─────────────────────────────────────────────────
 
 

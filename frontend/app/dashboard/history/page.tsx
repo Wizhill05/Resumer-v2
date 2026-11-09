@@ -14,7 +14,7 @@ export default async function HistoryPage() {
 
   return (
     <main className="app-surface flex flex-1 flex-col">
-      <Nav />
+      <Nav signedIn />
 
       <PageHero
         title="History"

@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
@@ -5,9 +6,9 @@ import re
 import time
 import uuid
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select, case, func
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +22,13 @@ from src.core.notify import send_completion_email
 from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
 from src.models.user import User
-from src.schemas.generation import GenerationCreate, GenerationOut
+from src.schemas.generation import (
+    GenerationCreate,
+    GenerationListItem,
+    GenerationListPage,
+    GenerationOut,
+    GenerationSummary,
+)
 from src.schemas.template import DEFAULT_SECTION_ORDER
 from src.services.content_split import resolve_default_split, resolve_default_mode, is_valid_mode
 from src.services.template_layout import get_generation_section_order, resolve_section_order
@@ -271,17 +278,183 @@ async def start_generation(
     return gen
 
 
+def _editor_revision_col():
+    """`render_metadata->>'editor_revision'` as an int, selected on its own so
+    the (large) JSONB blob never leaves the database."""
+    return func.coalesce(Generation.render_metadata["editor_revision"].as_integer(), 0)
+
+
 @router.get("", response_model=list[GenerationOut])
 async def list_generations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Legacy full list, kept byte-compatible for older clients.
+
+    Deprecated: the web app uses GET /generate/list (paginated, lightweight) and
+    GET /generate/summary. This still returns every row with the full
+    GenerationOut shape, but no longer loads columns the schema doesn't expose
+    (guest_input_snapshot, keywords, instructions, ...) and reads only
+    editor_revision out of render_metadata.
+    """
     result = await db.execute(
-        select(Generation)
+        select(
+            Generation.id,
+            Generation.user_id,
+            Generation.template_id,
+            Generation.job_title,
+            Generation.company,
+            Generation.status,
+            Generation.model_used,
+            Generation.job_description,
+            Generation.created_at,
+            Generation.completed_at,
+            Generation.thumb_storage_key,
+            Generation.content_split,
+            Generation.send_email,
+            Generation.creativity_mode,
+            Generation.section_order,
+            _editor_revision_col().label("editor_revision"),
+        )
         .where(Generation.user_id == current_user.id)
-        .order_by(Generation.created_at.desc())
+        .order_by(Generation.created_at.desc(), Generation.id.desc())
     )
-    return result.scalars().all()
+    out: list[GenerationOut] = []
+    for row in result.mappings():
+        data = dict(row)
+        revision = data.pop("editor_revision")
+        out.append(GenerationOut(**data, render_metadata={"editor_revision": revision}))
+    return out
+
+
+LIST_DEFAULT_LIMIT = 30
+LIST_MAX_LIMIT = 100
+
+
+def _encode_cursor(created_at: datetime, gen_id: uuid.UUID) -> str:
+    raw = f"{created_at.isoformat()}|{gen_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        ts, _, raw_id = base64.urlsafe_b64decode(padded.encode()).decode().partition("|")
+        return datetime.fromisoformat(ts), uuid.UUID(raw_id)
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid cursor")
+
+
+def _like_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+@router.get("/list", response_model=GenerationListPage)
+async def list_generations_page(
+    limit: int = Query(LIST_DEFAULT_LIMIT, ge=1, le=LIST_MAX_LIMIT),
+    cursor: str | None = Query(None, max_length=200),
+    q: str | None = Query(None, max_length=200, description="Case-insensitive substring of company or job title"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lightweight, keyset-paginated history (newest first, ties broken by id)."""
+    base = [Generation.user_id == current_user.id]
+    unfiltered_total = (
+        await db.execute(select(func.count()).select_from(Generation).where(*base))
+    ).scalar_one()
+
+    filters = list(base)
+    term = (q or "").strip()
+    if term:
+        pattern = f"%{_like_escape(term)}%"
+        filters.append(
+            or_(
+                Generation.company.ilike(pattern, escape="\\"),
+                Generation.job_title.ilike(pattern, escape="\\"),
+            )
+        )
+        total = (
+            await db.execute(select(func.count()).select_from(Generation).where(*filters))
+        ).scalar_one()
+    else:
+        total = unfiltered_total
+
+    page_filters = list(filters)
+    if cursor:
+        c_ts, c_id = _decode_cursor(cursor)
+        page_filters.append(
+            or_(
+                Generation.created_at < c_ts,
+                and_(Generation.created_at == c_ts, Generation.id < c_id),
+            )
+        )
+
+    result = await db.execute(
+        select(
+            Generation.id,
+            Generation.template_id,
+            Generation.job_title,
+            Generation.company,
+            Generation.status,
+            Generation.created_at,
+            Generation.thumb_storage_key,
+            _editor_revision_col().label("pdf_version"),
+        )
+        .where(*page_filters)
+        .order_by(Generation.created_at.desc(), Generation.id.desc())
+        .limit(limit + 1)
+    )
+    rows = result.mappings().all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    items = [GenerationListItem(**row) for row in rows]
+    next_cursor = _encode_cursor(items[-1].created_at, items[-1].id) if has_more and items else None
+    return GenerationListPage(
+        items=items, next_cursor=next_cursor, total=total, unfiltered_total=unfiltered_total
+    )
+
+
+@router.get("/summary", response_model=GenerationSummary)
+async def generation_summary(
+    month_start: datetime | None = Query(
+        None, description="Start of the caller's current month (ISO 8601); defaults to the UTC month start"
+    ),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aggregates only (count/max); never loads generation rows' content."""
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(hours=24)
+    if month_start is None:
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif month_start.tzinfo is None:
+        month_start = month_start.replace(tzinfo=timezone.utc)
+
+    agg = (
+        await db.execute(
+            select(
+                func.count(Generation.id),
+                func.count(Generation.id).filter(Generation.created_at >= day_ago),
+                func.count(Generation.id).filter(Generation.created_at >= month_start),
+            ).where(Generation.user_id == current_user.id)
+        )
+    ).one()
+    latest = (
+        await db.execute(
+            select(Generation.created_at, Generation.company, Generation.job_title)
+            .where(Generation.user_id == current_user.id)
+            .order_by(Generation.created_at.desc(), Generation.id.desc())
+            .limit(1)
+        )
+    ).first()
+    return GenerationSummary(
+        total=agg[0],
+        used_today=agg[1],
+        this_month=agg[2],
+        latest_created_at=latest.created_at if latest else None,
+        latest_company=latest.company if latest else None,
+        latest_job_title=latest.job_title if latest else None,
+    )
 
 
 @router.get("/{gen_id}", response_model=GenerationOut)

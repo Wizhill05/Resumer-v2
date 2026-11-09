@@ -8,6 +8,7 @@ export default async function SupportPage() {
   const session = await auth()
   return (
     <SupportShell
+      signedIn={Boolean(session?.user)}
       title="Support"
       subtitle="Report a problem, share an idea, or follow up. Every issue is a private conversation."
       actions={

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import ARRAY, DateTime, Float, ForeignKey, Integer, String, Text, Boolean, JSON, func
+from sqlalchemy import ARRAY, DateTime, Float, ForeignKey, Index, Integer, String, Text, Boolean, JSON, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,6 +12,10 @@ from src.models.user import Base
 
 class Generation(Base):
     __tablename__ = "generations"
+    __table_args__ = (
+        # History list / summary: per-user, newest first (keyset order).
+        Index("ix_generations_user_created", "user_id", text("created_at DESC"), text("id DESC")),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

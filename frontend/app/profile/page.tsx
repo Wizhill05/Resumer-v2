@@ -12,7 +12,7 @@ export default async function ProfilePage() {
 
   return (
     <main className="app-surface flex flex-1 flex-col">
-      <Nav />
+      <Nav signedIn />
       <ProfileClient />
       <Footer />
     </main>
