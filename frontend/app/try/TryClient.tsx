@@ -186,12 +186,12 @@ function AddCard({ title, children }: { title: string; children: React.ReactNode
 // ── Section panels ────────────────────────────────────────────────────────────
 
 function ProfilePanel({
-  draft, updateDraft, turnstileToken, needsTurnstile, resetTurnstile,
+  draft, updateDraft, needsTurnstile, getTurnstileToken, resetTurnstile,
 }: {
   draft: GuestDraft
   updateDraft: (d: GuestDraft) => void
-  turnstileToken: string
   needsTurnstile: boolean
+  getTurnstileToken: () => Promise<string>
   resetTurnstile: () => void
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -221,11 +221,13 @@ function ProfilePanel({
       : ""
 
   const importFiles = async (files: File[]) => {
+    setImportErr(null); setImportMsg(null); setFileCount(files.length); setImportStage("parsing")
+    const turnstileToken = await getTurnstileToken()
     if (needsTurnstile && !turnstileToken) {
-      setImportErr("Please complete the human check and try again.")
+      setImportErr("The security check didn't finish. Complete the check at the bottom of the page and try again.")
+      setImportStage("idle")
       return
     }
-    setImportErr(null); setImportMsg(null); setFileCount(files.length); setImportStage("parsing")
     try {
       const fd = new FormData()
       files.forEach((f) => fd.append("files", f))
@@ -850,7 +852,7 @@ function GeneratePanel({
 
 export function TryClient() {
   const router = useRouter()
-  const turnstile = useTurnstile({ size: "invisible" })
+  const turnstile = useTurnstile({ size: "flexible", appearance: "interaction-only" })
 
   const [draft, setDraft] = useState<GuestDraft>(() => emptyGuestDraft())
   const [cookiesBlocked, setCookiesBlocked] = useState(false)
@@ -961,8 +963,13 @@ export function TryClient() {
     if (!jobDescription.trim()) { setError("Paste a job description first."); setActive("generate"); return }
     if (usableExpCount < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
     if (usableProjCount < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
-    if (turnstile.needsTurnstile && !turnstile.token) { setError("Please complete the human check and try again."); return }
     setError(null); setSubmitting(true)
+    const turnstileToken = await turnstile.getToken()
+    if (turnstile.needsTurnstile && !turnstileToken) {
+      setError("The security check didn't finish. Complete it above the Generate button and try again.")
+      setSubmitting(false)
+      return
+    }
     if (ANALYTICS_ENABLED) posthog.capture("resume_generation_requested", {
       is_guest: true,
       projects_count: activeFocus.projects,
@@ -982,7 +989,7 @@ export function TryClient() {
           content_split: { projects: activeFocus.projects, experience: activeFocus.experience },
           creativity_mode: creativityMode,
           ...draft,
-          ...(turnstile.token ? { turnstile_token: turnstile.token } : {}),
+          ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
         }),
       })
       // Turnstile tokens are single use. Always request a fresh one for the
@@ -1084,7 +1091,7 @@ export function TryClient() {
         <div className="flex min-w-0 flex-1 flex-col bg-paper">
           {/* Scrollable content area */}
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} turnstileToken={turnstile.token} needsTurnstile={turnstile.needsTurnstile} resetTurnstile={turnstile.reset} />}
+            {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} needsTurnstile={turnstile.needsTurnstile} getTurnstileToken={turnstile.getToken} resetTurnstile={turnstile.reset} />}
             {active === "experience"      && <ExperiencePanel draft={draft} updateDraft={updateDraft} />}
             {active === "projects"        && <ProjectsPanel draft={draft} updateDraft={updateDraft} />}
             {active === "education"       && <EducationPanel draft={draft} updateDraft={updateDraft} />}
@@ -1104,7 +1111,7 @@ export function TryClient() {
 
           {/* Sticky generate bar - always visible */}
           <div className="shrink-0 border-t border-line bg-paper px-5 py-3">
-            <TurnstileHost hostRef={turnstile.hostRef} needsTurnstile={turnstile.needsTurnstile} className="sr-only" />
+            <TurnstileHost hostRef={turnstile.hostRef} needsTurnstile={turnstile.needsTurnstile} />
             {cookiesBlocked && active !== "generate" && (
               <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
                 <div className="flex items-start gap-2 text-xs text-amber-800">

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 type TurnstileApi = {
   render: (el: HTMLElement, opts: Record<string, unknown>) => string | undefined
@@ -15,7 +15,11 @@ function turnstileApi(): TurnstileApi | undefined {
 
 const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js"
 
-export type TurnstileSize = "invisible" | "compact" | "flexible"
+// Turnstile only accepts these sizes. "Invisible" is a widget mode chosen per
+// site key in the Cloudflare dashboard, not a size, so pass appearance
+// "interaction-only" to keep the widget hidden unless a click is needed.
+export type TurnstileSize = "normal" | "compact" | "flexible"
+export type TurnstileAppearance = "always" | "execute" | "interaction-only"
 
 /**
  * Shared Turnstile hook for guest flows.
@@ -27,14 +31,26 @@ export type TurnstileSize = "invisible" | "compact" | "flexible"
  * backend skips verification.
  */
 export function useTurnstile(
-  options: { siteKey?: string; size?: TurnstileSize; enabled?: boolean } = {},
+  options: { siteKey?: string; size?: TurnstileSize; appearance?: TurnstileAppearance; enabled?: boolean } = {},
 ) {
   const size = options.size ?? "flexible"
+  const appearance = options.appearance ?? "always"
   const enabled = options.enabled ?? true
   const siteKey = options.siteKey ?? process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ""
   const needsTurnstile = enabled && Boolean(siteKey)
 
-  const [token, setToken] = useState("")
+  const [token, setTokenState] = useState("")
+  const tokenRef = useRef("")
+  const waitersRef = useRef<((value: string) => void)[]>([])
+  const setToken = useCallback((next: string) => {
+    tokenRef.current = next
+    setTokenState(next)
+    if (next) {
+      const waiters = waitersRef.current
+      waitersRef.current = []
+      waiters.forEach((resolve) => resolve(next))
+    }
+  }, [])
   const hostRef = useRef<HTMLDivElement | null>(null)
   const widgetIdRef = useRef<string | null>(null)
 
@@ -50,6 +66,7 @@ export function useTurnstile(
       const widgetId = api.render(host!, {
         sitekey: siteKey,
         size,
+        appearance,
         callback: (next: string) => setToken(next),
         "expired-callback": () => setToken(""),
         "error-callback": () => setToken(""),
@@ -82,7 +99,7 @@ export function useTurnstile(
       }
       setToken("")
     }
-  }, [needsTurnstile, siteKey, size])
+  }, [needsTurnstile, siteKey, size, appearance, setToken])
 
   function reset() {
     setToken("")
@@ -93,7 +110,21 @@ export function useTurnstile(
     } catch {}
   }
 
-  return { token, needsTurnstile, reset, hostRef, siteKey }
+  /** Resolve with the current token, or wait up to `timeoutMs` for one. Empty string on timeout. */
+  function getToken(timeoutMs = 10000): Promise<string> {
+    if (!needsTurnstile) return Promise.resolve("")
+    if (tokenRef.current) return Promise.resolve(tokenRef.current)
+    return new Promise((resolve) => {
+      const done = (value: string) => { clearTimeout(timer); resolve(value) }
+      const timer = setTimeout(() => {
+        waitersRef.current = waitersRef.current.filter((w) => w !== done)
+        resolve("")
+      }, timeoutMs)
+      waitersRef.current.push(done)
+    })
+  }
+
+  return { token, needsTurnstile, reset, getToken, hostRef, siteKey }
 }
 
 export function TurnstileHost({
