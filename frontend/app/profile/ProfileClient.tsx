@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback, useSyncExternalStore } from "react"
+import { useState, useRef, useCallback, useSyncExternalStore, type ReactNode } from "react"
 import { useSearchParams } from "next/navigation"
 import { GithubNoticeBanner, useGithubReturnNotice } from "@/components/github/GithubReturnNotice"
 import { BasicInfoForm } from "@/components/profile/BasicInfoForm"
@@ -15,7 +15,9 @@ import { ProfileChangesProvider, useProfileWork, useProfileChanges } from "@/com
 import { SaveStatusBadge } from "@/components/profile/SaveStatusBadge"
 import { useProfileCompleteness } from "@/components/profile/useProfileCompleteness"
 import { PageHero } from "@/components/PageHero"
-import { User, Briefcase, FolderGit2, GraduationCap, Award, SlidersHorizontal, Upload } from "lucide-react"
+import { NextStepHint } from "@/components/onboarding/NextStepHint"
+import { readinessMessages, useOnboardingSteps, useUpdateOnboarding } from "@/lib/onboarding"
+import { User, Briefcase, FolderGit2, GraduationCap, Award, SlidersHorizontal, Upload, Check } from "lucide-react"
 
 type Section = "basic" | "experience" | "projects" | "education" | "extracurricular"
 
@@ -68,7 +70,9 @@ function ProfileEditor() {
   const [defaultsOpen, setDefaultsOpen] = useState(false)
   // New users get a full "upload old résumés" section under the hero; once the
   // profile is complete, import moves back to a compact hero button.
-  const { isLoading: profileLoading, complete: profileComplete } = useProfileCompleteness()
+  const { isLoading: profileLoading, complete: profileComplete, filled, missingSections } = useProfileCompleteness()
+  const onboarding = useOnboardingSteps()
+  const updateOnboarding = useUpdateOnboarding()
   const introDismissed = useSyncExternalStore(introDismissedStore.subscribe, introDismissedStore.get, () => false)
   const showHeroImport = profileComplete || introDismissed
 
@@ -135,6 +139,56 @@ function ProfileEditor() {
   ]
 
   const busy = isSaving || activeBusy
+
+  // Getting-started nudge: which section to fill next, then the handoff to Generate.
+  const filledCount = SECTIONS.filter((section) => filled[section]).length
+  const nextSection = missingSections[0] as Section | undefined
+  const tabLabel = (section: Section) => tabs.find((tab) => tab.id === section)?.label ?? SECTION_NAMES[section]
+  let onboardingHint: ReactNode = null
+  if (onboarding.active && !profileLoading) {
+    if (!profileComplete && nextSection) {
+      const onNext = nextSection === activeSection
+      onboardingHint = (
+        <NextStepHint
+          eyebrow={`Profile ${filledCount} of ${SECTIONS.length}`}
+          progress={{ done: filledCount, total: SECTIONS.length }}
+          action={onNext ? undefined : { label: `Go to ${tabLabel(nextSection)}`, onClick: () => void handleTabClick(nextSection) }}
+        >
+          {onNext
+            ? `Add at least one ${tabLabel(nextSection).toLowerCase().replace(/s$/, "")} entry and save. Every section needs one before you generate.`
+            : `Next: ${tabLabel(nextSection)}. Every section needs at least one entry before you generate.`}
+        </NextStepHint>
+      )
+    } else if (profileComplete && !onboarding.profileReady && onboarding.readiness) {
+      // Every section has an entry, but generation's preflight still blocks
+      // (missing link, too few skills, incomplete entries, or no split fits).
+      const gaps = onboarding.readiness.missing
+      const basicGap = gaps.some((gap) => gap.field === "professional_link" || gap.field === "skills")
+      const projectGap = gaps.some((gap) => gap.field.startsWith("projects."))
+      const target: Section = basicGap ? "basic" : projectGap ? "projects" : "experience"
+      const messages = readinessMessages(onboarding.readiness, 3)
+      onboardingHint = (
+        <NextStepHint
+          eyebrow="Almost ready"
+          action={activeSection === target ? undefined : { label: `Go to ${tabLabel(target)}`, onClick: () => void handleTabClick(target) }}
+        >
+          {messages.length
+            ? messages.join(" ")
+            : "Add a couple more projects or roles so at least one résumé layout fits."}
+        </NextStepHint>
+      )
+    } else if (onboarding.profileReady && onboarding.current?.id === "generate" && !onboarding.seen.includes("profile_ready")) {
+      onboardingHint = (
+        <NextStepHint
+          eyebrow="Profile ready"
+          action={{ label: "Generate résumé", href: "/dashboard/generate" }}
+          onDismiss={() => updateOnboarding.mutate({ seen: ["profile_ready"] })}
+        >
+          Your profile has everything a résumé needs. Paste a job post and Résumer tailors it to the role.
+        </NextStepHint>
+      )
+    }
+  }
   const saveStatus = busy ? "saving" : isDirty ? "unsaved" : "saved"
   const heroButton =
     "inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border px-4 text-sm font-semibold transition-[background-color,border-color,opacity] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember"
@@ -176,6 +230,7 @@ function ProfileEditor() {
 
       <div className="page-wrap flex-1 space-y-4 md:space-y-5">
         <GithubNoticeBanner notice={githubNotice} />
+        {onboardingHint}
         <DefaultsSection hideTrigger open={defaultsOpen} onOpenChange={setDefaultsOpen} />
         <ResumeImportPanel
           compact
@@ -213,6 +268,9 @@ function ProfileEditor() {
                     <Icon size={16} aria-hidden="true" className={isActive ? "text-ember" : "text-ink-faint"} />
                     <span className="md:hidden">{shortLabel}</span>
                     <span className="hidden md:inline">{tab.label}</span>
+                    {onboarding.active && filled[tab.id] && (
+                      <Check size={13} strokeWidth={3} aria-label="filled" className="ml-auto shrink-0 text-ok" />
+                    )}
                   </button>
                 )
               })}

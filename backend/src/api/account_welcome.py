@@ -156,3 +156,57 @@ async def post_welcome(
 
     await db.commit()
     return {"ok": True}
+
+
+# ── Getting-started guide ────────────────────────────────────────────────────
+# Step completion is derived on the client from real data (profile, history).
+# Only what can't be derived lives here: whether the guide was dismissed and
+# which one-time tips were seen, so both follow the user across devices.
+
+ONBOARDING_TIPS = frozenset({"result", "profile_ready"})
+
+
+def _onboarding_payload(user: User) -> dict:
+    state = user.onboarding_state if isinstance(user.onboarding_state, dict) else {}
+    seen = state.get("seen") if isinstance(state.get("seen"), list) else []
+    return {
+        "dismissed": state.get("dismissed") is True,
+        "seen": sorted({tip for tip in seen if tip in ONBOARDING_TIPS}),
+    }
+
+
+@router.get("/onboarding")
+async def get_onboarding(current_user: User = Depends(get_current_user)):
+    return _onboarding_payload(current_user)
+
+
+@router.patch("/onboarding")
+async def patch_onboarding(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request body.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid request body.")
+
+    current = _onboarding_payload(current_user)
+    dismissed = payload.get("dismissed")
+    if dismissed is not None:
+        if not isinstance(dismissed, bool):
+            raise HTTPException(status_code=400, detail="dismissed must be true or false.")
+        current["dismissed"] = dismissed
+
+    seen = payload.get("seen")
+    if seen is not None:
+        if not isinstance(seen, list) or not all(isinstance(tip, str) and tip in ONBOARDING_TIPS for tip in seen):
+            raise HTTPException(status_code=400, detail="Unknown onboarding tip.")
+        current["seen"] = sorted(set(current["seen"]) | set(seen))
+
+    # Reassign (not mutate) so SQLAlchemy sees the JSON column change.
+    current_user.onboarding_state = {"dismissed": current["dismissed"], "seen": current["seen"]}
+    await db.commit()
+    return current

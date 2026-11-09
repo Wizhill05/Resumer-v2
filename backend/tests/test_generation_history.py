@@ -123,12 +123,22 @@ async def test_summary_values(client, async_db):
     assert datetime.fromisoformat(body["latest_created_at"]).replace(tzinfo=timezone.utc) == NOW - timedelta(hours=1)
 
 
+async def test_summary_usable_total_skips_failed(client, async_db):
+    user = await make_user(async_db, "fail@example.com")
+    await add_gen(async_db, user, created_at=NOW - timedelta(hours=3), status="failed")
+    await add_gen(async_db, user, created_at=NOW - timedelta(hours=2), status="in_progress")
+    await add_gen(async_db, user, created_at=NOW - timedelta(hours=1), status="completed")
+    body = (await client.get("/generate/summary", headers=auth(user))).json()
+    assert body["total"] == 3
+    assert body["usable_total"] == 2
+
+
 async def test_summary_empty_user(client, async_db):
     user = await make_user(async_db, "empty@example.com")
     res = await client.get("/generate/summary", headers=auth(user))
     assert res.status_code == 200
     assert res.json() == {
-        "total": 0, "latest_created_at": None, "latest_company": None,
+        "total": 0, "usable_total": 0, "latest_created_at": None, "latest_company": None,
         "latest_job_title": None, "used_today": 0, "this_month": 0,
     }
 

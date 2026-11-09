@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
-  AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
+  AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight,
   Loader2, Plus, Trash2, Upload, X, Pencil, FileText,
   Briefcase, FolderGit2, GraduationCap, Award, User, Lock,
 } from "lucide-react"
@@ -84,6 +84,65 @@ const FOCUS_OPTIONS: { id: FocusMode; label: string; desc: string; projects: num
   { id: "extended",    label: "Extended Density",     desc: "3 projects + 3 experiences (Full density)", projects: 3, experience: 3 },
 ]
 
+// ── Getting-started strip ─────────────────────────────────────────────────────
+
+const GUIDE_HIDDEN_KEY = "resumer_guest_guide_hidden_v1"
+
+type GuideStep = { label: string; short: string; done: boolean; section: Section }
+
+function GuideStrip({
+  steps, tip, onStep, onHide,
+}: {
+  steps: GuideStep[]; tip: string; onStep: (section: Section) => void; onHide: () => void
+}) {
+  const currentIndex = steps.findIndex((step) => !step.done)
+  return (
+    <div className="shrink-0 border-b border-line bg-paper px-4 py-3 md:px-5" role="region" aria-label="How it works">
+      <div className="flex items-start gap-3">
+        <ol className="flex min-w-0 flex-1 items-center gap-x-1.5 sm:gap-x-2">
+          {steps.map((step, i) => {
+            const current = i === currentIndex
+            return (
+              <li key={step.label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                {i > 0 && <span aria-hidden="true" className="h-px w-2.5 shrink-0 bg-line-strong sm:w-6" />}
+                <button
+                  type="button"
+                  onClick={() => onStep(step.section)}
+                  aria-current={current ? "step" : undefined}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-full py-0.5 pr-2 pl-0.5 text-xs font-semibold transition-colors ${
+                    current ? "text-ink" : step.done ? "text-ink-muted hover:text-ink" : "text-ink-faint hover:text-ink"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
+                      step.done ? "border-line-strong text-ok" : current ? "border-ink text-ink" : "border-line"
+                    }`}
+                  >
+                    {step.done ? <Check size={11} strokeWidth={3} /> : i + 1}
+                  </span>
+                  <span className="sm:hidden">{step.short}</span>
+                  <span className="hidden sm:inline">{step.label}</span>
+                  <span className="sr-only">{step.done ? " (done)" : current ? " (next)" : ""}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ol>
+        <button
+          type="button"
+          onClick={onHide}
+          aria-label="Hide guide"
+          className="-mt-0.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-faint hover:bg-ink/5 hover:text-ink"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <p className="mt-2 text-xs leading-snug text-ink-muted">{tip}</p>
+    </div>
+  )
+}
+
 // ── Field helper ──────────────────────────────────────────────────────────────
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -134,9 +193,9 @@ function ItemRow({
 // ── Sidebar nav item ──────────────────────────────────────────────────────────
 
 function NavItem({
-  icon: Icon, label, count, active, onClick,
+  icon: Icon, label, count, active, next, onClick,
 }: {
-  icon: React.ElementType; label: string; count?: number; active: boolean; onClick: () => void
+  icon: React.ElementType; label: string; count?: number; active: boolean; next?: boolean; onClick: () => void
 }) {
   return (
     <button
@@ -150,7 +209,12 @@ function NavItem({
     >
       <Icon size={15} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-      {count !== undefined && (
+      {next && (
+        <span className="shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-muted">
+          Next
+        </span>
+      )}
+      {!next && count !== undefined && (
         <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? "bg-white/20 text-white" : "bg-ink/10 text-ink-muted"}`}>
           {count}
         </span>
@@ -168,6 +232,8 @@ function AddCard({ title, children }: { title: string; children: React.ReactNode
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        data-guide-target=""
         className="flex w-full cursor-pointer items-center gap-2 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-ink"
       >
         <Plus size={14} className="shrink-0 text-ink-faint" />
@@ -351,6 +417,7 @@ function ProfilePanel({
             <Input
               value={(draft.profile[key as keyof typeof draft.profile] as string) ?? ""}
               onChange={(e) => updateDraft({ ...draft, profile: { ...draft.profile, [key]: e.target.value } })}
+              data-guide-target={key === "full_name" ? "" : undefined}
               className="h-8 text-sm"
             />
           </Field>
@@ -881,6 +948,8 @@ export function TryClient() {
     }
   }
 
+  const [guideHidden, setGuideHidden] = useState(true)
+
   useEffect(() => {
     startTransition(() => {
       setDraft(loadGuestDraft())
@@ -907,6 +976,7 @@ export function TryClient() {
       } catch {
         // ignore
       }
+      try { setGuideHidden(localStorage.getItem(GUIDE_HIDDEN_KEY) === "1") } catch { setGuideHidden(false) }
       setHydrated(true)
     })
   }, [])
@@ -934,6 +1004,11 @@ export function TryClient() {
     saveGuestGenerate({ jobDescription, keywords, instructions, focus, creativityMode })
   }, [hydrated, jobDescription, keywords, instructions, focus, creativityMode])
 
+  const hideGuide = () => {
+    setGuideHidden(true)
+    try { localStorage.setItem(GUIDE_HIDDEN_KEY, "1") } catch {}
+  }
+
   const updateDraft = (next: GuestDraft) => { setDraft(next); saveGuestDraft(next) }
 
   const activeFocus = FOCUS_OPTIONS.find((f) => f.id === focus)!
@@ -957,6 +1032,40 @@ export function TryClient() {
       return null
     }
   }
+
+  // What the guest should do next, in the same order submit() validates.
+  const plural = (n: number, word: string) => `${n} more ${word}${n === 1 ? "" : "s"}`
+  const needExp = Math.max(0, activeFocus.experience - usableExpCount)
+  const needProj = Math.max(0, activeFocus.projects - usableProjCount)
+  const hasName = !!draft.profile.full_name?.trim()
+  const infoDone = hasName && needExp === 0 && needProj === 0
+  const jobDone = !!jobDescription.trim()
+  const next: { section: Section; label: string; tip: string } =
+    !hasName
+      ? { section: "profile", label: "Next: add your name", tip: "Start with your name in Profile, or upload an old résumé PDF there to fill every section at once." }
+      : needExp > 0
+        ? { section: "experience", label: `Next: add ${plural(needExp, "experience")}`, tip: `${activeFocus.label} layout uses ${activeFocus.experience} experiences. Add ${plural(needExp, "role")} (jobs, internships, research).` }
+        : needProj > 0
+          ? { section: "projects", label: `Next: add ${plural(needProj, "project")}`, tip: `${activeFocus.label} layout uses ${activeFocus.projects} projects. Add ${plural(needProj, "project")}. Education and activities are optional but help.` }
+          : !jobDone
+            ? { section: "generate", label: "Next: paste the job", tip: "Your info is in. Open Generate and paste the full job post, requirements included." }
+            : { section: "generate", label: "Generate free résumé", tip: "All set. Generation takes a few minutes; keep this tab open to watch it." }
+  // Jump to the section that needs work; if already there, focus its name
+  // field or open its "Add" form so the button always does something.
+  const goToNext = () => {
+    if (active !== next.section) { setActive(next.section); return }
+    const target = document.querySelector<HTMLElement>("[data-guide-target]")
+    if (!target) return
+    target.scrollIntoView({ behavior: "smooth", block: "center" })
+    if (target.tagName === "BUTTON") { if (target.getAttribute("aria-expanded") !== "true") target.click() }
+    else target.focus()
+  }
+
+  const guideSteps: GuideStep[] = [
+    { label: "Your info", short: "Info", done: infoDone, section: !infoDone ? next.section : "profile" },
+    { label: "Paste the job", short: "Job", done: jobDone, section: "generate" },
+    { label: "Generate", short: "Generate", done: false, section: "generate" },
+  ]
 
   const submit = async () => {
     if (!draft.profile.full_name?.trim()) { setError("Add your name in the Profile section."); setActive("profile"); return }
@@ -1035,6 +1144,9 @@ export function TryClient() {
 
   return (
     <div className="flex h-full flex-col relative bg-ink/[0.03]">
+      {!guideHidden && (
+        <GuideStrip steps={guideSteps} tip={next.tip} onStep={setActive} onHide={hideGuide} />
+      )}
 
       {/* Mobile Top Tabs Header (hidden on desktop) */}
       <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-ink/5 border-b border-line md:hidden shrink-0">
@@ -1054,6 +1166,9 @@ export function TryClient() {
             >
               <Icon size={12} />
               <span>{shortLabel}</span>
+              {next.section === item.id && !isActive && (
+                <span aria-label="next" className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink/50" />
+              )}
               {item.count !== undefined && (
                 <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${isActive ? "bg-ember/15 text-ember" : "bg-ink/5 text-ink-muted"}`}>
                   {item.count}
@@ -1074,6 +1189,7 @@ export function TryClient() {
               label={item.label}
               count={item.count}
               active={active === item.id}
+              next={next.section === item.id && active !== item.id}
               onClick={() => setActive(item.id)}
             />
           ))}
@@ -1126,16 +1242,18 @@ export function TryClient() {
                   type="button"
                   size="lg"
                   className="w-full"
-                  onClick={canGenerate || active === "generate" ? submit : () => { setActive("generate"); }}
+                  onClick={canGenerate || (active === "generate" && next.section === "generate") ? submit : () => goToNext()}
                   disabled={submitting || quota?.remaining === 0}
                 >
                   {submitting
                     ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
                     : quota?.remaining === 0
                       ? "Daily limit reached"
-                      : canGenerate || active === "generate"
+                      : canGenerate
                         ? "Generate free résumé"
-                        : "Go to Generate"
+                        : active === next.section && next.section !== "generate"
+                          ? next.label.replace(/^Next: a/, "A")
+                          : next.label
                   }
                 </Button>
                 {quota?.remaining === 0 && (

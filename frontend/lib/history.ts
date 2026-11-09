@@ -24,6 +24,8 @@ export type HistoryPage = {
 /** GET /generate/summary. */
 export type HistorySummary = {
   total: number
+  /** Generations that didn't fail (queued, running or completed). */
+  usable_total?: number
   latest_created_at: string | null
   latest_company: string | null
   latest_job_title: string | null
