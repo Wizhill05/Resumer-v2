@@ -94,6 +94,46 @@ async def _create_profile(async_db, user_id, **kwargs):
     return profile
 
 
+# --- profile email seeding ---
+
+async def test_welcome_sets_empty_profile_email_from_account(client, async_db):
+    user = await _create_user(async_db, "dana@example.com", name="Dana D")
+    res = await client.post(
+        "/account/welcome",
+        json={"full_name": "Dana D", "subtitle": "Engineer"},
+        headers=auth_headers(user),
+    )
+    assert res.status_code == 200
+    profile = (await async_db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one()
+    assert profile.email == "dana@example.com"
+
+
+async def test_welcome_fills_blank_email_on_existing_profile_and_on_skip(client, async_db):
+    user = await _create_user(async_db, "erin@example.com", name="Erin E")
+    await _create_profile(async_db, user.id, email="  ")
+    res = await client.post(
+        "/account/welcome",
+        json={"full_name": "Erin E", "skip": True},
+        headers=auth_headers(user),
+    )
+    assert res.status_code == 200
+    profile = (await async_db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one()
+    assert profile.email == "erin@example.com"
+
+
+async def test_welcome_does_not_overwrite_existing_profile_email(client, async_db):
+    user = await _create_user(async_db, "frank@example.com", name="Frank F")
+    await _create_profile(async_db, user.id, email="frank.work@corp.com")
+    res = await client.post(
+        "/account/welcome",
+        json={"full_name": "Frank F", "subtitle": "Engineer"},
+        headers=auth_headers(user),
+    )
+    assert res.status_code == 200
+    profile = (await async_db.execute(select(Profile).where(Profile.user_id == user.id))).scalar_one()
+    assert profile.email == "frank.work@corp.com"
+
+
 # --- GET ---
 
 async def test_get_prefill_falls_back_to_user_name(client, async_db):
