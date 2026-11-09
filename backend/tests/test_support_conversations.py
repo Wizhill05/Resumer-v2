@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from src.api.feedback import router
 from src.core.auth import get_current_user, get_optional_user
 from src.core.database import get_db
-from src.models.generation import FeedbackRating, ReportAttachment, SupportMessage, SupportReport
+from src.models.generation import FeedbackRating, ReportAttachment, SupportMessage, SupportPushSubscription, SupportRateLimit, SupportReport
 from src.models.user import Base, User
 from src.services import support
 
@@ -73,7 +73,7 @@ async def test_voice_enrichment_persists_transcript_or_preserves_recording(conte
 async def context(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-        await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[User.__table__, SupportReport.__table__, SupportMessage.__table__, ReportAttachment.__table__, FeedbackRating.__table__]))
+        await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[User.__table__, SupportReport.__table__, SupportMessage.__table__, ReportAttachment.__table__, FeedbackRating.__table__, SupportRateLimit.__table__, SupportPushSubscription.__table__]))
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     async with sessions() as db:
         owner = User(email="owner@example.com", name="Owner")
@@ -268,3 +268,171 @@ async def test_reporter_cannot_use_admin_metadata_editor(context, monkeypatch):
     response = await client.patch(f"/admin/feedback/reports/{report.id}", json={"category": "feedback"})
     assert response.status_code == 403
     assert report.category == "bug"
+
+
+async def test_no_confirmation_email_to_guests(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    # guest report has user_id None; notify_submission must not call notify_owner for guests
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    monkeypatch.setattr("src.core.database.AsyncSessionLocal", session)
+    monkeypatch.setattr(support, "notify_admins", AsyncMock(return_value="sent"))
+    notify_owner_mock = AsyncMock(return_value="sent")
+    monkeypatch.setattr(support, "notify_owner", notify_owner_mock)
+    await support.notify_submission(guest.id)
+    support.notify_admins.assert_awaited_once()
+    notify_owner_mock.assert_not_awaited()
+    # Signed-in report should notify owner
+    notify_owner_mock.reset_mock()
+    await support.notify_submission(report.id)
+    notify_owner_mock.assert_awaited_once()
+
+
+async def test_guest_cookie_set_and_list_via_cookie(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    response = await client.post("/feedback/support", data={"message": "cookie test"})
+    assert response.status_code == 200
+    assert "resumer_support_key" in response.headers.get("set-cookie", "")
+    submitted = response.json()
+    raw_key = response.headers["set-cookie"].split("resumer_support_key=")[1].split(";")[0]
+    # List via cookie should include report with access_token
+    listed = await client.get("/feedback/support", cookies={"resumer_support_key": raw_key})
+    assert listed.status_code == 200
+    ids = [row["id"] for row in listed.json()]
+    assert str(submitted["id"]) in ids
+    row = [r for r in listed.json() if r["id"] == str(submitted["id"])][0]
+    assert row.get("access_token")
+    # Cookie grants access to detail without token
+    detail = await client.get(f"/feedback/support/{submitted['id']}", cookies={"resumer_support_key": raw_key})
+    assert detail.status_code == 200
+
+
+async def test_guest_rate_limit_429(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    raw_guest_key = "rate-limit-test-key"
+    # Guest cookie limit 5/hour: submit 6
+    last_status = None
+    for i in range(6):
+        resp = await client.post("/feedback/support", data={"message": f"msg {i}"}, cookies={"resumer_support_key": raw_guest_key})
+        last_status = resp.status_code
+        if resp.status_code == 429:
+            break
+    assert last_status == 429
+
+
+async def test_user_rate_limit_429(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    # Signed-in override is owner from context fixture (10/hour). Loop until 429.
+    last_status = None
+    for i in range(12):
+        resp = await client.post("/feedback/support", data={"message": f"user msg {i}"})
+        last_status = resp.status_code
+        if resp.status_code == 429:
+            break
+    assert last_status == 429
+
+
+async def test_ip_header_ignored_without_internal_token(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    # Spoof X-Client-IP without valid internal token should not create IP bucket nor error
+    resp = await client.post("/feedback/support", data={"message": "spoof test"}, headers={"X-Client-IP": "9.9.9.9"})
+    assert resp.status_code == 200
+    rows = (await db.execute(select(SupportRateLimit).where(SupportRateLimit.key.like("ip:%")))).scalars().all()
+    assert all("9.9.9.9" not in r.key for r in rows)
+
+
+async def test_turnstile_skipped_when_unset_and_rejected_when_set(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    monkeypatch.setattr(support.settings, "TURNSTILE_SECRET_KEY", "")
+    resp = await client.post("/feedback/support", data={"message": "no turnstile"})
+    assert resp.status_code == 200
+    monkeypatch.setattr(support.settings, "TURNSTILE_SECRET_KEY", "test-secret")
+
+    def fake_verify(token, remoteip):
+        return False
+
+    monkeypatch.setattr("src.services.support._turnstile_verify_sync", fake_verify)
+    resp2 = await client.post("/feedback/support", data={"message": "bad token", "turnstile_token": "bad"})
+    assert resp2.status_code == 422
+
+
+async def test_push_subscribe_and_admin_reply_triggers_push(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    monkeypatch.setattr(support.settings, "VAPID_PUBLIC_KEY", "testpub")
+    monkeypatch.setattr(support.settings, "VAPID_PRIVATE_KEY", "testpriv")
+    monkeypatch.setattr(support.settings, "VAPID_SUBJECT", "mailto:test@example.com")
+    resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": "https://push.example/1", "keys": {"p256dh": "p", "auth": "a"}})
+    assert resp.status_code == 200
+    # public key endpoint
+    pub = await client.get("/feedback/support/push/public-key")
+    assert pub.status_code == 200
+    # Admin reply triggers push; mock webpush.
+    import sys
+    fake_store = {"called": []}
+    class FakePushModule:
+        @staticmethod
+        def webpush(**kwargs):
+            fake_store["called"].append(kwargs)
+
+    monkeypatch.setitem(sys.modules, "pywebpush", FakePushModule)
+    # Need notify_push to use separate AsyncSessionLocal - patch it to reuse db
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    monkeypatch.setattr("src.core.database.AsyncSessionLocal", session)
+    # But notify_push does `from src.core.database import AsyncSessionLocal` inside function, so patching attribute works.
+    # However support.notify_push imports inside; patch the module attribute.
+    app.dependency_overrides[get_optional_user] = lambda: admin
+    reply = await client.post(f"/feedback/support/{report.id}/messages", json={"message": "push trigger"})
+    assert reply.status_code == 200
+    assert len(fake_store["called"]) == 1
+
+
+async def test_push_410_cleanup(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    monkeypatch.setattr(support.settings, "VAPID_PUBLIC_KEY", "testpub")
+    monkeypatch.setattr(support.settings, "VAPID_PRIVATE_KEY", "testpriv")
+    monkeypatch.setattr(support.settings, "VAPID_SUBJECT", "mailto:test@example.com")
+    sub = SupportPushSubscription(report_id=report.id, endpoint="https://push.example/gone", p256dh="p", auth="a")
+    db.add(sub)
+    await db.commit()
+    import sys
+
+    class FakePush410Module:
+        @staticmethod
+        def webpush(**kwargs):
+            raise Exception("410 gone")
+
+    monkeypatch.setitem(sys.modules, "pywebpush", FakePush410Module)
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    monkeypatch.setattr("src.core.database.AsyncSessionLocal", session)
+    await support.notify_push(report.id, "hello", report=report)
+    remaining = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id))).scalars().all()
+    assert len(remaining) == 0
+

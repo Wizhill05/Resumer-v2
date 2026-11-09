@@ -7,7 +7,9 @@ export const issueSchema = z.object({
   category: z.string().nullable(),
   status: z.enum(["open", "in_progress", "resolved", "closed"]),
   created_at: z.string(),
-  updated_at: z.string().nullable().optional()
+  updated_at: z.string().nullable().optional(),
+  last_admin_reply_at: z.string().nullable().optional(),
+  access_token: z.string().nullable().optional()
 })
 export const threadSchema = issueSchema.extend({
   viewer_is_admin: z.boolean().optional(),
@@ -80,6 +82,31 @@ export const statusLabels = {
 }
 export function issueTitle(issue: SupportIssue) {
   return issue.title || issue.message.split("\n")[0].slice(0, 100)
+}
+const LAST_SEEN_KEY = "resumer_support_last_seen"
+type LastSeenMap = Record<string, string>
+export function getLastSeen(): LastSeenMap {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LAST_SEEN_KEY) || "{}")
+    return typeof parsed === "object" && parsed !== null ? (parsed as LastSeenMap) : {}
+  } catch {
+    return {}
+  }
+}
+export function markLastSeen(id: string, at: string) {
+  try {
+    const map = getLastSeen()
+    map[id] = at
+    localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(map))
+  } catch {}
+}
+export function hasUnseenReply(issues: Pick<SupportIssue, "id" | "last_admin_reply_at">[]) {
+  const seen = getLastSeen()
+  return issues.some((issue) => {
+    if (!issue.last_admin_reply_at) return false
+    const last = seen[issue.id] || ""
+    return issue.last_admin_reply_at > last
+  })
 }
 export async function supportFetch(url: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(url, { ...init, cache: "no-store" })

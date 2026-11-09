@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     NOTIFICATION_FROM_EMAIL: str = "Resumer <noreply@aryansingh.space>"
     SUPPORT_WEBHOOK_URL: str = ""
+    TURNSTILE_SECRET_KEY: str = ""
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_SUBJECT: str = "mailto:noreply@resumer.buzz"
+    SUPPORT_TICKET_HOURLY_USER: int = 10
+    SUPPORT_REPLY_HOURLY_USER: int = 60
+    SUPPORT_TICKET_HOURLY_GUEST_COOKIE: int = 5
+    SUPPORT_TICKET_HOURLY_GUEST_IP: int = 20
+    SUPPORT_REPLY_HOURLY_GUEST_COOKIE: int = 30
+    SUPPORT_REPLY_HOURLY_GUEST_IP: int = 100
 
     EXECUTION_MODE: str = "local"
     POSTHOG_PROJECT_TOKEN: str = ""

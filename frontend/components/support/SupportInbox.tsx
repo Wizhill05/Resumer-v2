@@ -23,7 +23,17 @@ export function SupportInbox({ signedIn }: { signedIn: boolean }) {
     let active = true
     async function load() {
       try {
-        const own = signedIn ? z.array(issueSchema).parse(await supportFetch("/api/support")) : []
+        const own: (SupportIssue & { token?: string })[] = []
+        try {
+          own.push(...z.array(issueSchema).parse(await supportFetch("/api/support")))
+        } catch {}
+        const serverGuests: (SupportIssue & { token?: string })[] = []
+        try {
+          const parsed = z.array(issueSchema).parse(await supportFetch("/api/support"))
+          for (const row of parsed) {
+            if (row.access_token) serverGuests.push({ ...row, token: row.access_token })
+          }
+        } catch {}
         const guests = await Promise.allSettled(
           savedGuestIssues().map(async (saved) => ({
             ...issueSchema.parse(
@@ -34,7 +44,10 @@ export function SupportInbox({ signedIn }: { signedIn: boolean }) {
             token: saved.token
           }))
         )
-        const all = new Map(own.map((issue) => [issue.id, issue]))
+        const all = new Map<string, SupportIssue & { token?: string }>(own.map((issue) => [issue.id, issue]))
+        for (const guest of serverGuests) {
+          if (!all.has(guest.id)) all.set(guest.id, guest)
+        }
         for (const guest of guests)
           if (guest.status === "fulfilled" && !all.has(guest.value.id))
             all.set(guest.value.id, guest.value)

@@ -51,6 +51,42 @@ export function SupportClient({
   const mounted = useRef(true)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState("")
+  const turnstileHostRef = useRef<HTMLDivElement | null>(null)
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || ""
+  useEffect(() => {
+    if (signedIn || !siteKey) return
+    let cancelled = false
+    const host = turnstileHostRef.current
+    if (!host) return
+    function renderWidget() {
+      const w = window as unknown as { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string; reset: (id: string) => void } }
+      if (cancelled || !w.turnstile) return
+      w.turnstile.render(host!, {
+        sitekey: siteKey,
+        callback: (token: string) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => setTurnstileToken("")
+      })
+    }
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
+    )
+    if (existing) {
+      existing.addEventListener("load", renderWidget)
+      renderWidget()
+    } else {
+      const script = document.createElement("script")
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js"
+      script.async = true
+      script.defer = true
+      script.addEventListener("load", renderWidget)
+      document.head.appendChild(script)
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [signedIn, siteKey])
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -119,6 +155,7 @@ export function SupportClient({
       data.set("message", message.trim())
       data.set("category", category)
       if (email.trim()) data.set("email_override", email.trim())
+      if (turnstileToken) data.set("turnstile_token", turnstileToken)
       if (generationId) data.set("generation_id", generationId)
       if (category !== "feedback") {
         data.set("where_happened", location.trim())
@@ -136,7 +173,7 @@ export function SupportClient({
         await supportFetch("/api/support", { method: "POST", body: data })
       )
       if (issue.access_token && !signedIn) rememberGuestIssue(issue.id, issue.access_token)
-      router.push(issueHref(issue.id, signedIn ? undefined : issue.access_token))
+      router.push(`${issueHref(issue.id, signedIn ? undefined : issue.access_token)}${issue.access_token ? "&new=1" : ""}`)
     } catch (err) {
       setError(
         err instanceof Error
@@ -337,9 +374,10 @@ export function SupportClient({
             className="min-h-11 text-base sm:text-sm"
           />
           <p className="text-xs leading-5 text-ink-muted">
-            Replies stay in this conversation. Add an email to receive notifications too.
+            Replies stay in this conversation. Email is optional and we will not send an automatic email to a guest address you type here.
             {!signedIn && " Keep your private issue link so you can return later."}
           </p>
+          {!signedIn && siteKey && <div ref={turnstileHostRef} className="pt-1" aria-label="Human check" />}
         </div>
         {generationId && (
           <p className="break-all text-xs text-ink-muted">
