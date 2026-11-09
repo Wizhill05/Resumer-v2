@@ -23,7 +23,15 @@ export function SupportInbox({ signedIn }: { signedIn: boolean }) {
     let active = true
     async function load() {
       try {
-        const own = signedIn ? z.array(issueSchema).parse(await supportFetch("/api/support")) : []
+        let parsed: SupportIssue[] = []
+        try {
+          parsed = z.array(issueSchema).parse(await supportFetch("/api/support"))
+        } catch {}
+        // Server-listed guest tickets carry an access token so links work on reload.
+        const own: (SupportIssue & { token?: string })[] = parsed.map((row) => ({
+          ...row,
+          token: row.access_token ?? undefined
+        }))
         const guests = await Promise.allSettled(
           savedGuestIssues().map(async (saved) => ({
             ...issueSchema.parse(
@@ -34,7 +42,7 @@ export function SupportInbox({ signedIn }: { signedIn: boolean }) {
             token: saved.token
           }))
         )
-        const all = new Map(own.map((issue) => [issue.id, issue]))
+        const all = new Map<string, SupportIssue & { token?: string }>(own.map((issue) => [issue.id, issue]))
         for (const guest of guests)
           if (guest.status === "fulfilled" && !all.has(guest.value.id))
             all.set(guest.value.id, guest.value)

@@ -1,5 +1,11 @@
 """Support ownership, conversation history, and notification delivery."""
+import asyncio
+import hashlib
+import hmac
+import json
 import logging
+import re
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -8,17 +14,96 @@ from typing import Literal
 from fastapi import HTTPException
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from src.core.config import settings
 from src.core.storage import StorageService
-from src.models.generation import ReportAttachment, SupportMessage, SupportReport
+from src.models.generation import ReportAttachment, SupportMessage, SupportPushSubscription, SupportReport
 from src.models.user import User
 
 logger = logging.getLogger(__name__)
 ReportStatus = Literal["open", "in_progress", "resolved", "closed"]
+
+_PUSH_ENDPOINT_MAX_LENGTH = 1024
+_PUSH_EXACT_HOSTS = {"fcm.googleapis.com", "android.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
+_PUSH_SUFFIX_HOSTS = ("push.services.mozilla.com", "notify.windows.com", "push.apple.com")
+_PUSH_HOST_RE = re.compile(r"^[a-z0-9.-]+$")
+# Characters that different URL parsers (urllib.parse vs urllib3/requests) disagree on
+# inside the authority. Any of them could make validation and delivery see different hosts.
+_PUSH_AUTHORITY_FORBIDDEN = set("\\;%@[]")
+PUSH_TIMEOUT_SECONDS = 10
+
+
+def validate_push_endpoint(endpoint: str) -> None:
+    """Validate that a WebPush endpoint points at a known push service.
+
+    Raises ValueError for anything that is not an allowlisted https endpoint.
+    Used both at subscribe time and right before sending to prevent SSRF/fan-out.
+    The host must parse identically under urllib.parse and urllib3 (which requests
+    and pywebpush use to connect), so parser-differential tricks are rejected.
+    """
+    from urllib.parse import urlsplit
+
+    from urllib3.util import parse_url
+
+    if not isinstance(endpoint, str):
+        raise ValueError("Invalid push endpoint")
+    if endpoint != endpoint.strip() or not endpoint or len(endpoint) > _PUSH_ENDPOINT_MAX_LENGTH:
+        raise ValueError("Invalid push endpoint")
+    if any(c.isspace() or ord(c) < 0x20 or ord(c) == 0x7F for c in endpoint):
+        raise ValueError("Invalid push endpoint")
+    if "\\" in endpoint:
+        raise ValueError("Invalid push endpoint")
+    try:
+        parsed = urlsplit(endpoint)
+    except ValueError:
+        raise ValueError("Invalid push endpoint")
+    if parsed.scheme != "https":
+        raise ValueError("Invalid push endpoint")
+    authority = parsed.netloc
+    if not authority or any(c in _PUSH_AUTHORITY_FORBIDDEN for c in authority):
+        raise ValueError("Invalid push endpoint")
+    if parsed.username or parsed.password:
+        raise ValueError("Invalid push endpoint")
+    host = parsed.hostname
+    if not host or not _PUSH_HOST_RE.match(host) or host.endswith(".") or host.startswith(".") or ".." in host:
+        raise ValueError("Invalid push endpoint")
+    try:
+        port = parsed.port
+    except ValueError:
+        raise ValueError("Invalid push endpoint")
+    if port is not None and port != 443:
+        raise ValueError("Invalid push endpoint")
+    # The connecting library must agree on host and port.
+    try:
+        alt = parse_url(endpoint)
+    except Exception:
+        raise ValueError("Invalid push endpoint")
+    if (alt.scheme or "").lower() != "https" or (alt.host or "").lower() != host or alt.auth:
+        raise ValueError("Invalid push endpoint")
+    if alt.port is not None and alt.port != 443:
+        raise ValueError("Invalid push endpoint")
+    if host in _PUSH_EXACT_HOSTS:
+        return
+    for suffix in _PUSH_SUFFIX_HOSTS:
+        if host == suffix or host.endswith("." + suffix):
+            return
+    raise ValueError("Invalid push endpoint")
+
+
+def is_valid_push_endpoint(endpoint: str) -> bool:
+    try:
+        validate_push_endpoint(endpoint)
+        return True
+    except ValueError:
+        return False
+
+GUEST_COOKIE_NAME = "resumer_support_key"
+GUEST_KEY_MAX_AGE = 365 * 24 * 60 * 60
+
+_turnstile_logged = False
 
 
 class ReplyCreate(BaseModel):
@@ -43,6 +128,48 @@ def guest_token(report_id: uuid.UUID) -> str:
     )
 
 
+def hash_guest_key(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+_GUEST_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+
+
+def is_valid_guest_key(raw: str | None) -> bool:
+    """True only for values shaped like keys we mint (token_urlsafe(32): 43 urlsafe chars)."""
+    return bool(raw) and bool(_GUEST_KEY_RE.match(raw))
+
+
+def guest_key_from_request(request) -> str | None:
+    """Return the guest key cookie only if it looks server-issued; ignore anything else."""
+    if request is None:
+        return None
+    raw = request.cookies.get(GUEST_COOKIE_NAME)
+    return raw if is_valid_guest_key(raw) else None
+
+
+def guest_key_hash_from_cookie(raw: str | None) -> str | None:
+    if not is_valid_guest_key(raw):
+        return None
+    return hash_guest_key(raw)
+
+
+def new_guest_key() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def set_guest_cookie(response, raw_key: str) -> None:
+    response.set_cookie(
+        GUEST_COOKIE_NAME,
+        raw_key,
+        max_age=GUEST_KEY_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
+
+
 async def get_report(db: AsyncSession, report_id: uuid.UUID) -> SupportReport:
     report = await db.get(SupportReport, report_id)
     if report is None:
@@ -50,10 +177,13 @@ async def get_report(db: AsyncSession, report_id: uuid.UUID) -> SupportReport:
     return report
 
 
-async def accessible_report(db: AsyncSession, report_id: uuid.UUID, user: User | None, access_token: str | None) -> SupportReport:
+async def accessible_report(db: AsyncSession, report_id: uuid.UUID, user: User | None, access_token: str | None, guest_key_hash: str | None = None) -> SupportReport:
     report = await get_report(db, report_id)
     if is_admin(user) or (user and report.user_id == user.id):
         return report
+    if report.user_id is None and guest_key_hash and report.guest_key_hash:
+        if hmac.compare_digest(report.guest_key_hash, guest_key_hash):
+            return report
     if report.user_id is None and access_token:
         try:
             claims = jwt.decode(access_token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
@@ -69,18 +199,38 @@ def message_out(message: SupportMessage) -> dict:
     return {"id": message.id, "message": message.message, "author_role": message.author_role, "created_at": message.created_at}
 
 
-def report_out(report: SupportReport) -> dict:
-    return {name: getattr(report, name) for name in (
+async def last_admin_reply_map(db: AsyncSession, report_ids: list[uuid.UUID]) -> dict:
+    if not report_ids:
+        return {}
+    rows = (await db.execute(
+        select(SupportMessage.report_id, func.max(SupportMessage.created_at))
+        .where(SupportMessage.report_id.in_(report_ids), SupportMessage.author_role == "admin")
+        .group_by(SupportMessage.report_id)
+    )).all()
+    return {rid: ts for rid, ts in rows}
+
+
+def report_out(report: SupportReport, last_admin_reply_at: datetime | None = None, include_access_token: bool = False) -> dict:
+    result = {name: getattr(report, name) for name in (
         "id", "title", "message", "status", "category", "where_happened", "steps_to_reproduce",
         "expected_behavior", "generation_id", "created_at", "updated_at", "resolved_at",
     )}
+    result["last_admin_reply_at"] = last_admin_reply_at
+    if include_access_token:
+        result["access_token"] = guest_token(report.id)
+    return result
 
 
 async def report_detail(db: AsyncSession, report: SupportReport, viewer_is_admin: bool = False) -> dict:
     messages = (await db.execute(select(SupportMessage).where(SupportMessage.report_id == report.id).order_by(SupportMessage.created_at, SupportMessage.id))).scalars().all()
     attachments = (await db.execute(select(ReportAttachment).where(ReportAttachment.report_id == report.id))).scalars().all()
     storage = StorageService()
-    result = report_out(report)
+    last_admin = None
+    for m in messages:
+        if m.author_role == "admin":
+            if last_admin is None or m.created_at > last_admin:
+                last_admin = m.created_at
+    result = report_out(report, last_admin_reply_at=last_admin)
     result.update({
         "viewer_is_admin": viewer_is_admin,
         "messages": [message_out(message) for message in messages],
@@ -134,6 +284,12 @@ def _send_update(to_email: str | None, report_id: uuid.UUID, message: str, url: 
 async def notify_owner(db: AsyncSession, report: SupportReport, message: str) -> str:
     user = await db.get(User, report.user_id) if report.user_id else None
     target = report.email_override or (user.email if user else None)
+    # Guest-typed addresses are unverified: only email them for human-written admin replies
+    # (this function is used for admin replies) and via email_override. For guest reports
+    # without user, still use email_override if present (admin reply path). Submission
+    # path no longer calls this for guests (see notify_submission).
+    if report.user_id is None and not report.email_override:
+        return "no_recipient"
     url = f"{settings.FRONTEND_URL.rstrip('/')}/support/issues/{report.id}"
     if report.user_id is None:
         url += f"?access_token={guest_token(report.id)}"
@@ -145,7 +301,10 @@ async def notify_submission(report_id: uuid.UUID) -> None:
     async with AsyncSessionLocal() as db:
         report = await get_report(db, report_id)
         await notify_admins(report, report.message)
-        await notify_owner(db, report, "We received your support request. Use this conversation to read replies and send more details.")
+        # Do not auto-email guest-typed addresses. Only notify signed-in owners
+        # whose email is verified by login.
+        if report.user_id is not None:
+            await notify_owner(db, report, "We received your support request. Use this conversation to read replies and send more details.")
 
 
 async def notify_admins(report: SupportReport, message: str) -> str:
@@ -158,6 +317,154 @@ async def notify_admins(report: SupportReport, message: str) -> str:
     return "failed" if "failed" in outcomes else outcomes[0]
 
 
+def _turnstile_verify_sync(token: str, remoteip: str | None) -> bool:
+    import requests
+    data = {"secret": settings.TURNSTILE_SECRET_KEY, "response": token}
+    if remoteip:
+        data["remoteip"] = remoteip
+    try:
+        resp = requests.post("https://challenges.cloudflare.com/turnstile/v0/siteverify", data=data, timeout=5)
+        payload = resp.json()
+        return bool(payload.get("success"))
+    except Exception:
+        return False
+
+
+async def verify_turnstile(token: str | None, remoteip: str | None) -> None:
+    global _turnstile_logged
+    if not settings.TURNSTILE_SECRET_KEY:
+        if not _turnstile_logged:
+            env = (getattr(settings, "ENVIRONMENT", "") or "").strip().lower()
+            if env == "production":
+                logger.error("TURNSTILE_SECRET_KEY not set in production, skipping Turnstile verification. Guest support has no bot protection.")
+            else:
+                logger.info("TURNSTILE_SECRET_KEY not set, skipping Turnstile verification in this environment")
+            _turnstile_logged = True
+        return
+    if not token or not token.strip():
+        raise HTTPException(422, "Please complete the human check and try again")
+    ok = await run_in_threadpool(_turnstile_verify_sync, token, remoteip)
+    if not ok:
+        raise HTTPException(422, "Please complete the human check and try again")
+
+
+def _no_redirect_session():
+    """A requests session that never follows redirects (a redirect could point anywhere)."""
+    import requests
+
+    class _NoRedirectSession(requests.Session):
+        def __init__(self) -> None:
+            super().__init__()
+            self.max_redirects = 0
+
+        def request(self, method, url, *args, **kwargs):
+            kwargs["allow_redirects"] = False
+            return super().request(method, url, *args, **kwargs)
+
+    return _NoRedirectSession()
+
+
+def _send_push_sync(sub, payload: dict, dead: list, session=None) -> None:
+    if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
+        return
+    endpoint = getattr(sub, "endpoint", "")
+    # Re-validate right before sending: rows may predate a stricter allowlist.
+    if not is_valid_push_endpoint(endpoint):
+        logger.warning("Push delivery skipped for invalid endpoint: %s", getattr(sub, "id", sub))
+        dead.append(sub.id)
+        return
+    try:
+        from pywebpush import webpush
+        webpush(
+            subscription_info={"endpoint": endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}},
+            data=json.dumps(payload),
+            vapid_private_key=settings.VAPID_PRIVATE_KEY,
+            vapid_claims={"sub": settings.VAPID_SUBJECT},
+            ttl=86400,
+            timeout=PUSH_TIMEOUT_SECONDS,
+            requests_session=session if session is not None else _no_redirect_session(),
+        )
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if status_code in (404, 410):
+            dead.append(sub.id)
+        logger.warning("Push delivery failed for %s (status %s): %s", getattr(sub, "id", sub), status_code, type(exc).__name__)
+
+
+async def notify_push(report_id: uuid.UUID, message: str, report=None, *, guest: bool | None = None) -> None:
+    """Send push to all subscriptions of report. Never raise.
+
+    Opens its own DB session, so it is safe to run after the request has finished.
+    """
+    if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
+        return
+    try:
+        if guest is None:
+            guest = report is not None and report.user_id is None
+        body = (message or "")[:120]
+        url = f"/support/issues/{report_id}"
+        if guest:
+            url += f"?access_token={guest_token(report_id)}"
+        payload = {"title": "New reply on your Resumer support issue", "body": body, "url": url}
+        from src.core.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            subs = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report_id))).scalars().all()
+            if not subs:
+                return
+            dead: list = []
+
+            def _run_all() -> None:
+                session = _no_redirect_session()
+                try:
+                    for s in subs:
+                        _send_push_sync(s, payload, dead, session)
+                finally:
+                    session.close()
+
+            await run_in_threadpool(_run_all)
+            if dead:
+                for dead_id in list(dead):
+                    obj = await db.get(SupportPushSubscription, dead_id)
+                    if obj is not None:
+                        await db.delete(obj)
+                try:
+                    await db.commit()
+                except Exception:
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+    except Exception:
+        logger.exception("Push notify failed for report %s", report_id)
+
+
+# Strong references so fire-and-forget push tasks are not garbage collected mid-flight.
+_push_tasks: set[asyncio.Task] = set()
+
+
+def _push_task_done(task: asyncio.Task) -> None:
+    _push_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("Background push task failed", exc_info=exc)
+
+
+def schedule_push(report_id: uuid.UUID, message: str, *, guest: bool) -> asyncio.Task | None:
+    """Fire-and-forget push delivery. Never blocks or raises into the caller."""
+    if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
+        return None
+    try:
+        task = asyncio.get_running_loop().create_task(notify_push(report_id, message, guest=guest))
+    except Exception:
+        logger.exception("Could not schedule push for report %s", report_id)
+        return None
+    _push_tasks.add(task)
+    task.add_done_callback(_push_task_done)
+    return task
+
+
 async def append_reply(db: AsyncSession, report: SupportReport, data: ReplyCreate, actor: User | None, admin: bool) -> dict:
     message = SupportMessage(report_id=report.id, author_id=actor.id if actor else None,
                              author_role="admin" if admin else "user", message=data.message)
@@ -168,4 +475,6 @@ async def append_reply(db: AsyncSession, report: SupportReport, data: ReplyCreat
     await db.commit()
     await db.refresh(message)
     notification = await notify_owner(db, report, data.message) if admin else await notify_admins(report, data.message)
+    if admin:
+        schedule_push(report.id, data.message, guest=report.user_id is None)
     return {"message": message_out(message), "notification_status": notification}

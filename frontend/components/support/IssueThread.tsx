@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label"
 import { getCategoryLabel } from "./supportCategories"
 import { AdminIssueEditor } from "./AdminIssueEditor"
 import {
+  issueHref,
   issueTitle,
+  markLastSeen,
   rememberGuestIssue,
   savedGuestIssues,
   statusLabels,
@@ -19,17 +21,181 @@ import {
   type SupportThread
 } from "./supportApi"
 
+function urlBase64ToUint8Array(base64: string) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4)
+  const normalized = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const raw = atob(normalized)
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0))
+}
+
+const pushStatusSchema = z.object({ subscribed: z.boolean() })
+const publicKeySchema = z.object({ key: z.string() })
+
+function PushToggle({ id, token }: { id: string; token?: string }) {
+  const [available, setAvailable] = useState(false)
+  const [subscribed, setSubscribed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const pushUrl = useCallback(
+    (endpoint?: string) => {
+      const params = new URLSearchParams()
+      if (token) params.set("access_token", token)
+      if (endpoint) params.set("endpoint", endpoint)
+      const qs = params.toString()
+      return `/api/support/${encodeURIComponent(id)}/push${qs ? `?${qs}` : ""}`
+    },
+    [id, token]
+  )
+
+  useEffect(() => {
+    let active = true
+    async function init() {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) return
+      try {
+        const res = await fetch("/api/support/push/public-key")
+        if (!res.ok) return
+        if (active) setAvailable(true)
+        const reg = await navigator.serviceWorker.register("/support-sw.js")
+        // The browser subscription is shared by every issue. Ask the server whether
+        // this particular issue is subscribed with it.
+        const sub = await reg.pushManager.getSubscription()
+        if (!sub) {
+          if (active) setSubscribed(false)
+          return
+        }
+        const status = pushStatusSchema.parse(await supportFetch(pushUrl(sub.endpoint)))
+        if (active) setSubscribed(status.subscribed)
+      } catch {}
+    }
+    void init()
+    return () => {
+      active = false
+    }
+  }, [pushUrl])
+
+  async function turnOn(reg: ServiceWorkerRegistration) {
+    let sub = await reg.pushManager.getSubscription()
+    let created = false
+    if (!sub) {
+      const permission =
+        Notification.permission === "granted" ? "granted" : await Notification.requestPermission()
+      if (permission !== "granted") {
+        setMessage("Notifications are blocked in this browser. Allow them in site settings to turn this on.")
+        return
+      }
+      const data = publicKeySchema.parse(await supportFetch("/api/support/push/public-key"))
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(data.key) as BufferSource
+      })
+      created = true
+    }
+    try {
+      await supportFetch(pushUrl(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON())
+      })
+    } catch (err) {
+      // Only undo a subscription this click created; an older one may serve other issues.
+      if (created) await sub.unsubscribe().catch(() => false)
+      throw err
+    }
+    setSubscribed(true)
+  }
+
+  async function turnOff(reg: ServiceWorkerRegistration) {
+    const sub = await reg.pushManager.getSubscription()
+    // Never unsubscribe the browser here: other issues may still use the same subscription.
+    if (sub) await supportFetch(pushUrl(sub.endpoint), { method: "DELETE" })
+    setSubscribed(false)
+  }
+
+  async function toggle() {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const reg = await navigator.serviceWorker.register("/support-sw.js")
+      if (subscribed) await turnOff(reg)
+      else await turnOn(reg)
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not update notifications in this browser.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!available) return null
+  return (
+    <div className="soft-card space-y-2 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold">Notify me in this browser when the team replies</p>
+          <p className="text-xs leading-5 text-ink-muted">
+            {subscribed ? "On. You will get a browser notification for replies on this issue." : "Off. Replies stay in this conversation."} On iPhone, add this site to your Home Screen first so notifications can work.
+          </p>
+        </div>
+        <Button variant="outline" disabled={busy} onClick={() => void toggle()} className="min-h-11">
+          {busy ? "Working..." : subscribed ? "Turn off" : "Turn on"}
+        </Button>
+      </div>
+      {message && <p className="text-xs leading-5 text-ink-muted">{message}</p>}
+    </div>
+  )
+}
+
+function PrivateLinkCard({ id, token }: { id: string; token?: string }) {
+  const [dismissed, setDismissed] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const link = typeof window !== "undefined" ? `${window.location.origin}${issueHref(id, token)}` : issueHref(id, token)
+  const code = id.slice(0, 8).toUpperCase()
+  if (dismissed) return null
+  return (
+    <div className="soft-card space-y-3 p-5" role="status">
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="text-lg font-bold">Your private ticket link</h2>
+        <button type="button" className="min-h-11 min-w-11 text-sm font-bold underline" onClick={() => setDismissed(true)} aria-label="Dismiss private link card">
+          Dismiss
+        </button>
+      </div>
+      <p className="text-sm leading-6 text-ink-muted">
+        Save this link. It is the only way to get back to this conversation on another device.
+      </p>
+      <p className="break-all text-sm">
+        <span className="font-bold">Ticket code: </span>
+        {code}
+      </p>
+      <p className="break-all rounded-md border border-line bg-paper p-3 text-xs">{link}</p>
+      <Button
+        className="min-h-11"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(link)
+            setCopied(true)
+          } catch {
+            setCopied(false)
+          }
+        }}
+      >
+        {copied ? "Copied" : "Copy link"}
+      </Button>
+    </div>
+  )
+}
+
 const replySchema = z.object({
   notification_status: z.enum(["sent", "failed", "not_configured", "no_recipient"]).optional()
 })
 export function IssueThread({
   id,
   accessToken,
-  adminView = false
+  adminView = false,
+  isNew = false
 }: {
   id: string
   accessToken?: string
   adminView?: boolean
+  isNew?: boolean
 }) {
   const [thread, setThread] = useState<SupportThread | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -48,14 +214,19 @@ export function IssueThread({
   const load = useCallback(async () => {
     const result = threadSchema.parse(await supportFetch(`${endpoint}${query}`))
     setThread(result)
+    if (result.last_admin_reply_at) markLastSeen(id, result.last_admin_reply_at)
+    else markLastSeen(id, new Date().toISOString())
     return result
-  }, [endpoint, query])
+  }, [endpoint, query, id])
   useEffect(() => {
     let active = true
     void supportFetch(`${endpoint}${query}`)
       .then((result) => {
         if (active) {
-          setThread(threadSchema.parse(result))
+          const parsed = threadSchema.parse(result)
+          setThread(parsed)
+          if (parsed.last_admin_reply_at) markLastSeen(id, parsed.last_admin_reply_at)
+          else markLastSeen(id, new Date().toISOString())
           setError(null)
         }
       })
@@ -72,7 +243,7 @@ export function IssueThread({
       active = false
       clearInterval(interval)
     }
-  }, [endpoint, query, load])
+  }, [endpoint, query, load, id])
   async function reply(event: React.FormEvent) {
     event.preventDefault()
     if (!draft.trim()) return
@@ -203,6 +374,12 @@ export function IssueThread({
               This is your private issue link. Bookmark it to return to this conversation, and keep
               it to yourself.
             </p>
+          )}
+          {isNew && token && !thread.viewer_is_admin && (
+            <PrivateLinkCard id={thread.id} token={token} />
+          )}
+          {!thread.viewer_is_admin && !adminView && (
+            <PushToggle id={thread.id} token={token} />
           )}
           <section aria-label="Conversation" className="space-y-4">
             <article className="min-w-0 border border-line bg-paper rounded-md">

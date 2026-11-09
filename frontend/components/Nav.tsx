@@ -9,6 +9,66 @@ import { useSession } from "next-auth/react"
 import { useGenerationStats } from "@/components/useGenerationStats"
 import { createPortal } from "react-dom"
 import { AccountMenu } from "@/components/AccountMenu"
+import {
+  getLastSeen,
+  hasGuestTicketMarker,
+  issueSchema,
+  supportFetch,
+  SUPPORT_SEEN_EVENT,
+  type SupportIssue
+} from "@/components/support/supportApi"
+import { z } from "zod"
+
+type BadgeRow = Pick<SupportIssue, "id" | "last_admin_reply_at">
+
+function computeUnseen(rows: BadgeRow[]) {
+  const seen = getLastSeen()
+  return rows.some((r) => {
+    if (!r.last_admin_reply_at) return false
+    const seenAt = seen[r.id] ? Date.parse(seen[r.id]) : 0
+    return Date.parse(r.last_admin_reply_at) > seenAt
+  })
+}
+
+/**
+ * Only fetches for signed-in visitors or browsers that have a guest ticket, so
+ * anonymous visitors on every page do not hit the support API.
+ */
+function useSupportBadge(signedIn: boolean) {
+  const [unseen, setUnseen] = useState(false)
+  useEffect(() => {
+    if (!signedIn && !hasGuestTicketMarker()) return
+    let active = true
+    let inFlight = false
+    let rows: BadgeRow[] = []
+    async function check() {
+      if (inFlight) return
+      inFlight = true
+      try {
+        rows = z.array(issueSchema).parse(await supportFetch("/api/support"))
+        if (active) setUnseen(computeUnseen(rows))
+      } catch {} finally {
+        inFlight = false
+      }
+    }
+    void check()
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check()
+    }
+    // An issue was viewed in this tab: recompute from cached rows, no refetch.
+    const onSeen = () => {
+      if (active) setUnseen(computeUnseen(rows))
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener(SUPPORT_SEEN_EVENT, onSeen)
+    return () => {
+      active = false
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener(SUPPORT_SEEN_EVENT, onSeen)
+    }
+  }, [signedIn])
+  return unseen
+}
 
 const defaultLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -56,6 +116,7 @@ export function Nav({ signedIn = false }: { signedIn?: boolean } = {}) {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const { data: session, status: sessionStatus } = useSession()
+  const supportUnseen = useSupportBadge(signedIn || sessionStatus === "authenticated")
   const accountUser = session?.user
   const accountInitials = accountUser?.name?.trim()
     ? accountUser.name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")
@@ -140,13 +201,16 @@ export function Nav({ signedIn = false }: { signedIn?: boolean } = {}) {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`px-3 py-1.5 transition-colors ${
+                  className={`relative px-3 py-1.5 transition-colors ${
                     active
                       ? "bg-orange-50 dark:bg-orange-950/50 text-[#ff4e26]"
                       : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white"
                   }`}
                 >
                   {link.label}
+                  {link.href === "/support" && supportUnseen && (
+                    <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#ff4e26]" aria-label="New reply on your support issue" />
+                  )}
                 </Link>
               )
             })}
@@ -333,6 +397,9 @@ export function Nav({ signedIn = false }: { signedIn?: boolean } = {}) {
                       <div className="flex items-center gap-3 min-w-0">
                         <Icon size={18} className={active ? "text-[#ff4e26]" : "text-zinc-400 dark:text-zinc-500"} />
                         <span className="text-base uppercase tracking-tight truncate">{link.label}</span>
+                        {link.href === "/support" && supportUnseen && (
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-[#ff4e26]" aria-label="New reply on your support issue" />
+                        )}
                       </div>
                       {active ? (
                         <span className="text-[10px] font-mono font-bold uppercase text-[#ff4e26] bg-[#ff4e26]/15 px-2 py-0.5 rounded">

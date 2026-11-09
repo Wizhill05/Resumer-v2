@@ -1373,7 +1373,7 @@ async def update_support_report_status(
     current_admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    from src.services.support import add_status_event, append_reply, get_report, notify_owner
+    from src.services.support import add_status_event, append_reply, get_report, notify_owner, schedule_push
     from src.models.generation import SupportMessage
     report = await get_report(db, id)
     changed = data.status is not None and report.status != data.status
@@ -1398,7 +1398,16 @@ async def update_support_report_status(
         notification = result["notification_status"]
     else:
         await db.commit()
-        notification = await notify_owner(db, report, f"Your request was marked {data.status.replace('_', ' ')}.") if changed else None
+        notification = None
+        if changed:
+            status_message = f"Your request was marked {data.status.replace('_', ' ')}."
+            # Guest addresses are unverified: automated status emails only go to signed-in
+            # owners. Human-written admin replies (append_reply) still email as before.
+            if report.user_id is None:
+                notification = "no_recipient"
+            else:
+                notification = await notify_owner(db, report, status_message)
+            schedule_push(report.id, status_message, guest=report.user_id is None)
     return {"status": "success", "report_status": report.status, "notification_status": notification}
 
 
