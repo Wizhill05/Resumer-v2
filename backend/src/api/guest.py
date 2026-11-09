@@ -9,15 +9,14 @@ from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Response, U
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import case, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.analytics import capture_generation
 from src.core.database import get_db
 from src.core.executor import trigger_pipeline
 from src.core.storage import StorageService
-from src.models.generation import Generation, GenerationLog, GuestRateLimit
+from src.models.generation import Generation, GenerationLog
 from src.models.user import User
 from src.schemas.guest import GuestGenerationCreate, GuestGenerationOut
 from src.schemas.profile import ResumeImportDraft
@@ -71,35 +70,42 @@ async def _guest_user(db: AsyncSession) -> User:
     return user
 
 
-async def _check_guest_rate_limit(token_hash: str, db: AsyncSession) -> None:
+async def guest_quota(token_hash: str | None, db: AsyncSession) -> dict:
+    limit = GUEST_MAX_DAILY_RUNS
+    if not token_hash:
+        return {"limit": limit, "used": 0, "remaining": limit, "resets_at": None}
     now = datetime.now(timezone.utc)
-    reset_at = now + timedelta(hours=24)
+    window_start = now - timedelta(hours=24)
     stmt = (
-        pg_insert(GuestRateLimit)
-        .values(token_hash=token_hash, request_count=1, reset_at=reset_at)
-        .on_conflict_do_update(
-            index_elements=[GuestRateLimit.token_hash],
-            set_={
-                "request_count": case(
-                    (GuestRateLimit.reset_at <= now, 1),
-                    else_=GuestRateLimit.request_count + 1,
-                ),
-                "reset_at": case(
-                    (GuestRateLimit.reset_at <= now, reset_at),
-                    else_=GuestRateLimit.reset_at,
-                ),
-            },
+        select(Generation.created_at)
+        .where(
+            Generation.is_guest == True,  # noqa: E712
+            Generation.guest_token_hash == token_hash,
+            Generation.created_at > window_start,
+            Generation.status != "failed",
         )
-        .returning(GuestRateLimit.request_count, GuestRateLimit.reset_at)
+        .order_by(Generation.created_at.asc())
     )
     result = await db.execute(stmt)
-    count, reset = result.one()
-    await db.commit()
-    if count > GUEST_MAX_DAILY_RUNS:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit: {GUEST_MAX_DAILY_RUNS} guest resumes per day. Resets at {reset.isoformat()}",
-        )
+    rows = result.scalars().all()
+    used = len(rows)
+    if used >= 1:
+        oldest = rows[0]
+        # Normalize naive timestamps (SQLite in tests) to UTC aware
+        if isinstance(oldest, datetime) and oldest.tzinfo is None:
+            oldest = oldest.replace(tzinfo=timezone.utc)
+        resets_at = (oldest + timedelta(hours=24)).isoformat() if isinstance(oldest, datetime) else None
+    else:
+        resets_at = None
+    remaining = max(0, limit - used)
+    return {"limit": limit, "used": used, "remaining": remaining, "resets_at": resets_at}
+
+
+def _dialect_name(db: AsyncSession) -> str:
+    try:
+        return db.get_bind().dialect.name
+    except Exception:
+        return getattr(getattr(getattr(db, "bind", None), "dialect", None), "name", "postgresql")
 
 
 async def _guest_generation(gen_id: str, token_hash: str, db: AsyncSession) -> Generation:
@@ -130,6 +136,7 @@ def _out(gen: Generation) -> GuestGenerationOut:
         creativity_mode=getattr(gen, "creativity_mode", None) or "proper",
         error_message=gen.error_message,
         section_order=gen.section_order,
+        expires_at=gen.expires_at.isoformat() if gen.expires_at else None,
     )
 
 
@@ -265,6 +272,15 @@ async def import_guest_resumes(
     return merge_drafts(drafts)
 
 
+@router.get("/quota")
+async def get_guest_quota_endpoint(
+    resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
+    db: AsyncSession = Depends(get_db),
+):
+    token_hash = _hash_token(resumer_guest_token) if resumer_guest_token else None
+    return await guest_quota(token_hash, db)
+
+
 @router.post("/generate", response_model=GuestGenerationOut)
 async def start_guest_generation(
     data: GuestGenerationCreate,
@@ -274,7 +290,6 @@ async def start_guest_generation(
 ):
     token = _guest_token(response, resumer_guest_token)
     token_hash = _hash_token(token)
-    await _check_guest_rate_limit(token_hash, db)
 
     manifest = TemplateRegistryService.get_template_manifest(data.template_id)
     if not manifest:
@@ -303,6 +318,28 @@ async def start_guest_generation(
         )
 
     guest_user = await _guest_user(db)
+
+    if _dialect_name(db) == "postgresql":
+        await db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:token_hash, 0))"), {"token_hash": token_hash})
+
+    quota = await guest_quota(token_hash, db)
+    if quota["remaining"] <= 0:
+        # Use get() for safety though quota always contains these keys
+        resets_at = quota.get("resets_at")
+        limit = quota.get("limit", GUEST_MAX_DAILY_RUNS)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "guest_quota_exhausted",
+                "message": f"You've used all {limit} free résumés for today. Sign in to keep going, or come back later.",
+                "resets_at": resets_at,
+                "limit": limit,
+            },
+        )
     snapshot = jsonable_encoder(
         {
             "profile": data.profile,
