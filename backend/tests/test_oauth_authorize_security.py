@@ -340,6 +340,9 @@ async def test_token_exchange_allows_omitted_redirect_uri(client: AsyncClient, a
         ("https://chatgpt.com/aip/g-abc/oauth/callback?x=1", False),
         ("https://chatgpt.com.evil.example/aip/g-abc/oauth/callback", False),
         ("https://chatgpt.com/aip/g-abc/../../evil/oauth/callback", False),
+        ("https://chatgpt.com/connector/oauth/SCrzzR_T_sCN", True),
+        ("https://chatgpt.com/connector/oauth/abc/../../evil", False),
+        ("https://chatgpt.com/connector/oauth/abc?next=https://evil.example", False),
     ],
 )
 async def test_gpt_action_callback_pattern(client: AsyncClient, async_db: AsyncSession, uri: str, ok: bool):
