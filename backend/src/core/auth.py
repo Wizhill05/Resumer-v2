@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+import uuid
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -13,6 +13,23 @@ from src.models.user import User
 bearer = HTTPBearer(auto_error=False)
 
 
+async def _lookup_user(db: AsyncSession, payload: dict) -> User | None:
+    """Resolve the user from the token's `sub`, which must be a user UUID.
+
+    Every backend JWT producer (frontend `backendTokenForSession`, OAuth access tokens) sets
+    `sub`; email-only tokens are rejected so identity never depends on a mutable email match.
+    """
+    sub = payload.get("sub")
+    if not sub:
+        return None
+    try:
+        parsed = uuid.UUID(str(sub))
+    except (ValueError, AttributeError, TypeError):
+        return None
+    result = await db.execute(select(User).where(User.id == parsed))
+    return result.scalar_one_or_none()
+
+
 async def get_optional_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
@@ -22,13 +39,10 @@ async def get_optional_user(
     if credentials:
         token = credentials.credentials
     elif request:
-        # Check cookies
+        # Check cookies. Auth.js session cookies are deliberately not read here: they are
+        # encrypted JWEs (never valid HS256 JWTs) and are not sent to this host anyway.
         for cookie_name in [
             "auth_token",
-            "authjs.session-token",
-            "__Secure-authjs.session-token",
-            "next-auth.session-token",
-            "__Secure-next-auth.session-token",
             "token",
         ]:
             if cookie_name in request.cookies:
@@ -44,27 +58,8 @@ async def get_optional_user(
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
     except JWTError:
         return None
-    email: str | None = payload.get("email")
-    if not email:
-        return None
 
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        user = User(
-            email=email,
-            name=payload.get("name"),
-            image=payload.get("picture"),
-            provider=payload.get("provider", "unknown"),
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-    user.github_username = payload.get("github_username")
-    user.github_access_token = payload.get("github_access_token")
-    return user
+    return await _lookup_user(db, payload)
 
 
 async def get_current_user(
@@ -79,25 +74,9 @@ async def get_current_user(
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    email: str | None = payload.get("email")
-    if not email:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing email")
-
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-
+    user = await _lookup_user(db, payload)
     if not user:
-        # Auto-create user on first authenticated call
-        user = User(
-            email=email,
-            name=payload.get("name"),
-            image=payload.get("picture"),
-            provider=payload.get("provider", "unknown"),
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
 
 

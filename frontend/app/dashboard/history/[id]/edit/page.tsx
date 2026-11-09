@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { redirect, notFound } from "next/navigation"
 import { EditorClient } from "./EditorClient"
-import { signBackendToken } from "@/lib/jwt"
+import { backendTokenForSession } from "@/lib/jwt"
 import type { EditorPayload } from "@/lib/resume-schema"
 
 type Props = {
@@ -13,12 +13,7 @@ async function fetchEditorPayload(genId: string): Promise<EditorPayload | null> 
   if (!session?.user) return null
 
   const backendUrl = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000"
-  const token = await signBackendToken({
-    email: session.user.email ?? "",
-    name: session.user.name ?? "",
-    picture: session.user.image ?? "",
-    provider: (session.user as { provider?: string }).provider ?? "google",
-  })
+  const token = await backendTokenForSession(session)
 
   const res = await fetch(`${backendUrl}/generate/${genId}/editor`, {
     headers: { Authorization: `Bearer ${token}` },

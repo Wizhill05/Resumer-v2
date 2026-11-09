@@ -18,6 +18,12 @@ from src.models.generation import (  # noqa: F401
     FeedbackRating,
 )
 from src.models.llm import LlmEndpoint, LlmRoleAssignment  # noqa: F401
+from src.models.identity import (  # noqa: F401
+    UserIdentity,
+    GithubToken,
+    GithubLinkState,
+    EmailVerification,
+)
 from src.models.oauth import (  # noqa: F401
     OAuthClient,
     OAuthAuthorizationCode,

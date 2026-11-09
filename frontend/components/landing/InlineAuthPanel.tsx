@@ -1,10 +1,24 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 import Link from "next/link"
 import { signInGithub, signInGoogle } from "@/app/actions"
+import { authErrorMessage } from "@/lib/auth-errors"
 import { EmailAuthForm } from "@/components/EmailAuthForm"
 import { ArrowRight } from "lucide-react"
+
+function readAuthError(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return authErrorMessage(params.get("auth_error"), params.get("provider"))
+  } catch {
+    return null
+  }
+}
+
+function useAuthError(): string | null {
+  return useSyncExternalStore(() => () => {}, readAuthError, () => null)
+}
 
 interface InlineAuthPanelProps {
   callbackUrl?: string
@@ -16,11 +30,17 @@ export function InlineAuthPanel({
   className = "",
 }: InlineAuthPanelProps) {
   const [showEmail, setShowEmail] = useState(false)
+  const authError = useAuthError()
 
   return (
     <div
       className={`relative w-full max-w-sm border border-line-strong bg-paper p-5 transition-all shadow-soft rounded-md ${className}`}
     >
+      {authError && (
+        <p role="alert" className="mb-3 text-sm font-semibold text-red-600 dark:text-red-400">
+          {authError}
+        </p>
+      )}
       {/* OAuth Action Buttons or Email Form */}
       {!showEmail ? (
         <>

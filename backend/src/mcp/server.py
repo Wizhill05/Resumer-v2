@@ -730,7 +730,7 @@ class MCPAuthMiddleware:
                     email=email,
                     name=payload.get("name") or email.split("@")[0].capitalize(),
                     image=payload.get("picture"),
-                    provider=payload.get("provider", "oauth-mcp"),
+                    provider=None,
                 )
                 db.add(user)
                 await db.commit()

@@ -44,6 +44,20 @@ async def client(async_db: AsyncSession):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture
+async def seed_credentials_user(async_db: AsyncSession):
+    """Create a credentials user the way the post-verification flow does."""
+    user = User(
+        email="charlie@example.com",
+        name="Charlie",
+        hashed_password=hash_password("Password123!"),
+        provider="credentials",
+    )
+    async_db.add(user)
+    await async_db.commit()
+    return user
+
+
 def test_password_hash_and_verify():
     pwd = "SecurePassword123!"
     hashed = hash_password(pwd)
@@ -55,52 +69,7 @@ def test_password_hash_and_verify():
     assert verify_password(pwd, None) is False
 
 
-async def test_email_register_success(client: AsyncClient):
-    res = await client.post(
-        "/auth/email/register",
-        json={"email": "reviewer@openai.com", "password": "ReviewerPass2026!", "name": "OpenAI Reviewer"},
-    )
-    assert res.status_code == 200
-    data = res.json()
-    assert data["email"] == "reviewer@openai.com"
-    assert data["name"] == "OpenAI Reviewer"
-    assert "id" in data
-
-
-async def test_email_register_duplicate_conflict(client: AsyncClient):
-    await client.post(
-        "/auth/email/register",
-        json={"email": "alice@example.com", "password": "Password123!"},
-    )
-    res = await client.post(
-        "/auth/email/register",
-        json={"email": "alice@example.com", "password": "Password123!"},
-    )
-    assert res.status_code == 409
-    assert "already exists" in res.json()["detail"]
-
-
-async def test_email_register_short_password(client: AsyncClient):
-    res = await client.post(
-        "/auth/email/register",
-        json={"email": "bob@example.com", "password": "123"},
-    )
-    assert res.status_code in (400, 422)
-
-
-async def test_email_register_invalid_email(client: AsyncClient):
-    res = await client.post(
-        "/auth/email/register",
-        json={"email": "not-an-email", "password": "Password123!"},
-    )
-    assert res.status_code == 400
-
-
-async def test_email_login_success(client: AsyncClient):
-    await client.post(
-        "/auth/email/register",
-        json={"email": "charlie@example.com", "password": "Password123!", "name": "Charlie"},
-    )
+async def test_email_login_success(client: AsyncClient, seed_credentials_user):
     res = await client.post(
         "/auth/email/login",
         json={"email": "charlie@example.com", "password": "Password123!"},
@@ -111,14 +80,10 @@ async def test_email_login_success(client: AsyncClient):
     assert data["name"] == "Charlie"
 
 
-async def test_email_login_wrong_password(client: AsyncClient):
-    await client.post(
-        "/auth/email/register",
-        json={"email": "dave@example.com", "password": "Password123!"},
-    )
+async def test_email_login_wrong_password(client: AsyncClient, seed_credentials_user):
     res = await client.post(
         "/auth/email/login",
-        json={"email": "dave@example.com", "password": "WrongPassword!"},
+        json={"email": "charlie@example.com", "password": "WrongPassword!"},
     )
     assert res.status_code == 401
     assert "Incorrect password" in res.json()["detail"]
@@ -152,16 +117,34 @@ async def test_email_login_social_account_without_password(client: AsyncClient, 
     assert res.status_code == 401
     assert "Google" in res.json()["detail"]
 
-    # Registering should allow them to set a password
-    reg_res = await client.post(
-        "/auth/email/register",
-        json={"email": "socialuser@example.com", "password": "NewEmailPassword123!"},
-    )
-    assert reg_res.status_code == 200
 
-    # Now login with the newly set password succeeds
-    login_res = await client.post(
-        "/auth/email/login",
-        json={"email": "socialuser@example.com", "password": "NewEmailPassword123!"},
+async def test_email_login_legacy_unverified_credentials_user(client: AsyncClient, async_db: AsyncSession):
+    # Grandfathered: credentials users with email_verified_at NULL can sign in.
+    user = User(
+        email="legacy@example.com",
+        name="Legacy",
+        hashed_password=hash_password("Password123!"),
+        provider="credentials",
+        email_verified_at=None,
     )
-    assert login_res.status_code == 200
+    async_db.add(user)
+    await async_db.commit()
+
+    res = await client.post(
+        "/auth/email/login",
+        json={"email": "legacy@example.com", "password": "Password123!"},
+    )
+    assert res.status_code == 200
+    assert res.json()["email"] == "legacy@example.com"
+
+
+async def test_old_register_endpoint_is_gone(client: AsyncClient, async_db: AsyncSession):
+    res = await client.post(
+        "/auth/email/register",
+        json={"email": "gone@example.com", "password": "Password123!", "name": "Gone"},
+    )
+    assert res.status_code != 200
+    from sqlalchemy import select
+
+    user = (await async_db.execute(select(User).where(User.email == "gone@example.com"))).scalar_one_or_none()
+    assert user is None

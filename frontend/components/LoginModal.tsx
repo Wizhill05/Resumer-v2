@@ -1,11 +1,25 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { signInGithub, signInGoogle } from "@/app/actions"
+import { authErrorMessage } from "@/lib/auth-errors"
 import { Button } from "@/components/ui/button"
 import { EmailAuthForm } from "@/components/EmailAuthForm"
 import { X } from "lucide-react"
+
+function readAuthError(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return authErrorMessage(params.get("auth_error"), params.get("provider"))
+  } catch {
+    return null
+  }
+}
+
+function useAuthError(): string | null {
+  return useSyncExternalStore(() => () => {}, readAuthError, () => null)
+}
 
 export function LoginModal({
   triggerClassName,
@@ -19,6 +33,7 @@ export function LoginModal({
 }) {
   const [open, setOpen] = useState(false)
   const [showEmail, setShowEmail] = useState(false)
+  const authError = useAuthError()
 
   const handleClose = () => {
     setOpen(false)
@@ -99,6 +114,11 @@ export function LoginModal({
               <p className="mt-2 text-base font-semibold text-ink-muted">
                 Choose a provider to get started
               </p>
+              {authError && (
+                <p role="alert" className="mt-3 text-sm font-semibold text-red-600 dark:text-red-400">
+                  {authError}
+                </p>
+              )}
             </div>
 
             {/* Login options */}

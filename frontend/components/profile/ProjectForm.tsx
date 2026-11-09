@@ -16,6 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ReportIssueButton } from "@/components/support/ReportIssueButton";
+import {
+  GITHUB_PROFILE_CONNECT_URL,
+  isGithubConnectedActive,
+  useGithubIntegration,
+} from "@/components/github/useGithubIntegration";
 
 import { normalizeUrl } from "./BasicInfoForm";
 
@@ -56,6 +61,7 @@ type DuplicateCandidate = {
 
 type ImportedProject = ProjectItem & {
   duplicate_candidates?: DuplicateCandidate[];
+  warnings?: { scope: string; message: string }[];
 };
 
 type GitHubRepoItem = {
@@ -65,7 +71,39 @@ type GitHubRepoItem = {
   html_url: string;
   language: string | null;
   stargazers_count: number;
+  updated_at?: string;
+  private: boolean;
 };
+
+type GitHubReposData = {
+  repos: GitHubRepoItem[];
+  connected: boolean;
+  github_username: string | null;
+  source: "token" | "public";
+};
+
+type GithubApiError = Error & {
+  status?: number;
+  detail?: string;
+  reset_at?: string;
+};
+
+function formatGithubError(err: unknown, fallback: string): string {
+  if (err instanceof Error) {
+    const apiErr = err as GithubApiError;
+    if (apiErr.status === 429) {
+      const when = apiErr.reset_at
+        ? new Date(apiErr.reset_at).toLocaleString()
+        : "later";
+      return `GitHub's shared limit is used up until ${when}. Connect GitHub to keep importing.`;
+    }
+    if (apiErr.status === 409) {
+      return "Reconnect GitHub to keep importing.";
+    }
+    return err.message || fallback;
+  }
+  return fallback;
+}
 
 export function parseGitHubUsername(input: string | undefined | null): string {
   if (!input) return "";
@@ -111,28 +149,47 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   const profileGithubUsername = parseGitHubUsername(profile?.github_url);
   const effectiveUsername = githubOwner.trim() || profileGithubUsername;
 
-  // Query GitHub repos whenever a username is present
+  const { data: githubIntegration, isLoading: isGithubIntegrationLoading } =
+    useGithubIntegration();
+  const isGithubConnected = isGithubConnectedActive(githubIntegration);
+  const integrationLogin = githubIntegration?.login ?? null;
+
+  // Query GitHub repos. When GitHub is connected, repos come from the user's
+  // own token (no username param); otherwise the shared unauthenticated limit
+  // is used with a username.
   const {
     data: githubReposData,
-    isLoading: isLoadingRepos,
+    isLoading: isReposQueryLoading,
     isError: isReposError,
+    error: reposQueryError,
     refetch: refetchRepos,
-  } = useQuery<{
-    repos: GitHubRepoItem[];
-    connected: boolean;
-    github_username: string | null;
-  }>({
-    queryKey: ["github-repos", effectiveUsername],
+  } = useQuery<GitHubReposData>({
+    queryKey: isGithubConnected
+      ? ["github-repos", "token"]
+      : ["github-repos", effectiveUsername],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (effectiveUsername) {
+      if (!isGithubConnected && effectiveUsername) {
         params.set("username", effectiveUsername);
       }
-      const res = await fetch(`/api/backend/profile/import/github-repos?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch GitHub repositories");
+      const res = await fetch(
+        `/api/backend/profile/import/github-repos?${params.toString()}`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const err = new Error(
+          body.detail || "Failed to fetch GitHub repositories",
+        ) as GithubApiError;
+        err.status = res.status;
+        err.detail = body.detail;
+        err.reset_at = body.reset_at;
+        throw err;
+      }
       return res.json();
     },
-    enabled: Boolean(effectiveUsername),
+    enabled:
+      !isGithubIntegrationLoading &&
+      (isGithubConnected || Boolean(effectiveUsername)),
   });
 
   const { data: projects = [], isLoading, isError, refetch } = useQuery<ProjectItem[]>({
@@ -276,8 +333,15 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
         body: JSON.stringify({ url: targetUrl }),
       });
       const body = await res.json();
-      if (!res.ok)
-        throw new Error(body.detail || "Failed to import GitHub project");
+      if (!res.ok) {
+        const err = new Error(
+          body.detail || "Failed to import GitHub project",
+        ) as GithubApiError;
+        err.status = res.status;
+        err.detail = body.detail;
+        err.reset_at = body.reset_at;
+        throw err;
+      }
       return body as ImportedProject;
     },
     onSuccess: (project) => {
@@ -309,9 +373,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       );
     },
     onError: (err) =>
-      setGithubMessage(
-        err instanceof Error ? err.message : "Failed to import GitHub project",
-      ),
+      setGithubMessage(formatGithubError(err, "Failed to import GitHub project")),
   });
 
   useProfileWork("github-import", false, githubImportMutation.isPending)
@@ -321,7 +383,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     if (selectedRepoUrl) {
       target = selectedRepoUrl;
     } else if (githubInputMode === "fields") {
-      const owner = githubOwner.trim() || profileGithubUsername;
+      const owner = githubOwner.trim() || integrationLogin || profileGithubUsername;
       if (!owner || !githubRepoName.trim()) {
         setGithubMessage("Please provide a GitHub Username and Repository name.");
         return;
@@ -506,6 +568,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   }
 
   const userRepos = githubReposData?.repos || [];
+  const isLoadingRepos = isReposQueryLoading || isGithubIntegrationLoading;
 
   const isGithubPending = githubImportMutation.isPending;
   const showGithubExpanded = mobileGithubExpanded || isGithubPending || Boolean(githubMessage);
@@ -599,13 +662,21 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
           {/* GitHub Linked Username Header */}
           <div className="flex flex-wrap items-center justify-between gap-2 border border-line bg-ink/[0.03] p-3 text-xs font-semibold text-ink rounded-md">
-            {effectiveUsername ? (
+            {isGithubConnected || effectiveUsername ? (
               <div className="flex items-center gap-2">
                 <svg className="h-4 w-4 fill-current text-ink" viewBox="0 0 24 24">
                   <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                 </svg>
                 <span>
-                  GitHub Profile Linked: <strong className="text-ink">@{effectiveUsername}</strong>
+                  {isGithubConnected ? (
+                    <>
+                      Synced from <strong className="text-ink">@{integrationLogin}</strong>
+                    </>
+                  ) : (
+                    <>
+                      GitHub Profile Linked: <strong className="text-ink">@{effectiveUsername}</strong>
+                    </>
+                  )}
                 </span>
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
               </div>
@@ -619,12 +690,23 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
             )}
           </div>
 
-          {/* Repositories Dropdown (Always visible when a username is present) */}
-          {effectiveUsername && (
+          {githubIntegration && !githubIntegration.connected && (
+            <p className="rounded-md border border-line bg-ink/[0.03] px-3 py-2 text-xs font-semibold text-ink-muted">
+              <a
+                href={GITHUB_PROFILE_CONNECT_URL}
+                className="text-ember underline underline-offset-4"
+              >
+                Connect GitHub for reliable imports
+              </a>
+            </p>
+          )}
+
+          {/* Repositories Dropdown (Always visible when a username is present or GitHub is connected) */}
+          {(effectiveUsername || isGithubConnected) && (
             <div className="space-y-2 border border-line bg-ink/[0.03] p-3 rounded-md">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold text-ink">
-                  Select a repository to import ({isLoadingRepos ? "Loading..." : `${userRepos.length} public repos found`})
+                  Select a repository to import ({isLoadingRepos ? "Loading..." : isGithubConnected ? `${userRepos.length} repos found` : `${userRepos.length} public repos found`})
                 </Label>
                 <button
                   type="button"
@@ -638,24 +720,54 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
               {isLoadingRepos ? (
                 <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-ink-muted">
-                  <Loader2 className="animate-spin" size={16} /> Fetching public repositories for @{effectiveUsername}...
+                  <Loader2 className="animate-spin" size={16} />{" "}
+                  {isGithubConnected
+                    ? "Fetching your repositories..."
+                    : `Fetching public repositories for @${effectiveUsername}...`}
                 </div>
               ) : isReposError ? (
-                <div className="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400 rounded-md">
-                  <span>Failed to load repositories. Please try again.</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => refetchRepos()}
-                    className="h-7 text-xs font-bold"
-                  >
-                    Retry
-                  </Button>
-                </div>
+                (reposQueryError as GithubApiError | null)?.status === 409 ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 py-2 px-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-300 rounded-md">
+                    <span>Reconnect GitHub to keep importing.</span>
+                    <a
+                      href="/account"
+                      className="underline underline-offset-4"
+                    >
+                      Reconnect GitHub
+                    </a>
+                  </div>
+                ) : (reposQueryError as GithubApiError | null)?.status === 429 ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400 rounded-md">
+                    <span>{formatGithubError(reposQueryError, "Failed to load repositories.")}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => refetchRepos()}
+                      className="h-7 text-xs font-bold"
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400 rounded-md">
+                    <span>Failed to load repositories. Please try again.</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => refetchRepos()}
+                      className="h-7 text-xs font-bold"
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                )
               ) : userRepos.length === 0 ? (
                 <div className="py-3 text-center text-xs font-semibold text-ink-muted">
-                  No public repositories found for @{effectiveUsername}.
+                  {isGithubConnected
+                    ? "No repositories found."
+                    : `No public repositories found for @${effectiveUsername}.`}
                 </div>
               ) : (
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
@@ -672,7 +784,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     <option value="">-- Choose a repository from your list --</option>
                     {userRepos.map((repo) => (
                       <option key={repo.full_name} value={repo.html_url}>
-                        {repo.full_name} {repo.language ? `(${repo.language})` : ""} {repo.stargazers_count ? `★ ${repo.stargazers_count}` : ""}
+                        {repo.private ? "🔒 " : ""}{repo.full_name} {repo.language ? `(${repo.language})` : ""} {repo.stargazers_count ? `★ ${repo.stargazers_count}` : ""} {repo.private ? "(Private)" : ""}
                       </option>
                     ))}
                   </select>
@@ -731,19 +843,27 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
             </div>
 
             {githubInputMode === "fields" && !selectedRepoUrl ? (
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-[1fr_1fr_auto]">
-                <div>
-                  <Label htmlFor="githubOwner" className="text-xs font-bold text-ink-muted">
-                    GitHub Username
-                  </Label>
-                  <Input
-                    id="githubOwner"
-                    value={githubOwner}
-                    onChange={(e) => setGithubOwner(e.target.value)}
-                    placeholder={profileGithubUsername || "e.g. facebook"}
-                    className="h-11 text-sm font-semibold mt-1"
-                  />
-                </div>
+              <div
+                className={
+                  isGithubConnected
+                    ? "grid gap-3 sm:grid-cols-[1fr_auto]"
+                    : "grid gap-3 sm:grid-cols-2 md:grid-cols-[1fr_1fr_auto]"
+                }
+              >
+                {!isGithubConnected && (
+                  <div>
+                    <Label htmlFor="githubOwner" className="text-xs font-bold text-ink-muted">
+                      GitHub Username
+                    </Label>
+                    <Input
+                      id="githubOwner"
+                      value={githubOwner}
+                      onChange={(e) => setGithubOwner(e.target.value)}
+                      placeholder={profileGithubUsername || "e.g. facebook"}
+                      className="h-11 text-sm font-semibold mt-1"
+                    />
+                  </div>
+                )}
                 <div>
                   <Label htmlFor="githubRepoName" className="text-xs font-bold text-ink-muted">
                     Repository Name
@@ -761,7 +881,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     type="button"
                     size="lg"
                     onClick={handleImportSubmit}
-                    disabled={githubImportMutation.isPending || (!githubOwner.trim() && !profileGithubUsername) || !githubRepoName.trim()}
+                    disabled={githubImportMutation.isPending || (!githubOwner.trim() && !profileGithubUsername && !integrationLogin) || !githubRepoName.trim()}
                     className="h-11 w-full sm:w-auto"
                   >
                     {githubImportMutation.isPending ? (
@@ -903,6 +1023,18 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
                     </p>
                   )}
                 </div>
+                {importPreview.warnings?.length ? (
+                  <div className="border border-yellow-300 dark:border-yellow-700/60 bg-yellow-50 dark:bg-yellow-950/40 p-3 md:col-span-2 rounded-md">
+                    <p className="text-xs font-bold text-yellow-900 dark:text-yellow-300">
+                      Import notes
+                    </p>
+                    <ul className="mt-1 list-inside list-disc space-y-1 text-sm font-semibold text-yellow-950 dark:text-yellow-200">
+                      {importPreview.warnings.map((warning, index) => (
+                        <li key={`${warning.scope}-${index}`}>{warning.message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 {importPreview.duplicate_candidates?.[0] && (
                   <div className="border border-yellow-300 dark:border-yellow-700/60 bg-yellow-50 dark:bg-yellow-950/40 p-3 md:col-span-2 rounded-md">
                     <p className="text-xs font-bold text-yellow-900 dark:text-yellow-300">

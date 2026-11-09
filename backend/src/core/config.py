@@ -27,9 +27,15 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    ENVIRONMENT: str = "development"
     DATABASE_URL: str = "postgresql+psycopg://user:pass@localhost/resumer"
     JWT_SECRET: str = "changeme"
     JWT_ALGORITHM: str = "HS256"
+    INTERNAL_API_SECRET: str = ""
+    GITHUB_TOKEN_KEY: str = ""
+    GITHUB_CONNECT_CLIENT_ID: str = ""
+    GITHUB_CONNECT_CLIENT_SECRET: str = ""
+    GITHUB_CONNECT_REDIRECT_URI: str = "https://resumer.buzz/api/integrations/github/callback"
 
     R2_ENDPOINT_URL: str = ""
     R2_ACCESS_KEY_ID: str = ""

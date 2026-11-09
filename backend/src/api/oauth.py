@@ -46,10 +46,16 @@ ALLOWED_CONNECTOR_REDIRECT_URIS: tuple[str, ...] = (
 
 # ChatGPT GPT Actions use a per-GPT callback: https://chatgpt.com/aip/g-<id>/oauth/callback
 _GPT_ACTION_CALLBACK_RE = re.compile(r"^https://(?:chat\.openai\.com|chatgpt\.com)/aip/g-[A-Za-z0-9]+/oauth/callback$")
+# ChatGPT connectors (apps) use a per-connector callback: https://chatgpt.com/connector/oauth/<id>
+_CHATGPT_CONNECTOR_CALLBACK_RE = re.compile(r"^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]+$")
 
 
 def _is_connector_callback(redirect_uri: str) -> bool:
-    return redirect_uri in ALLOWED_CONNECTOR_REDIRECT_URIS or bool(_GPT_ACTION_CALLBACK_RE.fullmatch(redirect_uri))
+    return (
+        redirect_uri in ALLOWED_CONNECTOR_REDIRECT_URIS
+        or bool(_GPT_ACTION_CALLBACK_RE.fullmatch(redirect_uri))
+        or bool(_CHATGPT_CONNECTOR_CALLBACK_RE.fullmatch(redirect_uri))
+    )
 
 
 DEFAULT_CLIENT_SCOPE = "profile:read profile:write resume:generate resume:edit offline_access"

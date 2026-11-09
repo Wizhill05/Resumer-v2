@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { needsWelcome } from "@/lib/welcome-gate"
 import { Nav } from "@/components/Nav"
 import { Footer } from "@/components/Footer"
 import { AccountClient } from "./AccountClient"
@@ -7,6 +8,7 @@ import { AccountClient } from "./AccountClient"
 export default async function AccountPage() {
   const session = await auth()
   if (!session?.user) redirect("/")
+  if (needsWelcome(session)) redirect("/welcome")
 
   const provider =
     (session as { provider?: string }).provider ??
