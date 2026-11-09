@@ -1,24 +1,29 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useState, useSyncExternalStore } from "react"
 
 const DISMISSED_KEY = "resumer_cookie_notice_dismissed"
 
-export function CookieNotice() {
-  const [mounted, setMounted] = useState(false)
-  const [dismissed, setDismissed] = useState(false)
+const emptySubscribe = () => () => {}
 
-  useEffect(() => {
-    setMounted(true)
+function useMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  )
+}
+
+export function CookieNotice() {
+  const mounted = useMounted()
+  const [dismissed, setDismissed] = useState(() => {
     try {
-      if (window.localStorage.getItem(DISMISSED_KEY) === "1") {
-        setDismissed(true)
-      }
+      return typeof window !== "undefined" && window.localStorage.getItem(DISMISSED_KEY) === "1"
     } catch {
-      // localStorage may be unavailable. Keep the notice visible.
+      return false
     }
-  }, [])
+  })
 
   if (!mounted || dismissed) return null
 

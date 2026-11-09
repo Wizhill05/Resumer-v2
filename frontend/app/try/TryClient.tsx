@@ -903,8 +903,6 @@ export function TryClient() {
     { id: "generate",        icon: FileText,    label: "Generate" },
   ]
 
-  const activeNavItem = nav.find((item) => item.id === active)
-
   return (
     <div className="flex h-full flex-col relative bg-ink/[0.03]">
 
