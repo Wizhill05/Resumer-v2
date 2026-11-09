@@ -102,6 +102,9 @@ class GenerationListPage(BaseModel):
 class GenerationSummary(BaseModel):
     """GET /generate/summary response: dashboard tile + usage stats."""
     total: int
+    # Generations that did not fail (queued, running or completed). The
+    # getting-started guide only counts these as "generated a résumé".
+    usable_total: int = 0
     latest_created_at: datetime | None = None
     latest_company: str | None = None
     latest_job_title: str | None = None

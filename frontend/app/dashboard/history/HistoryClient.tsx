@@ -17,6 +17,8 @@ import { PdfViewer } from "@/components/pdf/PdfViewer"
 import { downloadResumePdf, forgetResumePdf, getResumePdf, saveBlob, type ResumePdf } from "@/lib/resume-pdf-cache"
 import { FeedbackModal } from "@/components/FeedbackModal"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
+import { NextStepHint } from "@/components/onboarding/NextStepHint"
+import { useOnboardingState, useUpdateOnboarding } from "@/lib/onboarding"
 
 
 const nodeProgressMap: Record<string, number> = {
@@ -687,6 +689,16 @@ export function HistoryClient() {
   const [view, setView] = useState<ViewMode>("list")
   const [activeGenForFeedback, setActiveGenForFeedback] = useState<string | null>(null)
   const [fullscreenRun, setFullscreenRun] = useState<HistoryRun | null>(null)
+
+  // Getting-started: a one-time tip on the first finished résumé. Opening a
+  // preview (or "Got it") completes the guide's last step on every device.
+  const onboardingState = useOnboardingState()
+  const updateOnboarding = useUpdateOnboarding()
+  const resultTipSeen = onboardingState.data?.seen.includes("result") ?? true
+  const { mutate: markOnboarding } = updateOnboarding
+  useEffect(() => {
+    if (fullscreenRun && onboardingState.data && !resultTipSeen) markOnboarding({ seen: ["result"] })
+  }, [fullscreenRun, onboardingState.data, resultTipSeen, markOnboarding])
   const deleteRun = useDeleteRun()
   const clearSearch = () => {
     setSearchQuery("")
@@ -764,7 +776,20 @@ export function HistoryClient() {
     )
   }
 
+  const showResultTip =
+    !resultTipSeen && !onboardingState.data?.dismissed && runs.some((r) => r.status === "completed")
+
   return (
+    <div className="space-y-4">
+    {showResultTip && (
+      <NextStepHint
+        eyebrow="Your résumé is ready"
+        action={{ label: "Got it", onClick: () => updateOnboarding.mutate({ seen: ["result"] }) }}
+      >
+        Use Preview to see it full screen and download the PDF. Edit lets you change any line by hand. For the
+        next job, start a new résumé from the same profile.
+      </NextStepHint>
+    )}
     <div className="soft-card overflow-hidden pixel-enter">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-line">
@@ -1037,6 +1062,7 @@ export function HistoryClient() {
           onClose={() => setFullscreenRun(null)}
         />
       )}
+    </div>
     </div>
   )
 }

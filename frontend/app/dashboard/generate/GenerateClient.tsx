@@ -22,6 +22,8 @@ import {
 import { TemplateLayoutEditor } from "@/components/generation/TemplateLayoutEditor"
 import { TemplatePreviewDialog } from "@/components/generation/TemplatePreviewDialog"
 import { MobileGenerationBrief } from "@/components/generation/MobileGenerationBrief"
+import { NextStepHint } from "@/components/onboarding/NextStepHint"
+import { readinessMessages, useGenerationReadiness } from "@/lib/onboarding"
 
 type Step = "input" | "submitted"
 
@@ -152,7 +154,7 @@ export function GenerateClient() {
     )
   }, [verifiedLayoutOrder, isLoadingLayout, selectedTemplateObj])
 
-  const { data: profileExperiences = [] } = useQuery<ProfileEntry[]>({
+  const { data: profileExperiences = [], isSuccess: experiencesLoaded } = useQuery<ProfileEntry[]>({
     queryKey: ["profile-experiences"],
     queryFn: async () => {
       const res = await fetch("/api/backend/profile/experiences")
@@ -161,7 +163,7 @@ export function GenerateClient() {
     },
   })
 
-  const { data: profileProjects = [] } = useQuery<ProfileEntry[]>({
+  const { data: profileProjects = [], isSuccess: projectsLoaded } = useQuery<ProfileEntry[]>({
     queryKey: ["profile-projects"],
     queryFn: async () => {
       const res = await fetch("/api/backend/profile/projects")
@@ -214,6 +216,16 @@ export function GenerateClient() {
   const hasEnoughProjects = numProfileProjects >= projectsCount
   const hasEnoughExperiences = numProfileExperiences >= experienceCount
   const isMissingMaterial = !hasEnoughProjects || !hasEnoughExperiences
+  // Profile tab that fixes the shortfall, for every "update your profile" link.
+  const missingMaterialHref = hasEnoughProjects ? "/profile?tab=experience" : "/profile?tab=projects"
+
+  // Same rules the server preflight enforces (link, skills, usable entries),
+  // surfaced up front instead of as an error after clicking Generate.
+  const { data: readiness } = useGenerationReadiness("generate-page")
+  const readinessGaps = readinessMessages(readiness, 3)
+  const readinessNeedsBasics = (readiness?.missing ?? []).some(
+    (gap) => gap.field === "professional_link" || gap.field === "skills" || gap.field === "full_name" || gap.field === "email",
+  )
 
   const handleProjectsChange = (delta: number) => {
     const target = projectsCount + delta
@@ -447,6 +459,26 @@ export function GenerateClient() {
             className="shrink-0 bg-paper border-red-300 text-red-700 hover:bg-red-50 text-xs font-bold h-8"
           />
         </div>
+      )}
+
+      {step === "input" && experiencesLoaded && projectsLoaded && (isMissingMaterial || readinessGaps.length > 0) && (
+        <NextStepHint
+          eyebrow="Before you generate"
+          action={
+            readinessNeedsBasics
+              ? { label: "Open basic info", href: "/profile?tab=basic" }
+              : { label: hasEnoughProjects ? "Add experience" : "Add a project", href: missingMaterialHref }
+          }
+        >
+          {readinessGaps.length > 0 && <>{readinessGaps.join(" ")} </>}
+          {isMissingMaterial && (
+            <>
+              This layout uses {projectsCount} {projectsCount === 1 ? "project" : "projects"} and {experienceCount}{" "}
+              {experienceCount === 1 ? "experience" : "experiences"}. Your profile has {numProfileProjects} and{" "}
+              {numProfileExperiences}. Add more, or lower the counts under Content slot distribution.
+            </>
+          )}
+        </NextStepHint>
       )}
 
       {step === "input" && (
@@ -831,7 +863,7 @@ export function GenerateClient() {
               <div className="flex-1">
                 <span className="font-semibold">Profile material is below requested split.</span>{" "}
                 You requested {projectsCount} projects and {experienceCount} experiences, but your profile currently has {numProfileProjects} and {numProfileExperiences}.{" "}
-                <Link href="/profile" className="underline font-bold hover:text-amber-700 dark:hover:text-amber-100">
+                <Link href={missingMaterialHref} className="underline font-bold hover:text-amber-700 dark:hover:text-amber-100">
                   Update your profile
                 </Link>{" "}
                 to avoid generation failure.
@@ -1024,7 +1056,7 @@ export function GenerateClient() {
             </div>
 
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <Link href="/profile" className="flex-1">
+              <Link href={missingMaterialHref} className="flex-1">
                 <Button className="w-full">Update profile</Button>
               </Link>
               <Button variant="outline" type="button" onClick={() => setShowErrorModal(false)} className="flex-1">

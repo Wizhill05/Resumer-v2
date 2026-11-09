@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { ArrowUpRight, History, UserRound } from "lucide-react"
 import { clearGuestDraft, loadGuestDraft } from "@/lib/guest-storage"
 import { useHistorySummary } from "@/components/useGenerationStats"
+import { GettingStarted } from "@/components/onboarding/GettingStarted"
+import { useOnboardingSteps } from "@/lib/onboarding"
 
 type Profile = {
   full_name?: string
@@ -55,6 +57,8 @@ export function DashboardClient() {
     isPending: loadingHistory,
     isError: historyFailed,
   } = useHistorySummary()
+
+  const onboarding = useOnboardingSteps()
 
   const isLoading = loadingProfile || loadingExp || loadingProjects || loadingEducation || loadingExtra
   const missing = [
@@ -197,7 +201,10 @@ export function DashboardClient() {
         </div>
       )}
 
-      {!profileComplete && (
+      <GettingStarted />
+
+      {/* Once the guide is hidden or done, keep the plain reminder for gaps. */}
+      {!profileComplete && !onboarding.isLoading && !onboarding.active && (
         <section className="soft-card flex flex-col gap-4 p-5 sm:p-6 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-ink md:text-xl">Finish your profile first</h2>

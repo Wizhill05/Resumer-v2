@@ -11,6 +11,17 @@ async function getJson<T>(url: string): Promise<T> {
   return res.json()
 }
 
+/** Profile sections in the order the editor shows them. */
+export type ProfileSection = "basic" | "experience" | "projects" | "education" | "extracurricular"
+
+export const PROFILE_SECTION_LABELS: Record<ProfileSection, string> = {
+  basic: "Basic info",
+  experience: "Experience",
+  projects: "Project",
+  education: "Education",
+  extracurricular: "Activity",
+}
+
 /**
  * Whether the user has filled in enough to generate a résumé: basic info plus
  * at least one entry in every section. Shares query keys with the profile
@@ -24,16 +35,28 @@ export function useProfileCompleteness() {
   const extracurriculars = useQuery<Entry[]>({ queryKey: ["extracurriculars"], queryFn: () => getJson("/api/backend/profile/extracurriculars") })
 
   const isLoading = [profile, experiences, projects, education, extracurriculars].some((query) => query.isLoading)
-  const missing = [
-    !profile.data?.full_name || !profile.data?.email ? "Basic info" : null,
-    (experiences.data?.length ?? 0) < 1 ? "Experience" : null,
-    (projects.data?.length ?? 0) < 1 ? "Project" : null,
-    (education.data?.length ?? 0) < 1 ? "Education" : null,
-    (extracurriculars.data?.length ?? 0) < 1 ? "Activity" : null,
-  ].filter(Boolean) as string[]
+  const filled: Record<ProfileSection, boolean> = {
+    basic: !!profile.data?.full_name && !!profile.data?.email,
+    experience: (experiences.data?.length ?? 0) >= 1,
+    projects: (projects.data?.length ?? 0) >= 1,
+    education: (education.data?.length ?? 0) >= 1,
+    extracurricular: (extracurriculars.data?.length ?? 0) >= 1,
+  }
+  const missingSections = (Object.keys(filled) as ProfileSection[]).filter((section) => !filled[section])
+  const missing = missingSections.map((section) => PROFILE_SECTION_LABELS[section])
+
+  // Changes whenever any section refetches (e.g. after a save), so dependent
+  // queries like generation readiness can key off it.
+  const version = [profile, experiences, projects, education, extracurriculars]
+    .map((query) => query.dataUpdatedAt)
+    .join(":")
 
   return {
     isLoading,
+    version,
+    hasName: !!profile.data?.full_name,
+    filled,
+    missingSections,
     missing,
     complete: !isLoading && missing.length === 0,
   }
