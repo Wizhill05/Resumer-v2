@@ -108,16 +108,11 @@ export function GuestResultClient({ id }: { id: string }) {
   const expiresValid = expiresLabel && !Number.isNaN(new Date(run?.expires_at ?? "").getTime()) ? expiresLabel : null
   return (
     <section className="py-10">
-      {error && (
+      {error && !notFound && (
         <div className="mb-4 space-y-2 border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400 rounded-md">
           <div className="flex gap-2">
             <AlertCircle size={18} /> {error}
           </div>
-          {notFound && (
-            <Link href="/try" className="inline-flex items-center justify-center border border-line bg-paper px-3 py-2 text-xs font-bold text-ink rounded-md">
-              Back to try
-            </Link>
-          )}
         </div>
       )}
       {notFound ? (
@@ -216,7 +211,9 @@ export function GuestResultClient({ id }: { id: string }) {
               <Loader2 className="mr-2 animate-spin" size={18} /> {stepLabel}…
             </span>
           )}
-          <Link href="/try?tab=generate" className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-paper px-5 text-sm font-bold text-ink shadow-soft rounded-md">Make another</Link>
+          {status !== "failed" && (
+            <Link href="/try?tab=generate" className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-paper px-5 text-sm font-bold text-ink shadow-soft rounded-md">Make another</Link>
+          )}
           <LoginModal callbackUrl="/dashboard?importGuestDraft=1" triggerClassName="inline-flex min-h-12 items-center justify-center border border-line-strong bg-[#ff4e26] px-5 text-sm font-bold text-white shadow-soft rounded-md" />
         </div>
         <p className="text-xs font-bold text-ink-muted">Login saves history and keeps future résumés tied to your account.</p>
