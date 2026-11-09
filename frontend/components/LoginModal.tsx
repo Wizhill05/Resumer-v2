@@ -93,15 +93,17 @@ export function LoginModal({
           />
 
           {/* Modal */}
-          <div className="relative z-10 w-full max-w-lg border border-line-strong bg-paper p-6 sm:p-8 md:p-10 shadow-soft rounded-md">
-            {/* Close */}
+          <div className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col border border-line-strong bg-paper shadow-soft rounded-md">
+            {/* Close: lives outside the scroll area so it is always reachable */}
             <button
               onClick={handleClose}
-              className="absolute top-4 right-4 p-1 hover:bg-ink/5 rounded transition-colors cursor-pointer"
+              className="absolute top-3 right-3 z-10 p-1 hover:bg-ink/5 rounded transition-colors cursor-pointer"
               aria-label="Close"
             >
               <X size={18} />
             </button>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6 sm:p-8 md:p-10">
 
             {/* Header */}
             <div className="mb-8">
@@ -177,6 +179,7 @@ export function LoginModal({
             <p className="mt-6 text-center text-sm font-semibold text-ink-faint">
               Free beta. 5 generations per day.
             </p>
+            </div>
           </div>
         </div>,
         document.body

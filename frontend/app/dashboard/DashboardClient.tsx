@@ -47,7 +47,13 @@ export function DashboardClient() {
     queryFn: () => getJson("/api/backend/profile/extracurriculars"),
   })
 
-  const { data: history = [] } = useQuery<{ id: string; created_at: string; job_title?: string | null; company?: string | null }[]>({
+  // History is the heaviest request (the full run list), so it must not
+  // block the page or render as "0 résumés" while it is still in flight.
+  const {
+    data: history,
+    isPending: loadingHistory,
+    isError: historyFailed,
+  } = useQuery<{ id: string; created_at: string; job_title?: string | null; company?: string | null }[]>({
     queryKey: ["history"],
     queryFn: () => getJson("/api/backend/generate"),
   })
@@ -151,7 +157,7 @@ export function DashboardClient() {
     )
   }
 
-  const latest = history[0]
+  const latest = history?.[0]
   const latestDate = latest
     ? new Date(latest.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : null
@@ -176,11 +182,13 @@ export function DashboardClient() {
       desc: "Past builds, previews and PDFs.",
       href: "/dashboard/history",
       icon: History,
-      stats: [
-        [history.length, history.length === 1 ? "résumé" : "résumés"],
-        ...(latestDate ? [[latestDate, "latest"] as [string, string]] : []),
-        ...(latest?.company ? [[latest.company, "company"] as [string, string]] : []),
-      ] as [number | string, string][],
+      stats: (history
+        ? [
+            [history.length, history.length === 1 ? "résumé" : "résumés"],
+            ...(latestDate ? [[latestDate, "latest"] as [string, string]] : []),
+            ...(latest?.company ? [[latest.company, "company"] as [string, string]] : []),
+          ]
+        : [["—", "résumés"]]) as [number | string, string][],
     },
   ]
 
@@ -225,8 +233,16 @@ export function DashboardClient() {
                 <dl className="mt-auto grid grid-flow-col auto-cols-fr border-t border-line pt-4">
                   {tile.stats.map(([value, label], i) => (
                     <div key={label} className={`min-w-0 ${i ? "border-l border-line pl-4" : ""} pr-2`}>
-                      <dd className="truncate text-xl font-semibold tracking-tight text-ink">{value}</dd>
-                      <dt className="text-xs text-ink-muted">{label}</dt>
+                      <dd className="truncate text-xl font-semibold tracking-tight text-ink">
+                        {tile.key === "history" && loadingHistory ? (
+                          <span className="soft-skeleton inline-block h-6 w-10 align-middle" role="status" aria-label="Loading résumés" />
+                        ) : (
+                          value
+                        )}
+                      </dd>
+                      <dt className="text-xs text-ink-muted">
+                        {tile.key === "history" && historyFailed ? "couldn’t load" : label}
+                      </dt>
                     </div>
                   ))}
                 </dl>
