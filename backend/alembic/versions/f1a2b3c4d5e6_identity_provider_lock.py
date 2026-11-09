@@ -31,7 +31,12 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("signup_completed_at", sa.DateTime(timezone=True), nullable=True))
 
     # data steps
-    op.execute("UPDATE users SET provider = NULL WHERE provider IN ('unknown', 'oauth-session', '')")
+    # any provider value that is not a real login method (e.g. 'unknown', 'oauth-session',
+    # 'oauth-mcp', '') is reset so those users stay unlocked and the first real sign-in claims them
+    op.execute(
+        "UPDATE users SET provider = NULL "
+        "WHERE provider IS NOT NULL AND provider NOT IN ('google', 'github', 'credentials', 'guest')"
+    )
     op.execute("UPDATE users SET hashed_password = NULL WHERE coalesce(provider, '') <> 'credentials'")
     op.execute("UPDATE users SET signup_completed_at = now()")
     op.execute("UPDATE users SET email_verified_at = created_at WHERE provider IN ('google', 'github')")

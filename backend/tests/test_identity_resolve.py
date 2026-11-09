@@ -89,6 +89,18 @@ async def _create_identity(async_db, user_id, provider="google", account_id="acc
     return ident
 
 
+def _github_emails(entries):
+    """Patch the GitHub /user/emails call; returns a context manager."""
+    mock_resp = AsyncMock()
+    mock_resp.status_code = 200
+    mock_resp.json = lambda: entries
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    return patch("src.api.internal_auth.httpx.AsyncClient", return_value=mock_client)
+
+
 # --- resolve branches ---
 
 async def test_resolve_existing_login_identity(client, async_db):
@@ -319,11 +331,12 @@ async def test_resolve_same_provider_no_identity_creates_identity(client, async_
 
 async def test_resolve_same_provider_github_no_identity_creates_identity(client, async_db):
     user = await _create_user(async_db, "gh-noid@example.com", provider="github")
-    res = await client.post(
-        "/internal/auth/resolve",
-        json={"provider": "github", "provider_account_id": "gh-new1", "email": "gh-noid@example.com", "access_token": "tok"},
-        headers=internal_headers(),
-    )
+    with _github_emails([{"email": "gh-noid@example.com", "primary": True, "verified": True}]):
+        res = await client.post(
+            "/internal/auth/resolve",
+            json={"provider": "github", "provider_account_id": "gh-new1", "email": "gh-noid@example.com", "access_token": "tok"},
+            headers=internal_headers(),
+        )
     assert res.status_code == 200
     assert res.json()["is_new"] is False
 
@@ -355,6 +368,123 @@ async def test_resolve_same_provider_different_github_account_rejected(client, a
     detail = res.json()["detail"]
     assert detail["error"] == "provider_mismatch"
     assert detail["message"] == "This email is linked to a different GitHub account. Sign in with that account."
+
+
+# --- email verification required when attaching an identity to an existing user ---
+
+async def test_resolve_unlocked_legacy_unverified_google_rejected(client, async_db):
+    user = await _create_user(async_db, "unv-null@example.com", provider=None)
+    res = await client.post(
+        "/internal/auth/resolve",
+        json={"provider": "google", "provider_account_id": "g-unv1", "email": "unv-null@example.com", "email_verified": False},
+        headers=internal_headers(),
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["error"] == "email_not_verified"
+    await async_db.refresh(user)
+    assert user.provider is None
+    idents = (await async_db.execute(select(UserIdentity).where(UserIdentity.user_id == user.id))).scalars().all()
+    assert idents == []
+
+
+async def test_resolve_unlocked_legacy_unverified_github_rejected(client, async_db):
+    user = await _create_user(async_db, "unv-null-gh@example.com", provider=None)
+    with _github_emails([{"email": "unv-null-gh@example.com", "primary": True, "verified": False}]):
+        res = await client.post(
+            "/internal/auth/resolve",
+            json={"provider": "github", "provider_account_id": "gh-unv1", "email": "unv-null-gh@example.com", "access_token": "tok"},
+            headers=internal_headers(),
+        )
+    assert res.status_code == 409
+    assert res.json()["detail"]["error"] == "email_not_verified"
+    await async_db.refresh(user)
+    assert user.provider is None
+
+
+async def test_resolve_unlocked_legacy_verified_github_locks(client, async_db):
+    user = await _create_user(async_db, "ver-null-gh@example.com", provider=None)
+    with _github_emails([{"email": "ver-null-gh@example.com", "primary": True, "verified": True}]):
+        res = await client.post(
+            "/internal/auth/resolve",
+            json={"provider": "github", "provider_account_id": "gh-v1", "email": "ver-null-gh@example.com", "access_token": "tok"},
+            headers=internal_headers(),
+        )
+    assert res.status_code == 200
+    await async_db.refresh(user)
+    assert user.provider == "github"
+
+
+async def test_resolve_same_provider_no_identity_unverified_google_rejected(client, async_db):
+    user = await _create_user(async_db, "unv-noid@example.com", provider="google")
+    res = await client.post(
+        "/internal/auth/resolve",
+        json={"provider": "google", "provider_account_id": "g-unv2", "email": "unv-noid@example.com", "email_verified": False},
+        headers=internal_headers(),
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["error"] == "email_not_verified"
+    idents = (await async_db.execute(select(UserIdentity).where(UserIdentity.user_id == user.id))).scalars().all()
+    assert idents == []
+
+
+async def test_resolve_same_provider_no_identity_unverified_github_rejected(client, async_db):
+    user = await _create_user(async_db, "unv-noid-gh@example.com", provider="github")
+    with _github_emails([{"email": "unv-noid-gh@example.com", "primary": True, "verified": False}]):
+        res = await client.post(
+            "/internal/auth/resolve",
+            json={"provider": "github", "provider_account_id": "gh-unv2", "email": "unv-noid-gh@example.com", "access_token": "tok"},
+            headers=internal_headers(),
+        )
+    assert res.status_code == 409
+    assert res.json()["detail"]["error"] == "email_not_verified"
+    idents = (await async_db.execute(select(UserIdentity).where(UserIdentity.user_id == user.id))).scalars().all()
+    assert idents == []
+
+
+async def test_resolve_same_provider_no_identity_github_without_token_rejected(client, async_db):
+    await _create_user(async_db, "notok-gh@example.com", provider="github")
+    res = await client.post(
+        "/internal/auth/resolve",
+        json={"provider": "github", "provider_account_id": "gh-nt", "email": "notok-gh@example.com"},
+        headers=internal_headers(),
+    )
+    assert res.status_code == 409
+    assert res.json()["detail"]["error"] == "email_not_verified"
+
+
+async def test_resolve_legacy_claim_and_identity_match_skip_verification(client, async_db):
+    # Step 1 (exact account match) and step 2 (legacy backfilled claim) never call GitHub /user/emails.
+    user = await _create_user(async_db, "skip-v@example.com", provider="github")
+    await _create_identity(async_db, user.id, "github", "gh-known")
+    legacy_user = await _create_user(async_db, "skip-v2@example.com", provider="github")
+    legacy = UserIdentity(user_id=legacy_user.id, provider="github", provider_account_id=None, kind="login")
+    async_db.add(legacy)
+    await async_db.commit()
+    with patch("src.api.internal_auth._github_email_verified", new=AsyncMock(return_value=False)) as verify:
+        r1 = await client.post(
+            "/internal/auth/resolve",
+            json={"provider": "github", "provider_account_id": "gh-known", "email": "skip-v@example.com", "access_token": "tok"},
+            headers=internal_headers(),
+        )
+        r2 = await client.post(
+            "/internal/auth/resolve",
+            json={"provider": "github", "provider_account_id": "gh-claimed", "email": "skip-v2@example.com", "access_token": "tok"},
+            headers=internal_headers(),
+        )
+    assert r1.status_code == 200 and r2.status_code == 200
+    verify.assert_not_awaited()
+
+
+async def test_resolve_email_verification_runs_once(client, async_db):
+    await _create_user(async_db, "once@example.com", provider=None)
+    with patch("src.api.internal_auth._github_email_verified", new=AsyncMock(return_value=True)) as verify:
+        res = await client.post(
+            "/internal/auth/resolve",
+            json={"provider": "github", "provider_account_id": "gh-once", "email": "once@example.com", "access_token": "tok"},
+            headers=internal_headers(),
+        )
+    assert res.status_code == 200
+    assert verify.await_count == 1
 
 
 # --- finding 4: GitHub email verified without primary ---
@@ -475,3 +605,14 @@ async def test_resolve_github_without_encryption_key_still_succeeds(client, asyn
     assert result.scalar_one_or_none() is not None
     tokens_res = await async_db.execute(select(GithubToken))
     assert tokens_res.scalar_one_or_none() is None
+
+
+# --- unknown provider values never leak into messages ---
+
+def test_provider_messages_generic_for_unknown_provider():
+    from src.core.provider_messages import provider_label, provider_mismatch_message
+
+    assert "oauth-mcp" not in provider_label("oauth-mcp")
+    assert "oauth-mcp" not in provider_mismatch_message("oauth-mcp")
+    assert provider_mismatch_message(None) == provider_mismatch_message("oauth-mcp")
+    assert provider_mismatch_message("google") == "This email is registered with Google. Sign in with Google."

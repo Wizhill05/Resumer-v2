@@ -6,14 +6,13 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from jose import JWTError, jwt
+from jose import jwt
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.database import get_db
-from src.core.internal_token import is_valid_internal_token
 from src.core.provider_messages import provider_label, provider_mismatch_message
 from src.models.identity import UserIdentity
 from src.models.user import User
@@ -55,12 +54,10 @@ def _require_internal(authorization: str | None = Header(default=None)):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Internal auth is not configured")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing internal token")
-    if not is_valid_internal_token(authorization):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token")
     token = authorization[7:]
     try:
         payload = jwt.decode(token, settings.INTERNAL_API_SECRET, algorithms=["HS256"], options={"verify_aud": True}, audience="internal")
-    except (JWTError, Exception):
+    except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token")
     if payload.get("aud") != "internal":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token")
@@ -88,6 +85,24 @@ async def _github_email_verified(access_token: str | None, email: str) -> bool:
         if isinstance(entry, dict) and str(entry.get("email", "")).strip().lower() == email and entry.get("verified"):
             return True
     return False
+
+
+class _EmailVerification:
+    """Verifies the provider email at most once per request and rejects with 409 when unverified."""
+
+    def __init__(self, payload: ResolveRequest, email: str):
+        self._payload = payload
+        self._email = email
+        self._result: bool | None = None
+
+    async def require(self) -> None:
+        if self._result is None:
+            if self._payload.provider == "google":
+                self._result = bool(self._payload.email_verified)
+            else:
+                self._result = await _github_email_verified(self._payload.access_token, self._email)
+        if not self._result:
+            raise _rejection(409, "email_not_verified", None, "Your Google/GitHub email isn't verified.")
 
 
 def _normalize_scopes(scopes: str | None) -> str:
@@ -126,6 +141,7 @@ async def resolve_auth(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")
     email = payload.email.strip().lower()
     now = datetime.now(timezone.utc)
+    verification = _EmailVerification(payload, email)
 
     # Step 1: existing identity
     result = await db.execute(
@@ -167,8 +183,11 @@ async def resolve_auth(
     existing = result.scalar_one_or_none()
     if existing is not None:
         if existing.provider is None:
-            # Step 3: unlocked legacy user - lock and create identity
+            # Step 3: unlocked legacy user - lock and create identity (email match alone is not proof of ownership)
+            await verification.require()
             existing.provider = payload.provider
+            if existing.email_verified_at is None:
+                existing.email_verified_at = now
             identity = UserIdentity(
                 user_id=existing.id,
                 provider=payload.provider,
@@ -192,6 +211,9 @@ async def resolve_auth(
             )
             existing_ident = result.scalar_one_or_none()
             if existing_ident is None:
+                await verification.require()
+                if existing.email_verified_at is None:
+                    existing.email_verified_at = now
                 identity = UserIdentity(
                     user_id=existing.id,
                     provider=payload.provider,
@@ -221,12 +243,7 @@ async def resolve_auth(
         raise _mismatch(existing.provider)
 
     # Step 5: create user, requires verified email
-    if payload.provider == "google":
-        verified = bool(payload.email_verified)
-    else:
-        verified = await _github_email_verified(payload.access_token, email)
-    if not verified:
-        raise _rejection(409, "email_not_verified", None, "Your Google/GitHub email isn't verified.")
+    await verification.require()
 
     user = User(
         email=email,
