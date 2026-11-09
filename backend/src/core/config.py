@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     GUEST_IMPORT_DAILY_PER_IP: int = 15
     GUEST_IMPORT_DAILY_PER_TOKEN: int = 10
     GUEST_DAILY_GLOBAL_CAP: int = 300
-    GUEST_TURNSTILE_REQUIRED: bool = True
+    GUEST_TURNSTILE_REQUIRED: bool = False
 
     EXECUTION_MODE: str = "local"
     POSTHOG_PROJECT_TOKEN: str = ""
