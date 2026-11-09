@@ -4,6 +4,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 import pytest
+from fastapi import HTTPException
 
 sqlite3.register_adapter(uuid.UUID, lambda u: str(u))
 sqlite3.register_adapter(list, json.dumps)
@@ -561,3 +562,34 @@ async def test_guest_generation_rejects_incomplete_entries(monkeypatch):
         await start_guest_generation(None, data, Response(), db=None)
     assert error.value.status_code == 400
     assert "usable" in error.value.detail
+
+
+@pytest.mark.asyncio
+async def test_rest_rejected_request_does_not_charge_a_build(setup_test_env, monkeypatch):
+    """A user whose profile is not ready must not lose daily builds to rejected clicks."""
+    user, session_maker = setup_test_env
+    charged = []
+
+    async def spy_rate_limit(*args, **kwargs):
+        charged.append(True)
+
+    async def mock_noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("src.api.generation.reap_stuck_generations", mock_noop)
+    monkeypatch.setattr("src.api.generation.check_rate_limit", spy_rate_limit)
+    monkeypatch.setattr("src.api.generation.trigger_pipeline", mock_noop)
+
+    async with session_maker() as db:
+        current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        req = GenerationCreate(template_id="personal-classic", job_description="Backend Engineer requiring Python")
+        with pytest.raises(HTTPException) as exc:
+            await start_generation(req, current_user, db)
+        assert exc.value.status_code == 400
+    assert charged == []
+
+    await _seed_profile(session_maker, user.id, projects=2, experiences=2)
+    async with session_maker() as db:
+        current_user = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        await start_generation(req, current_user, db)
+    assert charged == [True]

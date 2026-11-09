@@ -21,12 +21,23 @@ PAIR_ROW_LIMIT = 100_000
 MAX_DAYS = 90
 ROLLING_MONTH = 30
 
-# Admin traffic is the operator, not a user, so it never counts as activity.
-_NOT_ADMIN = "coalesce(properties.$pathname, '') NOT LIKE '/admin%'"
+# Only live-site traffic counts. The frontend and backend tag every production event with
+# environment=production, while local and preview servers send none, so this filter keeps
+# working across domain changes. Admin traffic is the operator, not a user, so it never counts.
+_SITE_TRAFFIC = (
+    "properties.environment = 'production' "
+    "AND coalesce(properties.$pathname, '') NOT LIKE '/admin%'"
+)
+
+# Per-record URLs (/try/result/<uuid>, /dashboard/history/<uuid>/edit) collapse into one row.
+_PAGE_PATH = (
+    "replaceRegexpAll(properties.$pathname, "
+    "'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', ':id')"
+)
 
 # Property names are interpolated into HogQL, so only these may be requested.
 BREAKDOWN_PROPERTIES = {
-    "pages": "properties.$pathname",
+    "pages": _PAGE_PATH,
     "referrers": "properties.$referring_domain",
     "devices": "properties.$device_type",
     "countries": "properties.$geoip_country_name",
@@ -179,26 +190,29 @@ async def _fetch_overview(days: int) -> dict[str, Any]:
 
     pairs_q = (
         "SELECT DISTINCT toString(toDate(timestamp)) AS day, toString(person_id) AS pid FROM events "
-        f"WHERE event = '$pageview' AND timestamp >= now() - INTERVAL {pair_window} DAY AND {_NOT_ADMIN} "
+        f"WHERE event = '$pageview' AND timestamp >= now() - INTERVAL {pair_window} DAY AND {_SITE_TRAFFIC} "
         f"LIMIT {PAIR_ROW_LIMIT}"
     )
     traffic_q = (
         "SELECT toString(toDate(timestamp)) AS day, count() AS views, uniq(properties.$session_id) AS sessions "
-        f"FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL {days} DAY AND {_NOT_ADMIN} "
+        f"FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL {days} DAY AND {_SITE_TRAFFIC} "
         "GROUP BY day ORDER BY day"
     )
     live_q = (
         "SELECT uniq(person_id) FROM events "
-        f"WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 MINUTE AND {_NOT_ADMIN}"
+        f"WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 MINUTE AND {_SITE_TRAFFIC}"
     )
+    # person_id, not distinct_id: a visitor who signs in switches distinct_id and would count twice.
+    # ChatGPT/API builds never pass through the website steps, so they stay out of the funnel.
     funnel_q = (
-        "SELECT event, uniq(distinct_id) FROM events "
-        f"WHERE event IN ({events}) AND timestamp >= now() - INTERVAL {days} DAY GROUP BY event"
+        "SELECT event, uniq(person_id) FROM events "
+        f"WHERE event IN ({events}) AND timestamp >= now() - INTERVAL {days} DAY AND {_SITE_TRAFFIC} "
+        "AND (event != 'resume_generation_completed' OR properties.source = 'website') GROUP BY event"
     )
     breakdown_qs = {
         name: (
             f"SELECT {prop} AS label, count() AS views, uniq(person_id) AS visitors FROM events "
-            f"WHERE event = '$pageview' AND timestamp >= now() - INTERVAL {days} DAY AND {_NOT_ADMIN} "
+            f"WHERE event = '$pageview' AND timestamp >= now() - INTERVAL {days} DAY AND {_SITE_TRAFFIC} "
             "GROUP BY label ORDER BY views DESC LIMIT 8"
         )
         for name, prop in BREAKDOWN_PROPERTIES.items()

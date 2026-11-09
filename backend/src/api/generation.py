@@ -106,15 +106,18 @@ async def check_rate_limit(user: User, db: AsyncSession) -> None:
                     else_=UserRateLimit.reset_at,
                 ),
             },
+            # At the cap, leave the row alone so a rejected attempt does not use up a build.
+            where=or_(UserRateLimit.reset_at <= now, UserRateLimit.request_count < daily_cap) if daily_cap else None,
         )
         .returning(UserRateLimit.request_count, UserRateLimit.reset_at)
     )
-    result = await db.execute(stmt)
-    row = result.one()
+    row = (await db.execute(stmt)).one_or_none()
     await db.commit()
 
-    count, reset = row[0], row[1]
-    if daily_cap and count > daily_cap:
+    if row is None:
+        reset = (
+            await db.execute(select(UserRateLimit.reset_at).where(UserRateLimit.user_id == user.id))
+        ).scalar_one()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Rate limit: {daily_cap} generations per day. Resets at {reset.isoformat()}",
@@ -156,7 +159,6 @@ async def start_generation(
     db: AsyncSession = Depends(get_db),
 ):
     await reap_stuck_generations(db)
-    await check_rate_limit(current_user, db)
 
     # ── Validate template exists and resolve content split ─────────────────────
     manifest = TemplateRegistryService.get_template_manifest(data.template_id)
@@ -219,10 +221,6 @@ async def start_generation(
             ),
         )
 
-    if data.content_split is not None:
-        current_user.preferred_projects = data.content_split.projects
-        current_user.preferred_experience = data.content_split.experience
-
     # ── Resolve creativity mode: explicit per-run choice wins, else user default ──
     if data.creativity_mode is not None and not is_valid_mode(data.creativity_mode):
         raise HTTPException(
@@ -238,6 +236,14 @@ async def start_generation(
         template_id=data.template_id,
         manifest=manifest,
     )
+
+    # Charge a build only once the request is known to be valid. Charging first meant a
+    # user whose profile was not ready burned the daily cap on rejected clicks.
+    await check_rate_limit(current_user, db)
+
+    if data.content_split is not None:
+        current_user.preferred_projects = data.content_split.projects
+        current_user.preferred_experience = data.content_split.experience
 
     gen = Generation(
         user_id=current_user.id,
