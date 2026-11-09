@@ -818,6 +818,21 @@ export function TryClient() {
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
   const [creativityMode, setCreativityMode] = useState<CreativityMode>("proper")
+  const [quota, setQuota] = useState<{ limit: number; used: number; remaining: number; resets_at: string | null } | null>(null)
+
+  const fetchQuota = async () => {
+    try {
+      const res = await fetch("/api/guest/quota")
+      if (!res.ok) {
+        setQuota(null)
+        return
+      }
+      const body = await res.json()
+      setQuota(body)
+    } catch {
+      setQuota(null)
+    }
+  }
 
   useEffect(() => {
     startTransition(() => {
@@ -837,8 +852,34 @@ export function TryClient() {
       setKeywords(saved.keywords ?? "")
       setInstructions(saved.instructions ?? "")
       setCookiesBlocked(detectCookiesBlocked())
+      try {
+        const tab = new URLSearchParams(window.location.search).get("tab")
+        if (tab === "profile" || tab === "experience" || tab === "projects" || tab === "education" || tab === "extracurriculars" || tab === "generate") {
+          setActive(tab)
+        }
+      } catch {
+        // ignore
+      }
       setHydrated(true)
     })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/guest/quota")
+      .then((res) => {
+        if (!res.ok) return null
+        return res.json()
+      })
+      .then((body) => {
+        if (!cancelled && body) setQuota(body)
+      })
+      .catch(() => {
+        if (!cancelled) setQuota(null)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -858,6 +899,43 @@ export function TryClient() {
     usableExpCount >= activeFocus.experience &&
     usableProjCount >= activeFocus.projects
   )
+
+  const formatResetTime = (iso: string | null | undefined) => {
+    if (!iso) return null
+    try {
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return null
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    } catch {
+      return null
+    }
+  }
+
+  const extractErrorMessage = (body: unknown): string => {
+    const b = body as { detail?: unknown; error?: unknown } | null
+    if (b && typeof b.detail === "string" && b.detail) return b.detail
+    if (b && Array.isArray(b.detail)) {
+      const msgs = (b.detail as unknown[])
+        .map((item) => {
+          if (typeof item === "string") return item
+          if (item && typeof item === "object" && "msg" in (item as Record<string, unknown>)) {
+            const msg = (item as Record<string, unknown>).msg
+            return typeof msg === "string" ? msg : null
+          }
+          return null
+        })
+        .filter(Boolean) as string[]
+      if (msgs.length) return msgs.join("; ")
+      return "Failed to start generation"
+    }
+    if (b && b.detail && typeof b.detail === "object") {
+      const detail = b.detail as Record<string, unknown>
+      if (typeof detail.message === "string" && detail.message) return detail.message
+      return "Failed to start generation"
+    }
+    if (b && typeof b.error === "string" && b.error) return b.error
+    return "Failed to start generation"
+  }
 
   const submit = async () => {
     if (!draft.profile.full_name?.trim()) { setError("Add your name in the Profile section."); setActive("profile"); return }
@@ -886,11 +964,31 @@ export function TryClient() {
           ...draft,
         }),
       })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.detail || body.error || "Failed to start generation")
-      router.push(`/try/result/${body.id}`)
+      let body: unknown = null
+      try {
+        body = await res.json()
+      } catch {
+        body = null
+      }
+      if (!res.ok) {
+        const b = body as { detail?: unknown } | null
+        const detail = b?.detail as { code?: string; message?: string; resets_at?: string | null } | undefined
+        if (res.status === 429 && detail && typeof detail === "object" && detail.code === "guest_quota_exhausted") {
+          const msg = typeof detail.message === "string" && detail.message ? detail.message : "Daily limit reached."
+          const resetLabel = formatResetTime(detail.resets_at)
+          setError(resetLabel ? `${msg} Resets at ${resetLabel}.` : msg)
+          fetchQuota()
+        } else {
+          setError(extractErrorMessage(body))
+          fetchQuota()
+        }
+        return
+      }
+      const okBody = body as { id?: string }
+      router.push(`/try/result/${okBody.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start generation")
+      fetchQuota()
     } finally { setSubmitting(false) }
   }
 
@@ -990,22 +1088,33 @@ export function TryClient() {
               </div>
             )}
             <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                size="lg"
-                className="flex-1"
-                onClick={canGenerate || active === "generate" ? submit : () => { setActive("generate"); }}
-                disabled={submitting}
-              >
-                {submitting
-                  ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
-                  : canGenerate || active === "generate"
-                    ? "Generate free résumé"
-                    : "Go to Generate"
-                }
-              </Button>
+              <div className="flex-1">
+                <Button
+                  type="button"
+                  size="lg"
+                  className="w-full"
+                  onClick={canGenerate || active === "generate" ? submit : () => { setActive("generate"); }}
+                  disabled={submitting || quota?.remaining === 0}
+                >
+                  {submitting
+                    ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
+                    : quota?.remaining === 0
+                      ? "Daily limit reached"
+                      : canGenerate || active === "generate"
+                        ? "Generate free résumé"
+                        : "Go to Generate"
+                  }
+                </Button>
+                {quota?.remaining === 0 && (
+                  <p className="mt-1 text-center text-xs text-ink-muted">
+                    {formatResetTime(quota.resets_at) ? `Resets at ${formatResetTime(quota.resets_at)}. Sign in to keep going.` : "Sign in to keep going."}
+                  </p>
+                )}
+              </div>
               <div className="shrink-0 text-right">
-                <p className="text-xs font-semibold text-ink">5 free / day</p>
+                <p className="text-xs font-semibold text-ink">
+                  {quota ? `${quota.remaining} of ${quota.limit} left today` : "5 free / day"}
+                </p>
                 <p className="text-[10px] text-ink-faint">No login needed</p>
               </div>
             </div>
