@@ -1,28 +1,31 @@
 import asyncio
 import hashlib
+import hmac
 import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Response, UploadFile, status, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.analytics import capture_generation
+from src.core.client_ip import trusted_client_ip
+from src.core.config import settings
 from src.core.database import get_db
 from src.core.executor import trigger_pipeline
 from src.core.storage import StorageService
 from src.models.generation import Generation, GenerationLog
 from src.models.user import User
 from src.schemas.guest import GuestGenerationCreate, GuestGenerationOut
-from src.schemas.profile import ResumeImportDraft
 from src.schemas.template import DEFAULT_SECTION_ORDER
-from src.services.resume_import import MAX_FILES, extract_all_drafts, extract_resume_draft, extract_upload_text, merge_drafts
-from src.services.template_layout import get_generation_section_order, resolve_section_order
+from src.services.rate_limit import check_rate_limit
+from src.services.resume_import import MAX_FILES, extract_resume_draft, extract_upload_text, merge_drafts
+from src.services.support import verify_turnstile
+from src.services.template_layout import get_generation_section_order
 from src.template_registry.service import TemplateRegistryService
 from src.services.import_jobs import import_jobs
 
@@ -140,56 +143,19 @@ def _out(gen: Generation) -> GuestGenerationOut:
     )
 
 
-
-
-class ParsedTexts(BaseModel):
-    texts: list[str]
-    filenames: list[str]
-
-
-@router.post("/import/parse", response_model=ParsedTexts)
-async def parse_guest_resumes(
-    response: Response,
-    files: list[UploadFile] = File(...),
-    resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
-):
-    """Stage 1: parse PDFs to raw text. Fast, no LLM."""
-    _guest_token(response, resumer_guest_token)
-    if len(files) > MAX_FILES:
-        raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
-    texts = []
-    filenames = []
-    for file in files:
-        text = await extract_upload_text(file)
-        texts.append(text)
-        filenames.append(file.filename or "resume")
-    return ParsedTexts(texts=texts, filenames=filenames)
-
-
-@router.post("/import/extract", response_model=ResumeImportDraft)
-async def extract_guest_resumes(
-    data: ParsedTexts,
-    response: Response,
-    resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
-):
-    """Stage 2: run LLM extraction on pre-parsed texts (parallel), return merged draft."""
-    _guest_token(response, resumer_guest_token)
-    tasks = [extract_resume_draft(text, filename) for text, filename in zip(data.texts, data.filenames)]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    drafts = []
-    for i, result in enumerate(results):
-        if isinstance(result, Exception):
-            print(f"[guest/import/extract] skipping {data.filenames[i]}: {result}")
-            if len(data.texts) == 1:
-                raise result
-        else:
-            drafts.append(result)
-
-    if not drafts:
-        raise HTTPException(status_code=502, detail="Could not extract data from any of the uploaded resumes.")
-
-    return merge_drafts(drafts)
+async def _verify_guest_turnstile(token: str | None, client_ip: str | None) -> None:
+    """Guest Turnstile gate. Only enforced when required and a secret is set."""
+    if not settings.GUEST_TURNSTILE_REQUIRED:
+        return
+    if not settings.TURNSTILE_SECRET_KEY:
+        return
+    try:
+        await verify_turnstile(token, client_ip)
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "turnstile_failed", "message": "Please complete the security check and try again."},
+        )
 
 
 async def run_guest_import_task(job_id: str, texts: list[str], filenames: list[str]):
@@ -223,14 +189,41 @@ async def run_guest_import_task(job_id: str, texts: list[str], filenames: list[s
 
 @router.post("/import/start")
 async def start_guest_import(
+    request: Request,
     background_tasks: BackgroundTasks,
     response: Response,
     files: list[UploadFile] = File(...),
+    turnstile_token: str | None = Form(default=None),
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
+    db: AsyncSession = Depends(get_db),
 ):
-    _guest_token(response, resumer_guest_token)
     if len(files) > MAX_FILES:
         raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
+
+    client_ip = trusted_client_ip(request)
+    await _verify_guest_turnstile(turnstile_token, client_ip)
+
+    token = _guest_token(response, resumer_guest_token)
+    token_hash = _hash_token(token)
+
+    # Per-token import limit (cookieless clients get a fresh token each time,
+    # so the per-IP limit below is what actually stops them).
+    await check_rate_limit(
+        db,
+        f"guest-token:{token_hash}:import",
+        settings.GUEST_IMPORT_DAILY_PER_TOKEN,
+        timedelta(hours=24),
+        {"code": "guest_import_limit", "message": "Too many free imports today. Sign in to keep going, or try again tomorrow."},
+    )
+    # Per-IP import limit. Skipped when no trusted IP is available.
+    if client_ip:
+        await check_rate_limit(
+            db,
+            f"guest-ip:{client_ip}:import",
+            settings.GUEST_IMPORT_DAILY_PER_IP,
+            timedelta(hours=24),
+            {"code": "guest_ip_limit", "message": "Too many free imports from this network today. Sign in to keep going, or try again tomorrow."},
+        )
 
     texts = []
     filenames = []
@@ -246,6 +239,7 @@ async def start_guest_import(
         "result": None,
         "error": None,
         "created_at": time.time(),
+        "token_hash": token_hash,
     }
 
     background_tasks.add_task(run_guest_import_task, job_id, texts, filenames)
@@ -253,23 +247,19 @@ async def start_guest_import(
 
 
 @router.get("/import/status/{job_id}")
-async def get_guest_import_status(job_id: str):
-    if job_id not in import_jobs:
-        raise HTTPException(status_code=404, detail="Import job not found")
-    return import_jobs[job_id]
-
-
-@router.post("/import/resumes", response_model=ResumeImportDraft)
-async def import_guest_resumes(
-    response: Response,
-    files: list[UploadFile] = File(...),
+async def get_guest_import_status(
+    job_id: str,
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
 ):
-    _guest_token(response, resumer_guest_token)
-    if len(files) > MAX_FILES:
-        raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
-    drafts = await extract_all_drafts(files)
-    return merge_drafts(drafts)
+    if not resumer_guest_token:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    if job_id not in import_jobs:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    job = import_jobs[job_id]
+    expected = job.get("token_hash")
+    if not expected or not hmac.compare_digest(expected, _hash_token(resumer_guest_token)):
+        raise HTTPException(status_code=404, detail="Import job not found")
+    return {key: value for key, value in job.items() if key != "token_hash"}
 
 
 @router.get("/quota")
@@ -283,14 +273,12 @@ async def get_guest_quota_endpoint(
 
 @router.post("/generate", response_model=GuestGenerationOut)
 async def start_guest_generation(
+    request: Request,
     data: GuestGenerationCreate,
     response: Response,
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
     db: AsyncSession = Depends(get_db),
 ):
-    token = _guest_token(response, resumer_guest_token)
-    token_hash = _hash_token(token)
-
     manifest = TemplateRegistryService.get_template_manifest(data.template_id)
     if not manifest:
         raise HTTPException(status_code=422, detail=f"Template '{data.template_id}' not found.")
@@ -315,6 +303,44 @@ async def start_guest_generation(
                 f"Insufficient usable profile entries. This focus needs {resolved_split['experience']} experiences "
                 f"and {resolved_split['projects']} projects."
             ),
+        )
+
+    client_ip = trusted_client_ip(request)
+    await _verify_guest_turnstile(data.turnstile_token, client_ip)
+
+    token = _guest_token(response, resumer_guest_token)
+    token_hash = _hash_token(token)
+
+    # Global daily cap across all guest tokens.
+    cap = settings.GUEST_DAILY_GLOBAL_CAP
+    if cap and cap > 0:
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(hours=24)
+        total = (
+            await db.execute(
+                select(func.count(Generation.id)).where(
+                    Generation.is_guest == True,  # noqa: E712
+                    Generation.created_at > window_start,
+                    Generation.status != "failed",
+                )
+            )
+        ).scalar() or 0
+        if total >= cap:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "guest_trial_busy", "message": "The free trial is busy today. Sign in to keep going."},
+            )
+
+    # Per-IP daily limit. Skipped when no trusted IP is available (direct
+    # backend hit or missing INTERNAL_API_SECRET), since the IP would not be
+    # trustworthy anyway.
+    if client_ip:
+        await check_rate_limit(
+            db,
+            f"guest-ip:{client_ip}:generate",
+            settings.GUEST_GENERATE_DAILY_PER_IP,
+            timedelta(hours=24),
+            {"code": "guest_ip_limit", "message": "Too many free résumés from this network today. Sign in to keep going, or try again tomorrow."},
         )
 
     guest_user = await _guest_user(db)
