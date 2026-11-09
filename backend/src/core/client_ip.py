@@ -5,7 +5,7 @@ from fastapi import Request
 from src.core.internal_token import is_valid_internal_token
 
 
-def trusted_client_ip(request: Request) -> str | None:
+def trusted_client_ip(request: Request | None) -> str | None:
     """Return the client IP only when the request carries a valid internal token.
 
     The frontend proxy sets ``X-Client-IP`` to the real client address and a
@@ -13,6 +13,8 @@ def trusted_client_ip(request: Request) -> str | None:
     Direct backend hits without a valid token get ``None`` so callers can
     apply an untrusted bucket or skip IP-based limits.
     """
+    if request is None:
+        return None
     auth = request.headers.get("Authorization")
     internal = request.headers.get("X-Internal-Token")
     internal_auth = f"Bearer {internal}" if internal else None

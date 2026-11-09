@@ -543,6 +543,7 @@ async def test_http_generation_picks_viable_split_and_checks_profile(setup_test_
 
 async def test_guest_generation_rejects_incomplete_entries(monkeypatch):
     from fastapi import HTTPException, Response
+
     from src.api.guest import start_guest_generation
     from src.schemas.guest import GuestGenerationCreate
     from src.schemas.profile import ExperienceCreate, ProjectCreate
@@ -557,6 +558,6 @@ async def test_guest_generation_rejects_incomplete_entries(monkeypatch):
         ],
     )
     with pytest.raises(HTTPException) as error:
-        await start_guest_generation(data, Response(), db=None)
+        await start_guest_generation(None, data, Response(), db=None)
     assert error.value.status_code == 400
     assert "usable" in error.value.detail
