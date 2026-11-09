@@ -18,10 +18,14 @@ async function backendHeaders(): Promise<Record<string, string>> {
   try {
     const token = await internalToken()
     extra.Authorization = `Bearer ${token}`
-    const forwardedFor = (await nextHeaders()).get("x-forwarded-for")
+    const hdrs = await nextHeaders()
+    const vercelForwardedFor = hdrs.get("x-vercel-forwarded-for")?.trim()
+    const realIp = hdrs.get("x-real-ip")?.trim()
+    const forwardedFor = hdrs.get("x-forwarded-for")
     const firstHop = forwardedFor?.split(",")[0]?.trim()
-    if (firstHop) {
-      extra["X-Client-IP"] = firstHop
+    const clientIp = vercelForwardedFor || realIp || firstHop
+    if (clientIp) {
+      extra["X-Client-IP"] = clientIp
     }
   } catch (err) {
     console.error("backendHeaders: failed to build internal request headers:", err)

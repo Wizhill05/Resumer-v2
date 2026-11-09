@@ -17,16 +17,22 @@ function useSupportBadge() {
   const [unseen, setUnseen] = useState(false)
   useEffect(() => {
     let active = true
+    let inFlight = false
     async function check() {
+      if (inFlight) return
+      inFlight = true
       try {
         const rows = z.array(issueSchema).parse(await supportFetch("/api/support"))
         const seen = getLastSeen()
         const has = rows.some((r) => {
           if (!r.last_admin_reply_at) return false
-          return r.last_admin_reply_at > (seen[r.id] || "")
+          const seenAt = seen[r.id] ? Date.parse(seen[r.id]) : 0
+          return Date.parse(r.last_admin_reply_at) > seenAt
         })
         if (active) setUnseen(has)
-      } catch {}
+      } catch {} finally {
+        inFlight = false
+      }
     }
     void check()
     const onVisible = () => {

@@ -39,9 +39,12 @@ async function handleSupport(
     if (parts.length) headers.set("Cookie", parts.join("; "))
   }
   // Forward real client IP with internal token in separate header so user auth still works.
+  const vercelForwardedFor = req.headers.get("x-vercel-forwarded-for")?.trim()
+  const realIp = req.headers.get("x-real-ip")?.trim()
   const forwardedFor = req.headers.get("x-forwarded-for")
   const firstHop = forwardedFor?.split(",")[0]?.trim()
-  if (firstHop) headers.set("X-Client-IP", firstHop)
+  const clientIp = vercelForwardedFor || realIp || firstHop
+  if (clientIp) headers.set("X-Client-IP", clientIp)
   if (process.env.INTERNAL_API_SECRET) {
     try {
       const token = await internalToken()

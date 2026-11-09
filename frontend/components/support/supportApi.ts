@@ -104,8 +104,8 @@ export function hasUnseenReply(issues: Pick<SupportIssue, "id" | "last_admin_rep
   const seen = getLastSeen()
   return issues.some((issue) => {
     if (!issue.last_admin_reply_at) return false
-    const last = seen[issue.id] || ""
-    return issue.last_admin_reply_at > last
+    const seenAt = seen[issue.id] ? Date.parse(seen[issue.id]) : 0
+    return Date.parse(issue.last_admin_reply_at) > seenAt
   })
 }
 export async function supportFetch(url: string, init?: RequestInit): Promise<unknown> {

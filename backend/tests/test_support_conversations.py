@@ -379,7 +379,7 @@ async def test_push_subscribe_and_admin_reply_triggers_push(context, monkeypatch
     monkeypatch.setattr(support.settings, "VAPID_PUBLIC_KEY", "testpub")
     monkeypatch.setattr(support.settings, "VAPID_PRIVATE_KEY", "testpriv")
     monkeypatch.setattr(support.settings, "VAPID_SUBJECT", "mailto:test@example.com")
-    resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": "https://push.example/1", "keys": {"p256dh": "p", "auth": "a"}})
+    resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": "p", "auth": "a"}})
     assert resp.status_code == 200
     # public key endpoint
     pub = await client.get("/feedback/support/push/public-key")
@@ -414,7 +414,7 @@ async def test_push_410_cleanup(context, monkeypatch):
     monkeypatch.setattr(support.settings, "VAPID_PUBLIC_KEY", "testpub")
     monkeypatch.setattr(support.settings, "VAPID_PRIVATE_KEY", "testpriv")
     monkeypatch.setattr(support.settings, "VAPID_SUBJECT", "mailto:test@example.com")
-    sub = SupportPushSubscription(report_id=report.id, endpoint="https://push.example/gone", p256dh="p", auth="a")
+    sub = SupportPushSubscription(report_id=report.id, endpoint="https://fcm.googleapis.com/fcm/send/gone", p256dh="p", auth="a")
     db.add(sub)
     await db.commit()
     import sys
@@ -435,4 +435,118 @@ async def test_push_410_cleanup(context, monkeypatch):
     await support.notify_push(report.id, "hello", report=report)
     remaining = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id))).scalars().all()
     assert len(remaining) == 0
+
+
+@pytest.mark.parametrize("endpoint", [
+    "http://169.254.169.254/latest/meta-data/",
+    "http://fcm.googleapis.com/fcm/send/abc",
+    "https://evil.example.com/push/abc",
+    "https://fcm.googleapis.com:8443/fcm/send/abc",
+    "https://user:pass@fcm.googleapis.com/fcm/send/abc",
+])
+async def test_push_subscribe_rejects_non_allowlisted_endpoint(context, endpoint):
+    client, db, app, owner, stranger, admin, report, guest = context
+    resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": endpoint, "keys": {"p256dh": "p", "auth": "a"}})
+    assert resp.status_code == 422
+    rows = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id))).scalars().all()
+    assert rows == []
+
+
+async def test_push_subscribe_accepts_allowlisted_endpoint(context):
+    client, db, app, owner, stranger, admin, report, guest = context
+    resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": "p", "auth": "a"}})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+async def test_push_sixth_subscription_evicts_oldest(context):
+    client, db, app, owner, stranger, admin, report, guest = context
+    for i in range(1, 7):
+        resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": f"https://fcm.googleapis.com/fcm/send/{i}", "keys": {"p256dh": "p", "auth": "a"}})
+        assert resp.status_code == 200
+    rows = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id).order_by(SupportPushSubscription.endpoint))).scalars().all()
+    endpoints = {r.endpoint for r in rows}
+    assert len(rows) == 5
+    assert "https://fcm.googleapis.com/fcm/send/1" not in endpoints
+    assert "https://fcm.googleapis.com/fcm/send/6" in endpoints
+
+
+async def test_cookieless_guest_limited_via_ip_bucket(context, monkeypatch):
+    from datetime import datetime, timezone
+
+    from jose import jwt as jose_jwt
+
+    from src.core.config import settings
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    monkeypatch.setattr(settings, "INTERNAL_API_SECRET", "test-internal-secret")
+    monkeypatch.setattr(settings, "SUPPORT_TICKET_HOURLY_GUEST_IP", 3)
+    token = jose_jwt.encode({"aud": "internal", "exp": datetime.now(timezone.utc).timestamp() + 60}, "test-internal-secret", algorithm="HS256")
+    headers = {"Authorization": f"Bearer {token}", "X-Client-IP": "203.0.113.7"}
+    last = None
+    for i in range(6):
+        resp = await client.post("/feedback/support", data={"message": f"ip msg {i}"}, headers=headers)
+        client.cookies.clear()
+        last = resp.status_code
+        if resp.status_code == 429:
+            break
+    assert last == 429
+    rows = (await db.execute(select(SupportRateLimit).where(SupportRateLimit.key == "ip:203.0.113.7:tickets"))).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_cookieless_guest_limited_via_untrusted_bucket(context, monkeypatch):
+    from src.core.config import settings
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    monkeypatch.setattr(settings, "SUPPORT_TICKET_HOURLY_GUEST_UNTRUSTED", 3)
+    last = None
+    for i in range(6):
+        resp = await client.post("/feedback/support", data={"message": f"untrusted msg {i}"})
+        client.cookies.clear()
+        last = resp.status_code
+        if resp.status_code == 429:
+            break
+    assert last == 429
+    rows = (await db.execute(select(SupportRateLimit).where(SupportRateLimit.key == "guest-untrusted:tickets"))).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_guest_reply_per_report_limit(context, monkeypatch):
+    from src.core.config import settings
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr(settings, "SUPPORT_REPLY_HOURLY_GUEST_REPORT", 2)
+    monkeypatch.setattr(settings, "SUPPORT_REPLY_HOURLY_GUEST_UNTRUSTED", 100)
+    monkeypatch.setattr(settings, "SUPPORT_REPLY_HOURLY_GUEST_COOKIE", 100)
+    monkeypatch.setattr(settings, "SUPPORT_REPLY_HOURLY_GUEST_IP", 100)
+    token = support.guest_token(guest.id)
+    statuses = []
+    for i in range(4):
+        resp = await client.post(f"/feedback/support/{guest.id}/messages", params={"access_token": token}, json={"message": f"reply {i}"})
+        client.cookies.clear()
+        statuses.append(resp.status_code)
+    assert statuses == [200, 200, 429, 429]
+
+
+async def test_patch_support_rate_limit_429(context, monkeypatch):
+    from src.core.config import settings
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    monkeypatch.setattr(settings, "SUPPORT_REPLY_HOURLY_USER", 2)
+    last = None
+    statuses = ["resolved", "closed", "open", "resolved"]
+    for s in statuses:
+        resp = await client.patch(f"/feedback/support/{report.id}", json={"status": s})
+        last = resp.status_code
+        if resp.status_code == 429:
+            break
+    assert last == 429
 

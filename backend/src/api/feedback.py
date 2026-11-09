@@ -7,7 +7,9 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import get_current_user, get_optional_user
@@ -34,6 +36,7 @@ from src.services.support import (
     report_detail,
     report_out,
     set_guest_cookie,
+    validate_push_endpoint,
     verify_turnstile,
 )
 
@@ -98,28 +101,73 @@ def _aware(dt: datetime) -> datetime:
     return dt
 
 
+_untrusted_ip_logged = False
+
+
 async def _check_support_rate_limit(db: AsyncSession, key: str, limit: int, friendly: str) -> None:
     now = datetime.now(timezone.utc)
-    existing = (await db.execute(select(SupportRateLimit).where(SupportRateLimit.key == key))).scalar_one_or_none()
-    if existing is None:
-        existing = SupportRateLimit(key=key, request_count=1, reset_at=now + timedelta(hours=1))
-        db.add(existing)
-        await db.commit()
-        return
-    reset = _aware(existing.reset_at)
-    if reset <= now:
-        existing.request_count = 1
-        existing.reset_at = now + timedelta(hours=1)
-        await db.commit()
-        return
-    existing.request_count = (existing.request_count or 0) + 1
-    count = existing.request_count
+    reset_at = now + timedelta(hours=1)
+    try:
+        dialect_name = db.get_bind().dialect.name
+    except Exception:
+        dialect_name = getattr(getattr(db, "bind", None), "dialect", None) and db.bind.dialect.name  # type: ignore
+    if dialect_name == "sqlite":
+        insert_fn = sqlite_insert
+    else:
+        insert_fn = pg_insert
+    stmt = (
+        insert_fn(SupportRateLimit)
+        .values(key=key, request_count=1, reset_at=reset_at)
+        .on_conflict_do_update(
+            index_elements=[SupportRateLimit.key],
+            set_={
+                "request_count": case(
+                    (SupportRateLimit.reset_at <= now, 1),
+                    else_=SupportRateLimit.request_count + 1,
+                ),
+                "reset_at": case(
+                    (SupportRateLimit.reset_at <= now, reset_at),
+                    else_=SupportRateLimit.reset_at,
+                ),
+            },
+        )
+        .returning(SupportRateLimit.request_count, SupportRateLimit.reset_at)
+    )
+    result = await db.execute(stmt)
+    count, _reset = result.one()
     await db.commit()
     if count > limit:
         raise HTTPException(429, friendly)
 
 
-async def _rate_limit_prepare(db: AsyncSession, current_user: User | None, raw_guest_key: str | None, client_ip: str | None, *, is_ticket: bool) -> None:
+async def _rate_limit_ip_only(db: AsyncSession, current_user: User | None, client_ip: str | None, *, is_ticket: bool) -> None:
+    """Apply only the IP (or shared untrusted) bucket for guests.
+
+    Safe to call before access checks: junk requests only burn this bucket.
+    """
+    global _untrusted_ip_logged
+    if current_user and is_admin(current_user):
+        return
+    if current_user:
+        return
+    # Guest: always apply IP bucket when trusted IP available.
+    if client_ip:
+        if is_ticket:
+            await _check_support_rate_limit(db, f"ip:{client_ip}:tickets", settings.SUPPORT_TICKET_HOURLY_GUEST_IP, "Too many support requests. Please wait a little before sending another.")
+        else:
+            await _check_support_rate_limit(db, f"ip:{client_ip}:replies", settings.SUPPORT_REPLY_HOURLY_GUEST_IP, "Too many replies. Please wait a little before sending another.")
+    else:
+        if not _untrusted_ip_logged:
+            logger.warning("Support request without a trusted client IP (direct backend hit or INTERNAL_API_SECRET missing); applying shared untrusted bucket")
+            _untrusted_ip_logged = True
+        if is_ticket:
+            await _check_support_rate_limit(db, "guest-untrusted:tickets", settings.SUPPORT_TICKET_HOURLY_GUEST_UNTRUSTED, "Too many support requests. Please wait a little before sending another.")
+        else:
+            await _check_support_rate_limit(db, "guest-untrusted:replies", settings.SUPPORT_REPLY_HOURLY_GUEST_UNTRUSTED, "Too many replies. Please wait a little before sending another.")
+
+
+async def _rate_limit_after_access(db: AsyncSession, current_user: User | None, raw_guest_key: str | None, *, is_ticket: bool, report_id: uuid.UUID | None = None) -> None:
+    """Apply user, cookie and per-report buckets after access is confirmed."""
     if current_user and is_admin(current_user):
         return
     if current_user:
@@ -128,18 +176,20 @@ async def _rate_limit_prepare(db: AsyncSession, current_user: User | None, raw_g
         else:
             await _check_support_rate_limit(db, f"user:{current_user.id}:replies", settings.SUPPORT_REPLY_HOURLY_USER, "Too many replies. Please wait a little before sending another.")
         return
-    # Guest
+    # Guest: cookie bucket only when the request actually carried a cookie.
     if raw_guest_key:
         guest_hash = hash_guest_key(raw_guest_key)
         if is_ticket:
             await _check_support_rate_limit(db, f"guest-cookie:{guest_hash}:tickets", settings.SUPPORT_TICKET_HOURLY_GUEST_COOKIE, "Too many support requests. Please wait a little before sending another.")
         else:
             await _check_support_rate_limit(db, f"guest-cookie:{guest_hash}:replies", settings.SUPPORT_REPLY_HOURLY_GUEST_COOKIE, "Too many replies. Please wait a little before sending another.")
-    if client_ip:
-        if is_ticket:
-            await _check_support_rate_limit(db, f"ip:{client_ip}:tickets", settings.SUPPORT_TICKET_HOURLY_GUEST_IP, "Too many support requests. Please wait a little before sending another.")
-        else:
-            await _check_support_rate_limit(db, f"ip:{client_ip}:replies", settings.SUPPORT_REPLY_HOURLY_GUEST_IP, "Too many replies. Please wait a little before sending another.")
+    if report_id is not None and not is_ticket:
+        await _check_support_rate_limit(db, f"report:{report_id}:guest-replies", settings.SUPPORT_REPLY_HOURLY_GUEST_REPORT, "Too many replies. Please wait a little before sending another.")
+
+
+async def _rate_limit_prepare(db: AsyncSession, current_user: User | None, raw_guest_key: str | None, client_ip: str | None, *, is_ticket: bool, report_id: uuid.UUID | None = None) -> None:
+    await _rate_limit_ip_only(db, current_user, client_ip, is_ticket=is_ticket)
+    await _rate_limit_after_access(db, current_user, raw_guest_key, is_ticket=is_ticket, report_id=report_id)
 
 
 @router.get("/support/push/public-key")
@@ -149,26 +199,40 @@ async def push_public_key():
     return {"key": settings.VAPID_PUBLIC_KEY}
 
 
+class PushKeys(BaseModel):
+    p256dh: str = Field(..., min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_-]+={0,2}$")
+    auth: str = Field(..., min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+={0,2}$")
+
+
 class PushSubscribeBody(BaseModel):
-    endpoint: str
-    keys: dict
+    endpoint: str = Field(..., min_length=1, max_length=1024)
+    keys: PushKeys
 
 
 @router.post("/support/{id}/push")
 async def subscribe_push(id: uuid.UUID, body: PushSubscribeBody, access_token: str | None = None, request: Request = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
     raw_key = request.cookies.get(GUEST_COOKIE_NAME) if request else None
     report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(raw_key))
-    keys = body.keys or {}
-    p256dh = keys.get("p256dh")
-    auth = keys.get("auth")
+    await _rate_limit_prepare(db, current_user, raw_key, _trusted_client_ip(request) if request else None, is_ticket=False, report_id=report.id)
+    p256dh = body.keys.p256dh
+    auth = body.keys.auth
     if not body.endpoint or not p256dh or not auth:
+        raise HTTPException(422, "Invalid push subscription")
+    try:
+        validate_push_endpoint(body.endpoint)
+    except ValueError:
         raise HTTPException(422, "Invalid push subscription")
     existing = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id, SupportPushSubscription.endpoint == body.endpoint))).scalar_one_or_none()
     if existing:
         existing.p256dh = p256dh
         existing.auth = auth
     else:
-        db.add(SupportPushSubscription(report_id=report.id, endpoint=body.endpoint, p256dh=p256dh, auth=auth))
+        subs = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id).order_by(SupportPushSubscription.created_at.asc()))).scalars().all()
+        # Cap subscriptions at 5 per report: evict oldest when adding a new one.
+        while len(subs) >= 5:
+            oldest = subs.pop(0)
+            await db.delete(oldest)
+        db.add(SupportPushSubscription(report_id=report.id, endpoint=body.endpoint, p256dh=p256dh, auth=auth, created_at=datetime.now(timezone.utc)))
     await db.commit()
     return {"ok": True}
 
@@ -177,6 +241,7 @@ async def subscribe_push(id: uuid.UUID, body: PushSubscribeBody, access_token: s
 async def unsubscribe_push(id: uuid.UUID, endpoint: str | None = None, access_token: str | None = None, request: Request = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
     raw_key = request.cookies.get(GUEST_COOKIE_NAME) if request else None
     report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(raw_key))
+    await _rate_limit_prepare(db, current_user, raw_key, _trusted_client_ip(request) if request else None, is_ticket=False, report_id=report.id)
     if endpoint:
         existing = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id, SupportPushSubscription.endpoint == endpoint))).scalar_one_or_none()
         if existing:
@@ -211,12 +276,14 @@ async def submit_support_report(
         )
     raw_guest_key = request.cookies.get(GUEST_COOKIE_NAME)
     client_ip = _trusted_client_ip(request)
-    # Determine guest key before rate limiting so cookie bucket applies
+    # Only the cookie actually carried by the request gets a cookie bucket.
+    # Mint a fresh key only after rate limiting so cookieless guests cannot
+    # bypass the bucket with a fresh key per request.
     need_new_key = False
+    await _rate_limit_prepare(db, current_user, raw_guest_key, client_ip, is_ticket=True)
     if not current_user and not raw_guest_key:
         raw_guest_key = new_guest_key()
         need_new_key = True
-    await _rate_limit_prepare(db, current_user, raw_guest_key, client_ip, is_ticket=True)
     if not current_user:
         await verify_turnstile(turnstile_token, client_ip)
 
@@ -337,8 +404,12 @@ async def get_my_support_report(id: uuid.UUID, request: Request, access_token: s
 
 @router.post("/support/{id}/messages")
 async def reply_to_support_report(id: uuid.UUID, data: ReplyCreate, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
-    await _rate_limit_prepare(db, current_user, request.cookies.get(GUEST_COOKIE_NAME), _trusted_client_ip(request), is_ticket=False)
-    report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(request.cookies.get(GUEST_COOKIE_NAME)))
+    raw_cookie = request.cookies.get(GUEST_COOKIE_NAME)
+    client_ip = _trusted_client_ip(request)
+    # IP bucket before access so junk requests cannot burn real users' buckets.
+    await _rate_limit_ip_only(db, current_user, client_ip, is_ticket=False)
+    report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(raw_cookie))
+    await _rate_limit_after_access(db, current_user, raw_cookie, is_ticket=False, report_id=report.id)
     return await append_reply(db, report, data, current_user, is_admin(current_user))
 
 
@@ -349,6 +420,7 @@ class OwnerStatusUpdate(BaseModel):
 @router.patch("/support/{id}")
 async def update_my_support_report(id: uuid.UUID, data: OwnerStatusUpdate, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
     report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(request.cookies.get(GUEST_COOKIE_NAME)))
+    await _rate_limit_prepare(db, current_user, request.cookies.get(GUEST_COOKIE_NAME), _trusted_client_ip(request), is_ticket=False, report_id=report.id)
     add_status_event(db, report, data.status, current_user)
     await db.commit()
     return {"status": "success", "report_status": report.status}

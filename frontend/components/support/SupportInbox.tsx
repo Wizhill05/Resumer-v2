@@ -23,17 +23,15 @@ export function SupportInbox({ signedIn }: { signedIn: boolean }) {
     let active = true
     async function load() {
       try {
-        const own: (SupportIssue & { token?: string })[] = []
+        let parsed: SupportIssue[] = []
         try {
-          own.push(...z.array(issueSchema).parse(await supportFetch("/api/support")))
+          parsed = z.array(issueSchema).parse(await supportFetch("/api/support"))
         } catch {}
+        const own: (SupportIssue & { token?: string })[] = [...parsed]
         const serverGuests: (SupportIssue & { token?: string })[] = []
-        try {
-          const parsed = z.array(issueSchema).parse(await supportFetch("/api/support"))
-          for (const row of parsed) {
-            if (row.access_token) serverGuests.push({ ...row, token: row.access_token })
-          }
-        } catch {}
+        for (const row of parsed) {
+          if (row.access_token) serverGuests.push({ ...row, token: row.access_token })
+        }
         const guests = await Promise.allSettled(
           savedGuestIssues().map(async (saved) => ({
             ...issueSchema.parse(

@@ -24,6 +24,56 @@ from src.models.user import User
 logger = logging.getLogger(__name__)
 ReportStatus = Literal["open", "in_progress", "resolved", "closed"]
 
+_PUSH_ENDPOINT_MAX_LENGTH = 1024
+_PUSH_EXACT_HOSTS = {"fcm.googleapis.com", "android.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
+_PUSH_SUFFIX_HOSTS = ("push.services.mozilla.com", "notify.windows.com", "push.apple.com")
+
+
+def validate_push_endpoint(endpoint: str) -> None:
+    """Validate that a WebPush endpoint points at a known push service.
+
+    Raises ValueError for anything that is not an allowlisted https endpoint.
+    Used both at subscribe time and before sending to prevent SSRF/fan-out.
+    """
+    from urllib.parse import urlparse
+
+    if not isinstance(endpoint, str):
+        raise ValueError("Invalid push endpoint")
+    endpoint = endpoint.strip()
+    if not endpoint or len(endpoint) > _PUSH_ENDPOINT_MAX_LENGTH:
+        raise ValueError("Invalid push endpoint")
+    if any(c.isspace() or ord(c) < 0x20 for c in endpoint):
+        raise ValueError("Invalid push endpoint")
+    parsed = urlparse(endpoint)
+    if parsed.scheme != "https":
+        raise ValueError("Invalid push endpoint")
+    if parsed.username or parsed.password:
+        raise ValueError("Invalid push endpoint")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Invalid push endpoint")
+    try:
+        port = parsed.port
+    except ValueError:
+        raise ValueError("Invalid push endpoint")
+    if port is not None and port != 443:
+        raise ValueError("Invalid push endpoint")
+    host_lower = host.lower().rstrip(".")
+    if host_lower in _PUSH_EXACT_HOSTS:
+        return
+    for suffix in _PUSH_SUFFIX_HOSTS:
+        if host_lower == suffix or host_lower.endswith("." + suffix):
+            return
+    raise ValueError("Invalid push endpoint")
+
+
+def is_valid_push_endpoint(endpoint: str) -> bool:
+    try:
+        validate_push_endpoint(endpoint)
+        return True
+    except ValueError:
+        return False
+
 GUEST_COOKIE_NAME = "resumer_support_key"
 GUEST_KEY_MAX_AGE = 365 * 24 * 60 * 60
 
@@ -242,7 +292,11 @@ async def verify_turnstile(token: str | None, remoteip: str | None) -> None:
     global _turnstile_logged
     if not settings.TURNSTILE_SECRET_KEY:
         if not _turnstile_logged:
-            logger.info("TURNSTILE_SECRET_KEY not set, skipping Turnstile verification in this environment")
+            env = (getattr(settings, "ENVIRONMENT", "") or "").strip().lower()
+            if env == "production":
+                logger.error("TURNSTILE_SECRET_KEY not set in production, skipping Turnstile verification. Guest support has no bot protection.")
+            else:
+                logger.info("TURNSTILE_SECRET_KEY not set, skipping Turnstile verification in this environment")
             _turnstile_logged = True
         return
     if not token or not token.strip():
@@ -254,6 +308,10 @@ async def verify_turnstile(token: str | None, remoteip: str | None) -> None:
 
 def _send_push_sync(sub, payload: dict, dead: list) -> None:
     if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
+        return
+    if not is_valid_push_endpoint(getattr(sub, "endpoint", "")):
+        logger.warning("Push delivery skipped for invalid endpoint: %s", getattr(sub, "id", sub))
+        dead.append(sub.id)
         return
     try:
         from pywebpush import webpush
