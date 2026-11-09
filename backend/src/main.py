@@ -22,6 +22,7 @@ from src.api import account_welcome, profile, generation, system, imports, guest
 from src.core.oauth import ensure_oauth_schema
 from src.core.database import AsyncSessionLocal
 from src.services.llm_config import ensure_llm_schema, llm_config_service
+from src.services.guest_cleanup import guest_cleanup_loop
 from src.template_registry import router as template_router
 from src.services.import_jobs import cleanup_old_jobs
 from src.mcp.server import mcp_server, get_mcp_app
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
     if not llm_config_service.resolve_targets("default"):
         logger.warning("[startup] No LLM endpoint configured for role 'default'.")
     cleanup_task = asyncio.create_task(cleanup_old_jobs())
+    guest_cleanup_task = asyncio.create_task(guest_cleanup_loop())
     try:
         mcp_server.session_manager._has_started = False
         async with mcp_server.session_manager.run():
@@ -59,8 +61,13 @@ async def lifespan(app: FastAPI):
         await asyncio.to_thread(shutdown_analytics)
 
     cleanup_task.cancel()
+    guest_cleanup_task.cancel()
     try:
         await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await guest_cleanup_task
     except asyncio.CancelledError:
         pass
 
