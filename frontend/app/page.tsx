@@ -1,12 +1,11 @@
 import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { AuthErrorBanner } from "@/components/AuthErrorBanner"
-import { HeroSection } from "@/components/landing/HeroSection"
-import { StoryOverture } from "@/components/landing/StoryOverture"
-import { StoryJourney } from "@/components/landing/StoryJourney"
-import { StoryTransformation } from "@/components/landing/StoryTransformation"
-import { AgentSection } from "@/components/landing/AgentSection"
-import { StoryClosing } from "@/components/landing/StoryClosing"
+import { LandingNav } from "@/components/landing/LandingNav"
+import { LiveStage } from "@/components/landing/LiveStage"
+import { ModeDial } from "@/components/landing/ModeDial"
+import { AgentLine } from "@/components/landing/AgentLine"
+import { Closing } from "@/components/landing/Closing"
 import { Footer } from "@/components/Footer"
 
 export default async function Home() {
@@ -16,23 +15,16 @@ export default async function Home() {
     redirect("/dashboard")
   }
 
+  const mcpUrl = process.env.NEXT_PUBLIC_MCP_URL || "https://api.resumer.buzz/mcp"
+
   return (
-    <main className="relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-white text-[var(--fluid-ink)] dark:bg-[#18181b]">
+    <main className="relative flex min-h-screen flex-1 flex-col bg-white text-[var(--fluid-ink)] dark:bg-[#18181b]">
       <AuthErrorBanner />
-      <HeroSection />
-      <div id="how-it-works" className="scroll-mt-16">
-        <StoryOverture />
-      </div>
-      <section className="relative overflow-hidden px-5 py-20 sm:py-28 lg:py-32">
-        <div className="mx-auto max-w-6xl">
-          <div className="grid grid-cols-1 items-start gap-16 lg:grid-cols-2 lg:gap-14 xl:gap-20">
-            <StoryJourney />
-            <StoryTransformation />
-          </div>
-        </div>
-      </section>
-      <AgentSection />
-      <StoryClosing />
+      <LandingNav />
+      <LiveStage />
+      <ModeDial />
+      <AgentLine mcpUrl={mcpUrl} />
+      <Closing />
       <Footer variant="landing" />
     </main>
   )
