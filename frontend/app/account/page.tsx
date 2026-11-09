@@ -16,7 +16,7 @@ export default async function AccountPage() {
 
   return (
     <main className="app-surface flex flex-1 flex-col">
-      <Nav />
+      <Nav signedIn />
 
       <AccountClient
         name={session.user.name ?? null}

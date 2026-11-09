@@ -12,7 +12,7 @@ export default async function OnboardingPage() {
 
   return (
     <main className="flex-1 flex flex-col bg-app text-ink">
-      <Nav />
+      <Nav signedIn />
       <div className="page-wrap flex-1 space-y-4 md:space-y-5">
         <div className="page-header space-y-0.5">
           <h1 className="text-xl font-bold tracking-tight md:text-2xl">Build Profile</h1>

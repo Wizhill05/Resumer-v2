@@ -36,7 +36,7 @@ function providerLabel(provider?: string) {
   return provider ? provider[0].toUpperCase() + provider.slice(1) : "OAuth"
 }
 
-export function AccountMenu() {
+export function AccountMenu({ signedIn = false }: { signedIn?: boolean } = {}) {
   const { data: session, status } = useSession()
   const isAdmin = useIsAdmin()
   const [open, setOpen] = useState(false)
@@ -67,6 +67,21 @@ export function AccountMenu() {
         className="h-8 w-8 animate-pulse rounded-full border border-line bg-ink/5"
         aria-label="Loading account"
       />
+    )
+  }
+
+  if (!session?.user && signedIn) {
+    // The server already knows this visitor is signed in; keep /account
+    // reachable even when the client session fetch failed or came back empty.
+    return (
+      <Link
+        href="/account"
+        aria-label="Account"
+        title="Account"
+        className="ml-1 flex h-8 w-8 items-center justify-center rounded-full border border-line bg-paper text-ink-muted transition-colors hover:border-ink/40 hover:bg-ink/5 hover:text-ink"
+      >
+        <Settings size={15} aria-hidden="true" />
+      </Link>
     )
   }
 
