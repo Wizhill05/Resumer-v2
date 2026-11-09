@@ -19,6 +19,7 @@ import {
 } from "@/lib/guest-storage"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
+import { TurnstileHost, useTurnstile } from "@/components/TurnstileWidget"
 import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
 import type {
   GuestDraft, GuestEducation, GuestExperience,
@@ -43,6 +44,32 @@ function detectCookiesBlocked(): boolean {
   } catch {
     return true
   }
+}
+
+function extractErrorMessage(body: unknown, fallback = "Failed to start generation"): string {
+  const b = body as { detail?: unknown; error?: unknown } | null
+  if (b && typeof b.detail === "string" && b.detail) return b.detail
+  if (b && Array.isArray(b.detail)) {
+    const msgs = (b.detail as unknown[])
+      .map((item) => {
+        if (typeof item === "string") return item
+        if (item && typeof item === "object" && "msg" in (item as Record<string, unknown>)) {
+          const msg = (item as Record<string, unknown>).msg
+          return typeof msg === "string" ? msg : null
+        }
+        return null
+      })
+      .filter(Boolean) as string[]
+    if (msgs.length) return msgs.join("; ")
+    return fallback
+  }
+  if (b && b.detail && typeof b.detail === "object") {
+    const detail = b.detail as Record<string, unknown>
+    if (typeof detail.message === "string" && detail.message) return detail.message
+    return fallback
+  }
+  if (b && typeof b.error === "string" && b.error) return b.error
+  return fallback
 }
 
 type Section = "profile" | "experience" | "projects" | "education" | "extracurriculars" | "generate"
@@ -158,7 +185,15 @@ function AddCard({ title, children }: { title: string; children: React.ReactNode
 
 // ── Section panels ────────────────────────────────────────────────────────────
 
-function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: (d: GuestDraft) => void }) {
+function ProfilePanel({
+  draft, updateDraft, turnstileToken, needsTurnstile, resetTurnstile,
+}: {
+  draft: GuestDraft
+  updateDraft: (d: GuestDraft) => void
+  turnstileToken: string
+  needsTurnstile: boolean
+  resetTurnstile: () => void
+}) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [importStage, setImportStage] = useState<"idle" | "parsing" | "extracting" | "deduplicating">("idle")
   const [fileCount, setFileCount] = useState(0)
@@ -186,13 +221,21 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
       : ""
 
   const importFiles = async (files: File[]) => {
+    if (needsTurnstile && !turnstileToken) {
+      setImportErr("Please complete the human check and try again.")
+      return
+    }
     setImportErr(null); setImportMsg(null); setFileCount(files.length); setImportStage("parsing")
     try {
       const fd = new FormData()
       files.forEach((f) => fd.append("files", f))
+      if (turnstileToken) fd.append("turnstile_token", turnstileToken)
       const startRes = await fetch("/api/guest/import/start", { method: "POST", body: fd })
-      const startBody = await startRes.json()
-      if (!startRes.ok) throw new Error(startBody.detail || startBody.error || "Failed to start import")
+      // Turnstile tokens are single use. Always request a fresh one for the
+      // next attempt, whether this one succeeded or failed.
+      if (needsTurnstile) resetTurnstile()
+      const startBody = await startRes.json().catch(() => null)
+      if (!startRes.ok) throw new Error(extractErrorMessage(startBody, "Failed to start import"))
 
       const jobId = startBody.job_id
       let jobStatus = "parsing"
@@ -202,8 +245,8 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
       while (jobStatus === "parsing" || jobStatus === "extracting" || jobStatus === "deduplicating") {
         await new Promise((resolve) => setTimeout(resolve, 1500))
         const statusRes = await fetch(`/api/guest/import/status/${jobId}`)
-        const statusBody = await statusRes.json()
-        if (!statusRes.ok) throw new Error(statusBody.detail || "Failed to check import status")
+        const statusBody = await statusRes.json().catch(() => null)
+        if (!statusRes.ok) throw new Error(extractErrorMessage(statusBody, "Failed to check import status"))
 
         jobStatus = statusBody.status
         jobResult = statusBody.result
@@ -228,6 +271,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
         setImportMsg(`Extracted ${added} item${added !== 1 ? "s" : ""}${skipped > 0 ? `, ${skipped} duplicate${skipped !== 1 ? "s" : ""} skipped` : ""}.`)
       }
     } catch (err) {
+      if (needsTurnstile) resetTurnstile()
       setImportErr(err instanceof Error ? err.message : "Import failed")
     } finally { setImportStage("idle") }
   }
@@ -806,6 +850,7 @@ function GeneratePanel({
 
 export function TryClient() {
   const router = useRouter()
+  const turnstile = useTurnstile({ size: "invisible" })
 
   const [draft, setDraft] = useState<GuestDraft>(() => emptyGuestDraft())
   const [cookiesBlocked, setCookiesBlocked] = useState(false)
@@ -911,37 +956,12 @@ export function TryClient() {
     }
   }
 
-  const extractErrorMessage = (body: unknown): string => {
-    const b = body as { detail?: unknown; error?: unknown } | null
-    if (b && typeof b.detail === "string" && b.detail) return b.detail
-    if (b && Array.isArray(b.detail)) {
-      const msgs = (b.detail as unknown[])
-        .map((item) => {
-          if (typeof item === "string") return item
-          if (item && typeof item === "object" && "msg" in (item as Record<string, unknown>)) {
-            const msg = (item as Record<string, unknown>).msg
-            return typeof msg === "string" ? msg : null
-          }
-          return null
-        })
-        .filter(Boolean) as string[]
-      if (msgs.length) return msgs.join("; ")
-      return "Failed to start generation"
-    }
-    if (b && b.detail && typeof b.detail === "object") {
-      const detail = b.detail as Record<string, unknown>
-      if (typeof detail.message === "string" && detail.message) return detail.message
-      return "Failed to start generation"
-    }
-    if (b && typeof b.error === "string" && b.error) return b.error
-    return "Failed to start generation"
-  }
-
   const submit = async () => {
     if (!draft.profile.full_name?.trim()) { setError("Add your name in the Profile section."); setActive("profile"); return }
     if (!jobDescription.trim()) { setError("Paste a job description first."); setActive("generate"); return }
     if (usableExpCount < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
     if (usableProjCount < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
+    if (turnstile.needsTurnstile && !turnstile.token) { setError("Please complete the human check and try again."); return }
     setError(null); setSubmitting(true)
     if (ANALYTICS_ENABLED) posthog.capture("resume_generation_requested", {
       is_guest: true,
@@ -962,8 +982,12 @@ export function TryClient() {
           content_split: { projects: activeFocus.projects, experience: activeFocus.experience },
           creativity_mode: creativityMode,
           ...draft,
+          ...(turnstile.token ? { turnstile_token: turnstile.token } : {}),
         }),
       })
+      // Turnstile tokens are single use. Always request a fresh one for the
+      // next attempt, whether this one succeeded or failed.
+      if (turnstile.needsTurnstile) turnstile.reset()
       let body: unknown = null
       try {
         body = await res.json()
@@ -987,6 +1011,7 @@ export function TryClient() {
       const okBody = body as { id?: string }
       router.push(`/try/result/${okBody.id}`)
     } catch (err) {
+      if (turnstile.needsTurnstile) turnstile.reset()
       setError(err instanceof Error ? err.message : "Failed to start generation")
       fetchQuota()
     } finally { setSubmitting(false) }
@@ -1059,7 +1084,7 @@ export function TryClient() {
         <div className="flex min-w-0 flex-1 flex-col bg-paper">
           {/* Scrollable content area */}
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} />}
+            {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} turnstileToken={turnstile.token} needsTurnstile={turnstile.needsTurnstile} resetTurnstile={turnstile.reset} />}
             {active === "experience"      && <ExperiencePanel draft={draft} updateDraft={updateDraft} />}
             {active === "projects"        && <ProjectsPanel draft={draft} updateDraft={updateDraft} />}
             {active === "education"       && <EducationPanel draft={draft} updateDraft={updateDraft} />}
@@ -1079,6 +1104,7 @@ export function TryClient() {
 
           {/* Sticky generate bar - always visible */}
           <div className="shrink-0 border-t border-line bg-paper px-5 py-3">
+            <TurnstileHost hostRef={turnstile.hostRef} needsTurnstile={turnstile.needsTurnstile} className="sr-only" />
             {cookiesBlocked && active !== "generate" && (
               <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
                 <div className="flex items-start gap-2 text-xs text-amber-800">

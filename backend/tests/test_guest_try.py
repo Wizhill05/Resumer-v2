@@ -28,7 +28,7 @@ def compile_jsonb_sqlite(type_, compiler, **kw):
 
 from src.api.guest import _hash_token, guest_quota, router  # noqa: E402
 from src.core.database import get_db  # noqa: E402
-from src.models.generation import Generation  # noqa: E402
+from src.models.generation import Generation, SupportRateLimit  # noqa: E402
 from src.models.user import Base, User  # noqa: E402
 
 GENERATE_PAYLOAD = {
@@ -55,7 +55,7 @@ async def client(monkeypatch):
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-        await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[User.__table__, Generation.__table__]))
+        await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[User.__table__, Generation.__table__, SupportRateLimit.__table__]))
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     async with sessions() as db:
         app = FastAPI()

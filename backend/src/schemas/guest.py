@@ -19,6 +19,7 @@ class GuestGenerationCreate(BaseModel):
     model_used: str = "unknown"
     content_split: ContentSplitRequest | None = None
     creativity_mode: CreativityMode = "proper"
+    turnstile_token: str | None = None
     profile: ProfileUpdate = ProfileUpdate()
     experiences: list[ExperienceCreate] = Field(default_factory=list)
     projects: list[ProjectCreate] = Field(default_factory=list)
