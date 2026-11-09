@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -132,3 +132,12 @@ async def test_overview_queries_count_live_site_people_only(monkeypatch):
     assert "uniq(person_id)" in funnel
     assert "distinct_id" not in funnel.split("FROM")[0]
     assert any(":id" in q for q in queries), "per-record page URLs should be collapsed"
+
+
+def test_ended_usage_window_reads_as_unused():
+    now = datetime.now(timezone.utc)
+    assert admin._active_usage(7, now - timedelta(minutes=1)) == (0, None)
+    assert admin._active_usage(None, None) == (0, None)
+    live = now + timedelta(hours=3)
+    assert admin._active_usage(3, live) == (3, live)
+    assert admin._active_usage(2, live.replace(tzinfo=None)) == (2, live.replace(tzinfo=None))

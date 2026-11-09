@@ -23,6 +23,7 @@ function TierPill({ user }: { user: UserItem }) {
 }
 
 function UsageEditor({ user, actions }: { user: UserItem; actions: UserActions }) {
+  if (user.is_admin) return <span className="font-mono text-zinc-500" title="Admins skip the daily cap">No cap</span>
   if (actions.editingId !== user.id) return <span className="font-mono">{user.request_count} builds</span>
   return (
     <div className="flex flex-wrap items-center gap-2">

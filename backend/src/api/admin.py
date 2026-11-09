@@ -978,6 +978,14 @@ async def retry_generation(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return {"status": "success", "message": "Pipeline restarted successfully"}
 
 
+def _active_usage(count: int | None, reset_at: datetime | None) -> tuple[int, datetime | None]:
+    """Builds used in the current 24h window. The stored row is only reset by the next build,
+    so a window that has already ended still holds its old count; report that as unused."""
+    if reset_at is None or _as_utc(reset_at) <= datetime.now(timezone.utc):
+        return 0, None
+    return count or 0, reset_at
+
+
 @router.get("/users", dependencies=[Depends(get_current_admin)])
 async def list_users(
     limit: int = 50,
@@ -998,8 +1006,7 @@ async def list_users(
     output = []
     for row in result.all():
         u = row[0]
-        req_count = row[1] or 0
-        reset_at = row[2]
+        req_count, reset_at = _active_usage(row[1], row[2])
         override_result = await db.execute(
             select(UserCreditOverride).where(UserCreditOverride.user_id == u.id)
         )
@@ -1048,10 +1055,11 @@ async def get_user_credits(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     monthly_result = await db.execute(
         select(func.count(Generation.id)).where(Generation.user_id == id, Generation.created_at >= month_start)
     )
+    request_count, reset_at = _active_usage(limit.request_count, limit.reset_at) if limit else (0, None)
     return {
         "user_id": id,
-        "request_count": limit.request_count if limit else 0,
-        "reset_at": limit.reset_at if limit else None,
+        "request_count": request_count,
+        "reset_at": reset_at,
         "daily_cap": override.daily_cap if override and override.daily_cap is not None else settings.DEFAULT_DAILY_CAP,
         "monthly_cap": override.monthly_cap if override and override.monthly_cap is not None else settings.DEFAULT_MONTHLY_CAP,
         "monthly_count": monthly_result.scalar() or 0,
@@ -1105,6 +1113,9 @@ async def update_user_rate_limit(
         db.add(limit)
     else:
         limit.request_count = data.request_count
+        # Setting usage on an ended window would be wiped by the next build, so start a new one.
+        if _as_utc(limit.reset_at) <= datetime.now(timezone.utc):
+            limit.reset_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
     await db.commit()
     return {"status": "success", "message": f"User {id} rate limit updated to {data.request_count}"}
