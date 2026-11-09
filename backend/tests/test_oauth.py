@@ -48,6 +48,15 @@ async def client(async_db: AsyncSession):
     app.dependency_overrides.clear()
 
 
+async def _signed_token_for(async_db: AsyncSession, email: str) -> str:
+    """Create a user and return a backend JWT for it (what the frontend bridge sends)."""
+    from jose import jwt
+
+    async_db.add(User(id=uuid.uuid4(), email=email, name=email.split("@")[0].capitalize()))
+    await async_db.commit()
+    return jwt.encode({"email": email}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
 # ── PKCE Unit Tests ──────────────────────────────────────────────────────────
 
 def test_pkce_verification():
@@ -155,7 +164,7 @@ async def test_oauth_authorize_get_login_page(client: AsyncClient):
 # ── Full OAuth 2.1 PKCE Flow ─────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_full_oauth_pkce_flow(client: AsyncClient):
+async def test_full_oauth_pkce_flow(client: AsyncClient, async_db: AsyncSession):
     # 1. Register client
     reg_res = await client.post("/oauth/register", json={
         "client_name": "Gemini Connected App",
@@ -176,7 +185,7 @@ async def test_full_oauth_pkce_flow(client: AsyncClient):
         "state": "random_csrf_state_123",
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
-        "email": "candidate@example.com",
+        "token": await _signed_token_for(async_db, "candidate@example.com"),
     }, follow_redirects=False)
 
     assert auth_res.status_code == 302
@@ -254,7 +263,7 @@ async def test_full_oauth_pkce_flow(client: AsyncClient):
     assert replay_new_res.status_code == 400
 
 @pytest.mark.asyncio
-async def test_token_exchange_json_payload(client: AsyncClient):
+async def test_token_exchange_json_payload(client: AsyncClient, async_db: AsyncSession):
     reg_res = await client.post("/oauth/register", json={
         "client_name": "JSON Client App",
         "redirect_uris": ["https://chatgpt.com/oauth/callback"],
@@ -272,7 +281,7 @@ async def test_token_exchange_json_payload(client: AsyncClient):
         "state": "json_state",
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
-        "email": "json_user@example.com",
+        "token": await _signed_token_for(async_db, "json_user@example.com"),
     }, follow_redirects=False)
     assert auth_res.status_code == 302
 
