@@ -3,6 +3,22 @@ import type { GuestDraft, GuestExperience, GuestProject } from "@/lib/guest-type
 const STORAGE_KEY = "resumer_guest_draft_v1"
 const GENERATE_STORAGE_KEY = "resumer_guest_generate_v1"
 
+// Browsers that block all cookies also throw on any localStorage access.
+function readStorage(key: string): string | null {
+  if (typeof window === "undefined") return null
+  try { return window.localStorage.getItem(key) } catch { return null }
+}
+
+function writeStorage(key: string, value: string | null) {
+  if (typeof window === "undefined") return
+  try {
+    if (value === null) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, value)
+  } catch {
+    // Storage unavailable (blocked or full). Keep working in memory.
+  }
+}
+
 export const emptyGuestDraft = (): GuestDraft => ({
   profile: {},
   experiences: [],
@@ -13,8 +29,7 @@ export const emptyGuestDraft = (): GuestDraft => ({
 })
 
 export function loadGuestDraft(): GuestDraft {
-  if (typeof window === "undefined") return emptyGuestDraft()
-  const raw = window.localStorage.getItem(STORAGE_KEY)
+  const raw = readStorage(STORAGE_KEY)
   if (!raw) return emptyGuestDraft()
   try {
     return { ...emptyGuestDraft(), ...JSON.parse(raw) }
@@ -24,13 +39,11 @@ export function loadGuestDraft(): GuestDraft {
 }
 
 export function saveGuestDraft(draft: GuestDraft) {
-  if (typeof window === "undefined") return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...draft, updatedAt: new Date().toISOString() }))
+  writeStorage(STORAGE_KEY, JSON.stringify({ ...draft, updatedAt: new Date().toISOString() }))
 }
 
 export function clearGuestDraft() {
-  if (typeof window === "undefined") return
-  window.localStorage.removeItem(STORAGE_KEY)
+  writeStorage(STORAGE_KEY, null)
 }
 
 export type GuestGenerateForm = {
@@ -50,8 +63,7 @@ export const emptyGuestGenerate = (): GuestGenerateForm => ({
 })
 
 export function loadGuestGenerate(): GuestGenerateForm {
-  if (typeof window === "undefined") return emptyGuestGenerate()
-  const raw = window.localStorage.getItem(GENERATE_STORAGE_KEY)
+  const raw = readStorage(GENERATE_STORAGE_KEY)
   if (!raw) return emptyGuestGenerate()
   try {
     return { ...emptyGuestGenerate(), ...JSON.parse(raw) }
@@ -61,8 +73,7 @@ export function loadGuestGenerate(): GuestGenerateForm {
 }
 
 export function saveGuestGenerate(form: GuestGenerateForm) {
-  if (typeof window === "undefined") return
-  window.localStorage.setItem(GENERATE_STORAGE_KEY, JSON.stringify(form))
+  writeStorage(GENERATE_STORAGE_KEY, JSON.stringify(form))
 }
 
 function hasText(value: string | null | undefined): boolean {

@@ -981,7 +981,7 @@ export function TryClient() {
 
           {/* Sticky generate bar - always visible */}
           <div className="shrink-0 border-t border-line bg-paper px-5 py-3">
-            {cookiesBlocked && (
+            {cookiesBlocked && active !== "generate" && (
               <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
                 <div className="flex items-start gap-2 text-xs text-amber-800">
                   <AlertCircle size={13} className="mt-0.5 shrink-0" />
@@ -994,12 +994,12 @@ export function TryClient() {
                 type="button"
                 size="lg"
                 className="flex-1"
-                onClick={canGenerate ? submit : () => { setActive("generate"); }}
+                onClick={canGenerate || active === "generate" ? submit : () => { setActive("generate"); }}
                 disabled={submitting}
               >
                 {submitting
                   ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
-                  : canGenerate
+                  : canGenerate || active === "generate"
                     ? "Generate free résumé"
                     : "Go to Generate"
                 }
