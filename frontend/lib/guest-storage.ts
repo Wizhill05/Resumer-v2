@@ -1,6 +1,23 @@
-import type { GuestDraft } from "@/lib/guest-types"
+import type { GuestDraft, GuestExperience, GuestProject } from "@/lib/guest-types"
 
 const STORAGE_KEY = "resumer_guest_draft_v1"
+const GENERATE_STORAGE_KEY = "resumer_guest_generate_v1"
+
+// Browsers that block all cookies also throw on any localStorage access.
+function readStorage(key: string): string | null {
+  if (typeof window === "undefined") return null
+  try { return window.localStorage.getItem(key) } catch { return null }
+}
+
+function writeStorage(key: string, value: string | null) {
+  if (typeof window === "undefined") return
+  try {
+    if (value === null) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, value)
+  } catch {
+    // Storage unavailable (blocked or full). Keep working in memory.
+  }
+}
 
 export const emptyGuestDraft = (): GuestDraft => ({
   profile: {},
@@ -12,8 +29,7 @@ export const emptyGuestDraft = (): GuestDraft => ({
 })
 
 export function loadGuestDraft(): GuestDraft {
-  if (typeof window === "undefined") return emptyGuestDraft()
-  const raw = window.localStorage.getItem(STORAGE_KEY)
+  const raw = readStorage(STORAGE_KEY)
   if (!raw) return emptyGuestDraft()
   try {
     return { ...emptyGuestDraft(), ...JSON.parse(raw) }
@@ -23,13 +39,96 @@ export function loadGuestDraft(): GuestDraft {
 }
 
 export function saveGuestDraft(draft: GuestDraft) {
-  if (typeof window === "undefined") return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...draft, updatedAt: new Date().toISOString() }))
+  writeStorage(STORAGE_KEY, JSON.stringify({ ...draft, updatedAt: new Date().toISOString() }))
 }
 
 export function clearGuestDraft() {
-  if (typeof window === "undefined") return
-  window.localStorage.removeItem(STORAGE_KEY)
+  writeStorage(STORAGE_KEY, null)
+}
+
+export type GuestGenerateForm = {
+  jobDescription: string
+  keywords: string
+  instructions: string
+  focus: string
+  creativityMode: string
+}
+
+export const emptyGuestGenerate = (): GuestGenerateForm => ({
+  jobDescription: "",
+  keywords: "",
+  instructions: "",
+  focus: "balanced",
+  creativityMode: "proper",
+})
+
+export function loadGuestGenerate(): GuestGenerateForm {
+  const raw = readStorage(GENERATE_STORAGE_KEY)
+  if (!raw) return emptyGuestGenerate()
+  try {
+    return { ...emptyGuestGenerate(), ...JSON.parse(raw) }
+  } catch {
+    return emptyGuestGenerate()
+  }
+}
+
+export function saveGuestGenerate(form: GuestGenerateForm) {
+  writeStorage(GENERATE_STORAGE_KEY, JSON.stringify(form))
+}
+
+function hasText(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.trim() !== ""
+}
+
+function hasNonBlankItem(values: string[] | null | undefined): boolean {
+  return Array.isArray(values) && values.some((v) => typeof v === "string" && v.trim() !== "")
+}
+
+export function experienceUsable(exp: GuestExperience): boolean {
+  return (
+    hasText(exp.role) &&
+    hasText(exp.organization) &&
+    hasNonBlankItem(exp.bullet_points ?? null)
+  )
+}
+
+export function projectUsable(proj: GuestProject): boolean {
+  return hasText(proj.name) && (hasText(proj.description ?? null) || hasNonBlankItem(proj.bullet_points ?? null))
+}
+
+export function usableExperiences(experiences: GuestExperience[]): GuestExperience[] {
+  return experiences.filter(experienceUsable)
+}
+
+export function usableProjects(projects: GuestProject[]): GuestProject[] {
+  return projects.filter(projectUsable)
+}
+
+export function incompleteExperienceMessages(experiences: GuestExperience[]): string[] {
+  const messages: string[] = []
+  experiences.forEach((exp, i) => {
+    if (experienceUsable(exp)) return
+    const missing: string[] = []
+    if (!hasText(exp.role)) missing.push("a role")
+    if (!hasText(exp.organization)) missing.push("an organization")
+    if (!hasNonBlankItem(exp.bullet_points ?? null)) missing.push("a bullet point")
+    messages.push(`Experience ${i + 1} needs ${missing.join(" and ")}`)
+  })
+  return messages
+}
+
+export function incompleteProjectMessages(projects: GuestProject[]): string[] {
+  const messages: string[] = []
+  projects.forEach((proj, i) => {
+    if (projectUsable(proj)) return
+    const missing: string[] = []
+    if (!hasText(proj.name)) missing.push("a name")
+    if (!hasText(proj.description ?? null) && !hasNonBlankItem(proj.bullet_points ?? null)) {
+      missing.push("a description or bullet")
+    }
+    messages.push(`Project ${i + 1} needs ${missing.join(" and ")}`)
+  })
+  return messages
 }
 
 function norm(s: string): string {

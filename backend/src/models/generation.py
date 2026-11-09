@@ -78,14 +78,6 @@ class UserRateLimit(Base):
     reset_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class GuestRateLimit(Base):
-    __tablename__ = "guest_rate_limits"
-
-    token_hash: Mapped[str] = mapped_column(String, primary_key=True)
-    request_count: Mapped[int] = mapped_column(Integer, default=0)
-    reset_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
 class SupportRateLimit(Base):
     __tablename__ = "support_rate_limits"
 

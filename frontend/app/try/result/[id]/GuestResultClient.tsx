@@ -3,7 +3,6 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { LoginModal } from "@/components/LoginModal"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { captureDownload } from "@/lib/posthog"
@@ -14,6 +13,7 @@ type GuestRun = {
   job_title?: string | null
   company?: string | null
   error_message?: string | null
+  expires_at?: string | null
 }
 
 const nodeProgressMap: Record<string, number> = {
@@ -49,6 +49,7 @@ export function GuestResultClient({ id }: { id: string }) {
   const [percent, setPercent] = useState(10)
   const [stepLabel, setStepLabel] = useState("Starting")
   const [error, setError] = useState<string | null>(null)
+  const [notFound, setNotFound] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -57,7 +58,18 @@ export function GuestResultClient({ id }: { id: string }) {
       try {
         const res = await fetch(`/api/guest/generate/${id}`)
         const body = await res.json()
-        if (!res.ok) throw new Error(body.detail || body.error || "Failed to load generation")
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 404) {
+            if (active) {
+              setNotFound(true)
+              setError("We couldn't find this résumé. It may have expired, or it was made in a different browser.")
+            }
+            return
+          }
+          const detail = body?.detail
+          const message = typeof detail === "string" && detail ? detail : (body?.error || "Failed to load generation")
+          throw new Error(message)
+        }
         if (active) setRun(body)
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : "Failed to load generation")
@@ -90,9 +102,35 @@ export function GuestResultClient({ id }: { id: string }) {
   }, [id])
 
   const status = run?.status ?? "in_progress"
+  const expiresLabel = run?.expires_at
+    ? new Date(run.expires_at).toLocaleDateString([], { month: "short", day: "numeric" })
+    : null
+  const expiresValid = expiresLabel && !Number.isNaN(new Date(run?.expires_at ?? "").getTime()) ? expiresLabel : null
   return (
     <section className="py-10">
-      {error && <div className="mb-4 flex gap-2 border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-3 text-sm font-bold text-red-700 dark:text-red-400 rounded-md"><AlertCircle size={18} /> {error}</div>}
+      {error && !notFound && (
+        <div className="mb-4 space-y-2 border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-400 rounded-md">
+          <div className="flex gap-2">
+            <AlertCircle size={18} /> {error}
+          </div>
+        </div>
+      )}
+      {notFound ? (
+        <div className="panel-strong space-y-5 p-6 md:p-8">
+          <div>
+            <p className="text-xs font-bold text-[#ff4e26]">Guest generation</p>
+            <h1 className="mt-2 text-4xl font-bold leading-[0.92] tracking-[-0.045em] md:text-6xl dark:text-white">
+              Résumé not found.
+            </h1>
+            <p className="mt-3 text-sm font-bold text-ink-muted">
+              We could not find this résumé. It may have expired, or it was made in a different browser.
+            </p>
+          </div>
+          <Link href="/try" className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-paper px-5 text-sm font-bold text-ink shadow-soft rounded-md">
+            Back to try
+          </Link>
+        </div>
+      ) : (
       <div className="panel-strong space-y-5 p-6 md:p-8">
         <div>
           <p className="text-xs font-bold text-[#ff4e26]">Guest generation</p>
@@ -121,6 +159,7 @@ export function GuestResultClient({ id }: { id: string }) {
         {status === "failed" && (
           <div className="space-y-3">
             <p className="text-sm font-bold text-red-700 dark:text-red-400">{run?.error_message || "Pipeline failed. Try again with more complete details."}</p>
+            <p className="text-xs font-semibold text-ink-muted">Your inputs are saved and this run didn&apos;t use a credit.</p>
             <div className="flex flex-wrap gap-2">
               <ReportIssueButton
                 defaultCategory="generation"
@@ -146,7 +185,7 @@ export function GuestResultClient({ id }: { id: string }) {
               Your résumé is ready. Download it now.
             </p>
             <p className="mt-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-              Log in to save it to your account and access it anytime.
+              {expiresValid ? `Available until ${expiresValid}. Sign in to keep it.` : "Sign in to keep it."}
             </p>
           </div>
         )}
@@ -163,16 +202,23 @@ export function GuestResultClient({ id }: { id: string }) {
             >
               <CheckCircle2 size={18} className="mr-2" /> Download PDF
             </a>
-          ) : status === "failed" ? null : (
+          ) : status === "failed" ? (
+            <Link href="/try?tab=generate" className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-[#ff4e26] px-5 text-sm font-bold text-white shadow-soft rounded-md">
+              Try again
+            </Link>
+          ) : (
             <span className="inline-flex min-h-12 cursor-not-allowed items-center justify-center border border-line bg-ink/5 px-5 text-sm font-bold text-ink-faint rounded-md">
               <Loader2 className="mr-2 animate-spin" size={18} /> {stepLabel}…
             </span>
           )}
-          <Link href="/try" className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-paper px-5 text-sm font-bold text-ink shadow-soft rounded-md">Make another</Link>
+          {status !== "failed" && (
+            <Link href="/try?tab=generate" className="inline-flex min-h-12 items-center justify-center border border-line-strong bg-paper px-5 text-sm font-bold text-ink shadow-soft rounded-md">Make another</Link>
+          )}
           <LoginModal callbackUrl="/dashboard?importGuestDraft=1" triggerClassName="inline-flex min-h-12 items-center justify-center border border-line-strong bg-[#ff4e26] px-5 text-sm font-bold text-white shadow-soft rounded-md" />
         </div>
         <p className="text-xs font-bold text-ink-muted">Login saves history and keeps future résumés tied to your account.</p>
       </div>
+      )}
     </section>
   )
 }

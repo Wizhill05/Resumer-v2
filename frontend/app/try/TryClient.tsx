@@ -1,20 +1,25 @@
 "use client"
 
-import Link from "next/link"
 import { startTransition, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
   Loader2, Plus, Trash2, Upload, X, Pencil, FileText,
-  Briefcase, FolderGit2, GraduationCap, Award, User, Lock, Menu, Info,
+  Briefcase, FolderGit2, GraduationCap, Award, User, Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { emptyGuestDraft, loadGuestDraft, mergeGuestDraft, saveGuestDraft } from "@/lib/guest-storage"
+import { CookieNotice } from "@/components/try/CookieNotice"
+import {
+  emptyGuestDraft, incompleteExperienceMessages, incompleteProjectMessages,
+  loadGuestDraft, loadGuestGenerate, mergeGuestDraft, saveGuestDraft,
+  saveGuestGenerate, usableExperiences, usableProjects,
+} from "@/lib/guest-storage"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
+import { TurnstileHost, useTurnstile } from "@/components/TurnstileWidget"
 import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
 import type {
   GuestDraft, GuestEducation, GuestExperience,
@@ -25,8 +30,47 @@ import type {
 
 const splitLines = (v: string) => v.split("\n").map((l) => l.trim()).filter(Boolean)
 const splitCommas = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean)
-const hasConsent = () =>
-  typeof document !== "undefined" && document.cookie.includes("resumer_guest_consent=true")
+
+const COOKIE_BLOCKED_MESSAGE =
+  "Your browser is blocking cookies, so the free trial can't keep your résumé. Allow cookies for this site, or sign in."
+
+function detectCookiesBlocked(): boolean {
+  try {
+    if (typeof navigator !== "undefined" && navigator.cookieEnabled === false) return true
+    document.cookie = "resumer_cookie_probe=1; Path=/; SameSite=Lax; Max-Age=60"
+    const ok = document.cookie.includes("resumer_cookie_probe=1")
+    document.cookie = "resumer_cookie_probe=; Path=/; SameSite=Lax; Max-Age=0"
+    return !ok
+  } catch {
+    return true
+  }
+}
+
+function extractErrorMessage(body: unknown, fallback = "Failed to start generation"): string {
+  const b = body as { detail?: unknown; error?: unknown } | null
+  if (b && typeof b.detail === "string" && b.detail) return b.detail
+  if (b && Array.isArray(b.detail)) {
+    const msgs = (b.detail as unknown[])
+      .map((item) => {
+        if (typeof item === "string") return item
+        if (item && typeof item === "object" && "msg" in (item as Record<string, unknown>)) {
+          const msg = (item as Record<string, unknown>).msg
+          return typeof msg === "string" ? msg : null
+        }
+        return null
+      })
+      .filter(Boolean) as string[]
+    if (msgs.length) return msgs.join("; ")
+    return fallback
+  }
+  if (b && b.detail && typeof b.detail === "object") {
+    const detail = b.detail as Record<string, unknown>
+    if (typeof detail.message === "string" && detail.message) return detail.message
+    return fallback
+  }
+  if (b && typeof b.error === "string" && b.error) return b.error
+  return fallback
+}
 
 type Section = "profile" | "experience" | "projects" | "education" | "extracurriculars" | "generate"
 
@@ -39,28 +83,6 @@ const FOCUS_OPTIONS: { id: FocusMode; label: string; desc: string; projects: num
   { id: "proj_leaning",label: "Project Leaning",      desc: "3 projects + 2 experiences (Technical depth)", projects: 3, experience: 2 },
   { id: "extended",    label: "Extended Density",     desc: "3 projects + 3 experiences (Full density)", projects: 3, experience: 3 },
 ]
-
-// ── Consent Banner ────────────────────────────────────────────────────────────
-
-function ConsentBanner({ accepted, onAccept }: { accepted: boolean; onAccept: () => void }) {
-  if (accepted) return null
-  return (
-    <div className="flex shrink-0 items-start gap-3 border-b border-line bg-ember-tint/50 px-4 py-2.5 text-sm text-ink-soft">
-      <Info size={15} className="mt-0.5 shrink-0 text-ember" aria-hidden="true" />
-      <p className="flex-1 leading-snug text-xs">
-        We use an essential session cookie to enforce the 5/day limit and protect your downloads.
-        Your draft is saved on this device.{" "}
-        <Link href="/privacy" className="underline">Privacy</Link>
-      </p>
-      <div className="flex shrink-0 gap-2">
-        <Link href="/" className="text-xs font-semibold text-ink-soft hover:underline">Decline</Link>
-        <button onClick={onAccept} className="cursor-pointer rounded-md bg-ember px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90">
-          Accept
-        </button>
-      </div>
-    </div>
-  )
-}
 
 // ── Field helper ──────────────────────────────────────────────────────────────
 
@@ -163,7 +185,15 @@ function AddCard({ title, children }: { title: string; children: React.ReactNode
 
 // ── Section panels ────────────────────────────────────────────────────────────
 
-function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: (d: GuestDraft) => void }) {
+function ProfilePanel({
+  draft, updateDraft, needsTurnstile, getTurnstileToken, resetTurnstile,
+}: {
+  draft: GuestDraft
+  updateDraft: (d: GuestDraft) => void
+  needsTurnstile: boolean
+  getTurnstileToken: () => Promise<string>
+  resetTurnstile: () => void
+}) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [importStage, setImportStage] = useState<"idle" | "parsing" | "extracting" | "deduplicating">("idle")
   const [fileCount, setFileCount] = useState(0)
@@ -192,12 +222,22 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
 
   const importFiles = async (files: File[]) => {
     setImportErr(null); setImportMsg(null); setFileCount(files.length); setImportStage("parsing")
+    const turnstileToken = await getTurnstileToken()
+    if (needsTurnstile && !turnstileToken) {
+      setImportErr("The security check didn't finish. Complete the check at the bottom of the page and try again.")
+      setImportStage("idle")
+      return
+    }
     try {
       const fd = new FormData()
       files.forEach((f) => fd.append("files", f))
+      if (turnstileToken) fd.append("turnstile_token", turnstileToken)
       const startRes = await fetch("/api/guest/import/start", { method: "POST", body: fd })
-      const startBody = await startRes.json()
-      if (!startRes.ok) throw new Error(startBody.detail || startBody.error || "Failed to start import")
+      // Turnstile tokens are single use. Always request a fresh one for the
+      // next attempt, whether this one succeeded or failed.
+      if (needsTurnstile) resetTurnstile()
+      const startBody = await startRes.json().catch(() => null)
+      if (!startRes.ok) throw new Error(extractErrorMessage(startBody, "Failed to start import"))
 
       const jobId = startBody.job_id
       let jobStatus = "parsing"
@@ -207,8 +247,8 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
       while (jobStatus === "parsing" || jobStatus === "extracting" || jobStatus === "deduplicating") {
         await new Promise((resolve) => setTimeout(resolve, 1500))
         const statusRes = await fetch(`/api/guest/import/status/${jobId}`)
-        const statusBody = await statusRes.json()
-        if (!statusRes.ok) throw new Error(statusBody.detail || "Failed to check import status")
+        const statusBody = await statusRes.json().catch(() => null)
+        if (!statusRes.ok) throw new Error(extractErrorMessage(statusBody, "Failed to check import status"))
 
         jobStatus = statusBody.status
         jobResult = statusBody.result
@@ -233,6 +273,7 @@ function ProfilePanel({ draft, updateDraft }: { draft: GuestDraft; updateDraft: 
         setImportMsg(`Extracted ${added} item${added !== 1 ? "s" : ""}${skipped > 0 ? `, ${skipped} duplicate${skipped !== 1 ? "s" : ""} skipped` : ""}.`)
       }
     } catch (err) {
+      if (needsTurnstile) resetTurnstile()
       setImportErr(err instanceof Error ? err.message : "Import failed")
     } finally { setImportStage("idle") }
   }
@@ -652,7 +693,7 @@ function ExtracurricularsPanel({ draft, updateDraft }: { draft: GuestDraft; upda
 }
 
 function GeneratePanel({
-  draft, accepted, focus, setFocus,
+  draft, cookiesBlocked, focus, setFocus,
   jobDescription, setJobDescription,
   keywords, setKeywords,
   instructions, setInstructions,
@@ -660,7 +701,7 @@ function GeneratePanel({
   error, setError,
 }: {
   draft: GuestDraft
-  accepted: boolean
+  cookiesBlocked: boolean
   focus: FocusMode
   setFocus: (f: FocusMode) => void
   jobDescription: string
@@ -675,12 +716,25 @@ function GeneratePanel({
   setError: (e: string | null) => void
 }) {
   const activeFocus = FOCUS_OPTIONS.find((f) => f.id === focus)!
+  const usableExpCount = usableExperiences(draft.experiences).length
+  const usableProjCount = usableProjects(draft.projects).length
+  const incompleteExpMessages = incompleteExperienceMessages(draft.experiences)
+  const incompleteProjMessages = incompleteProjectMessages(draft.projects)
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold text-ink">Generate résumé</h2>
         <p className="mt-0.5 text-xs text-ink-muted">Choose a focus, paste the job post, and generate.</p>
       </div>
+
+      {cookiesBlocked && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2.5">
+          <div className="flex items-start gap-2 text-xs text-amber-800">
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />
+            <span className="flex-1 font-semibold">{COOKIE_BLOCKED_MESSAGE}</span>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="flex flex-col gap-2 rounded border border-red-200 bg-red-50 px-3 py-2.5">
@@ -708,7 +762,7 @@ function GeneratePanel({
         <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted">Content focus</p>
         <div className="divide-y divide-line">
           {FOCUS_OPTIONS.map((opt) => {
-            const locked = draft.experiences.length < opt.experience || draft.projects.length < opt.projects
+            const locked = usableExpCount < opt.experience || usableProjCount < opt.projects
             const selected = focus === opt.id
             return (
               <button
@@ -728,7 +782,7 @@ function GeneratePanel({
                 {locked && (
                   <span className="flex shrink-0 items-center gap-1 text-xs text-ink-faint">
                     <Lock size={11} />
-                    {`Need ${Math.max(0, opt.experience - draft.experiences.length)} exp · ${Math.max(0, opt.projects - draft.projects.length)} proj`}
+                    {`Need ${Math.max(0, opt.experience - usableExpCount)} exp · ${Math.max(0, opt.projects - usableProjCount)} proj`}
                   </span>
                 )}
               </button>
@@ -767,15 +821,26 @@ function GeneratePanel({
         <p className="font-semibold text-ink">Ready to generate?</p>
         {[
           { label: "Name", ok: !!draft.profile.full_name?.trim(), hint: "Add name in Profile" },
-          { label: `Experience (need ${activeFocus.experience})`, ok: draft.experiences.length >= activeFocus.experience, hint: `Add ${activeFocus.experience - draft.experiences.length} more` },
-          { label: `Projects (need ${activeFocus.projects})`, ok: draft.projects.length >= activeFocus.projects, hint: `Add ${activeFocus.projects - draft.projects.length} more` },
+          { label: `Experience (need ${activeFocus.experience})`, ok: usableExpCount >= activeFocus.experience, hint: `Add ${activeFocus.experience - usableExpCount} more` },
+          { label: `Projects (need ${activeFocus.projects})`, ok: usableProjCount >= activeFocus.projects, hint: `Add ${activeFocus.projects - usableProjCount} more` },
           { label: "Job description", ok: !!jobDescription.trim(), hint: "Paste above" },
-          { label: "Cookie consent", ok: accepted, hint: "Accept notice at top" },
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2">
             <span className={item.ok ? "text-emerald-500" : "text-red-400"}>{item.ok ? "✓" : "✗"}</span>
             <span className={item.ok ? "text-ink-muted" : "text-ink-muted"}>{item.label}</span>
             {!item.ok && <span className="text-ink-faint">({item.hint})</span>}
+          </div>
+        ))}
+        {incompleteExpMessages.map((message) => (
+          <div key={message} className="flex items-center gap-2">
+            <span className="text-amber-500">!</span>
+            <span className="text-ink-muted">{message}</span>
+          </div>
+        ))}
+        {incompleteProjMessages.map((message) => (
+          <div key={message} className="flex items-center gap-2">
+            <span className="text-amber-500">!</span>
+            <span className="text-ink-muted">{message}</span>
           </div>
         ))}
       </div>
@@ -787,9 +852,11 @@ function GeneratePanel({
 
 export function TryClient() {
   const router = useRouter()
+  const turnstile = useTurnstile({ size: "flexible", appearance: "interaction-only" })
 
   const [draft, setDraft] = useState<GuestDraft>(() => emptyGuestDraft())
-  const [accepted, setAccepted] = useState(false)
+  const [cookiesBlocked, setCookiesBlocked] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
   const [active, setActive] = useState<Section>("profile")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -798,38 +865,111 @@ export function TryClient() {
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
   const [creativityMode, setCreativityMode] = useState<CreativityMode>("proper")
+  const [quota, setQuota] = useState<{ limit: number; used: number; remaining: number; resets_at: string | null } | null>(null)
+
+  const fetchQuota = async () => {
+    try {
+      const res = await fetch("/api/guest/quota")
+      if (!res.ok) {
+        setQuota(null)
+        return
+      }
+      const body = await res.json()
+      setQuota(body)
+    } catch {
+      setQuota(null)
+    }
+  }
 
   useEffect(() => {
     startTransition(() => {
       setDraft(loadGuestDraft())
-      setAccepted(hasConsent())
+      const saved = loadGuestGenerate()
+      if (FOCUS_OPTIONS.some((option) => option.id === saved.focus)) {
+        setFocus(saved.focus as FocusMode)
+      }
+      if (
+        saved.creativityMode === "proper" ||
+        saved.creativityMode === "larp" ||
+        saved.creativityMode === "super_larp"
+      ) {
+        setCreativityMode(saved.creativityMode as CreativityMode)
+      }
+      setJobDescription(saved.jobDescription ?? "")
+      setKeywords(saved.keywords ?? "")
+      setInstructions(saved.instructions ?? "")
+      setCookiesBlocked(detectCookiesBlocked())
+      try {
+        const tab = new URLSearchParams(window.location.search).get("tab")
+        if (tab === "profile" || tab === "experience" || tab === "projects" || tab === "education" || tab === "extracurriculars" || tab === "generate") {
+          setActive(tab)
+        }
+      } catch {
+        // ignore
+      }
+      setHydrated(true)
     })
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/guest/quota")
+      .then((res) => {
+        if (!res.ok) return null
+        return res.json()
+      })
+      .then((body) => {
+        if (!cancelled && body) setQuota(body)
+      })
+      .catch(() => {
+        if (!cancelled) setQuota(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated) return
+    saveGuestGenerate({ jobDescription, keywords, instructions, focus, creativityMode })
+  }, [hydrated, jobDescription, keywords, instructions, focus, creativityMode])
+
   const updateDraft = (next: GuestDraft) => { setDraft(next); saveGuestDraft(next) }
 
-  const acceptCookies = () => {
-    document.cookie = "resumer_guest_consent=true; Max-Age=15552000; Path=/; SameSite=Lax"
-    setAccepted(true)
-  }
-
   const activeFocus = FOCUS_OPTIONS.find((f) => f.id === focus)!
+  const usableExpCount = usableExperiences(draft.experiences).length
+  const usableProjCount = usableProjects(draft.projects).length
 
   const canGenerate = (
-    accepted &&
     !!draft.profile.full_name?.trim() &&
     !!jobDescription.trim() &&
-    draft.experiences.length >= activeFocus.experience &&
-    draft.projects.length >= activeFocus.projects
+    usableExpCount >= activeFocus.experience &&
+    usableProjCount >= activeFocus.projects
   )
 
+  const formatResetTime = (iso: string | null | undefined) => {
+    if (!iso) return null
+    try {
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return null
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    } catch {
+      return null
+    }
+  }
+
   const submit = async () => {
-    if (!accepted) { setError("Accept the cookie notice at the top to continue."); setActive("generate"); return }
     if (!draft.profile.full_name?.trim()) { setError("Add your name in the Profile section."); setActive("profile"); return }
     if (!jobDescription.trim()) { setError("Paste a job description first."); setActive("generate"); return }
-    if (draft.experiences.length < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
-    if (draft.projects.length < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
+    if (usableExpCount < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
+    if (usableProjCount < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
     setError(null); setSubmitting(true)
+    const turnstileToken = await turnstile.getToken()
+    if (turnstile.needsTurnstile && !turnstileToken) {
+      setError("The security check didn't finish. Complete it above the Generate button and try again.")
+      setSubmitting(false)
+      return
+    }
     if (ANALYTICS_ENABLED) posthog.capture("resume_generation_requested", {
       is_guest: true,
       projects_count: activeFocus.projects,
@@ -849,13 +989,38 @@ export function TryClient() {
           content_split: { projects: activeFocus.projects, experience: activeFocus.experience },
           creativity_mode: creativityMode,
           ...draft,
+          ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
         }),
       })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.detail || body.error || "Failed to start generation")
-      router.push(`/try/result/${body.id}`)
+      // Turnstile tokens are single use. Always request a fresh one for the
+      // next attempt, whether this one succeeded or failed.
+      if (turnstile.needsTurnstile) turnstile.reset()
+      let body: unknown = null
+      try {
+        body = await res.json()
+      } catch {
+        body = null
+      }
+      if (!res.ok) {
+        const b = body as { detail?: unknown } | null
+        const detail = b?.detail as { code?: string; message?: string; resets_at?: string | null } | undefined
+        if (res.status === 429 && detail && typeof detail === "object" && detail.code === "guest_quota_exhausted") {
+          const msg = typeof detail.message === "string" && detail.message ? detail.message : "Daily limit reached."
+          const resetLabel = formatResetTime(detail.resets_at)
+          setError(resetLabel ? `${msg} Resets at ${resetLabel}.` : msg)
+          fetchQuota()
+        } else {
+          setError(extractErrorMessage(body))
+          fetchQuota()
+        }
+        return
+      }
+      const okBody = body as { id?: string }
+      router.push(`/try/result/${okBody.id}`)
     } catch (err) {
+      if (turnstile.needsTurnstile) turnstile.reset()
       setError(err instanceof Error ? err.message : "Failed to start generation")
+      fetchQuota()
     } finally { setSubmitting(false) }
   }
 
@@ -868,11 +1033,8 @@ export function TryClient() {
     { id: "generate",        icon: FileText,    label: "Generate" },
   ]
 
-  const activeNavItem = nav.find((item) => item.id === active)
-
   return (
     <div className="flex h-full flex-col relative bg-ink/[0.03]">
-      <ConsentBanner accepted={accepted} onAccept={acceptCookies} />
 
       {/* Mobile Top Tabs Header (hidden on desktop) */}
       <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-ink/5 border-b border-line md:hidden shrink-0">
@@ -929,14 +1091,14 @@ export function TryClient() {
         <div className="flex min-w-0 flex-1 flex-col bg-paper">
           {/* Scrollable content area */}
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} />}
+            {active === "profile"         && <ProfilePanel draft={draft} updateDraft={updateDraft} needsTurnstile={turnstile.needsTurnstile} getTurnstileToken={turnstile.getToken} resetTurnstile={turnstile.reset} />}
             {active === "experience"      && <ExperiencePanel draft={draft} updateDraft={updateDraft} />}
             {active === "projects"        && <ProjectsPanel draft={draft} updateDraft={updateDraft} />}
             {active === "education"       && <EducationPanel draft={draft} updateDraft={updateDraft} />}
             {active === "extracurriculars" && <ExtracurricularsPanel draft={draft} updateDraft={updateDraft} />}
             {active === "generate"        && (
               <GeneratePanel
-                draft={draft} accepted={accepted}
+                draft={draft} cookiesBlocked={cookiesBlocked}
                 focus={focus} setFocus={setFocus}
                 jobDescription={jobDescription} setJobDescription={setJobDescription}
                 keywords={keywords} setKeywords={setKeywords}
@@ -949,31 +1111,50 @@ export function TryClient() {
 
           {/* Sticky generate bar - always visible */}
           <div className="shrink-0 border-t border-line bg-paper px-5 py-3">
+            <TurnstileHost hostRef={turnstile.hostRef} needsTurnstile={turnstile.needsTurnstile} />
+            {cookiesBlocked && active !== "generate" && (
+              <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
+                <div className="flex items-start gap-2 text-xs text-amber-800">
+                  <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                  <span className="flex-1 font-semibold">{COOKIE_BLOCKED_MESSAGE}</span>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                size="lg"
-                className="flex-1"
-                onClick={active === "generate" ? submit : () => { setActive("generate"); }}
-                disabled={submitting}
-              >
-                {submitting
-                  ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
-                  : canGenerate
-                    ? "Generate Free Résumé"
-                    : active === "generate"
-                      ? "Generate Free Résumé"
-                      : "Go to Generate →"
-                }
-              </Button>
+              <div className="flex-1">
+                <Button
+                  type="button"
+                  size="lg"
+                  className="w-full"
+                  onClick={canGenerate || active === "generate" ? submit : () => { setActive("generate"); }}
+                  disabled={submitting || quota?.remaining === 0}
+                >
+                  {submitting
+                    ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
+                    : quota?.remaining === 0
+                      ? "Daily limit reached"
+                      : canGenerate || active === "generate"
+                        ? "Generate free résumé"
+                        : "Go to Generate"
+                  }
+                </Button>
+                {quota?.remaining === 0 && (
+                  <p className="mt-1 text-center text-xs text-ink-muted">
+                    {formatResetTime(quota.resets_at) ? `Resets at ${formatResetTime(quota.resets_at)}. Sign in to keep going.` : "Sign in to keep going."}
+                  </p>
+                )}
+              </div>
               <div className="shrink-0 text-right">
-                <p className="text-xs font-semibold text-ink">5 free / day</p>
+                <p className="text-xs font-semibold text-ink">
+                  {quota ? `${quota.remaining} of ${quota.limit} left today` : "5 free / day"}
+                </p>
                 <p className="text-[10px] text-ink-faint">No login needed</p>
               </div>
             </div>
           </div>
         </div>
       </div>
+      <CookieNotice />
     </div>
   )
 }

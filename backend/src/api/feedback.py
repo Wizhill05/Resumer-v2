@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 import uuid
 from datetime import datetime, timedelta, timezone
 import logging
@@ -8,16 +7,16 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import case, delete, func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import get_current_user, get_optional_user
+from src.core.client_ip import trusted_client_ip
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.internal_token import is_valid_internal_token
 from src.core.storage import StorageService
+from src.services.rate_limit import check_rate_limit, cleanup_expired_rate_limits, insert_for
 from src.models.generation import FeedbackRating, Generation, ReportAttachment, SupportPushSubscription, SupportRateLimit, SupportReport
 from src.models.user import User
 from src.services.support import (
@@ -99,16 +98,7 @@ async def get_support_user(request: Request, user: User | None = Depends(get_opt
 
 
 def _trusted_client_ip(request: Request) -> str | None:
-    auth = request.headers.get("Authorization")
-    internal = request.headers.get("X-Internal-Token")
-    internal_auth = f"Bearer {internal}" if internal else None
-    if not (is_valid_internal_token(auth) or is_valid_internal_token(internal_auth)):
-        return None
-    client_ip = request.headers.get("X-Client-IP")
-    if not client_ip:
-        return None
-    cleaned = client_ip.split(",")[0].strip()
-    return cleaned or None
+    return trusted_client_ip(request)
 
 
 def _aware(dt: datetime) -> datetime:
@@ -121,11 +111,7 @@ _untrusted_ip_logged = False
 
 
 def _insert_for(db: AsyncSession):
-    try:
-        dialect_name = db.get_bind().dialect.name
-    except Exception:
-        dialect_name = getattr(getattr(getattr(db, "bind", None), "dialect", None), "name", "postgresql")
-    return sqlite_insert if dialect_name == "sqlite" else pg_insert
+    return insert_for(db)
 
 
 # Fraction of limiter calls that also prune long-expired buckets.
@@ -133,46 +119,11 @@ _RATE_LIMIT_CLEANUP_PROBABILITY = 0.01
 
 
 async def _cleanup_expired_rate_limits(db: AsyncSession, now: datetime) -> None:
-    try:
-        await db.execute(delete(SupportRateLimit).where(SupportRateLimit.reset_at < now - timedelta(days=1)))
-        await db.commit()
-    except Exception:
-        logger.warning("Support rate limit cleanup failed", exc_info=True)
-        try:
-            await db.rollback()
-        except Exception:
-            pass
+    await cleanup_expired_rate_limits(db, now)
 
 
 async def _check_support_rate_limit(db: AsyncSession, key: str, limit: int, friendly: str) -> None:
-    now = datetime.now(timezone.utc)
-    reset_at = now + timedelta(hours=1)
-    insert_fn = _insert_for(db)
-    stmt = (
-        insert_fn(SupportRateLimit)
-        .values(key=key, request_count=1, reset_at=reset_at)
-        .on_conflict_do_update(
-            index_elements=[SupportRateLimit.key],
-            set_={
-                "request_count": case(
-                    (SupportRateLimit.reset_at <= now, 1),
-                    else_=SupportRateLimit.request_count + 1,
-                ),
-                "reset_at": case(
-                    (SupportRateLimit.reset_at <= now, reset_at),
-                    else_=SupportRateLimit.reset_at,
-                ),
-            },
-        )
-        .returning(SupportRateLimit.request_count, SupportRateLimit.reset_at)
-    )
-    result = await db.execute(stmt)
-    count, _reset = result.one()
-    await db.commit()
-    if random.random() < _RATE_LIMIT_CLEANUP_PROBABILITY:
-        await _cleanup_expired_rate_limits(db, now)
-    if count > limit:
-        raise HTTPException(429, friendly)
+    await check_rate_limit(db, key, limit, timedelta(hours=1), friendly, cleanup_probability=_RATE_LIMIT_CLEANUP_PROBABILITY)
 
 
 async def _rate_limit_ip_only(db: AsyncSession, current_user: User | None, client_ip: str | None, *, is_ticket: bool) -> None:
