@@ -282,10 +282,9 @@ async def test_token_exchange_requires_matching_redirect_uri(client: AsyncClient
     client_id, code = await _issue_code(client, async_db)
     base = {"grant_type": "authorization_code", "code": code, "code_verifier": VERIFIER, "client_id": client_id}
 
-    for bad in ({"redirect_uri": EVIL}, {}):
-        res = await client.post("/oauth/token", data={**base, **bad})
-        assert res.status_code == 400
-        assert "redirect_uri" in res.json()["detail"]
+    res = await client.post("/oauth/token", data={**base, "redirect_uri": EVIL})
+    assert res.status_code == 400
+    assert "redirect_uri" in res.json()["detail"]
 
     # The code is still usable by the legitimate client afterwards.
     ok = await client.post("/oauth/token", data={**base, "redirect_uri": GOOD})
@@ -321,3 +320,27 @@ async def test_token_exchange_rejects_other_client_id(client: AsyncClient, async
         },
     )
     assert res.status_code == 400
+
+
+async def test_token_exchange_allows_omitted_redirect_uri(client: AsyncClient, async_db: AsyncSession):
+    client_id, code = await _issue_code(client, async_db)
+    res = await client.post(
+        "/oauth/token",
+        data={"grant_type": "authorization_code", "code": code, "code_verifier": VERIFIER, "client_id": client_id},
+    )
+    assert res.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "uri,ok",
+    [
+        ("https://chatgpt.com/aip/g-abc123XYZ/oauth/callback", True),
+        ("https://chat.openai.com/aip/g-abc123/oauth/callback", True),
+        ("https://chatgpt.com/aip/g-abc/oauth/callback?x=1", False),
+        ("https://chatgpt.com.evil.example/aip/g-abc/oauth/callback", False),
+        ("https://chatgpt.com/aip/g-abc/../../evil/oauth/callback", False),
+    ],
+)
+async def test_gpt_action_callback_pattern(client: AsyncClient, async_db: AsyncSession, uri: str, ok: bool):
+    res = await client.get("/oauth/authorize", params=_get_params("gpt-action-client", uri), follow_redirects=False)
+    assert (res.status_code != 400) == ok

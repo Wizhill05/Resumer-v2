@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -43,6 +44,14 @@ ALLOWED_CONNECTOR_REDIRECT_URIS: tuple[str, ...] = (
     "https://claude.com/api/mcp/auth_callback",
 )
 
+# ChatGPT GPT Actions use a per-GPT callback: https://chatgpt.com/aip/g-<id>/oauth/callback
+_GPT_ACTION_CALLBACK_RE = re.compile(r"^https://(?:chat\.openai\.com|chatgpt\.com)/aip/g-[A-Za-z0-9]+/oauth/callback$")
+
+
+def _is_connector_callback(redirect_uri: str) -> bool:
+    return redirect_uri in ALLOWED_CONNECTOR_REDIRECT_URIS or bool(_GPT_ACTION_CALLBACK_RE.fullmatch(redirect_uri))
+
+
 DEFAULT_CLIENT_SCOPE = "profile:read profile:write resume:generate resume:edit offline_access"
 
 
@@ -57,12 +66,15 @@ async def _resolve_client(
     result = await db.execute(select(OAuthClient).where(OAuthClient.client_id == client_id))
     client = result.scalar_one_or_none()
     if client is None:
-        if redirect_uri not in ALLOWED_CONNECTOR_REDIRECT_URIS:
+        if not _is_connector_callback(redirect_uri):
             raise _bad_request("Unknown client_id or unregistered redirect_uri")
+        uris = list(ALLOWED_CONNECTOR_REDIRECT_URIS)
+        if redirect_uri not in uris:
+            uris.append(redirect_uri)
         client = OAuthClient(
             client_id=client_id,
             client_name=f"{client_id.capitalize()} Connector",
-            redirect_uris=list(ALLOWED_CONNECTOR_REDIRECT_URIS),
+            redirect_uris=uris,
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             scope=scope or DEFAULT_CLIENT_SCOPE,
@@ -73,7 +85,12 @@ async def _resolve_client(
         await db.refresh(client)
         return client
     if redirect_uri not in (client.redirect_uris or []):
-        raise _bad_request("Mismatching redirect_uri")
+        if not _is_connector_callback(redirect_uri):
+            raise _bad_request("Mismatching redirect_uri")
+        # A known connector callback (exact URL or strict GPT Action pattern) can only
+        # deliver codes to OpenAI/Google/Anthropic, so remembering it is safe.
+        client.redirect_uris = list(client.redirect_uris or []) + [redirect_uri]
+        await db.commit()
     return client
 
 
@@ -497,7 +514,8 @@ async def oauth_token(
         # Bind the code to the client and redirect_uri it was issued for (RFC 6749 4.1.3)
         if client_id and client_id != auth_code_obj.client_id:
             raise HTTPException(status_code=400, detail="client_id does not match the authorization code.")
-        if not redirect_uri or redirect_uri != auth_code_obj.redirect_uri:
+        # OAuth 2.1 clients may omit redirect_uri here (PKCE binds the code); if sent, it must match.
+        if redirect_uri and redirect_uri != auth_code_obj.redirect_uri:
             raise HTTPException(status_code=400, detail="redirect_uri does not match the authorization request.")
 
         # Verify PKCE
