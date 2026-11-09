@@ -114,12 +114,12 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
           </p>
         </section>
 
-        {/* Small print at the very end of the page — what "agent" means here. */}
+        {/* Small print at the very end of the page - what "agent" means here. */}
         <section aria-labelledby="agent-meaning-heading" className="border-t border-zinc-200 py-8 dark:border-zinc-800">
           <h2 id="agent-meaning-heading" className="text-sm font-bold">What “agent” means here</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-            A desktop coding agent you run locally — Claude Code, Codex,
-            Antigravity, OpenCode, Pi agent. Not the ChatGPT web app or chat
+            A desktop coding agent you run locally (Claude Code, Codex,
+            Antigravity, OpenCode, Pi agent). Not the ChatGPT web app or chat
             interface, nor the Gemini chat interface. Chat interfaces are also
             supported: just paste the prompt and the agent walks you through
             the whole setup, step by step.

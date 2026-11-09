@@ -2,12 +2,12 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ChevronDown, ExternalLink, FileText, Sparkles } from "lucide-react"
+import { ChevronDown, ExternalLink, FileText, Plug } from "lucide-react"
 
 const FAQS: { q: string; a: string }[] = [
   {
     q: "Generation failed",
-    a: "Check you have enough projects/experiences for the split. Retry once, then use the Report button on the failed card — it includes the run ID.",
+    a: "Check you have enough projects/experiences for the split. Retry once, then use the Report button on the failed card. It includes the run ID.",
   },
   {
     q: "PDF too cramped",
@@ -62,7 +62,7 @@ export function SupportFaq() {
             className="flex items-center justify-between border border-line bg-ink/[0.03] px-3 py-2.5 text-xs font-bold hover:border-ink/40 dark:hover:border-ember/50 transition-colors rounded-md"
           >
             <span className="flex items-center gap-2">
-              <Sparkles size={14} /> Connect an agent
+              <Plug size={14} /> Connect an agent
             </span>
             <span className="text-[10px] text-ink-faint">→</span>
           </Link>

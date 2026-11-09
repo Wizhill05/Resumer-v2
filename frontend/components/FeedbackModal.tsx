@@ -155,7 +155,7 @@ export function FeedbackModal({ generationId, onClose }: FeedbackModalProps) {
                       size={36}
                       className={
                         active
-                          ? "fill-ember text-ember drop-shadow-[0_4px_10px_rgb(255_78_38/40%)]"
+                          ? "fill-ember text-ember"
                           : "text-ink-faint"
                       }
                     />

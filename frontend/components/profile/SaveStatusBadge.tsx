@@ -28,7 +28,7 @@ export function SaveStatusBadge({ status, onSaveNow, errorMessage, className = "
   if (status === "saved") {
     return (
       <span role="status" aria-live="polite" className={`${base} text-ink-soft ${className}`}>
-        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-b from-[#ff6a45] to-[#ff4e26] text-white shadow-[0_2px_6px_-1px_rgb(255_78_38/60%)]">
+        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-b from-[#ff6a45] to-[#ff4e26] text-white">
           <Check size={10} strokeWidth={3.5} aria-hidden="true" />
         </span>
         All changes saved

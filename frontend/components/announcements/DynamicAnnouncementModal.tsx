@@ -83,7 +83,7 @@ export function DynamicAnnouncementModal() {
               System Notice
             </span>
             <span className="hidden sm:inline-block text-xs font-bold opacity-90">
-              — {CURRENT_ANNOUNCEMENT.title}
+              · {CURRENT_ANNOUNCEMENT.title}
             </span>
           </div>
 
@@ -131,7 +131,7 @@ export function DynamicAnnouncementModal() {
               className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
                 isLocked
                   ? "cursor-not-allowed bg-ink/10 text-ink-muted"
-                  : "cursor-pointer bg-ember text-white hover:bg-[#e03d16] shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)]"
+                  : "cursor-pointer bg-ember text-white hover:bg-[#e03d16] shadow-[0_1px_2px_rgb(35_10_4/14%)]"
               }`}
             >
               {isLocked ? `Wait ${secondsRemaining}s` : "Got it"}

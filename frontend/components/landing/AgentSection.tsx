@@ -28,7 +28,7 @@ export function AgentSection() {
         </div>
         <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-[var(--fluid-ink-soft)] sm:text-base dark:text-zinc-300">
           Paste one prompt into your local coding agent. It connects to
-          RéSUMER, checks your profile, and guides you through the rest —
+          RéSUMER, checks your profile, and guides you through the rest,
           tailored to each tool. Then give it a job description and it
           generates your ATS-safe résumé PDF.
         </p>

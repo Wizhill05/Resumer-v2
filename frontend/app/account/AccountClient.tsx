@@ -74,12 +74,12 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
                 width={72}
                 height={72}
                 referrerPolicy="no-referrer"
-                className="h-14 w-14 shrink-0 rounded-full border-[3px] border-paper object-cover shadow-[0_10px_24px_-8px_rgb(255_78_38/45%)] md:h-[4.5rem] md:w-[4.5rem]"
+                className="h-14 w-14 shrink-0 rounded-full border-[3px] border-paper object-cover shadow-soft md:h-[4.5rem] md:w-[4.5rem]"
               />
             ) : (
               <span
                 aria-hidden="true"
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-[3px] border-paper bg-gradient-to-br from-[#ff7d5c] to-[#ff4e26] text-lg font-bold tracking-normal text-white shadow-[0_10px_24px_-8px_rgb(255_78_38/55%)] md:h-[4.5rem] md:w-[4.5rem] md:text-2xl"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-[3px] border-paper bg-gradient-to-br from-[#ff7d5c] to-[#ff4e26] text-lg font-bold tracking-normal text-white shadow-soft md:h-[4.5rem] md:w-[4.5rem] md:text-2xl"
               >
                 {initials(name, email)}
               </span>
@@ -147,7 +147,7 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
             </dl>
             <p className="mt-4 text-xs text-ink-muted">
               {isAdmin
-                ? "Admin account — daily and monthly caps bypassed."
+                ? "Admin account: daily and monthly caps bypassed."
                 : `${DAILY_GENERATION_CAP} free generations per rolling 24 hours.`}
             </p>
           </section>

@@ -124,7 +124,7 @@ export function SectionOrderList({ items, onChange, onHoverSection, disabled = f
               role="listitem" data-section-id={id}
               onMouseEnter={() => onHoverSection?.(id)} onMouseLeave={() => onHoverSection?.(null)}
               style={{ transform: `translateY(${translate}px)`, zIndex: active ? 20 : 0, transition: drag?.id === id ? "none" : undefined }}
-              className={`relative touch-pan-y flex min-h-[72px] items-center gap-2 rounded-lg border bg-paper px-2.5 py-3 motion-safe:transition-transform motion-safe:duration-200 ${active ? "border-[#ff4e26] shadow-lg ring-2 ring-[#ff4e26]/15" : "border-line"}`}
+              className={`relative touch-pan-y flex min-h-[72px] items-center gap-2 rounded-lg border bg-paper px-2.5 py-3 motion-safe:transition-transform motion-safe:duration-200 ${active ? "border-[#ff4e26] shadow-soft" : "border-line"}`}
             >
               <button type="button" data-drag-handle aria-label={`Reorder ${SECTION_METADATA[id].label}, position ${index + 1} of ${items.length}`}
                 aria-describedby="reorder-instructions" disabled={disabled}

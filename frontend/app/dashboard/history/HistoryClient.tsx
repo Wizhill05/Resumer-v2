@@ -105,7 +105,7 @@ function useLiveProgress(runId: string, enabled: boolean, onDone: () => void, in
           onDoneRef.current()
         }
       } catch {
-        // transient network error — retry next tick
+        // transient network error - retry next tick
       }
     }
 
@@ -502,7 +502,7 @@ function FullscreenResumeOverlay({
           </button>
           <button
             onClick={download}
-            className="flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)]"
+            className="flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-semibold bg-ember hover:bg-[#e03d16] text-white transition-colors cursor-pointer shadow-[0_1px_2px_rgb(35_10_4/14%)]"
             aria-label="Download PDF"
           >
             <Download size={13} />
@@ -639,7 +639,7 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
         </p>
         {failed && (
           <div className="mt-2 pl-3.5">
-            <p className="text-[11px] font-medium text-red-500 dark:text-red-400">Generation failed — tap Report to send logs-backed feedback.</p>
+            <p className="text-[11px] font-medium text-red-500 dark:text-red-400">Generation failed. Tap Report to send logs-backed feedback.</p>
           </div>
         )}
       </div>
@@ -774,7 +774,7 @@ export function HistoryClient() {
             : `${total} ${total === 1 ? "generation" : "generations"}`}
         </span>
         <div className="flex items-center gap-2">
-          {/* View toggle — desktop only */}
+          {/* View toggle - desktop only */}
           <div className="hidden md:flex items-center gap-0.5 rounded-md border border-line bg-ink/[0.04] p-0.5">
             <button
               onClick={() => setView("list")}
@@ -825,7 +825,7 @@ export function HistoryClient() {
                 setSearchQuery("")
               }
             }}
-            className="h-10 w-full rounded-md border border-line-strong bg-paper pl-9 pr-9 text-sm text-ink placeholder:text-ink-faint transition-[border-color,box-shadow] focus:border-ember focus:outline-none focus:ring-3 focus:ring-ember/15"
+            className="h-10 w-full rounded-md border border-line-strong bg-paper pl-9 pr-9 text-sm text-ink placeholder:text-ink-faint transition-[border-color] focus:border-ember focus:outline-none"
           />
           {searchQuery && (
             <button

@@ -1,6 +1,6 @@
 "use client"
 
-import { Bug, Sparkles, FileUp, FileText, User, Lightbulb, MessageCircle } from "lucide-react"
+import { Bug, FileWarning, FileUp, FileText, User, Lightbulb, MessageCircle } from "lucide-react"
 
 export type SupportCategoryValue = "bug" | "generation" | "import" | "template" | "account" | "feedback" | "other"
 
@@ -22,7 +22,7 @@ export const SUPPORT_CATEGORIES: SupportCategory[] = [
     value: "generation",
     label: "Generation Issue",
     description: "Résumé generation failed or output looks wrong",
-    icon: Sparkles,
+    icon: FileWarning,
   },
   {
     value: "import",

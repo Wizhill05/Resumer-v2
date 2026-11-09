@@ -217,7 +217,7 @@ export function RemakeClient({ runId }: Props) {
                 href={`/api/backend/generate/${runId}/download`}
             onClick={() => captureDownload(runId, "remake")}
                 download
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-ember px-4 text-xs font-semibold text-white shadow-[0_8px_20px_-10px_rgb(255_78_38/70%)] transition-colors hover:bg-[#e03d16]"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-ember px-4 text-xs font-semibold text-white shadow-[0_1px_2px_rgb(35_10_4/14%)] transition-colors hover:bg-[#e03d16]"
               >
                 <Download size={14} />
                 <span>Download PDF</span>

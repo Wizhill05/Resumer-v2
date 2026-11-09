@@ -9,19 +9,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, RefreshCw, ChevronDown, ChevronUp, Lock } from "lucide-react";
+import { Loader2, Trash2, Edit2, X } from "lucide-react";
 import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ReportIssueButton } from "@/components/support/ReportIssueButton";
-import {
-  GITHUB_PROFILE_CONNECT_URL,
-  GITHUB_PROFILE_PRIVATE_START_URL,
-  isGithubConnectedActive,
-  useGithubIntegration,
-} from "@/components/github/useGithubIntegration";
+import { GithubImportCard, formatGithubError, type GithubApiError } from "./GithubImportCard";
 
 import { normalizeUrl } from "./BasicInfoForm";
 
@@ -65,58 +60,6 @@ type ImportedProject = ProjectItem & {
   warnings?: { scope: string; message: string }[];
 };
 
-type GitHubRepoItem = {
-  name: string;
-  full_name: string;
-  description: string | null;
-  html_url: string;
-  language: string | null;
-  stargazers_count: number;
-  updated_at?: string;
-  private: boolean;
-};
-
-type GitHubReposData = {
-  repos: GitHubRepoItem[];
-  connected: boolean;
-  github_username: string | null;
-  source: "token" | "public";
-};
-
-type GithubApiError = Error & {
-  status?: number;
-  detail?: string;
-  reset_at?: string;
-};
-
-function formatGithubError(err: unknown, fallback: string): string {
-  if (err instanceof Error) {
-    const apiErr = err as GithubApiError;
-    if (apiErr.status === 429) {
-      const when = apiErr.reset_at
-        ? new Date(apiErr.reset_at).toLocaleString()
-        : "later";
-      return `GitHub's shared limit is used up until ${when}. Connect GitHub to keep importing.`;
-    }
-    if (apiErr.status === 409) {
-      return "Reconnect GitHub to keep importing.";
-    }
-    return err.message || fallback;
-  }
-  return fallback;
-}
-
-export function parseGitHubUsername(input: string | undefined | null): string {
-  if (!input) return "";
-  let clean = input.trim();
-  clean = clean.replace(/^@/, "");
-  if (clean.includes("github.com/")) {
-    const parts = clean.split("github.com/")[1].split("/").filter(Boolean);
-    return parts[0] || "";
-  }
-  return clean.split("/")[0] || "";
-}
-
 interface ProjectFormProps {
   onDirtyChange?: (isDirty: boolean, saveFn: () => Promise<boolean>, busy?: boolean, discardDraft?: () => void) => void;
 }
@@ -126,72 +69,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const activeRecordId = editingId;
-  const [mobileGithubExpanded, setMobileGithubExpanded] = useState(false);
-  // GitHub import state
-  const [githubInputMode, setGithubInputMode] = useState<"fields" | "url">("fields");
-  const [githubOwner, setGithubOwner] = useState("");
-  const [githubRepoName, setGithubRepoName] = useState("");
-  const [githubUrl, setGithubUrl] = useState("");
-  const [selectedRepoUrl, setSelectedRepoUrl] = useState("");
   const [githubMessage, setGithubMessage] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<ImportedProject | null>(null);
-
-
-  // Fetch basic user profile to extract github_url automatically
-  const { data: profile } = useQuery<{ github_url?: string }>({
-    queryKey: ["profile"],
-    queryFn: async () => {
-      const res = await fetch("/api/backend/profile");
-      if (!res.ok) throw new Error("Failed to load profile");
-      return res.json();
-    },
-  });
-
-  const profileGithubUsername = parseGitHubUsername(profile?.github_url);
-  const effectiveUsername = githubOwner.trim() || profileGithubUsername;
-
-  const { data: githubIntegration, isLoading: isGithubIntegrationLoading } =
-    useGithubIntegration();
-  const isGithubConnected = isGithubConnectedActive(githubIntegration);
-  const integrationLogin = githubIntegration?.login ?? null;
-
-  // Query GitHub repos. When GitHub is connected, repos come from the user's
-  // own token (no username param); otherwise the shared unauthenticated limit
-  // is used with a username.
-  const {
-    data: githubReposData,
-    isLoading: isReposQueryLoading,
-    isError: isReposError,
-    error: reposQueryError,
-    refetch: refetchRepos,
-  } = useQuery<GitHubReposData>({
-    queryKey: isGithubConnected
-      ? ["github-repos", "token"]
-      : ["github-repos", effectiveUsername],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (!isGithubConnected && effectiveUsername) {
-        params.set("username", effectiveUsername);
-      }
-      const res = await fetch(
-        `/api/backend/profile/import/github-repos?${params.toString()}`,
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const err = new Error(
-          body.detail || "Failed to fetch GitHub repositories",
-        ) as GithubApiError;
-        err.status = res.status;
-        err.detail = body.detail;
-        err.reset_at = body.reset_at;
-        throw err;
-      }
-      return res.json();
-    },
-    enabled:
-      !isGithubIntegrationLoading &&
-      (isGithubConnected || Boolean(effectiveUsername)),
-  });
 
   const { data: projects = [], isLoading, isError, refetch } = useQuery<ProjectItem[]>({
     queryKey: ["projects"],
@@ -345,7 +224,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
       }
       return body as ImportedProject;
     },
-    onSuccess: (project) => {
+    onSuccess: (project, target) => {
       setIsAdding(true);
       setEditingId(null);
       setImportPreview(project);
@@ -356,7 +235,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
         project.technologies ? project.technologies.join(", ") : "",
         { shouldDirty: true },
       );
-      setValue("github_url", project.github_url || githubUrl, { shouldDirty: true });
+      setValue("github_url", project.github_url || (target.includes("github.com") ? target : `https://github.com/${target}`), { shouldDirty: true });
       setValue("live_url", project.live_url || "", { shouldDirty: true });
       setValue("start_date", "", { shouldDirty: true });
       setValue("end_date", "", { shouldDirty: true });
@@ -379,27 +258,28 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
 
   useProfileWork("github-import", false, githubImportMutation.isPending)
 
-  const handleImportSubmit = () => {
-    let target = "";
-    if (selectedRepoUrl) {
-      target = selectedRepoUrl;
-    } else if (githubInputMode === "fields") {
-      const owner = githubOwner.trim() || integrationLogin || profileGithubUsername;
-      if (!owner || !githubRepoName.trim()) {
-        setGithubMessage("Please provide a GitHub Username and Repository name.");
-        return;
-      }
-      target = `${owner}/${githubRepoName.trim()}`;
-    } else {
-      if (!githubUrl.trim()) {
-        setGithubMessage("Please enter a GitHub URL or owner/repo.");
-        return;
-      }
-      target = githubUrl.trim();
-    }
-
+  const handleImport = (target: string) => {
     setGithubMessage(null);
     githubImportMutation.mutate(target);
+  };
+
+  const startAdd = () => {
+    saveMutation.reset();
+    setIsAdding(true);
+    setEditingId(null);
+    setGithubMessage(null);
+    setImportPreview(null);
+    reset({
+      name: "",
+      description: "",
+      technologies: "",
+      github_url: "",
+      live_url: "",
+      start_date: "",
+      end_date: "",
+      bullet_points: "",
+      sort_order: projects.length,
+    });
   };
 
   const startEdit = (project: ProjectItem) => {
@@ -568,11 +448,8 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
     );
   }
 
-  const userRepos = githubReposData?.repos || [];
-  const isLoadingRepos = isReposQueryLoading || isGithubIntegrationLoading;
-
-  const isGithubPending = githubImportMutation.isPending;
-  const showGithubExpanded = mobileGithubExpanded || isGithubPending || Boolean(githubMessage);
+  const importingTarget = githubImportMutation.isPending ? githubImportMutation.variables ?? null : null;
+  const githubFailed = githubImportMutation.isError && Boolean(githubMessage);
 
   return (
     <div className="space-y-3 pixel-enter md:space-y-4">
@@ -584,400 +461,27 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
         <span className="rounded bg-ink/5 px-1.5 py-0.5 text-xs font-semibold text-ink-soft">{projects.length}</span>
       </h2>
 
-      {(
-        <div className="soft-card space-y-3 p-4 md:p-5">
-          {/* Mobile Collapsible Header */}
-          <div className="flex items-center justify-between gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => setMobileGithubExpanded(!mobileGithubExpanded)}
-              className="flex min-w-0 flex-1 items-center gap-2 text-left font-bold tracking-tight text-ink"
-            >
-              <FolderGit2 size={16} className="shrink-0 text-[#ff4e26]" />
-              <span className="truncate text-xs">Import from GitHub</span>
-              {showGithubExpanded ? <ChevronUp size={14} className="shrink-0 text-ink-faint" /> : <ChevronDown size={14} className="shrink-0 text-ink-faint" />}
-            </button>
-            <Button
-              onClick={() => {
-                saveMutation.reset();
-                setIsAdding(true);
-                setEditingId(null);
-                setGithubMessage(null);
-                setImportPreview(null);
-                reset({
-                  name: "",
-                  description: "",
-                  technologies: "",
-                  github_url: "",
-                  live_url: "",
-                  start_date: "",
-                  end_date: "",
-                  bullet_points: "",
-                  sort_order: projects.length,
-                });
-              }}
+      <GithubImportCard
+        importingTarget={importingTarget}
+        onImport={handleImport}
+        onAddManually={startAdd}
+        message={githubMessage}
+        messageAction={
+          githubFailed ? (
+            <ReportIssueButton
+              defaultCategory="import"
+              defaultMessage={`[GitHub import failed]\nMessage: ${githubMessage}\nInput: ${githubImportMutation.variables ?? "-"}\n\nDescribe what repo you tried to import and expected outcome:\n`}
+              title="Report GitHub import issue"
+              description="Import input is prefilled. Add repo URL and what failed."
+              variant="outline"
               size="xs"
-              variant="outline"
+              className="font-bold text-[11px] border-line-strong"
             >
-              <Plus size={12} /> Add
-            </Button>
-          </div>
-
-          {/* Desktop Title Header */}
-          <div className="hidden md:flex md:flex-row md:items-start md:justify-between md:gap-3">
-            <div className="space-y-1">
-              <h3 className="flex items-center gap-2 text-lg font-bold tracking-tight text-ink">
-                <FolderGit2 className="text-ember" size={20} aria-hidden="true" /> Import from GitHub
-              </h3>
-              <p className="max-w-xl text-sm text-ink-muted">
-                Choose a repository from your GitHub projects dropdown menu below, or enter a username &amp; repository. We extract metadata, README, and stage your project for review.
-              </p>
-            </div>
-            <Button
-              onClick={() => {
-                saveMutation.reset();
-                setIsAdding(true);
-                setEditingId(null);
-                setGithubMessage(null);
-                setImportPreview(null);
-                reset({
-                  name: "",
-                  description: "",
-                  technologies: "",
-                  github_url: "",
-                  live_url: "",
-                  start_date: "",
-                  end_date: "",
-                  bullet_points: "",
-                  sort_order: projects.length,
-                });
-              }}
-              size="sm"
-              variant="outline"
-            >
-              <Plus size={16} /> Add manually
-            </Button>
-          </div>
-
-          <div className={`${showGithubExpanded ? "block" : "hidden"} md:block space-y-3 pt-2 md:pt-0 border-t border-line md:border-t-0`}>
-
-          {/* GitHub Linked Username Header */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border border-line bg-ink/[0.03] p-3 text-xs font-semibold text-ink rounded-md">
-            {isGithubConnected || effectiveUsername ? (
-              <div className="flex items-center gap-2">
-                <svg className="h-4 w-4 fill-current text-ink" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-                </svg>
-                <span>
-                  {isGithubConnected ? (
-                    <>
-                      Synced from <strong className="text-ink">@{integrationLogin}</strong>
-                    </>
-                  ) : (
-                    <>
-                      GitHub Profile Linked: <strong className="text-ink">@{effectiveUsername}</strong>
-                    </>
-                  )}
-                </span>
-                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-ink-muted">
-                <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-                </svg>
-                <span>Enter a GitHub username or repo below to view repositories</span>
-              </div>
-            )}
-          </div>
-
-          {githubIntegration && isGithubConnected && (
-            githubIntegration.private_access ? (
-              <p className="flex items-center gap-1.5 px-1 text-xs font-semibold text-ink-muted">
-                <Lock size={12} aria-hidden="true" className="shrink-0" />
-                Including private repos
-              </p>
-            ) : (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-line bg-ink/[0.03] px-3 py-2 text-xs font-semibold text-ink-muted">
-                <Lock size={12} aria-hidden="true" className="shrink-0" />
-                <span>Showing public repos only.</span>
-                <a
-                  href={GITHUB_PROFILE_PRIVATE_START_URL}
-                  className="text-ember underline underline-offset-4"
-                >
-                  Include private repos
-                </a>
-                <span className="basis-full font-medium text-ink-faint">
-                  GitHub asks for full repo access; Résumer only reads.
-                </span>
-              </div>
-            )
-          )}
-
-          {githubIntegration && !githubIntegration.connected && (
-            <p className="rounded-md border border-line bg-ink/[0.03] px-3 py-2 text-xs font-semibold text-ink-muted">
-              <a
-                href={GITHUB_PROFILE_CONNECT_URL}
-                className="text-ember underline underline-offset-4"
-              >
-                Connect GitHub for reliable imports
-              </a>
-            </p>
-          )}
-
-          {/* Repositories Dropdown (Always visible when a username is present or GitHub is connected) */}
-          {(effectiveUsername || isGithubConnected) && (
-            <div className="space-y-2 border border-line bg-ink/[0.03] p-3 rounded-md">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold text-ink">
-                  Select a repository to import ({isLoadingRepos ? "Loading..." : isGithubConnected ? `${userRepos.length} repos found` : `${userRepos.length} public repos found`})
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => refetchRepos()}
-                  disabled={isLoadingRepos}
-                  className="flex items-center gap-1 text-[11px] font-bold text-ink-muted hover:text-ink dark:hover:text-white disabled:opacity-50"
-                >
-                  <RefreshCw size={11} className={isLoadingRepos ? "animate-spin" : ""} /> Refresh
-                </button>
-              </div>
-
-              {isLoadingRepos ? (
-                <div className="flex items-center justify-center gap-2 py-4 text-xs font-semibold text-ink-muted">
-                  <Loader2 className="animate-spin" size={16} />{" "}
-                  {isGithubConnected
-                    ? "Fetching your repositories..."
-                    : `Fetching public repositories for @${effectiveUsername}...`}
-                </div>
-              ) : isReposError ? (
-                (reposQueryError as GithubApiError | null)?.status === 409 ? (
-                  <div className="flex flex-wrap items-center justify-between gap-2 py-2 px-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-300 rounded-md">
-                    <span>Reconnect GitHub to keep importing.</span>
-                    <a
-                      href="/account"
-                      className="underline underline-offset-4"
-                    >
-                      Reconnect GitHub
-                    </a>
-                  </div>
-                ) : (reposQueryError as GithubApiError | null)?.status === 429 ? (
-                  <div className="flex flex-wrap items-center justify-between gap-2 py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400 rounded-md">
-                    <span>{formatGithubError(reposQueryError, "Failed to load repositories.")}</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => refetchRepos()}
-                      className="h-7 text-xs font-bold"
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-600 dark:text-red-400 rounded-md">
-                    <span>Failed to load repositories. Please try again.</span>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => refetchRepos()}
-                      className="h-7 text-xs font-bold"
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                )
-              ) : userRepos.length === 0 ? (
-                <div className="py-3 text-center text-xs font-semibold text-ink-muted">
-                  {isGithubConnected
-                    ? "No repositories found."
-                    : `No public repositories found for @${effectiveUsername}.`}
-                </div>
-              ) : (
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <select
-                    value={selectedRepoUrl}
-                    onChange={(e) => {
-                      setSelectedRepoUrl(e.target.value);
-                      if (e.target.value) {
-                        setGithubUrl(e.target.value);
-                      }
-                    }}
-                    className="w-full h-11 border border-line bg-paper px-3 text-sm font-semibold text-ink focus:outline-hidden focus:ring-2 focus:ring-[#ff4e26] rounded-md"
-                  >
-                    <option value="">-- Choose a repository from your list --</option>
-                    {userRepos.map((repo) => (
-                      <option key={repo.full_name} value={repo.html_url}>
-                        {repo.private ? "🔒 " : ""}{repo.full_name} {repo.language ? `(${repo.language})` : ""} {repo.stargazers_count ? `★ ${repo.stargazers_count}` : ""} {repo.private ? "(Private)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    type="button"
-                    size="lg"
-                    onClick={handleImportSubmit}
-                    disabled={githubImportMutation.isPending || !selectedRepoUrl}
-                  >
-                    {githubImportMutation.isPending ? (
-                      <>
-                        <Loader2 className="animate-spin" size={18} /> Reading...
-                      </>
-                    ) : (
-                      <>
-                        <FolderGit2 size={18} /> Import Selected Project
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Manual Input Controls Mode Selector */}
-          <div className="space-y-3 pt-1">
-            <div className="flex gap-4 border-b border-line pb-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setGithubInputMode("fields");
-                  setSelectedRepoUrl("");
-                }}
-                className={`text-xs font-bold transition-colors ${
-                  githubInputMode === "fields" && !selectedRepoUrl
-                    ? "text-[#ff4e26] border-b border-[#ff4e26] pb-1"
-                    : "text-ink-muted hover:text-ink dark:hover:text-white"
-                }`}
-              >
-                Username &amp; Repo Name
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setGithubInputMode("url");
-                  setSelectedRepoUrl("");
-                }}
-                className={`text-xs font-bold transition-colors ${
-                  githubInputMode === "url" && !selectedRepoUrl
-                    ? "text-[#ff4e26] border-b border-[#ff4e26] pb-1"
-                    : "text-ink-muted hover:text-ink dark:hover:text-white"
-                }`}
-              >
-                Full Link / Shorthand
-              </button>
-            </div>
-
-            {githubInputMode === "fields" && !selectedRepoUrl ? (
-              <div
-                className={
-                  isGithubConnected
-                    ? "grid gap-3 sm:grid-cols-[1fr_auto]"
-                    : "grid gap-3 sm:grid-cols-2 md:grid-cols-[1fr_1fr_auto]"
-                }
-              >
-                {!isGithubConnected && (
-                  <div>
-                    <Label htmlFor="githubOwner" className="text-xs font-bold text-ink-muted">
-                      GitHub Username
-                    </Label>
-                    <Input
-                      id="githubOwner"
-                      value={githubOwner}
-                      onChange={(e) => setGithubOwner(e.target.value)}
-                      placeholder={profileGithubUsername || "e.g. facebook"}
-                      className="h-11 text-sm font-semibold mt-1"
-                    />
-                  </div>
-                )}
-                <div>
-                  <Label htmlFor="githubRepoName" className="text-xs font-bold text-ink-muted">
-                    Repository Name
-                  </Label>
-                  <Input
-                    id="githubRepoName"
-                    value={githubRepoName}
-                    onChange={(e) => setGithubRepoName(e.target.value)}
-                    placeholder="e.g. react"
-                    className="h-11 text-sm font-semibold mt-1"
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    size="lg"
-                    onClick={handleImportSubmit}
-                    disabled={githubImportMutation.isPending || (!githubOwner.trim() && !profileGithubUsername && !integrationLogin) || !githubRepoName.trim()}
-                    className="h-11 w-full sm:w-auto"
-                  >
-                    {githubImportMutation.isPending ? (
-                      <>
-                        <Loader2 className="animate-spin" size={18} /> Reading...
-                      </>
-                    ) : (
-                      <>
-                        <FolderGit2 size={18} /> Import
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            ) : !selectedRepoUrl ? (
-              <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-                <Input
-                  value={githubUrl}
-                  onChange={(event) => setGithubUrl(event.target.value)}
-                  placeholder="https://github.com/owner/repo or owner/repo"
-                  className="h-11 text-base font-semibold"
-                />
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={handleImportSubmit}
-                  disabled={githubImportMutation.isPending || !githubUrl.trim()}
-                >
-                  {githubImportMutation.isPending ? (
-                    <>
-                      <Loader2 className="animate-spin" size={18} /> Reading...
-                    </>
-                  ) : (
-                    <>
-                      <FolderGit2 size={18} /> Import Using GitHub
-                    </>
-                  )}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap gap-2 text-[11px] font-bold text-ink-muted">
-            <span>{projects.length} saved projects</span>
-            <span>README aware</span>
-            <span>Duplicate checks</span>
-            <span>Review before save</span>
-          </div>
-
-          {githubMessage && (
-            <div className="space-y-2">
-              <p className="border border-line bg-ink/[0.03] p-2.5 text-xs font-bold text-ink rounded-md">
-                {githubMessage}
-              </p>
-              {(githubMessage.toLowerCase().includes("failed") || githubMessage.toLowerCase().includes("could not") || githubMessage.toLowerCase().includes("error")) && (
-                <ReportIssueButton
-                  defaultCategory="import"
-                  defaultMessage={`[GitHub import failed]\nMessage: ${githubMessage}\nInput: ${selectedRepoUrl || (githubInputMode === "fields" ? `${githubOwner}/${githubRepoName}` : githubUrl)}\nUsername: ${effectiveUsername || "-"}\n\nDescribe what repo you tried to import and expected outcome:\n`}
-                  title="Report GitHub import issue"
-                  description="Import input is prefilled. Add repo URL and what failed."
-                  variant="outline"
-                  size="xs"
-                  className="font-bold text-[11px] border-line-strong"
-                >
-                  Report import issue
-                </ReportIssueButton>
-              )}
-            </div>
-          )}
-          </div>
-        </div>
-      )}
+              Report import issue
+            </ReportIssueButton>
+          ) : null
+        }
+      />
 
       {importPreview && <ProfileDialog label="Review imported project" busy={saveMutation.isPending} onRequestClose={() => setImportPreview(null)}>
             <div className="profile-entry-form space-y-4">

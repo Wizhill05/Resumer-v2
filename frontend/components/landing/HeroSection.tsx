@@ -1,6 +1,7 @@
 import { AgentMarks } from "@/components/landing/AgentMarks"
 import Link from "next/link"
-import { ArrowDown, ArrowUpRight, Star } from "lucide-react"
+import { ArrowDown, ArrowUpRight } from "lucide-react"
+import { GithubMark } from "@/components/icons/GithubMark"
 import { FluidField } from "@/components/landing/FluidField"
 import { LoginModal } from "@/components/LoginModal"
 import { CalligraphyTitle } from "@/components/landing/CalligraphyTitle"
@@ -17,7 +18,7 @@ export function HeroSection() {
     <section className="relative flex h-[50dvh] min-h-[300px] flex-col overflow-hidden border-b border-black/10 bg-[var(--fluid-canvas)] md:h-auto md:min-h-[100dvh] dark:border-white/10">
       <FluidField />
 
-      {/* Glass nav — fixed to the top always even when scrolling */}
+      {/* Glass nav - fixed to the top always even when scrolling */}
       <header className="fixed top-0 inset-x-0 z-50 px-0 md:top-4 md:px-5 pointer-events-none">
         <div className="pointer-events-auto mx-auto flex h-11 w-full max-w-5xl items-center justify-between border-b border-black/10 bg-white/70 px-4 backdrop-blur-xl md:border md:border-black/10 md:shadow-[0_18px_50px_-24px_rgba(74,32,4,0.55)] dark:border-white/10 dark:bg-black/60 md:dark:bg-black/60">
           <Link
@@ -97,7 +98,7 @@ export function HeroSection() {
           rel="noopener noreferrer"
           className={subtleButton}
         >
-          <Star size={14} aria-hidden="true" />
+          <GithubMark size={14} />
           <span>Star on GitHub</span>
         </a>
       </div>
