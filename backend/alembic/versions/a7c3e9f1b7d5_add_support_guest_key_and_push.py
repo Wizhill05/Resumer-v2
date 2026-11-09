@@ -25,7 +25,7 @@ def upgrade():
         sa.Column("endpoint", sa.Text(), nullable=False),
         sa.Column("p256dh", sa.Text(), nullable=False),
         sa.Column("auth", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("report_id", "endpoint", name="uq_support_push_report_endpoint"),
     )
     op.create_index("ix_support_push_subscriptions_report_id", "support_push_subscriptions", ["report_id"])

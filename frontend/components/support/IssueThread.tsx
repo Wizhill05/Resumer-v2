@@ -28,12 +28,24 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0))
 }
 
+const pushStatusSchema = z.object({ subscribed: z.boolean() })
+const publicKeySchema = z.object({ key: z.string() })
+
 function PushToggle({ id, token }: { id: string; token?: string }) {
   const [available, setAvailable] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const query = token ? `?access_token=${encodeURIComponent(token)}` : ""
+  const pushUrl = useCallback(
+    (endpoint?: string) => {
+      const params = new URLSearchParams()
+      if (token) params.set("access_token", token)
+      if (endpoint) params.set("endpoint", endpoint)
+      const qs = params.toString()
+      return `/api/support/${encodeURIComponent(id)}/push${qs ? `?${qs}` : ""}`
+    },
+    [id, token]
+  )
 
   useEffect(() => {
     let active = true
@@ -44,47 +56,68 @@ function PushToggle({ id, token }: { id: string; token?: string }) {
         if (!res.ok) return
         if (active) setAvailable(true)
         const reg = await navigator.serviceWorker.register("/support-sw.js")
+        // The browser subscription is shared by every issue. Ask the server whether
+        // this particular issue is subscribed with it.
         const sub = await reg.pushManager.getSubscription()
-        if (active) setSubscribed(Boolean(sub))
+        if (!sub) {
+          if (active) setSubscribed(false)
+          return
+        }
+        const status = pushStatusSchema.parse(await supportFetch(pushUrl(sub.endpoint)))
+        if (active) setSubscribed(status.subscribed)
       } catch {}
     }
     void init()
     return () => {
       active = false
     }
-  }, [])
+  }, [pushUrl])
+
+  async function turnOn(reg: ServiceWorkerRegistration) {
+    let sub = await reg.pushManager.getSubscription()
+    let created = false
+    if (!sub) {
+      const permission =
+        Notification.permission === "granted" ? "granted" : await Notification.requestPermission()
+      if (permission !== "granted") {
+        setMessage("Notifications are blocked in this browser. Allow them in site settings to turn this on.")
+        return
+      }
+      const data = publicKeySchema.parse(await supportFetch("/api/support/push/public-key"))
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(data.key) as BufferSource
+      })
+      created = true
+    }
+    try {
+      await supportFetch(pushUrl(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON())
+      })
+    } catch (err) {
+      // Only undo a subscription this click created; an older one may serve other issues.
+      if (created) await sub.unsubscribe().catch(() => false)
+      throw err
+    }
+    setSubscribed(true)
+  }
+
+  async function turnOff(reg: ServiceWorkerRegistration) {
+    const sub = await reg.pushManager.getSubscription()
+    // Never unsubscribe the browser here: other issues may still use the same subscription.
+    if (sub) await supportFetch(pushUrl(sub.endpoint), { method: "DELETE" })
+    setSubscribed(false)
+  }
 
   async function toggle() {
     setBusy(true)
     setMessage(null)
     try {
       const reg = await navigator.serviceWorker.register("/support-sw.js")
-      const existing = await reg.pushManager.getSubscription()
-      if (existing) {
-        try {
-          await supportFetch(`/api/support/${encodeURIComponent(id)}/push${query}${query ? "&" : "?"}endpoint=${encodeURIComponent(existing.endpoint)}`, { method: "DELETE" })
-        } catch {}
-        await existing.unsubscribe()
-        setSubscribed(false)
-        return
-      }
-      const res = await fetch("/api/support/push/public-key")
-      const data = (await res.json()) as { key: string }
-      const permission = await Notification.requestPermission()
-      if (permission !== "granted") {
-        setMessage("Notifications are blocked in this browser. Allow them in site settings to turn this on.")
-        return
-      }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(data.key) as BufferSource
-      })
-      await supportFetch(`/api/support/${encodeURIComponent(id)}/push${query}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sub.toJSON())
-      })
-      setSubscribed(true)
+      if (subscribed) await turnOff(reg)
+      else await turnOn(reg)
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not update notifications in this browser.")
     } finally {

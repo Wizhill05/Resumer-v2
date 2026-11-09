@@ -9,27 +9,44 @@ import { useSession } from "next-auth/react"
 import { useGenerationStats } from "@/components/useGenerationStats"
 import { createPortal } from "react-dom"
 import { AccountMenu } from "@/components/AccountMenu"
-import { getLastSeen, supportFetch } from "@/components/support/supportApi"
+import {
+  getLastSeen,
+  hasGuestTicketMarker,
+  issueSchema,
+  supportFetch,
+  SUPPORT_SEEN_EVENT,
+  type SupportIssue
+} from "@/components/support/supportApi"
 import { z } from "zod"
-import { issueSchema } from "@/components/support/supportApi"
 
-function useSupportBadge() {
+type BadgeRow = Pick<SupportIssue, "id" | "last_admin_reply_at">
+
+function computeUnseen(rows: BadgeRow[]) {
+  const seen = getLastSeen()
+  return rows.some((r) => {
+    if (!r.last_admin_reply_at) return false
+    const seenAt = seen[r.id] ? Date.parse(seen[r.id]) : 0
+    return Date.parse(r.last_admin_reply_at) > seenAt
+  })
+}
+
+/**
+ * Only fetches for signed-in visitors or browsers that have a guest ticket, so
+ * anonymous visitors on every page do not hit the support API.
+ */
+function useSupportBadge(signedIn: boolean) {
   const [unseen, setUnseen] = useState(false)
   useEffect(() => {
+    if (!signedIn && !hasGuestTicketMarker()) return
     let active = true
     let inFlight = false
+    let rows: BadgeRow[] = []
     async function check() {
       if (inFlight) return
       inFlight = true
       try {
-        const rows = z.array(issueSchema).parse(await supportFetch("/api/support"))
-        const seen = getLastSeen()
-        const has = rows.some((r) => {
-          if (!r.last_admin_reply_at) return false
-          const seenAt = seen[r.id] ? Date.parse(seen[r.id]) : 0
-          return Date.parse(r.last_admin_reply_at) > seenAt
-        })
-        if (active) setUnseen(has)
+        rows = z.array(issueSchema).parse(await supportFetch("/api/support"))
+        if (active) setUnseen(computeUnseen(rows))
       } catch {} finally {
         inFlight = false
       }
@@ -38,12 +55,18 @@ function useSupportBadge() {
     const onVisible = () => {
       if (document.visibilityState === "visible") void check()
     }
+    // An issue was viewed in this tab: recompute from cached rows, no refetch.
+    const onSeen = () => {
+      if (active) setUnseen(computeUnseen(rows))
+    }
     document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener(SUPPORT_SEEN_EVENT, onSeen)
     return () => {
       active = false
       document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener(SUPPORT_SEEN_EVENT, onSeen)
     }
-  }, [])
+  }, [signedIn])
   return unseen
 }
 
@@ -93,7 +116,7 @@ export function Nav({ signedIn = false }: { signedIn?: boolean } = {}) {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const { data: session, status: sessionStatus } = useSession()
-  const supportUnseen = useSupportBadge()
+  const supportUnseen = useSupportBadge(signedIn || sessionStatus === "authenticated")
   const accountUser = session?.user
   const accountInitials = accountUser?.name?.trim()
     ? accountUser.name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")

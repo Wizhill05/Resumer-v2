@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
 import logging
@@ -7,7 +8,7 @@ from typing import List, Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,18 +21,17 @@ from src.core.storage import StorageService
 from src.models.generation import FeedbackRating, Generation, ReportAttachment, SupportPushSubscription, SupportRateLimit, SupportReport
 from src.models.user import User
 from src.services.support import (
-    GUEST_COOKIE_NAME,
     ReplyCreate,
     accessible_report,
     add_status_event,
     append_reply,
+    guest_key_from_request,
     guest_key_hash_from_cookie,
     guest_token,
     hash_guest_key,
     is_admin,
     last_admin_reply_map,
     new_guest_key,
-    notify_push,
     notify_submission,
     report_detail,
     report_out,
@@ -82,6 +82,22 @@ class RatingCheckResponse(BaseModel):
     already_rated: bool
 
 
+async def get_support_user(request: Request, user: User | None = Depends(get_optional_user)) -> User | None:
+    """Optional user for support routes.
+
+    A request that carries a user Bearer token which no longer resolves (expired, or the
+    account is gone) gets a clear 401 instead of silently becoming a guest. Guests send no
+    Authorization header; the proxy's internal token is not a user token and is ignored.
+    """
+    if user is not None:
+        return user
+    authorization = request.headers.get("Authorization") or ""
+    scheme, _, credentials = authorization.partition(" ")
+    if scheme.lower() == "bearer" and credentials.strip() and not is_valid_internal_token(f"Bearer {credentials.strip()}"):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Your session expired. Sign in again.")
+    return None
+
+
 def _trusted_client_ip(request: Request) -> str | None:
     auth = request.headers.get("Authorization")
     internal = request.headers.get("X-Internal-Token")
@@ -104,17 +120,34 @@ def _aware(dt: datetime) -> datetime:
 _untrusted_ip_logged = False
 
 
-async def _check_support_rate_limit(db: AsyncSession, key: str, limit: int, friendly: str) -> None:
-    now = datetime.now(timezone.utc)
-    reset_at = now + timedelta(hours=1)
+def _insert_for(db: AsyncSession):
     try:
         dialect_name = db.get_bind().dialect.name
     except Exception:
-        dialect_name = getattr(getattr(db, "bind", None), "dialect", None) and db.bind.dialect.name  # type: ignore
-    if dialect_name == "sqlite":
-        insert_fn = sqlite_insert
-    else:
-        insert_fn = pg_insert
+        dialect_name = getattr(getattr(getattr(db, "bind", None), "dialect", None), "name", "postgresql")
+    return sqlite_insert if dialect_name == "sqlite" else pg_insert
+
+
+# Fraction of limiter calls that also prune long-expired buckets.
+_RATE_LIMIT_CLEANUP_PROBABILITY = 0.01
+
+
+async def _cleanup_expired_rate_limits(db: AsyncSession, now: datetime) -> None:
+    try:
+        await db.execute(delete(SupportRateLimit).where(SupportRateLimit.reset_at < now - timedelta(days=1)))
+        await db.commit()
+    except Exception:
+        logger.warning("Support rate limit cleanup failed", exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+
+async def _check_support_rate_limit(db: AsyncSession, key: str, limit: int, friendly: str) -> None:
+    now = datetime.now(timezone.utc)
+    reset_at = now + timedelta(hours=1)
+    insert_fn = _insert_for(db)
     stmt = (
         insert_fn(SupportRateLimit)
         .values(key=key, request_count=1, reset_at=reset_at)
@@ -136,6 +169,8 @@ async def _check_support_rate_limit(db: AsyncSession, key: str, limit: int, frie
     result = await db.execute(stmt)
     count, _reset = result.one()
     await db.commit()
+    if random.random() < _RATE_LIMIT_CLEANUP_PROBABILITY:
+        await _cleanup_expired_rate_limits(db, now)
     if count > limit:
         raise HTTPException(429, friendly)
 
@@ -209,11 +244,29 @@ class PushSubscribeBody(BaseModel):
     keys: PushKeys
 
 
-@router.post("/support/{id}/push")
-async def subscribe_push(id: uuid.UUID, body: PushSubscribeBody, access_token: str | None = None, request: Request = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
-    raw_key = request.cookies.get(GUEST_COOKIE_NAME) if request else None
+MAX_PUSH_SUBSCRIPTIONS_PER_REPORT = 5
+
+
+async def _push_route_report(db: AsyncSession, id: uuid.UUID, request: Request, current_user: User | None, access_token: str | None) -> SupportReport:
+    raw_key = guest_key_from_request(request)
     report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(raw_key))
-    await _rate_limit_prepare(db, current_user, raw_key, _trusted_client_ip(request) if request else None, is_ticket=False, report_id=report.id)
+    await _rate_limit_prepare(db, current_user, raw_key, _trusted_client_ip(request), is_ticket=False, report_id=report.id)
+    return report
+
+
+@router.get("/support/{id}/push")
+async def push_subscription_status(id: uuid.UUID, request: Request, endpoint: str | None = None, access_token: str | None = None, current_user: User | None = Depends(get_support_user), db: AsyncSession = Depends(get_db)):
+    """Whether this browser endpoint is subscribed to this specific report."""
+    report = await _push_route_report(db, id, request, current_user, access_token)
+    if not endpoint or len(endpoint) > 1024:
+        return {"subscribed": False}
+    existing = (await db.execute(select(SupportPushSubscription.id).where(SupportPushSubscription.report_id == report.id, SupportPushSubscription.endpoint == endpoint))).first()
+    return {"subscribed": existing is not None}
+
+
+@router.post("/support/{id}/push")
+async def subscribe_push(id: uuid.UUID, body: PushSubscribeBody, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_support_user), db: AsyncSession = Depends(get_db)):
+    report = await _push_route_report(db, id, request, current_user, access_token)
     p256dh = body.keys.p256dh
     auth = body.keys.auth
     if not body.endpoint or not p256dh or not auth:
@@ -222,31 +275,40 @@ async def subscribe_push(id: uuid.UUID, body: PushSubscribeBody, access_token: s
         validate_push_endpoint(body.endpoint)
     except ValueError:
         raise HTTPException(422, "Invalid push subscription")
-    existing = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id, SupportPushSubscription.endpoint == body.endpoint))).scalar_one_or_none()
-    if existing:
-        existing.p256dh = p256dh
-        existing.auth = auth
-    else:
-        subs = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id).order_by(SupportPushSubscription.created_at.asc()))).scalars().all()
-        # Cap subscriptions at 5 per report: evict oldest when adding a new one.
-        while len(subs) >= 5:
-            oldest = subs.pop(0)
-            await db.delete(oldest)
-        db.add(SupportPushSubscription(report_id=report.id, endpoint=body.endpoint, p256dh=p256dh, auth=auth, created_at=datetime.now(timezone.utc)))
+    # Atomic upsert: concurrent subscribes for the same endpoint cannot hit the unique constraint.
+    insert_fn = _insert_for(db)
+    await db.execute(
+        insert_fn(SupportPushSubscription)
+        .values(id=uuid.uuid4(), report_id=report.id, endpoint=body.endpoint, p256dh=p256dh, auth=auth, created_at=datetime.now(timezone.utc))
+        .on_conflict_do_update(
+            index_elements=[SupportPushSubscription.report_id, SupportPushSubscription.endpoint],
+            set_={"p256dh": p256dh, "auth": auth},
+        )
+    )
+    # Cap subscriptions per report: evict the oldest others, never the one just saved.
+    subs = (await db.execute(
+        select(SupportPushSubscription)
+        .where(SupportPushSubscription.report_id == report.id)
+        .order_by(SupportPushSubscription.created_at.asc(), SupportPushSubscription.id.asc())
+    )).scalars().all()
+    excess = len(subs) - MAX_PUSH_SUBSCRIPTIONS_PER_REPORT
+    for sub in subs:
+        if excess <= 0:
+            break
+        if sub.endpoint == body.endpoint:
+            continue
+        await db.delete(sub)
+        excess -= 1
     await db.commit()
     return {"ok": True}
 
 
 @router.delete("/support/{id}/push")
-async def unsubscribe_push(id: uuid.UUID, endpoint: str | None = None, access_token: str | None = None, request: Request = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
-    raw_key = request.cookies.get(GUEST_COOKIE_NAME) if request else None
-    report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(raw_key))
-    await _rate_limit_prepare(db, current_user, raw_key, _trusted_client_ip(request) if request else None, is_ticket=False, report_id=report.id)
+async def unsubscribe_push(id: uuid.UUID, request: Request, endpoint: str | None = None, access_token: str | None = None, current_user: User | None = Depends(get_support_user), db: AsyncSession = Depends(get_db)):
+    report = await _push_route_report(db, id, request, current_user, access_token)
     if endpoint:
-        existing = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id, SupportPushSubscription.endpoint == endpoint))).scalar_one_or_none()
-        if existing:
-            await db.delete(existing)
-            await db.commit()
+        await db.execute(delete(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id, SupportPushSubscription.endpoint == endpoint))
+        await db.commit()
     return {"ok": True}
 
 
@@ -266,7 +328,7 @@ async def submit_support_report(
     turnstile_token: Optional[str] = Form(None),
     screenshots: List[UploadFile] = File(default=[]),
     voice: Optional[UploadFile] = File(default=None),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: Optional[User] = Depends(get_support_user),
     db: AsyncSession = Depends(get_db),
 ):
     if not message.strip():
@@ -274,18 +336,12 @@ async def submit_support_report(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Message content cannot be empty",
         )
-    raw_guest_key = request.cookies.get(GUEST_COOKIE_NAME)
+    raw_guest_key = guest_key_from_request(request)
     client_ip = _trusted_client_ip(request)
-    # Only the cookie actually carried by the request gets a cookie bucket.
+    # Only a valid cookie actually carried by the request gets a cookie bucket.
     # Mint a fresh key only after rate limiting so cookieless guests cannot
     # bypass the bucket with a fresh key per request.
-    need_new_key = False
     await _rate_limit_prepare(db, current_user, raw_guest_key, client_ip, is_ticket=True)
-    if not current_user and not raw_guest_key:
-        raw_guest_key = new_guest_key()
-        need_new_key = True
-    if not current_user:
-        await verify_turnstile(turnstile_token, client_ip)
 
     if email_override:
         email_override = email_override.strip()
@@ -318,6 +374,15 @@ async def submit_support_report(
         if voice_mime.split(";", 1)[0] not in ALLOWED_VOICE_TYPES:
             raise HTTPException(415, "Unsupported audio recording format")
         validated_voice = (voice.filename, voice_content, voice_mime)
+
+    # Turnstile runs after the cheap checks (so form errors surface first and a valid token
+    # is not burned on them) but before any upload or report write.
+    if not current_user:
+        await verify_turnstile(turnstile_token, client_ip)
+    need_new_key = False
+    if not current_user and not raw_guest_key:
+        raw_guest_key = new_guest_key()
+        need_new_key = True
 
     user_id = current_user.id if current_user else None
     guest_hash = None
@@ -371,7 +436,7 @@ async def submit_support_report(
 
 
 @router.get("/support")
-async def list_my_support_reports(request: Request, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
+async def list_my_support_reports(request: Request, current_user: User | None = Depends(get_support_user), db: AsyncSession = Depends(get_db)):
     reports: list[SupportReport] = []
     seen: set = set()
     if current_user:
@@ -380,7 +445,7 @@ async def list_my_support_reports(request: Request, current_user: User | None = 
             if r.id not in seen:
                 seen.add(r.id)
                 reports.append(r)
-    guest_hash = guest_key_hash_from_cookie(request.cookies.get(GUEST_COOKIE_NAME))
+    guest_hash = guest_key_hash_from_cookie(guest_key_from_request(request))
     if guest_hash:
         guest_reports = (await db.execute(select(SupportReport).where(SupportReport.guest_key_hash == guest_hash).order_by(SupportReport.updated_at.desc()))).scalars().all()
         for r in guest_reports:
@@ -397,14 +462,14 @@ async def list_my_support_reports(request: Request, current_user: User | None = 
 
 
 @router.get("/support/{id}")
-async def get_my_support_report(id: uuid.UUID, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
-    report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(request.cookies.get(GUEST_COOKIE_NAME)))
+async def get_my_support_report(id: uuid.UUID, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_support_user), db: AsyncSession = Depends(get_db)):
+    report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(guest_key_from_request(request)))
     return await report_detail(db, report, is_admin(current_user))
 
 
 @router.post("/support/{id}/messages")
-async def reply_to_support_report(id: uuid.UUID, data: ReplyCreate, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
-    raw_cookie = request.cookies.get(GUEST_COOKIE_NAME)
+async def reply_to_support_report(id: uuid.UUID, data: ReplyCreate, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_support_user), db: AsyncSession = Depends(get_db)):
+    raw_cookie = guest_key_from_request(request)
     client_ip = _trusted_client_ip(request)
     # IP bucket before access so junk requests cannot burn real users' buckets.
     await _rate_limit_ip_only(db, current_user, client_ip, is_ticket=False)
@@ -418,9 +483,10 @@ class OwnerStatusUpdate(BaseModel):
 
 
 @router.patch("/support/{id}")
-async def update_my_support_report(id: uuid.UUID, data: OwnerStatusUpdate, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db)):
-    report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(request.cookies.get(GUEST_COOKIE_NAME)))
-    await _rate_limit_prepare(db, current_user, request.cookies.get(GUEST_COOKIE_NAME), _trusted_client_ip(request), is_ticket=False, report_id=report.id)
+async def update_my_support_report(id: uuid.UUID, data: OwnerStatusUpdate, request: Request, access_token: str | None = None, current_user: User | None = Depends(get_support_user), db: AsyncSession = Depends(get_db)):
+    raw_cookie = guest_key_from_request(request)
+    report = await accessible_report(db, id, current_user, access_token, guest_key_hash_from_cookie(raw_cookie))
+    await _rate_limit_prepare(db, current_user, raw_cookie, _trusted_client_ip(request), is_ticket=False, report_id=report.id)
     add_status_event(db, report, data.status, current_user)
     await db.commit()
     return {"status": "success", "report_status": report.status}

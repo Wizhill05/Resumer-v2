@@ -52,10 +52,14 @@ export const createdIssueSchema = z.object({
   access_token: z.string().nullable().optional()
 })
 const savedIssuesSchema = z.array(z.object({ id: z.string(), token: z.string() }))
+const SAVED_ISSUES_KEY = "resumer_support_threads"
+const GUEST_TICKET_FLAG = "resumer_has_support_ticket"
+/** Event fired on window whenever an issue is marked as seen in this tab. */
+export const SUPPORT_SEEN_EVENT = "resumer:support-seen"
 export function savedGuestIssues() {
   try {
     return savedIssuesSchema.parse(
-      JSON.parse(localStorage.getItem("resumer_support_threads") || "[]")
+      JSON.parse(localStorage.getItem(SAVED_ISSUES_KEY) || "[]")
     )
   } catch {
     return []
@@ -64,12 +68,27 @@ export function savedGuestIssues() {
 export function rememberGuestIssue(id: string, token: string) {
   try {
     localStorage.setItem(
-      "resumer_support_threads",
+      SAVED_ISSUES_KEY,
       JSON.stringify(
         [{ id, token }, ...savedGuestIssues().filter((issue) => issue.id !== id)].slice(0, 30)
       )
     )
   } catch {}
+  markGuestTicket()
+}
+/** Remember that this browser has created or opened a guest ticket. */
+export function markGuestTicket() {
+  try {
+    localStorage.setItem(GUEST_TICKET_FLAG, "1")
+  } catch {}
+}
+/** True when this browser may own guest tickets, so the support list is worth fetching. */
+export function hasGuestTicketMarker() {
+  try {
+    return localStorage.getItem(GUEST_TICKET_FLAG) === "1" || savedGuestIssues().length > 0
+  } catch {
+    return false
+  }
 }
 export function issueHref(id: string, token?: string | null) {
   return `/support/issues/${encodeURIComponent(id)}${token ? `?access_token=${encodeURIComponent(token)}` : ""}`
@@ -99,6 +118,9 @@ export function markLastSeen(id: string, at: string) {
     map[id] = at
     localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(map))
   } catch {}
+  try {
+    window.dispatchEvent(new CustomEvent(SUPPORT_SEEN_EVENT, { detail: { id, at } }))
+  } catch {}
 }
 export function hasUnseenReply(issues: Pick<SupportIssue, "id" | "last_admin_reply_at">[]) {
   const seen = getLastSeen()
@@ -108,6 +130,15 @@ export function hasUnseenReply(issues: Pick<SupportIssue, "id" | "last_admin_rep
     return Date.parse(issue.last_admin_reply_at) > seenAt
   })
 }
+export class SupportFetchError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "SupportFetchError"
+    this.status = status
+  }
+}
+export const SESSION_EXPIRED_MESSAGE = "Your session expired. Sign in again."
 export async function supportFetch(url: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(url, { ...init, cache: "no-store" })
   const data: unknown = await response.json().catch(() => null)
@@ -116,7 +147,10 @@ export async function supportFetch(url: string, init?: RequestInit): Promise<unk
     const error = z
       .object({ detail: z.string().optional(), error: z.string().optional() })
       .safeParse(data)
-    throw new Error(error.success ? error.data.detail || error.data.error || fallback : fallback)
+    throw new SupportFetchError(
+      error.success ? error.data.detail || error.data.error || fallback : fallback,
+      response.status
+    )
   }
   return data
 }

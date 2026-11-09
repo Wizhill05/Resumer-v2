@@ -90,7 +90,7 @@ class SupportRateLimit(Base):
     __tablename__ = "support_rate_limits"
 
     key: Mapped[str] = mapped_column(String, primary_key=True)
-    request_count: Mapped[int] = mapped_column(Integer, default=0)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     reset_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -107,7 +107,7 @@ class SupportPushSubscription(Base):
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)
     p256dh: Mapped[str] = mapped_column(Text, nullable=False)
     auth: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class PromptConfig(Base):

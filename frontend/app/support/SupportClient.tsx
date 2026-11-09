@@ -15,8 +15,20 @@ import {
   createdIssueSchema,
   issueHref,
   rememberGuestIssue,
+  SESSION_EXPIRED_MESSAGE,
+  SupportFetchError,
   supportFetch
 } from "@/components/support/supportApi"
+
+type TurnstileApi = {
+  render: (el: HTMLElement, opts: Record<string, unknown>) => string | undefined
+  reset: (id: string) => void
+  remove: (id: string) => void
+}
+function turnstileApi(): TurnstileApi | undefined {
+  return (window as unknown as { turnstile?: TurnstileApi }).turnstile
+}
+const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js"
 
 export function SupportClient({
   userEmail,
@@ -53,40 +65,58 @@ export function SupportClient({
   const [submitting, setSubmitting] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState("")
   const turnstileHostRef = useRef<HTMLDivElement | null>(null)
+  const turnstileWidgetId = useRef<string | null>(null)
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || ""
+  const needsTurnstile = !signedIn && Boolean(siteKey)
   useEffect(() => {
-    if (signedIn || !siteKey) return
+    if (!needsTurnstile) return
     let cancelled = false
     const host = turnstileHostRef.current
     if (!host) return
     function renderWidget() {
-      const w = window as unknown as { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string; reset: (id: string) => void } }
-      if (cancelled || !w.turnstile) return
-      w.turnstile.render(host!, {
+      const api = turnstileApi()
+      if (cancelled || !api || turnstileWidgetId.current) return
+      const widgetId = api.render(host!, {
         sitekey: siteKey,
         callback: (token: string) => setTurnstileToken(token),
         "expired-callback": () => setTurnstileToken(""),
-        "error-callback": () => setTurnstileToken("")
+        "error-callback": () => setTurnstileToken(""),
+        "timeout-callback": () => setTurnstileToken("")
       })
+      turnstileWidgetId.current = widgetId ?? null
     }
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[src="https://challenges.cloudflare.com/turnstile/v0/api.js"]'
-    )
-    if (existing) {
-      existing.addEventListener("load", renderWidget)
-      renderWidget()
-    } else {
-      const script = document.createElement("script")
-      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js"
+    let script = document.querySelector<HTMLScriptElement>(`script[src="${TURNSTILE_SRC}"]`)
+    if (!script) {
+      script = document.createElement("script")
+      script.src = TURNSTILE_SRC
       script.async = true
       script.defer = true
-      script.addEventListener("load", renderWidget)
       document.head.appendChild(script)
     }
+    script.addEventListener("load", renderWidget)
+    renderWidget()
+    const loadedScript = script
     return () => {
       cancelled = true
+      loadedScript.removeEventListener("load", renderWidget)
+      const widgetId = turnstileWidgetId.current
+      turnstileWidgetId.current = null
+      if (widgetId) {
+        try {
+          turnstileApi()?.remove(widgetId)
+        } catch {}
+      }
+      setTurnstileToken("")
     }
-  }, [signedIn, siteKey])
+  }, [needsTurnstile, siteKey])
+  function resetTurnstile() {
+    setTurnstileToken("")
+    const widgetId = turnstileWidgetId.current
+    if (!widgetId) return
+    try {
+      turnstileApi()?.reset(widgetId)
+    } catch {}
+  }
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -147,6 +177,10 @@ export function SupportClient({
       setError("Describe your issue before sending.")
       return
     }
+    if (needsTurnstile && !turnstileToken) {
+      setError("Please complete the human check before sending.")
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -175,10 +209,14 @@ export function SupportClient({
       if (issue.access_token && !signedIn) rememberGuestIssue(issue.id, issue.access_token)
       router.push(`${issueHref(issue.id, signedIn ? undefined : issue.access_token)}${issue.access_token ? "&new=1" : ""}`)
     } catch (err) {
+      // A Turnstile token is single use: always get a fresh one before the next try.
+      if (needsTurnstile) resetTurnstile()
       setError(
-        err instanceof Error
-          ? err.message
-          : "Could not create your issue. Your draft is still here."
+        err instanceof SupportFetchError && err.status === 401
+          ? SESSION_EXPIRED_MESSAGE
+          : err instanceof Error
+            ? err.message
+            : "Could not create your issue. Your draft is still here."
       )
       setSubmitting(false)
     }
@@ -377,7 +415,7 @@ export function SupportClient({
             Replies stay in this conversation. Email is optional and we will not send an automatic email to a guest address you type here.
             {!signedIn && " Keep your private issue link so you can return later."}
           </p>
-          {!signedIn && siteKey && <div ref={turnstileHostRef} className="pt-1" aria-label="Human check" />}
+          {needsTurnstile && <div ref={turnstileHostRef} className="pt-1" aria-label="Human check" />}
         </div>
         {generationId && (
           <p className="break-all text-xs text-ink-muted">
@@ -396,7 +434,11 @@ export function SupportClient({
           <p className="text-xs text-ink-muted">
             Only you and the support team can view this issue.
           </p>
-          <Button type="submit" disabled={submitting || recording} className="min-h-11 px-5">
+          <Button
+            type="submit"
+            disabled={submitting || recording || (needsTurnstile && !turnstileToken)}
+            className="min-h-11 px-5"
+          >
             {submitting && <Loader2 size={16} className="animate-spin" />}
             {submitting ? "Creating issue..." : "Create issue"}
           </Button>

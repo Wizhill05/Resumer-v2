@@ -1,8 +1,10 @@
 """Support ownership, conversation history, and notification delivery."""
+import asyncio
 import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -27,30 +29,46 @@ ReportStatus = Literal["open", "in_progress", "resolved", "closed"]
 _PUSH_ENDPOINT_MAX_LENGTH = 1024
 _PUSH_EXACT_HOSTS = {"fcm.googleapis.com", "android.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
 _PUSH_SUFFIX_HOSTS = ("push.services.mozilla.com", "notify.windows.com", "push.apple.com")
+_PUSH_HOST_RE = re.compile(r"^[a-z0-9.-]+$")
+# Characters that different URL parsers (urllib.parse vs urllib3/requests) disagree on
+# inside the authority. Any of them could make validation and delivery see different hosts.
+_PUSH_AUTHORITY_FORBIDDEN = set("\\;%@[]")
+PUSH_TIMEOUT_SECONDS = 10
 
 
 def validate_push_endpoint(endpoint: str) -> None:
     """Validate that a WebPush endpoint points at a known push service.
 
     Raises ValueError for anything that is not an allowlisted https endpoint.
-    Used both at subscribe time and before sending to prevent SSRF/fan-out.
+    Used both at subscribe time and right before sending to prevent SSRF/fan-out.
+    The host must parse identically under urllib.parse and urllib3 (which requests
+    and pywebpush use to connect), so parser-differential tricks are rejected.
     """
-    from urllib.parse import urlparse
+    from urllib.parse import urlsplit
+
+    from urllib3.util import parse_url
 
     if not isinstance(endpoint, str):
         raise ValueError("Invalid push endpoint")
-    endpoint = endpoint.strip()
-    if not endpoint or len(endpoint) > _PUSH_ENDPOINT_MAX_LENGTH:
+    if endpoint != endpoint.strip() or not endpoint or len(endpoint) > _PUSH_ENDPOINT_MAX_LENGTH:
         raise ValueError("Invalid push endpoint")
-    if any(c.isspace() or ord(c) < 0x20 for c in endpoint):
+    if any(c.isspace() or ord(c) < 0x20 or ord(c) == 0x7F for c in endpoint):
         raise ValueError("Invalid push endpoint")
-    parsed = urlparse(endpoint)
+    if "\\" in endpoint:
+        raise ValueError("Invalid push endpoint")
+    try:
+        parsed = urlsplit(endpoint)
+    except ValueError:
+        raise ValueError("Invalid push endpoint")
     if parsed.scheme != "https":
+        raise ValueError("Invalid push endpoint")
+    authority = parsed.netloc
+    if not authority or any(c in _PUSH_AUTHORITY_FORBIDDEN for c in authority):
         raise ValueError("Invalid push endpoint")
     if parsed.username or parsed.password:
         raise ValueError("Invalid push endpoint")
     host = parsed.hostname
-    if not host:
+    if not host or not _PUSH_HOST_RE.match(host) or host.endswith(".") or host.startswith(".") or ".." in host:
         raise ValueError("Invalid push endpoint")
     try:
         port = parsed.port
@@ -58,11 +76,19 @@ def validate_push_endpoint(endpoint: str) -> None:
         raise ValueError("Invalid push endpoint")
     if port is not None and port != 443:
         raise ValueError("Invalid push endpoint")
-    host_lower = host.lower().rstrip(".")
-    if host_lower in _PUSH_EXACT_HOSTS:
+    # The connecting library must agree on host and port.
+    try:
+        alt = parse_url(endpoint)
+    except Exception:
+        raise ValueError("Invalid push endpoint")
+    if (alt.scheme or "").lower() != "https" or (alt.host or "").lower() != host or alt.auth:
+        raise ValueError("Invalid push endpoint")
+    if alt.port is not None and alt.port != 443:
+        raise ValueError("Invalid push endpoint")
+    if host in _PUSH_EXACT_HOSTS:
         return
     for suffix in _PUSH_SUFFIX_HOSTS:
-        if host_lower == suffix or host_lower.endswith("." + suffix):
+        if host == suffix or host.endswith("." + suffix):
             return
     raise ValueError("Invalid push endpoint")
 
@@ -106,10 +132,26 @@ def hash_guest_key(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def guest_key_hash_from_cookie(raw: str | None) -> str | None:
-    if not raw or not raw.strip():
+_GUEST_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+
+
+def is_valid_guest_key(raw: str | None) -> bool:
+    """True only for values shaped like keys we mint (token_urlsafe(32): 43 urlsafe chars)."""
+    return bool(raw) and bool(_GUEST_KEY_RE.match(raw))
+
+
+def guest_key_from_request(request) -> str | None:
+    """Return the guest key cookie only if it looks server-issued; ignore anything else."""
+    if request is None:
         return None
-    return hash_guest_key(raw.strip())
+    raw = request.cookies.get(GUEST_COOKIE_NAME)
+    return raw if is_valid_guest_key(raw) else None
+
+
+def guest_key_hash_from_cookie(raw: str | None) -> str | None:
+    if not is_valid_guest_key(raw):
+        return None
+    return hash_guest_key(raw)
 
 
 def new_guest_key() -> str:
@@ -306,37 +348,62 @@ async def verify_turnstile(token: str | None, remoteip: str | None) -> None:
         raise HTTPException(422, "Please complete the human check and try again")
 
 
-def _send_push_sync(sub, payload: dict, dead: list) -> None:
+def _no_redirect_session():
+    """A requests session that never follows redirects (a redirect could point anywhere)."""
+    import requests
+
+    class _NoRedirectSession(requests.Session):
+        def __init__(self) -> None:
+            super().__init__()
+            self.max_redirects = 0
+
+        def request(self, method, url, *args, **kwargs):
+            kwargs["allow_redirects"] = False
+            return super().request(method, url, *args, **kwargs)
+
+    return _NoRedirectSession()
+
+
+def _send_push_sync(sub, payload: dict, dead: list, session=None) -> None:
     if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
         return
-    if not is_valid_push_endpoint(getattr(sub, "endpoint", "")):
+    endpoint = getattr(sub, "endpoint", "")
+    # Re-validate right before sending: rows may predate a stricter allowlist.
+    if not is_valid_push_endpoint(endpoint):
         logger.warning("Push delivery skipped for invalid endpoint: %s", getattr(sub, "id", sub))
         dead.append(sub.id)
         return
     try:
         from pywebpush import webpush
         webpush(
-            subscription_info={"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}},
+            subscription_info={"endpoint": endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}},
             data=json.dumps(payload),
             vapid_private_key=settings.VAPID_PRIVATE_KEY,
             vapid_claims={"sub": settings.VAPID_SUBJECT},
             ttl=86400,
+            timeout=PUSH_TIMEOUT_SECONDS,
+            requests_session=session if session is not None else _no_redirect_session(),
         )
     except Exception as exc:
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
-        if status_code in (404, 410) or "404" in str(exc) or "410" in str(exc):
+        if status_code in (404, 410):
             dead.append(sub.id)
-        logger.warning("Push delivery failed for %s: %s", getattr(sub, "id", sub), exc)
+        logger.warning("Push delivery failed for %s (status %s): %s", getattr(sub, "id", sub), status_code, type(exc).__name__)
 
 
-async def notify_push(report_id: uuid.UUID, message: str, report=None) -> None:
-    """Send push to all subscriptions of report. Never raise."""
+async def notify_push(report_id: uuid.UUID, message: str, report=None, *, guest: bool | None = None) -> None:
+    """Send push to all subscriptions of report. Never raise.
+
+    Opens its own DB session, so it is safe to run after the request has finished.
+    """
     if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
         return
     try:
+        if guest is None:
+            guest = report is not None and report.user_id is None
         body = (message or "")[:120]
         url = f"/support/issues/{report_id}"
-        if report is not None and report.user_id is None:
+        if guest:
             url += f"?access_token={guest_token(report_id)}"
         payload = {"title": "New reply on your Resumer support issue", "body": body, "url": url}
         from src.core.database import AsyncSessionLocal
@@ -347,8 +414,12 @@ async def notify_push(report_id: uuid.UUID, message: str, report=None) -> None:
             dead: list = []
 
             def _run_all() -> None:
-                for s in subs:
-                    _send_push_sync(s, payload, dead)
+                session = _no_redirect_session()
+                try:
+                    for s in subs:
+                        _send_push_sync(s, payload, dead, session)
+                finally:
+                    session.close()
 
             await run_in_threadpool(_run_all)
             if dead:
@@ -367,6 +438,33 @@ async def notify_push(report_id: uuid.UUID, message: str, report=None) -> None:
         logger.exception("Push notify failed for report %s", report_id)
 
 
+# Strong references so fire-and-forget push tasks are not garbage collected mid-flight.
+_push_tasks: set[asyncio.Task] = set()
+
+
+def _push_task_done(task: asyncio.Task) -> None:
+    _push_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("Background push task failed", exc_info=exc)
+
+
+def schedule_push(report_id: uuid.UUID, message: str, *, guest: bool) -> asyncio.Task | None:
+    """Fire-and-forget push delivery. Never blocks or raises into the caller."""
+    if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
+        return None
+    try:
+        task = asyncio.get_running_loop().create_task(notify_push(report_id, message, guest=guest))
+    except Exception:
+        logger.exception("Could not schedule push for report %s", report_id)
+        return None
+    _push_tasks.add(task)
+    task.add_done_callback(_push_task_done)
+    return task
+
+
 async def append_reply(db: AsyncSession, report: SupportReport, data: ReplyCreate, actor: User | None, admin: bool) -> dict:
     message = SupportMessage(report_id=report.id, author_id=actor.id if actor else None,
                              author_role="admin" if admin else "user", message=data.message)
@@ -378,8 +476,5 @@ async def append_reply(db: AsyncSession, report: SupportReport, data: ReplyCreat
     await db.refresh(message)
     notification = await notify_owner(db, report, data.message) if admin else await notify_admins(report, data.message)
     if admin:
-        try:
-            await notify_push(report.id, data.message, report=report)
-        except Exception:
-            logger.exception("Push notify failed after reply %s", report.id)
+        schedule_push(report.id, data.message, guest=report.user_id is None)
     return {"message": message_out(message), "notification_status": notification}

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
@@ -319,7 +320,7 @@ async def test_guest_rate_limit_429(context, monkeypatch):
     app.dependency_overrides[get_optional_user] = lambda: None
     monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
     monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
-    raw_guest_key = "rate-limit-test-key"
+    raw_guest_key = support.new_guest_key()
     # Guest cookie limit 5/hour: submit 6
     last_status = None
     for i in range(6):
@@ -406,6 +407,7 @@ async def test_push_subscribe_and_admin_reply_triggers_push(context, monkeypatch
     app.dependency_overrides[get_optional_user] = lambda: admin
     reply = await client.post(f"/feedback/support/{report.id}/messages", json={"message": "push trigger"})
     assert reply.status_code == 200
+    await _drain_push_tasks()
     assert len(fake_store["called"]) == 1
 
 
@@ -422,7 +424,7 @@ async def test_push_410_cleanup(context, monkeypatch):
     class FakePush410Module:
         @staticmethod
         def webpush(**kwargs):
-            raise Exception("410 gone")
+            raise _push_error(410)
 
     monkeypatch.setitem(sys.modules, "pywebpush", FakePush410Module)
     from contextlib import asynccontextmanager
@@ -550,3 +552,381 @@ async def test_patch_support_rate_limit_429(context, monkeypatch):
             break
     assert last == 429
 
+
+
+async def _drain_push_tasks():
+    tasks = list(support._push_tasks)
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+class _FakeResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+
+def _push_error(status_code):
+    exc = Exception(f"Push failed: {status_code}")
+    exc.response = _FakeResponse(status_code)
+    return exc
+
+
+def _enable_push(monkeypatch, db):
+    monkeypatch.setattr(support.settings, "VAPID_PUBLIC_KEY", "testpub")
+    monkeypatch.setattr(support.settings, "VAPID_PRIVATE_KEY", "testpriv")
+    monkeypatch.setattr(support.settings, "VAPID_SUBJECT", "mailto:test@example.com")
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    monkeypatch.setattr("src.core.database.AsyncSessionLocal", session)
+
+
+PUSH_BYPASS_ENDPOINTS = [
+    "https://attacker.example\\.push.apple.com/x",
+    "https://attacker.example\\@web.push.apple.com/x",
+    "https://attacker.com;.push.apple.com/x",
+    "https://attacker.com%00.push.apple.com/x",
+    "https://attacker.com%2e.push.apple.com/x",
+    "https://attacker.com@web.push.apple.com/x",
+    "https://fcm.googleapis.com:443@attacker.com/x",
+    "https://fcm.googleapis.com./x",
+    "https://.push.apple.com/x",
+    "https://attacker..push.apple.com/x",
+    "https://evilpush.apple.com/x",
+    "https://push.apple.com.attacker.com/x",
+    "https://fcm.googleapis.com:8443/x",
+    "https://fcm.googleapis.com:0/x",
+    "https://[::1]/x",
+    "https://fcm.googleapis.com\t/x",
+    " https://fcm.googleapis.com/x",
+    "https://fcm.googleapis.com/x\n",
+    "https://fcm.googleapis.com/a b",
+    "https://fcm.googleapis.com\x00/x",
+    "https://attacker_com.push.apple.com/x",
+    "https:///fcm.googleapis.com/x",
+    "ftp://fcm.googleapis.com/x",
+]
+
+
+@pytest.mark.parametrize("endpoint", PUSH_BYPASS_ENDPOINTS)
+def test_validate_push_endpoint_rejects_parser_bypasses(endpoint):
+    with pytest.raises(ValueError):
+        support.validate_push_endpoint(endpoint)
+    assert support.is_valid_push_endpoint(endpoint) is False
+
+
+@pytest.mark.parametrize("endpoint", PUSH_BYPASS_ENDPOINTS[:7])
+async def test_push_subscribe_rejects_parser_bypasses(context, endpoint):
+    client, db, app, owner, stranger, admin, report, guest = context
+    resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": endpoint, "keys": {"p256dh": "p", "auth": "a"}})
+    assert resp.status_code == 422
+    rows = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id))).scalars().all()
+    assert rows == []
+
+
+@pytest.mark.parametrize("endpoint", [
+    "https://fcm.googleapis.com/fcm/send/abc:APA91b",
+    "https://web.push.apple.com:443/QGx",
+    "https://updates.push.services.mozilla.com/wpush/v2/gAAAA",
+    "https://wns2-par02p.notify.windows.com/w/?token=BQYAAAB%2bAbc%3d",
+    "https://api.push.apple.com/3/device/abc",
+])
+def test_validate_push_endpoint_accepts_real_services(endpoint):
+    support.validate_push_endpoint(endpoint)
+
+
+def test_send_push_passes_timeout_and_no_redirect_session(monkeypatch):
+    import sys
+
+    import requests
+
+    monkeypatch.setattr(support.settings, "VAPID_PUBLIC_KEY", "testpub")
+    monkeypatch.setattr(support.settings, "VAPID_PRIVATE_KEY", "testpriv")
+    calls = []
+
+    class FakePushModule:
+        @staticmethod
+        def webpush(**kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setitem(sys.modules, "pywebpush", FakePushModule)
+    sub = SupportPushSubscription(id=uuid.uuid4(), report_id=uuid.uuid4(), endpoint="https://fcm.googleapis.com/fcm/send/x", p256dh="p", auth="a")
+    dead = []
+    support._send_push_sync(sub, {"title": "t"}, dead)
+    assert dead == []
+    assert calls[0]["timeout"] == 10
+    session = calls[0]["requests_session"]
+    assert isinstance(session, requests.Session)
+    assert session.max_redirects == 0
+    captured = {}
+
+    def fake_request(self, method, url, *args, **kwargs):
+        captured.update(kwargs)
+        return _FakeResponse(201)
+
+    monkeypatch.setattr(requests.Session, "request", fake_request)
+    session.post("https://fcm.googleapis.com/fcm/send/x", data=b"x", allow_redirects=True)
+    assert captured["allow_redirects"] is False
+
+    # A stored row that no longer validates is never sent and is marked dead.
+    bad = SupportPushSubscription(id=uuid.uuid4(), report_id=uuid.uuid4(), endpoint="https://attacker.example\\.push.apple.com/x", p256dh="p", auth="a")
+    support._send_push_sync(bad, {"title": "t"}, dead)
+    assert dead == [bad.id]
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("error,is_dead", [
+    (_push_error(404), True),
+    (_push_error(410), True),
+    (_push_error(500), False),
+    (_push_error(429), False),
+    (Exception("410 gone"), False),
+    (Exception("upstream 404 timeout"), False),
+])
+def test_dead_subscription_only_from_status_code(monkeypatch, error, is_dead):
+    import sys
+
+    monkeypatch.setattr(support.settings, "VAPID_PUBLIC_KEY", "testpub")
+    monkeypatch.setattr(support.settings, "VAPID_PRIVATE_KEY", "testpriv")
+
+    class FakePushModule:
+        @staticmethod
+        def webpush(**kwargs):
+            raise error
+
+    monkeypatch.setitem(sys.modules, "pywebpush", FakePushModule)
+    sub = SupportPushSubscription(id=uuid.uuid4(), report_id=uuid.uuid4(), endpoint="https://fcm.googleapis.com/fcm/send/x", p256dh="p", auth="a")
+    dead = []
+    support._send_push_sync(sub, {"title": "t"}, dead)
+    assert (dead == [sub.id]) is is_dead
+
+
+@pytest.mark.parametrize("mode", ["hang", "raise"])
+async def test_admin_reply_returns_when_push_hangs_or_raises(context, monkeypatch, mode):
+    from src.api.admin import router as admin_router
+    from src.core.auth import get_current_admin
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    _enable_push(monkeypatch, db)
+    started = asyncio.Event()
+
+    async def bad_push(report_id, message, report=None, *, guest=None):
+        started.set()
+        if mode == "hang":
+            await asyncio.Event().wait()
+        raise RuntimeError("push service exploded")
+
+    monkeypatch.setattr(support, "notify_push", bad_push)
+    app.dependency_overrides[get_optional_user] = lambda: admin
+    reply = await asyncio.wait_for(client.post(f"/feedback/support/{report.id}/messages", json={"message": "hello"}), timeout=5)
+    assert reply.status_code == 200
+    assert reply.json()["notification_status"] == "sent"
+    app.include_router(admin_router)
+    app.dependency_overrides[get_current_admin] = lambda: admin
+    status_resp = await asyncio.wait_for(client.patch(f"/admin/feedback/reports/{report.id}", json={"status": "resolved"}), timeout=5)
+    assert status_resp.status_code == 200
+    await asyncio.wait_for(started.wait(), timeout=5)
+    tasks = list(support._push_tasks)
+    assert tasks
+    if mode == "hang":
+        assert all(not t.done() for t in tasks)
+        for t in tasks:
+            t.cancel()
+    await _drain_push_tasks()
+    assert not support._push_tasks
+
+
+async def test_turnstile_runs_after_cheap_validation(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    monkeypatch.setattr(support.settings, "TURNSTILE_SECRET_KEY", "test-secret")
+    verify_calls = []
+
+    def fake_verify(token, remoteip):
+        verify_calls.append(token)
+        return False
+
+    monkeypatch.setattr("src.services.support._turnstile_verify_sync", fake_verify)
+    storage = Mock()
+    monkeypatch.setattr("src.api.feedback.StorageService", lambda: storage)
+    resp = await client.post("/feedback/support", data={"message": "hi", "email_override": "not an email", "turnstile_token": "bad"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Enter a valid email address"
+    resp = await client.post("/feedback/support", data={"message": "hi", "category": "nope", "turnstile_token": "bad"})
+    assert resp.json()["detail"] == "Choose a valid report category"
+    resp = await client.post("/feedback/support", data={"message": "hi", "turnstile_token": "bad"}, files={"screenshots": ("x.html", b"<b>", "text/html")})
+    assert resp.status_code == 415
+    assert verify_calls == []
+    # Valid form, invalid token: Turnstile error, and nothing uploaded or stored.
+    before = len((await db.execute(select(SupportReport))).scalars().all())
+    resp = await client.post("/feedback/support", data={"message": "hi", "turnstile_token": "bad"}, files={"screenshots": ("x.png", b"png", "image/png")})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Please complete the human check and try again"
+    assert verify_calls == ["bad"]
+    storage.upload_bytes.assert_not_called()
+    assert len((await db.execute(select(SupportReport))).scalars().all()) == before
+    assert "set-cookie" not in resp.headers
+
+
+async def test_push_status_endpoint_is_per_report_and_access_checked(context):
+    client, db, app, owner, stranger, admin, report, guest = context
+    endpoint = "https://fcm.googleapis.com/fcm/send/status-check"
+    url = f"/feedback/support/{report.id}/push"
+    assert (await client.get(url, params={"endpoint": endpoint})).json() == {"subscribed": False}
+    assert (await client.post(url, json={"endpoint": endpoint, "keys": {"p256dh": "p", "auth": "a"}})).status_code == 200
+    assert (await client.get(url, params={"endpoint": endpoint})).json() == {"subscribed": True}
+    assert (await client.get(url, params={"endpoint": endpoint + "-other"})).json() == {"subscribed": False}
+    assert (await client.get(url)).json() == {"subscribed": False}
+    # Same browser endpoint, different report: not subscribed there.
+    other = SupportReport(user_id=owner.id, message="Second issue", status="open")
+    db.add(other)
+    await db.commit()
+    assert (await client.get(f"/feedback/support/{other.id}/push", params={"endpoint": endpoint})).json() == {"subscribed": False}
+    # Turning off one issue leaves the other subscription alone.
+    assert (await client.post(f"/feedback/support/{other.id}/push", json={"endpoint": endpoint, "keys": {"p256dh": "p", "auth": "a"}})).status_code == 200
+    assert (await client.delete(url, params={"endpoint": endpoint})).status_code == 200
+    assert (await client.get(url, params={"endpoint": endpoint})).json() == {"subscribed": False}
+    assert (await client.get(f"/feedback/support/{other.id}/push", params={"endpoint": endpoint})).json() == {"subscribed": True}
+    app.dependency_overrides[get_optional_user] = lambda: stranger
+    assert (await client.get(url, params={"endpoint": endpoint})).status_code == 404
+    app.dependency_overrides[get_optional_user] = lambda: None
+    assert (await client.get(f"/feedback/support/{guest.id}/push", params={"endpoint": endpoint})).status_code == 404
+    token = support.guest_token(guest.id)
+    assert (await client.get(f"/feedback/support/{guest.id}/push", params={"endpoint": endpoint, "access_token": token})).json() == {"subscribed": False}
+
+
+async def test_push_status_endpoint_is_rate_limited(context, monkeypatch):
+    from src.core.config import settings
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    monkeypatch.setattr(settings, "SUPPORT_REPLY_HOURLY_USER", 2)
+    statuses = [(await client.get(f"/feedback/support/{report.id}/push", params={"endpoint": "https://fcm.googleapis.com/x"})).status_code for _ in range(3)]
+    assert statuses == [200, 200, 429]
+
+
+async def test_admin_status_change_skips_email_for_guest_reports(context, monkeypatch):
+    from src.api.admin import router as admin_router
+    from src.core.auth import get_current_admin
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.include_router(admin_router)
+    app.dependency_overrides[get_current_admin] = lambda: admin
+    guest.email_override = "typed@example.com"
+    await db.commit()
+    scheduled = Mock()
+    monkeypatch.setattr(support, "schedule_push", scheduled)
+    resp = await client.patch(f"/admin/feedback/reports/{guest.id}", json={"status": "resolved"})
+    assert resp.status_code == 200
+    assert resp.json()["notification_status"] == "no_recipient"
+    support.notify_owner.assert_not_awaited()
+    scheduled.assert_called_once()
+    assert scheduled.call_args.kwargs["guest"] is True
+    # A human-written admin reply to the guest still emails.
+    resp = await client.patch(f"/admin/feedback/reports/{guest.id}", json={"admin_note": "We fixed it"})
+    assert resp.status_code == 200
+    support.notify_owner.assert_awaited_once()
+    # Signed-in owners still get status emails.
+    support.notify_owner.reset_mock()
+    resp = await client.patch(f"/admin/feedback/reports/{report.id}", json={"status": "resolved"})
+    assert resp.json()["notification_status"] == "sent"
+    support.notify_owner.assert_awaited_once()
+
+
+async def test_push_subscribe_upserts_existing_row(context):
+    client, db, app, owner, stranger, admin, report, guest = context
+    endpoint = "https://fcm.googleapis.com/fcm/send/race"
+    # A row inserted by a concurrent request that this request never selected.
+    db.add(SupportPushSubscription(report_id=report.id, endpoint=endpoint, p256dh="old", auth="old"))
+    await db.commit()
+    resp = await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": endpoint, "keys": {"p256dh": "newp", "auth": "newa"}})
+    assert resp.status_code == 200
+    rows = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id).execution_options(populate_existing=True))).scalars().all()
+    assert len(rows) == 1
+    assert (rows[0].p256dh, rows[0].auth) == ("newp", "newa")
+    # Re-subscribing an existing endpoint at the cap never evicts it or others.
+    for i in range(4):
+        assert (await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": f"{endpoint}-{i}", "keys": {"p256dh": "p", "auth": "a"}})).status_code == 200
+    assert (await client.post(f"/feedback/support/{report.id}/push", json={"endpoint": endpoint, "keys": {"p256dh": "p2", "auth": "a2"}})).status_code == 200
+    rows = (await db.execute(select(SupportPushSubscription).where(SupportPushSubscription.report_id == report.id))).scalars().all()
+    assert len(rows) == 5
+
+
+@pytest.mark.parametrize("bad_cookie", ["short", "x" * 44, "a" * 42 + "!", "rate-limit-test-key"])
+async def test_bad_guest_cookie_is_replaced(context, monkeypatch, bad_cookie):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    resp = await client.post("/feedback/support", data={"message": "cookie"}, cookies={"resumer_support_key": bad_cookie})
+    assert resp.status_code == 200
+    new_key = resp.headers["set-cookie"].split("resumer_support_key=")[1].split(";")[0]
+    assert new_key != bad_cookie
+    assert support.is_valid_guest_key(new_key)
+    created = await db.get(SupportReport, uuid.UUID(resp.json()["id"]))
+    assert created.guest_key_hash == support.hash_guest_key(new_key)
+    # A forged non-issued value never grants access, even if a row carries its hash.
+    guest.guest_key_hash = support.hash_guest_key(bad_cookie)
+    await db.commit()
+    client.cookies.clear()
+    listed = await client.get("/feedback/support", cookies={"resumer_support_key": bad_cookie})
+    assert str(guest.id) not in [row["id"] for row in listed.json()]
+    assert (await client.get(f"/feedback/support/{guest.id}", cookies={"resumer_support_key": bad_cookie})).status_code == 404
+
+
+async def test_valid_guest_cookie_is_kept(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    key = support.new_guest_key()
+    resp = await client.post("/feedback/support", data={"message": "cookie"}, cookies={"resumer_support_key": key})
+    assert resp.status_code == 200
+    assert "set-cookie" not in resp.headers
+    created = await db.get(SupportReport, uuid.UUID(resp.json()["id"]))
+    assert created.guest_key_hash == support.hash_guest_key(key)
+
+
+async def test_expired_rate_limit_rows_are_cleaned_up(context, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from src.api import feedback
+
+    client, db, app, owner, stranger, admin, report, guest = context
+    now = datetime.now(timezone.utc)
+    db.add_all([
+        SupportRateLimit(key="stale", request_count=3, reset_at=now - timedelta(days=2)),
+        SupportRateLimit(key="recent", request_count=3, reset_at=now - timedelta(hours=2)),
+        SupportRateLimit(key="active", request_count=3, reset_at=now + timedelta(minutes=30)),
+    ])
+    await db.commit()
+    monkeypatch.setattr(feedback, "_RATE_LIMIT_CLEANUP_PROBABILITY", 1.0)
+    resp = await client.patch(f"/feedback/support/{report.id}", json={"status": "resolved"})
+    assert resp.status_code == 200
+    keys = {row.key for row in (await db.execute(select(SupportRateLimit))).scalars().all()}
+    assert "stale" not in keys
+    assert {"recent", "active"} <= keys
+
+
+async def test_unresolvable_session_gets_401_not_guest(context, monkeypatch):
+    client, db, app, owner, stranger, admin, report, guest = context
+    app.dependency_overrides[get_optional_user] = lambda: None
+    monkeypatch.setattr("src.api.feedback.notify_submission", AsyncMock())
+    monkeypatch.setattr("src.services.feedback_ai.process_new_support_report", AsyncMock())
+    monkeypatch.setattr(support.settings, "TURNSTILE_SECRET_KEY", "test-secret")
+    monkeypatch.setattr("src.services.support._turnstile_verify_sync", lambda token, ip: True)
+    resp = await client.post("/feedback/support", data={"message": "stale session"}, headers={"Authorization": "Bearer not-a-real-user-token"})
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Your session expired. Sign in again."
+    assert "set-cookie" not in resp.headers
+    assert (await client.get("/feedback/support", headers={"Authorization": "Bearer stale"})).status_code == 401
+    # Normal guests (no Authorization header) are unaffected.
+    resp = await client.post("/feedback/support", data={"message": "guest", "turnstile_token": "ok"})
+    assert resp.status_code == 200
+    # Signed-in users that resolve are unaffected by the header check.
+    app.dependency_overrides[get_optional_user] = lambda: owner
+    resp = await client.post("/feedback/support", data={"message": "owner"}, headers={"Authorization": "Bearer whatever"})
+    assert resp.status_code == 200
