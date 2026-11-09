@@ -1,6 +1,7 @@
-import type { GuestDraft } from "@/lib/guest-types"
+import type { GuestDraft, GuestExperience, GuestProject } from "@/lib/guest-types"
 
 const STORAGE_KEY = "resumer_guest_draft_v1"
+const GENERATE_STORAGE_KEY = "resumer_guest_generate_v1"
 
 export const emptyGuestDraft = (): GuestDraft => ({
   profile: {},
@@ -30,6 +31,93 @@ export function saveGuestDraft(draft: GuestDraft) {
 export function clearGuestDraft() {
   if (typeof window === "undefined") return
   window.localStorage.removeItem(STORAGE_KEY)
+}
+
+export type GuestGenerateForm = {
+  jobDescription: string
+  keywords: string
+  instructions: string
+  focus: string
+  creativityMode: string
+}
+
+export const emptyGuestGenerate = (): GuestGenerateForm => ({
+  jobDescription: "",
+  keywords: "",
+  instructions: "",
+  focus: "balanced",
+  creativityMode: "proper",
+})
+
+export function loadGuestGenerate(): GuestGenerateForm {
+  if (typeof window === "undefined") return emptyGuestGenerate()
+  const raw = window.localStorage.getItem(GENERATE_STORAGE_KEY)
+  if (!raw) return emptyGuestGenerate()
+  try {
+    return { ...emptyGuestGenerate(), ...JSON.parse(raw) }
+  } catch {
+    return emptyGuestGenerate()
+  }
+}
+
+export function saveGuestGenerate(form: GuestGenerateForm) {
+  if (typeof window === "undefined") return
+  window.localStorage.setItem(GENERATE_STORAGE_KEY, JSON.stringify(form))
+}
+
+function hasText(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.trim() !== ""
+}
+
+function hasNonBlankItem(values: string[] | null | undefined): boolean {
+  return Array.isArray(values) && values.some((v) => typeof v === "string" && v.trim() !== "")
+}
+
+export function experienceUsable(exp: GuestExperience): boolean {
+  return (
+    hasText(exp.role) &&
+    hasText(exp.organization) &&
+    hasNonBlankItem(exp.bullet_points ?? null)
+  )
+}
+
+export function projectUsable(proj: GuestProject): boolean {
+  return hasText(proj.name) && (hasText(proj.description ?? null) || hasNonBlankItem(proj.bullet_points ?? null))
+}
+
+export function usableExperiences(experiences: GuestExperience[]): GuestExperience[] {
+  return experiences.filter(experienceUsable)
+}
+
+export function usableProjects(projects: GuestProject[]): GuestProject[] {
+  return projects.filter(projectUsable)
+}
+
+export function incompleteExperienceMessages(experiences: GuestExperience[]): string[] {
+  const messages: string[] = []
+  experiences.forEach((exp, i) => {
+    if (experienceUsable(exp)) return
+    const missing: string[] = []
+    if (!hasText(exp.role)) missing.push("a role")
+    if (!hasText(exp.organization)) missing.push("an organization")
+    if (!hasNonBlankItem(exp.bullet_points ?? null)) missing.push("a bullet point")
+    messages.push(`Experience ${i + 1} needs ${missing.join(" and ")}`)
+  })
+  return messages
+}
+
+export function incompleteProjectMessages(projects: GuestProject[]): string[] {
+  const messages: string[] = []
+  projects.forEach((proj, i) => {
+    if (projectUsable(proj)) return
+    const missing: string[] = []
+    if (!hasText(proj.name)) missing.push("a name")
+    if (!hasText(proj.description ?? null) && !hasNonBlankItem(proj.bullet_points ?? null)) {
+      missing.push("a description or bullet")
+    }
+    messages.push(`Project ${i + 1} needs ${missing.join(" and ")}`)
+  })
+  return messages
 }
 
 function norm(s: string): string {

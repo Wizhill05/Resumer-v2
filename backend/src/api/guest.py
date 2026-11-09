@@ -30,7 +30,6 @@ from src.services.import_jobs import import_jobs
 router = APIRouter(prefix="/guest", tags=["guest"])
 
 GUEST_COOKIE = "resumer_guest_token"
-CONSENT_COOKIE = "resumer_guest_consent"
 GUEST_USER_EMAIL = "__guest__@resumer.local"
 GUEST_MAX_DAILY_RUNS = 5
 GUEST_TOKEN_DAYS = 7
@@ -39,11 +38,6 @@ GUEST_ARTIFACT_DAYS = 7
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def _require_consent(consent: str | None) -> None:
-    if consent != "true":
-        raise HTTPException(status_code=403, detail="Cookie consent required for anonymous trial")
 
 
 def _set_guest_cookie(response: Response, token: str) -> None:
@@ -57,8 +51,7 @@ def _set_guest_cookie(response: Response, token: str) -> None:
     )
 
 
-def _guest_token(response: Response, consent: str | None, token: str | None) -> str:
-    _require_consent(consent)
+def _guest_token(response: Response, token: str | None) -> str:
     if token:
         return token
     new_token = secrets.token_urlsafe(32)
@@ -151,11 +144,10 @@ class ParsedTexts(BaseModel):
 async def parse_guest_resumes(
     response: Response,
     files: list[UploadFile] = File(...),
-    resumer_guest_consent: str | None = Cookie(default=None, alias=CONSENT_COOKIE),
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
 ):
     """Stage 1: parse PDFs to raw text. Fast, no LLM."""
-    _guest_token(response, resumer_guest_consent, resumer_guest_token)
+    _guest_token(response, resumer_guest_token)
     if len(files) > MAX_FILES:
         raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
     texts = []
@@ -171,11 +163,10 @@ async def parse_guest_resumes(
 async def extract_guest_resumes(
     data: ParsedTexts,
     response: Response,
-    resumer_guest_consent: str | None = Cookie(default=None, alias=CONSENT_COOKIE),
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
 ):
     """Stage 2: run LLM extraction on pre-parsed texts (parallel), return merged draft."""
-    _guest_token(response, resumer_guest_consent, resumer_guest_token)
+    _guest_token(response, resumer_guest_token)
     tasks = [extract_resume_draft(text, filename) for text, filename in zip(data.texts, data.filenames)]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -228,10 +219,9 @@ async def start_guest_import(
     background_tasks: BackgroundTasks,
     response: Response,
     files: list[UploadFile] = File(...),
-    resumer_guest_consent: str | None = Cookie(default=None, alias=CONSENT_COOKIE),
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
 ):
-    _guest_token(response, resumer_guest_consent, resumer_guest_token)
+    _guest_token(response, resumer_guest_token)
     if len(files) > MAX_FILES:
         raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
 
@@ -266,10 +256,9 @@ async def get_guest_import_status(job_id: str):
 async def import_guest_resumes(
     response: Response,
     files: list[UploadFile] = File(...),
-    resumer_guest_consent: str | None = Cookie(default=None, alias=CONSENT_COOKIE),
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
 ):
-    _guest_token(response, resumer_guest_consent, resumer_guest_token)
+    _guest_token(response, resumer_guest_token)
     if len(files) > MAX_FILES:
         raise HTTPException(status_code=400, detail=f"Upload {MAX_FILES} resumes or fewer")
     drafts = await extract_all_drafts(files)
@@ -280,11 +269,10 @@ async def import_guest_resumes(
 async def start_guest_generation(
     data: GuestGenerationCreate,
     response: Response,
-    resumer_guest_consent: str | None = Cookie(default=None, alias=CONSENT_COOKIE),
     resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
     db: AsyncSession = Depends(get_db),
 ):
-    token = _guest_token(response, resumer_guest_consent, resumer_guest_token)
+    token = _guest_token(response, resumer_guest_token)
     token_hash = _hash_token(token)
     await _check_guest_rate_limit(token_hash, db)
 
