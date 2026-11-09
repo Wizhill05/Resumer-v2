@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
+import { GithubNoticeBanner, useGithubReturnNotice } from "@/components/github/GithubReturnNotice"
 import { BasicInfoForm } from "@/components/profile/BasicInfoForm"
 import { DefaultsSection } from "@/components/profile/DefaultsSection"
 import { ExperienceForm } from "@/components/profile/ExperienceForm"
@@ -15,6 +17,8 @@ import { PageHero } from "@/components/PageHero"
 import { User, Briefcase, FolderGit2, GraduationCap, Award, SlidersHorizontal, Upload } from "lucide-react"
 
 type Section = "basic" | "experience" | "projects" | "education" | "extracurricular"
+
+const SECTIONS: Section[] = ["basic", "experience", "projects", "education", "extracurricular"]
 
 const SECTION_NAMES: Record<Section, string> = {
   basic: "Basic Details",
@@ -31,7 +35,13 @@ export function ProfileClient() {
 function ProfileEditor() {
   const { confirmLeave } = useProfileChanges()
   const [applyingImport, setApplyingImport] = useState(false)
-  const [activeSection, setActiveSection] = useState<Section>("basic")
+  const searchParams = useSearchParams()
+  const githubNotice = useGithubReturnNotice("/profile")
+  // `?tab=projects` opens that tab (used as GitHub OAuth returnTo).
+  const [activeSection, setActiveSection] = useState<Section>(() => {
+    const tab = searchParams.get("tab")
+    return SECTIONS.find((section) => section === tab) ?? "basic"
+  })
   const [pendingTargetSection, setPendingTargetSection] = useState<Section | null>(null)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -142,6 +152,7 @@ function ProfileEditor() {
       />
 
       <div className="page-wrap flex-1 space-y-4 md:space-y-5">
+        <GithubNoticeBanner notice={githubNotice} />
         <DefaultsSection hideTrigger open={defaultsOpen} onOpenChange={setDefaultsOpen} />
         <ResumeImportPanel
           compact

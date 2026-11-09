@@ -9,7 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Plus, Trash2, Edit2, X, FolderGit2, RefreshCw, ChevronDown, ChevronUp, Lock } from "lucide-react";
 import { SaveStatusBadge, SaveStatus } from "./SaveStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ReportIssueButton } from "@/components/support/ReportIssueButton";
 import {
   GITHUB_PROFILE_CONNECT_URL,
+  GITHUB_PROFILE_PRIVATE_START_URL,
   isGithubConnectedActive,
   useGithubIntegration,
 } from "@/components/github/useGithubIntegration";
@@ -689,6 +690,29 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
               </div>
             )}
           </div>
+
+          {githubIntegration && isGithubConnected && (
+            githubIntegration.private_access ? (
+              <p className="flex items-center gap-1.5 px-1 text-xs font-semibold text-ink-muted">
+                <Lock size={12} aria-hidden="true" className="shrink-0" />
+                Including private repos
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-line bg-ink/[0.03] px-3 py-2 text-xs font-semibold text-ink-muted">
+                <Lock size={12} aria-hidden="true" className="shrink-0" />
+                <span>Showing public repos only.</span>
+                <a
+                  href={GITHUB_PROFILE_PRIVATE_START_URL}
+                  className="text-ember underline underline-offset-4"
+                >
+                  Include private repos
+                </a>
+                <span className="basis-full font-medium text-ink-faint">
+                  GitHub asks for full repo access; Résumer only reads.
+                </span>
+              </div>
+            )
+          )}
 
           {githubIntegration && !githubIntegration.connected && (
             <p className="rounded-md border border-line bg-ink/[0.03] px-3 py-2 text-xs font-semibold text-ink-muted">

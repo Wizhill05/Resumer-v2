@@ -16,7 +16,7 @@ export default async function WelcomePage() {
 
   return (
     <main className="app-surface flex flex-1 flex-col">
-      <Nav />
+      <Nav signedIn />
 
       <PageHero
         title="Welcome to Résumer."

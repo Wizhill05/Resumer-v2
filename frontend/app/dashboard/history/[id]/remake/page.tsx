@@ -16,7 +16,7 @@ export default async function RemakePage({ params }: Props) {
 
   return (
     <main className="app-surface flex min-h-screen flex-col">
-      <Nav />
+      <Nav signedIn />
       <PageHero
         narrow
         title="Swap a project"
