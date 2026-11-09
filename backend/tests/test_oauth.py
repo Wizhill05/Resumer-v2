@@ -302,7 +302,7 @@ async def test_oauth_authorize_with_signed_token(client: AsyncClient, async_db: 
     await async_db.commit()
 
     user_token = jwt.encode(
-        {"email": "bridge_user@example.com", "name": "Bridge User"},
+        {"sub": str(user.id), "email": "bridge_user@example.com", "name": "Bridge User"},
         settings.JWT_SECRET,
         algorithm=settings.JWT_ALGORITHM,
     )

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
@@ -77,6 +77,19 @@ class RegisterStartResponse(BaseModel):
 class RegisterResendResponse(BaseModel):
     ok: bool = True
     resend_after: int = RESEND_AFTER_SECONDS
+
+
+def _require_internal_token(request: Request) -> None:
+    """The registration endpoints are only called by the Next.js server, which sends an internal token.
+
+    Rejecting everything else keeps direct callers from bypassing the per-IP send limit
+    (X-Client-IP is only trusted alongside a valid internal token).
+    """
+    if not is_valid_internal_token(request.headers.get("Authorization")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid internal token",
+        )
 
 
 def normalize_email(email: str) -> str:
@@ -179,7 +192,7 @@ async def _get_pending(db: AsyncSession, email: str) -> EmailVerification | None
 
 
 async def _existing_user_or_409(db: AsyncSession, email: str) -> None:
-    result = await db.execute(select(User).where(User.email == email))
+    result = await db.execute(select(User).where(func.lower(User.email) == email))
     existing = result.scalar_one_or_none()
     if not existing:
         return
@@ -206,7 +219,7 @@ async def _send_code(email: str, name: str, code: str) -> None:
         )
 
 
-@router.post("/register/start", response_model=RegisterStartResponse)
+@router.post("/register/start", response_model=RegisterStartResponse, dependencies=[Depends(_require_internal_token)])
 async def start_email_registration(
     payload: EmailRegisterStartRequest,
     request: Request,
@@ -263,7 +276,7 @@ async def start_email_registration(
     return RegisterStartResponse(ok=True, email=email)
 
 
-@router.post("/register/verify", response_model=AuthUserResponse)
+@router.post("/register/verify", response_model=AuthUserResponse, dependencies=[Depends(_require_internal_token)])
 async def verify_email_registration(
     payload: EmailRegisterVerifyRequest,
     db: AsyncSession = Depends(get_db),
@@ -322,7 +335,7 @@ async def verify_email_registration(
     )
 
 
-@router.post("/register/resend", response_model=RegisterResendResponse)
+@router.post("/register/resend", response_model=RegisterResendResponse, dependencies=[Depends(_require_internal_token)])
 async def resend_email_registration(
     payload: EmailRegisterResendRequest,
     request: Request,
@@ -361,7 +374,7 @@ async def login_email_user(
     email = normalize_email(payload.email)
     password = payload.password
 
-    result = await db.execute(select(User).where(User.email == email))
+    result = await db.execute(select(User).where(func.lower(User.email) == email))
     user = result.scalar_one_or_none()
 
     if not user:

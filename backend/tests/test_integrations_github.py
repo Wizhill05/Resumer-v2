@@ -238,6 +238,35 @@ async def test_start_private_scope(client, async_db):
     assert result.scalar_one().want_private is True
 
 
+async def test_start_purges_expired_and_used_states_for_user_only(client, async_db):
+    from datetime import datetime, timedelta, timezone
+
+    user = await _create_user(async_db, "purge@example.com")
+    other = await _create_user(async_db, "purge-other@example.com")
+    now = datetime.now(timezone.utc)
+
+    def _row(h, owner, expires, used=None):
+        return GithubLinkState(
+            state_hash=h, user_id=owner.id, code_verifier="v" * 43, want_private=False, expires_at=expires, used_at=used
+        )
+
+    async_db.add_all(
+        [
+            _row("expired-mine", user, now - timedelta(minutes=1)),
+            _row("used-mine", user, now + timedelta(minutes=5), used=now),
+            _row("live-mine", user, now + timedelta(minutes=5)),
+            _row("expired-other", other, now - timedelta(minutes=1)),
+        ]
+    )
+    await async_db.commit()
+
+    await _start_state(client, user)
+    hashes = {r.state_hash for r in (await async_db.execute(select(GithubLinkState))).scalars().all()}
+    assert "expired-mine" not in hashes and "used-mine" not in hashes
+    assert "live-mine" in hashes and "expired-other" in hashes
+    assert len(hashes) == 3
+
+
 # --- complete ---
 
 async def test_complete_happy_path_google_user(client, async_db, monkeypatch):

@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.auth import get_current_user
@@ -55,14 +55,6 @@ def _pkce_challenge(code_verifier: str) -> str:
 async def _get_tokens(db: AsyncSession, identity_id: uuid.UUID) -> list[GithubToken]:
     result = await db.execute(select(GithubToken).where(GithubToken.identity_id == identity_id))
     return list(result.scalars().all())
-
-
-def _sync_token(tokens: list[GithubToken]) -> GithubToken | None:
-    for oauth_app in ("connect", "login"):
-        for token in tokens:
-            if token.oauth_app == oauth_app:
-                return token
-    return None
 
 
 async def exchange_code_for_token(code: str, code_verifier: str) -> dict:
@@ -157,6 +149,13 @@ async def start_link(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="GitHub linking is not configured")
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
+    # Purge this user's expired or already-used states so the table doesn't grow forever.
+    await db.execute(
+        delete(GithubLinkState).where(
+            GithubLinkState.user_id == user.id,
+            or_(GithubLinkState.expires_at < _now(), GithubLinkState.used_at.is_not(None)),
+        )
+    )
     link_state = GithubLinkState(
         state_hash=_sha256_hex(state),
         user_id=user.id,
