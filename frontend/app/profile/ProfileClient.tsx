@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useSyncExternalStore } from "react"
 import { useSearchParams } from "next/navigation"
 import { GithubNoticeBanner, useGithubReturnNotice } from "@/components/github/GithubReturnNotice"
 import { BasicInfoForm } from "@/components/profile/BasicInfoForm"
@@ -13,6 +13,7 @@ import { ResumeImportPanel } from "@/components/profile/ResumeImportPanel"
 import { UnsavedModal } from "@/components/profile/UnsavedModal"
 import { ProfileChangesProvider, useProfileWork, useProfileChanges } from "@/components/profile/ProfileChanges"
 import { SaveStatusBadge } from "@/components/profile/SaveStatusBadge"
+import { useProfileCompleteness } from "@/components/profile/useProfileCompleteness"
 import { PageHero } from "@/components/PageHero"
 import { User, Briefcase, FolderGit2, GraduationCap, Award, SlidersHorizontal, Upload } from "lucide-react"
 
@@ -26,6 +27,23 @@ const SECTION_NAMES: Record<Section, string> = {
   projects: "Projects",
   education: "Education",
   extracurricular: "Extracurriculars & Achievements",
+}
+
+// Remembers (per browser) that the user closed the "upload old résumés" card.
+const INTRO_DISMISSED_KEY = "resumer_import_intro_dismissed_v1"
+const introListeners = new Set<() => void>()
+const introDismissedStore = {
+  subscribe(listener: () => void) {
+    introListeners.add(listener)
+    return () => { introListeners.delete(listener) }
+  },
+  get: () => {
+    try { return window.localStorage.getItem(INTRO_DISMISSED_KEY) === "1" } catch { return false }
+  },
+  dismiss() {
+    try { window.localStorage.setItem(INTRO_DISMISSED_KEY, "1") } catch {}
+    introListeners.forEach((listener) => listener())
+  },
 }
 
 export function ProfileClient() {
@@ -48,6 +66,11 @@ function ProfileEditor() {
   const [importVersion, setImportVersion] = useState(0)
   const [activeBusy, setActiveBusy] = useState(false)
   const [defaultsOpen, setDefaultsOpen] = useState(false)
+  // New users get a full "upload old résumés" section under the hero; once the
+  // profile is complete, import moves back to a compact hero button.
+  const { isLoading: profileLoading, complete: profileComplete } = useProfileCompleteness()
+  const introDismissed = useSyncExternalStore(introDismissedStore.subscribe, introDismissedStore.get, () => false)
+  const showHeroImport = profileComplete || introDismissed
 
   const activeDiscardRef = useRef<(() => void) | null>(null)
   const activeSaveFnRef = useRef<(() => Promise<boolean>) | null>(null)
@@ -134,14 +157,14 @@ function ProfileEditor() {
                 <SlidersHorizontal size={16} aria-hidden="true" />
                 Defaults
               </button>
-              <label
+              {showHeroImport && <label
                 htmlFor="profile-import-input"
                 aria-disabled={applyingImport}
                 className={`${heroButton} border-ink bg-ink text-paper shadow-[0_8px_20px_-12px_rgb(35_10_4/60%)] hover:opacity-90 ${applyingImport ? "pointer-events-none opacity-50" : ""}`}
               >
                 <Upload size={16} aria-hidden="true" />
                 Import PDFs
-              </label>
+              </label>}
             </div>
             <SaveStatusBadge
               status={saveStatus}
@@ -156,6 +179,8 @@ function ProfileEditor() {
         <DefaultsSection hideTrigger open={defaultsOpen} onOpenChange={setDefaultsOpen} />
         <ResumeImportPanel
           compact
+          intro={!profileLoading && !showHeroImport}
+          onDismissIntro={introDismissedStore.dismiss}
           inputId="profile-import-input"
           onApplyingChange={setApplyingImport}
           onApplied={() => { activeDiscardRef.current?.(); setImportVersion((version) => version + 1); setIsDirty(false) }}

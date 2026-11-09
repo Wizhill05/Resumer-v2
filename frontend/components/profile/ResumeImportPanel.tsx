@@ -20,7 +20,16 @@ type ResumeImportDraft = {
 
 type Stage = "idle" | "parsing" | "extracting" | "deduplicating" | "done"
 
-export function ResumeImportPanel({ onApplied, onApplyingChange, inputId, compact = false }: { onApplied?: () => void; onApplyingChange?: (busy: boolean) => void; inputId?: string; compact?: boolean }) {
+export function ResumeImportPanel({ onApplied, onApplyingChange, inputId, compact = false, intro = false, onDismissIntro }: {
+  onApplied?: () => void
+  onApplyingChange?: (busy: boolean) => void
+  inputId?: string
+  compact?: boolean
+  /** Compact mode only: while idle, show an upload prompt instead of rendering nothing. */
+  intro?: boolean
+  /** Shows a close button on the intro prompt. */
+  onDismissIntro?: () => void
+}) {
   const queryClient = useQueryClient()
   const { confirmLeave } = useProfileChanges()
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -163,7 +172,39 @@ export function ResumeImportPanel({ onApplied, onApplyingChange, inputId, compac
       />
   )
 
-  if (compact && !isPending && draft === null && error === null) return fileInput
+  if (compact && !isPending && draft === null && error === null) {
+    if (!intro) return fileInput
+    return (
+      <section aria-labelledby="resume-import-intro" className="soft-card relative flex flex-col gap-4 p-5 sm:p-6 md:flex-row md:items-center md:justify-between md:gap-8">
+        {fileInput}
+        {onDismissIntro && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Hide this and keep Import PDFs in the header"
+            title="Hide"
+            onClick={onDismissIntro}
+            className="absolute right-2 top-2 border-transparent text-ink-faint hover:text-ink"
+          >
+            <X size={14} aria-hidden="true" />
+          </Button>
+        )}
+        <div className="min-w-0 pr-8 md:pr-0">
+          <p className="font-mono text-[11px] font-bold uppercase tracking-widest text-ink-faint">Start here</p>
+          <h2 id="resume-import-intro" className="mt-1.5 text-lg font-bold tracking-tight text-ink md:text-xl">Have old résumés? Upload them.</h2>
+          <p className="mt-1 max-w-xl text-sm text-ink-muted">
+            We pull your experience, projects, education and activities out of them automatically. You review everything before it&apos;s saved.
+          </p>
+          <p className="mt-2 text-xs text-ink-faint">PDF only. Up to 5 files, 5 MB each.</p>
+        </div>
+        <Button type="button" size="lg" onClick={() => inputRef.current?.click()} className="w-full shrink-0 md:w-auto">
+          <Upload size={16} aria-hidden="true" />
+          Upload PDFs
+        </Button>
+      </section>
+    )
+  }
 
   return (
     <fieldset disabled={applyMutation.isPending} aria-busy={isPending || applyMutation.isPending} aria-label="Import résumé PDFs" className={`min-w-0 ${compact ? "soft-card space-y-3 p-4" : "soft-inset p-3 md:p-4"}`}>
