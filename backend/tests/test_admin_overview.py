@@ -115,3 +115,20 @@ async def test_posthog_overview_success_is_cached(monkeypatch):
     assert second["data"] == first["data"] and len(calls) == count
     assert calls[0].headers["authorization"] == "Bearer phx_test"
     ph.clear_cache()
+
+
+@pytest.mark.asyncio
+async def test_overview_queries_count_live_site_people_only(monkeypatch):
+    queries: list[str] = []
+
+    async def fake_run(client, hogql):
+        queries.append(hogql)
+        return []
+
+    monkeypatch.setattr(ph, "_run_query", fake_run)
+    await ph._fetch_overview(7)
+    assert queries and all("properties.environment = 'production'" in q for q in queries)
+    funnel = next(q for q in queries if "signed_in_visit" in q)
+    assert "uniq(person_id)" in funnel
+    assert "distinct_id" not in funnel.split("FROM")[0]
+    assert any(":id" in q for q in queries), "per-record page URLs should be collapsed"
