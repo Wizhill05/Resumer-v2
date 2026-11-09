@@ -442,6 +442,7 @@ async def generation_summary(
                 func.count(Generation.id),
                 func.count(Generation.id).filter(Generation.created_at >= day_ago),
                 func.count(Generation.id).filter(Generation.created_at >= month_start),
+                func.count(Generation.id).filter(Generation.status != "failed"),
             ).where(Generation.user_id == current_user.id)
         )
     ).one()
@@ -455,6 +456,7 @@ async def generation_summary(
     ).first()
     return GenerationSummary(
         total=agg[0],
+        usable_total=agg[3],
         used_today=agg[1],
         this_month=agg[2],
         latest_created_at=latest.created_at if latest else None,

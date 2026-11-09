@@ -20,7 +20,7 @@ export default async function WelcomePage() {
 
       <PageHero
         title="Welcome to Résumer."
-        subtitle="A couple of quick details and we'll get your profile set up."
+        subtitle="Step 1 of 4. A couple of quick details and we'll get your profile set up."
       />
 
       <div className="page-wrap flex-1">

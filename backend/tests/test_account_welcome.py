@@ -535,3 +535,37 @@ async def test_unauthenticated_post_returns_401(client):
 async def test_unauthenticated_bad_token_returns_401(client):
     res = await client.get("/account/welcome", headers={"Authorization": "Bearer invalid"})
     assert res.status_code == 401
+
+
+# --- getting-started guide state ---
+
+async def test_onboarding_defaults_for_new_user(client, async_db):
+    user = await _create_user(async_db, "new@example.com")
+    res = await client.get("/account/onboarding", headers=auth_headers(user))
+    assert res.status_code == 200
+    assert res.json() == {"dismissed": False, "seen": []}
+
+
+async def test_onboarding_patch_persists_and_merges(client, async_db):
+    user = await _create_user(async_db, "sync@example.com")
+    headers = auth_headers(user)
+    res = await client.patch("/account/onboarding", json={"seen": ["result"]}, headers=headers)
+    assert res.json() == {"dismissed": False, "seen": ["result"]}
+    res = await client.patch("/account/onboarding", json={"dismissed": True, "seen": ["profile_ready"]}, headers=headers)
+    assert res.json() == {"dismissed": True, "seen": ["profile_ready", "result"]}
+
+    await async_db.refresh(user)
+    assert user.onboarding_state == {"dismissed": True, "seen": ["profile_ready", "result"]}
+    res = await client.get("/account/onboarding", headers=headers)
+    assert res.json() == {"dismissed": True, "seen": ["profile_ready", "result"]}
+
+
+@pytest.mark.parametrize("body", [{"dismissed": "yes"}, {"seen": ["nope"]}, {"seen": "result"}, ["x"]])
+async def test_onboarding_patch_rejects_bad_input(client, async_db, body):
+    user = await _create_user(async_db, f"bad{uuid.uuid4().hex[:6]}@example.com")
+    res = await client.patch("/account/onboarding", json=body, headers=auth_headers(user))
+    assert res.status_code == 400
+
+
+async def test_onboarding_requires_auth(client):
+    assert (await client.get("/account/onboarding")).status_code == 401
