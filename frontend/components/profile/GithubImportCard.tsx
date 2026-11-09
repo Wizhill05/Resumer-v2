@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clipboard, FolderGit2, Link2, Loader2, Lock, Plus, RefreshCw, Search, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -65,18 +65,20 @@ export function parseGitHubUsername(input: string | undefined | null): string {
 
 const NAME = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})";
 const REPO = "[A-Za-z0-9._-]+";
-const SHORTHAND_RE = new RegExp(`^${NAME}/${REPO}/?$`);
+const SHORTHAND_RE = new RegExp(`^${NAME}/${REPO}$`);
 const USERNAME_RE = new RegExp(`^@?${NAME}$`);
+const REPO_NAME_RE = new RegExp(`^${REPO}$`);
+// Only github.com itself: gist.github.com or lookalike hosts are not repos.
+const GITHUB_URL_RE = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/?#\s]+)\/([^/?#\s]+)/i;
 
-/** Returns `owner/repo` when the query is a GitHub link or shorthand. */
+/** Returns `owner/repo` when the query is a github.com repo link or shorthand. */
 function parseRepoTarget(query: string): string | null {
-  const q = query.trim().replace(/\.git$/, "");
+  const q = query.trim();
   if (!q) return null;
-  if (/github\.com\//i.test(q)) {
-    const [owner, repo] = q.split(/github\.com\//i)[1].split(/[/?#]/).filter(Boolean);
-    return owner && repo ? `${owner}/${repo}` : null;
-  }
-  return SHORTHAND_RE.test(q) ? q.replace(/\/$/, "") : null;
+  const match = q.match(GITHUB_URL_RE);
+  if (match) return `${match[1]}/${match[2].replace(/\.git$/, "")}`;
+  const shorthand = q.replace(/\.git$/, "").replace(/\/$/, "");
+  return SHORTHAND_RE.test(shorthand) ? shorthand : null;
 }
 
 const LANGUAGE_COLORS: Record<string, string> = {
@@ -183,22 +185,35 @@ export function GithubImportCard({
     enabled: !isIntegrationLoading && (usingToken || Boolean(username)),
   });
 
-  const repos = useMemo(() => reposData?.repos ?? [], [reposData]);
+  const repos = reposData?.repos ?? [];
   const ownerLabel = usingToken ? login : username;
-  const linkTarget = parseRepoTarget(query);
   const trimmed = query.trim();
+  const linkTarget = parseRepoTarget(query);
+  const searchTerm = (linkTarget ?? trimmed.replace(/^@/, "")).toLowerCase();
+  // With a connected account the backend lists the token's repos and ignores
+  // `username`, so browsing someone else only works while disconnected.
+  const canBrowse = !integration?.connected;
   const browseCandidate =
-    !linkTarget && USERNAME_RE.test(trimmed) && (trimmed.startsWith("@") || (!usingToken && !username))
+    canBrowse && !linkTarget && USERNAME_RE.test(trimmed) && (trimmed.startsWith("@") || !username)
       ? trimmed.replace(/^@/, "")
       : null;
 
-  const filtered = useMemo(() => {
-    if (linkTarget || !trimmed || trimmed.startsWith("@")) return repos;
-    const q = trimmed.toLowerCase();
-    return repos.filter(
-      (r) => r.full_name.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q),
-    );
-  }, [repos, trimmed, linkTarget]);
+  const filtered = searchTerm
+    ? repos.filter(
+        (r) => r.full_name.toLowerCase().includes(searchTerm) || r.description?.toLowerCase().includes(searchTerm),
+      )
+    : repos;
+
+  const exactRepo = repos.find(
+    (r) => r.full_name.toLowerCase() === searchTerm || (!linkTarget && r.name.toLowerCase() === searchTerm),
+  );
+  // A bare repo name that isn't in the list (over 100 repos, collaborator repos)
+  // can still be imported under the shown owner.
+  const bareTarget =
+    !linkTarget && !browseCandidate && !exactRepo && ownerLabel && REPO_NAME_RE.test(trimmed) && filtered.length === 0
+      ? `${ownerLabel}/${trimmed}`
+      : null;
+  const directTarget = exactRepo ? null : (linkTarget ?? bareTarget);
 
   const isBusy = Boolean(importingTarget);
   const loading = isIntegrationLoading || isReposLoading;
@@ -207,17 +222,19 @@ export function GithubImportCard({
 
   const submitQuery = () => {
     if (isBusy) return;
-    if (linkTarget) onImport(linkTarget);
+    if (exactRepo) onImport(exactRepo.html_url);
+    else if (directTarget) onImport(directTarget);
     else if (browseCandidate) {
       setBrowseOwner(browseCandidate);
       setQuery("");
     } else if (filtered.length === 1) onImport(filtered[0].html_url);
   };
 
+  const privateCount = repos.reduce((n, r) => n + (r.private ? 1 : 0), 0);
   const countLabel = loading
     ? "Loading…"
     : usingToken
-      ? `${repos.length} repos${repos.some((r) => r.private) ? ` · ${repos.filter((r) => r.private).length} private` : ""}`
+      ? `${repos.length} repos${privateCount ? ` · ${privateCount} private` : ""}`
       : `${repos.length} public`;
 
   return (
@@ -283,7 +300,7 @@ export function GithubImportCard({
                     onClick={() => setBrowseOwner("")}
                     className="ml-2 cursor-pointer text-ember underline-offset-4 hover:underline"
                   >
-                    Back to {isConnected ? "yours" : `@${profileUsername || "you"}`}
+                    {profileUsername ? `Back to @${profileUsername}` : "Clear"}
                   </button>
                 )}
               </p>
@@ -300,14 +317,14 @@ export function GithubImportCard({
             </div>
           )}
 
-          {linkTarget && (
+          {directTarget && (
             <RepoRow
-              onClick={() => onImport(linkTarget)}
+              onClick={() => onImport(directTarget)}
               disabled={isBusy}
-              busy={importingTarget === linkTarget}
+              busy={importingTarget === directTarget}
               icon={<Link2 size={16} className="text-ink-faint" aria-hidden="true" />}
-              title={linkTarget}
-              meta="Import from link"
+              title={directTarget}
+              meta={linkTarget ? "Import from link" : "Not in your list. Import it directly"}
             />
           )}
 
@@ -332,18 +349,12 @@ export function GithubImportCard({
             </div>
           ) : isReposError ? (
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm text-red-600 dark:text-red-400">
-              <span>
-                {errorStatus === 409
-                  ? "Reconnect GitHub to keep importing."
-                  : errorStatus === 429
-                    ? formatGithubError(reposError, "Failed to load repositories.")
-                    : "Couldn't load repositories."}
-              </span>
+              <span>{formatGithubError(reposError, "Couldn't load repositories.")}</span>
               {errorStatus === 409 ? (
                 <a href="/account" className="font-semibold text-ember underline-offset-4 hover:underline">
                   Reconnect
                 </a>
-              ) : (
+              ) : errorStatus === 404 ? null : (
                 <button
                   type="button"
                   onClick={() => refetch()}
@@ -357,10 +368,12 @@ export function GithubImportCard({
             <p className="px-4 py-5 text-center text-sm text-ink-muted">
               {usingToken ? "No repositories found." : `No public repositories for @${username}.`}
             </p>
-          ) : filtered.length === 0 && !linkTarget ? (
-            <p className="px-4 py-5 text-center text-sm text-ink-muted">
-              No repos match &ldquo;{trimmed}&rdquo;.
-            </p>
+          ) : filtered.length === 0 ? (
+            directTarget || browseCandidate ? null : (
+              <p className="px-4 py-5 text-center text-sm text-ink-muted">
+                No repos match &ldquo;{trimmed}&rdquo;.
+              </p>
+            )
           ) : (
             <ul className="max-h-[17.5rem] divide-y divide-line overflow-y-auto overscroll-contain">
               {filtered.map((repo) => {
@@ -399,7 +412,7 @@ export function GithubImportCard({
             </ul>
           )}
 
-          {!linkTarget && (
+          {!directTarget && (
             <p className={`flex items-center gap-2.5 px-4 py-3 text-[13px] text-ink-faint ${hasSource || browseCandidate ? "border-t border-line" : ""}`}>
               <Clipboard size={15} className="shrink-0" aria-hidden="true" />
               <span>
@@ -461,7 +474,7 @@ function RepoRow({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-ink/[0.04] focus-visible:bg-ink/[0.04] focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
+      className="flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-ink/[0.04] focus-visible:bg-ink/[0.04] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ember disabled:cursor-default disabled:hover:bg-transparent"
     >
       {icon}
       <span className="min-w-0 flex-1">

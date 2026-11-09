@@ -449,9 +449,7 @@ export function ProjectForm({ onDirtyChange }: ProjectFormProps) {
   }
 
   const importingTarget = githubImportMutation.isPending ? githubImportMutation.variables ?? null : null;
-  const githubFailed = Boolean(
-    githubMessage && /failed|could not|couldn't|error|limit|reconnect/i.test(githubMessage),
-  );
+  const githubFailed = githubImportMutation.isError && Boolean(githubMessage);
 
   return (
     <div className="space-y-3 pixel-enter md:space-y-4">
