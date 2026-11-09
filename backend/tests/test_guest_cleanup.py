@@ -17,7 +17,6 @@ from src.models.generation import (
     Generation,
     GenerationLog,
     GenerationNodeMetric,
-    GuestRateLimit,
     SupportReport,
 )
 from src.models.user import Base, User
@@ -50,7 +49,6 @@ async def db_session(monkeypatch):
         Generation.__table__,
         GenerationLog.__table__,
         GenerationNodeMetric.__table__,
-        GuestRateLimit.__table__,
         SupportReport.__table__,
         FeedbackRating.__table__,
     ]
@@ -202,24 +200,6 @@ async def test_claimed_row_and_null_expires_kept(db_session, monkeypatch):
     assert counts["generations_deleted"] == 0
     assert await db_session.get(Generation, claimed.id) is not None
     assert await db_session.get(Generation, no_expiry_guest.id) is not None
-
-
-async def test_old_rate_limit_rows_pruned_fresh_kept(db_session, monkeypatch):
-    _mock_storage(monkeypatch)
-    db_session.add_all(
-        [
-            GuestRateLimit(token_hash="old", request_count=5, reset_at=NOW - timedelta(days=2)),
-            GuestRateLimit(token_hash="recent", request_count=1, reset_at=NOW - timedelta(hours=2)),
-            GuestRateLimit(token_hash="active", request_count=1, reset_at=NOW + timedelta(hours=1)),
-        ]
-    )
-    await db_session.commit()
-
-    counts = await guest_cleanup.purge_expired_guest_data(db_session, now=NOW)
-    assert counts["rate_limits_deleted"] >= 1
-    remaining = {row.token_hash for row in (await db_session.execute(select(GuestRateLimit))).scalars().all()}
-    assert "old" not in remaining
-    assert {"recent", "active"} <= remaining
 
 
 async def test_support_report_and_feedback_unlinked_not_deleted(db_session, monkeypatch):

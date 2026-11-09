@@ -10,7 +10,6 @@ from src.models.profile import Profile, UserProject, UserExperience, UserEducati
 from src.models.generation import (  # noqa: F401
     Generation,
     GenerationLog,
-    GuestRateLimit,
     PromptConfig,
     UserRateLimit,
     SupportReport,

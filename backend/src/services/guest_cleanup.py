@@ -10,7 +10,6 @@ from src.models.generation import (
     Generation,
     GenerationLog,
     GenerationNodeMetric,
-    GuestRateLimit,
     SupportReport,
 )
 
@@ -25,7 +24,7 @@ _INTERVAL_SECONDS = 3600
 
 
 async def purge_expired_guest_data(db, now=None, batch_size: int = 200) -> dict:
-    """Delete expired guest generations, their artifacts/logs, and stale rate limits.
+    """Delete expired guest generations and their artifacts/logs.
 
     Only rows with ``is_guest == True AND expires_at IS NOT NULL AND
     expires_at < now`` are removed. Claimed rows (``is_guest == False`` or
@@ -38,11 +37,8 @@ async def purge_expired_guest_data(db, now=None, batch_size: int = 200) -> dict:
       (nullable, ondelete=SET NULL, preserved rather than deleted),
     - then deletes the Generation row.
 
-    Also deletes ``GuestRateLimit`` rows whose ``reset_at < now - 1 day``.
-
     Returns a dict of counts:
-    ``{"generations_deleted": int, "storage_objects_deleted": int,
-       "rate_limits_deleted": int}``.
+    ``{"generations_deleted": int, "storage_objects_deleted": int}``.
     """
     if now is None:
         now = datetime.now(timezone.utc)
@@ -104,17 +100,11 @@ async def purge_expired_guest_data(db, now=None, batch_size: int = 200) -> dict:
 
         await db.commit()
 
-    rate_cutoff = now - timedelta(days=1)
-    rate_result = await db.execute(delete(GuestRateLimit).where(GuestRateLimit.reset_at < rate_cutoff))
-    await db.commit()
-    rate_limits_deleted = rate_result.rowcount or 0
-
     counts = {
         "generations_deleted": generations_deleted,
         "storage_objects_deleted": storage_objects_deleted,
-        "rate_limits_deleted": rate_limits_deleted,
     }
-    if generations_deleted or rate_limits_deleted:
+    if generations_deleted:
         logger.info("guest_cleanup: purged %s", counts)
     return counts
 

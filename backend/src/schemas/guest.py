@@ -39,3 +39,4 @@ class GuestGenerationOut(BaseModel):
     creativity_mode: str | None = None
     error_message: str | None = None
     section_order: list[str] | None = None
+    expires_at: str | None = None
