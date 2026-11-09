@@ -1,18 +1,22 @@
 "use client"
 
-import Link from "next/link"
 import { startTransition, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   AlertCircle, CheckCircle2, ChevronDown, ChevronRight,
   Loader2, Plus, Trash2, Upload, X, Pencil, FileText,
-  Briefcase, FolderGit2, GraduationCap, Award, User, Lock, Menu, Info,
+  Briefcase, FolderGit2, GraduationCap, Award, User, Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { emptyGuestDraft, loadGuestDraft, mergeGuestDraft, saveGuestDraft } from "@/lib/guest-storage"
+import { CookieNotice } from "@/components/try/CookieNotice"
+import {
+  emptyGuestDraft, incompleteExperienceMessages, incompleteProjectMessages,
+  loadGuestDraft, loadGuestGenerate, mergeGuestDraft, saveGuestDraft,
+  saveGuestGenerate, usableExperiences, usableProjects,
+} from "@/lib/guest-storage"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
 import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
@@ -25,8 +29,21 @@ import type {
 
 const splitLines = (v: string) => v.split("\n").map((l) => l.trim()).filter(Boolean)
 const splitCommas = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean)
-const hasConsent = () =>
-  typeof document !== "undefined" && document.cookie.includes("resumer_guest_consent=true")
+
+const COOKIE_BLOCKED_MESSAGE =
+  "Your browser is blocking cookies, so the free trial can't keep your résumé. Allow cookies for this site, or sign in."
+
+function detectCookiesBlocked(): boolean {
+  try {
+    if (typeof navigator !== "undefined" && navigator.cookieEnabled === false) return true
+    document.cookie = "resumer_cookie_probe=1; Path=/; SameSite=Lax; Max-Age=60"
+    const ok = document.cookie.includes("resumer_cookie_probe=1")
+    document.cookie = "resumer_cookie_probe=; Path=/; SameSite=Lax; Max-Age=0"
+    return !ok
+  } catch {
+    return true
+  }
+}
 
 type Section = "profile" | "experience" | "projects" | "education" | "extracurriculars" | "generate"
 
@@ -39,28 +56,6 @@ const FOCUS_OPTIONS: { id: FocusMode; label: string; desc: string; projects: num
   { id: "proj_leaning",label: "Project Leaning",      desc: "3 projects + 2 experiences (Technical depth)", projects: 3, experience: 2 },
   { id: "extended",    label: "Extended Density",     desc: "3 projects + 3 experiences (Full density)", projects: 3, experience: 3 },
 ]
-
-// ── Consent Banner ────────────────────────────────────────────────────────────
-
-function ConsentBanner({ accepted, onAccept }: { accepted: boolean; onAccept: () => void }) {
-  if (accepted) return null
-  return (
-    <div className="flex shrink-0 items-start gap-3 border-b border-line bg-ember-tint/50 px-4 py-2.5 text-sm text-ink-soft">
-      <Info size={15} className="mt-0.5 shrink-0 text-ember" aria-hidden="true" />
-      <p className="flex-1 leading-snug text-xs">
-        We use an essential session cookie to enforce the 5/day limit and protect your downloads.
-        Your draft is saved on this device.{" "}
-        <Link href="/privacy" className="underline">Privacy</Link>
-      </p>
-      <div className="flex shrink-0 gap-2">
-        <Link href="/" className="text-xs font-semibold text-ink-soft hover:underline">Decline</Link>
-        <button onClick={onAccept} className="cursor-pointer rounded-md bg-ember px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90">
-          Accept
-        </button>
-      </div>
-    </div>
-  )
-}
 
 // ── Field helper ──────────────────────────────────────────────────────────────
 
@@ -652,7 +647,7 @@ function ExtracurricularsPanel({ draft, updateDraft }: { draft: GuestDraft; upda
 }
 
 function GeneratePanel({
-  draft, accepted, focus, setFocus,
+  draft, cookiesBlocked, focus, setFocus,
   jobDescription, setJobDescription,
   keywords, setKeywords,
   instructions, setInstructions,
@@ -660,7 +655,7 @@ function GeneratePanel({
   error, setError,
 }: {
   draft: GuestDraft
-  accepted: boolean
+  cookiesBlocked: boolean
   focus: FocusMode
   setFocus: (f: FocusMode) => void
   jobDescription: string
@@ -675,12 +670,25 @@ function GeneratePanel({
   setError: (e: string | null) => void
 }) {
   const activeFocus = FOCUS_OPTIONS.find((f) => f.id === focus)!
+  const usableExpCount = usableExperiences(draft.experiences).length
+  const usableProjCount = usableProjects(draft.projects).length
+  const incompleteExpMessages = incompleteExperienceMessages(draft.experiences)
+  const incompleteProjMessages = incompleteProjectMessages(draft.projects)
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold text-ink">Generate résumé</h2>
         <p className="mt-0.5 text-xs text-ink-muted">Choose a focus, paste the job post, and generate.</p>
       </div>
+
+      {cookiesBlocked && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2.5">
+          <div className="flex items-start gap-2 text-xs text-amber-800">
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />
+            <span className="flex-1 font-semibold">{COOKIE_BLOCKED_MESSAGE}</span>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="flex flex-col gap-2 rounded border border-red-200 bg-red-50 px-3 py-2.5">
@@ -708,7 +716,7 @@ function GeneratePanel({
         <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted">Content focus</p>
         <div className="divide-y divide-line">
           {FOCUS_OPTIONS.map((opt) => {
-            const locked = draft.experiences.length < opt.experience || draft.projects.length < opt.projects
+            const locked = usableExpCount < opt.experience || usableProjCount < opt.projects
             const selected = focus === opt.id
             return (
               <button
@@ -728,7 +736,7 @@ function GeneratePanel({
                 {locked && (
                   <span className="flex shrink-0 items-center gap-1 text-xs text-ink-faint">
                     <Lock size={11} />
-                    {`Need ${Math.max(0, opt.experience - draft.experiences.length)} exp · ${Math.max(0, opt.projects - draft.projects.length)} proj`}
+                    {`Need ${Math.max(0, opt.experience - usableExpCount)} exp · ${Math.max(0, opt.projects - usableProjCount)} proj`}
                   </span>
                 )}
               </button>
@@ -767,15 +775,26 @@ function GeneratePanel({
         <p className="font-semibold text-ink">Ready to generate?</p>
         {[
           { label: "Name", ok: !!draft.profile.full_name?.trim(), hint: "Add name in Profile" },
-          { label: `Experience (need ${activeFocus.experience})`, ok: draft.experiences.length >= activeFocus.experience, hint: `Add ${activeFocus.experience - draft.experiences.length} more` },
-          { label: `Projects (need ${activeFocus.projects})`, ok: draft.projects.length >= activeFocus.projects, hint: `Add ${activeFocus.projects - draft.projects.length} more` },
+          { label: `Experience (need ${activeFocus.experience})`, ok: usableExpCount >= activeFocus.experience, hint: `Add ${activeFocus.experience - usableExpCount} more` },
+          { label: `Projects (need ${activeFocus.projects})`, ok: usableProjCount >= activeFocus.projects, hint: `Add ${activeFocus.projects - usableProjCount} more` },
           { label: "Job description", ok: !!jobDescription.trim(), hint: "Paste above" },
-          { label: "Cookie consent", ok: accepted, hint: "Accept notice at top" },
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2">
             <span className={item.ok ? "text-emerald-500" : "text-red-400"}>{item.ok ? "✓" : "✗"}</span>
             <span className={item.ok ? "text-ink-muted" : "text-ink-muted"}>{item.label}</span>
             {!item.ok && <span className="text-ink-faint">({item.hint})</span>}
+          </div>
+        ))}
+        {incompleteExpMessages.map((message) => (
+          <div key={message} className="flex items-center gap-2">
+            <span className="text-amber-500">!</span>
+            <span className="text-ink-muted">{message}</span>
+          </div>
+        ))}
+        {incompleteProjMessages.map((message) => (
+          <div key={message} className="flex items-center gap-2">
+            <span className="text-amber-500">!</span>
+            <span className="text-ink-muted">{message}</span>
           </div>
         ))}
       </div>
@@ -789,7 +808,8 @@ export function TryClient() {
   const router = useRouter()
 
   const [draft, setDraft] = useState<GuestDraft>(() => emptyGuestDraft())
-  const [accepted, setAccepted] = useState(false)
+  const [cookiesBlocked, setCookiesBlocked] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
   const [active, setActive] = useState<Section>("profile")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -802,33 +822,48 @@ export function TryClient() {
   useEffect(() => {
     startTransition(() => {
       setDraft(loadGuestDraft())
-      setAccepted(hasConsent())
+      const saved = loadGuestGenerate()
+      if (FOCUS_OPTIONS.some((option) => option.id === saved.focus)) {
+        setFocus(saved.focus as FocusMode)
+      }
+      if (
+        saved.creativityMode === "proper" ||
+        saved.creativityMode === "larp" ||
+        saved.creativityMode === "super_larp"
+      ) {
+        setCreativityMode(saved.creativityMode as CreativityMode)
+      }
+      setJobDescription(saved.jobDescription ?? "")
+      setKeywords(saved.keywords ?? "")
+      setInstructions(saved.instructions ?? "")
+      setCookiesBlocked(detectCookiesBlocked())
+      setHydrated(true)
     })
   }, [])
 
+  useEffect(() => {
+    if (!hydrated) return
+    saveGuestGenerate({ jobDescription, keywords, instructions, focus, creativityMode })
+  }, [hydrated, jobDescription, keywords, instructions, focus, creativityMode])
+
   const updateDraft = (next: GuestDraft) => { setDraft(next); saveGuestDraft(next) }
 
-  const acceptCookies = () => {
-    document.cookie = "resumer_guest_consent=true; Max-Age=15552000; Path=/; SameSite=Lax"
-    setAccepted(true)
-  }
-
   const activeFocus = FOCUS_OPTIONS.find((f) => f.id === focus)!
+  const usableExpCount = usableExperiences(draft.experiences).length
+  const usableProjCount = usableProjects(draft.projects).length
 
   const canGenerate = (
-    accepted &&
     !!draft.profile.full_name?.trim() &&
     !!jobDescription.trim() &&
-    draft.experiences.length >= activeFocus.experience &&
-    draft.projects.length >= activeFocus.projects
+    usableExpCount >= activeFocus.experience &&
+    usableProjCount >= activeFocus.projects
   )
 
   const submit = async () => {
-    if (!accepted) { setError("Accept the cookie notice at the top to continue."); setActive("generate"); return }
     if (!draft.profile.full_name?.trim()) { setError("Add your name in the Profile section."); setActive("profile"); return }
     if (!jobDescription.trim()) { setError("Paste a job description first."); setActive("generate"); return }
-    if (draft.experiences.length < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
-    if (draft.projects.length < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
+    if (usableExpCount < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
+    if (usableProjCount < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
     setError(null); setSubmitting(true)
     if (ANALYTICS_ENABLED) posthog.capture("resume_generation_requested", {
       is_guest: true,
@@ -872,7 +907,6 @@ export function TryClient() {
 
   return (
     <div className="flex h-full flex-col relative bg-ink/[0.03]">
-      <ConsentBanner accepted={accepted} onAccept={acceptCookies} />
 
       {/* Mobile Top Tabs Header (hidden on desktop) */}
       <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-ink/5 border-b border-line md:hidden shrink-0">
@@ -936,7 +970,7 @@ export function TryClient() {
             {active === "extracurriculars" && <ExtracurricularsPanel draft={draft} updateDraft={updateDraft} />}
             {active === "generate"        && (
               <GeneratePanel
-                draft={draft} accepted={accepted}
+                draft={draft} cookiesBlocked={cookiesBlocked}
                 focus={focus} setFocus={setFocus}
                 jobDescription={jobDescription} setJobDescription={setJobDescription}
                 keywords={keywords} setKeywords={setKeywords}
@@ -949,21 +983,27 @@ export function TryClient() {
 
           {/* Sticky generate bar - always visible */}
           <div className="shrink-0 border-t border-line bg-paper px-5 py-3">
+            {cookiesBlocked && (
+              <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2">
+                <div className="flex items-start gap-2 text-xs text-amber-800">
+                  <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                  <span className="flex-1 font-semibold">{COOKIE_BLOCKED_MESSAGE}</span>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <Button
                 type="button"
                 size="lg"
                 className="flex-1"
-                onClick={active === "generate" ? submit : () => { setActive("generate"); }}
+                onClick={canGenerate ? submit : () => { setActive("generate"); }}
                 disabled={submitting}
               >
                 {submitting
                   ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
                   : canGenerate
-                    ? "Generate Free Résumé"
-                    : active === "generate"
-                      ? "Generate Free Résumé"
-                      : "Go to Generate →"
+                    ? "Generate free résumé"
+                    : "Go to Generate"
                 }
               </Button>
               <div className="shrink-0 text-right">
@@ -974,6 +1014,7 @@ export function TryClient() {
           </div>
         </div>
       </div>
+      <CookieNotice />
     </div>
   )
 }
