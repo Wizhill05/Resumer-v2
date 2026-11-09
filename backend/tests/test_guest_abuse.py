@@ -271,3 +271,20 @@ async def test_import_per_token_limit(client, monkeypatch):
         if resp.status_code == 429:
             break
     assert statuses[-1] == 429, statuses
+
+
+async def test_exhausted_token_does_not_burn_ip_slots(client, monkeypatch):
+    test_client, _trigger, db, _engine = client
+    monkeypatch.setattr(settings, "INTERNAL_API_SECRET", "test-internal-secret")
+    monkeypatch.setattr(settings, "GUEST_GENERATE_DAILY_PER_IP", 100)
+    headers = _internal_headers("203.0.113.40")
+    for _ in range(5):
+        resp = await _generate(test_client, headers=headers)
+        assert resp.status_code == 200, resp.text
+    for _ in range(3):
+        resp = await _generate(test_client, headers=headers)
+        assert resp.status_code == 429, resp.text
+        assert resp.json()["detail"]["code"] == "guest_quota_exhausted"
+    bucket = await db.get(SupportRateLimit, "guest-ip:203.0.113.40:generate")
+    assert bucket is not None
+    assert bucket.request_count == 5

@@ -104,6 +104,19 @@ async def guest_quota(token_hash: str | None, db: AsyncSession) -> dict:
     return {"limit": limit, "used": used, "remaining": remaining, "resets_at": resets_at}
 
 
+def _quota_exhausted(quota: dict) -> HTTPException:
+    limit = quota.get("limit", GUEST_MAX_DAILY_RUNS)
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={
+            "code": "guest_quota_exhausted",
+            "message": f"You've used all {limit} free résumés for today. Sign in to keep going, or come back later.",
+            "resets_at": quota.get("resets_at"),
+            "limit": limit,
+        },
+    )
+
+
 def _dialect_name(db: AsyncSession) -> str:
     try:
         return db.get_bind().dialect.name
@@ -331,6 +344,12 @@ async def start_guest_generation(
                 detail={"code": "guest_trial_busy", "message": "The free trial is busy today. Sign in to keep going."},
             )
 
+    # Cheap unlocked pre-check so a browser that has used its 5 doesn't also
+    # burn shared per-IP slots. The locked check below stays authoritative.
+    pre_quota = await guest_quota(token_hash, db)
+    if pre_quota["remaining"] <= 0:
+        raise _quota_exhausted(pre_quota)
+
     # Per-IP daily limit. Skipped when no trusted IP is available (direct
     # backend hit or missing INTERNAL_API_SECRET), since the IP would not be
     # trustworthy anyway.
@@ -350,22 +369,11 @@ async def start_guest_generation(
 
     quota = await guest_quota(token_hash, db)
     if quota["remaining"] <= 0:
-        # Use get() for safety though quota always contains these keys
-        resets_at = quota.get("resets_at")
-        limit = quota.get("limit", GUEST_MAX_DAILY_RUNS)
         try:
             await db.rollback()
         except Exception:
             pass
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "code": "guest_quota_exhausted",
-                "message": f"You've used all {limit} free résumés for today. Sign in to keep going, or come back later.",
-                "resets_at": resets_at,
-                "limit": limit,
-            },
-        )
+        raise _quota_exhausted(quota)
     snapshot = jsonable_encoder(
         {
             "profile": data.profile,
