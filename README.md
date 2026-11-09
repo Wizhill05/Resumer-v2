@@ -240,7 +240,9 @@ Current production deployment uses **Vercel for the frontend and AWS EC2 with Do
 | `GET /profile/projects` | List saved projects. |
 | `GET /profile/experiences` | List saved experiences. |
 | `POST /generate` | Start a resume generation run. |
-| `GET /generate` | List generation history. |
+| `GET /generate/list` | Lightweight, keyset-paginated history (`limit` ≤ 100, `cursor`, `q`). Returns `{items, next_cursor, total, unfiltered_total}`; items omit the job description. |
+| `GET /generate/summary` | Dashboard aggregates: `total`, `latest_*`, `used_today`, `this_month`. |
+| `GET /generate` | Legacy full, unpaginated history (deprecated; shape unchanged). |
 | `GET /generate/{gen_id}` | Fetch generation status. |
 | `GET /generate/{gen_id}/logs` | Poll generation logs. |
 

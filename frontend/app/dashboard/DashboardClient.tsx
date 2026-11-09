@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { ArrowUpRight, History, UserRound } from "lucide-react"
 import { clearGuestDraft, loadGuestDraft } from "@/lib/guest-storage"
+import { useHistorySummary } from "@/components/useGenerationStats"
 
 type Profile = {
   full_name?: string
@@ -47,16 +48,13 @@ export function DashboardClient() {
     queryFn: () => getJson("/api/backend/profile/extracurriculars"),
   })
 
-  // History is the heaviest request (the full run list), so it must not
-  // block the page or render as "0 résumés" while it is still in flight.
+  // History only needs aggregates (GET /generate/summary), but it still must
+  // not block the page or render as "0 résumés" while it is in flight.
   const {
     data: history,
     isPending: loadingHistory,
     isError: historyFailed,
-  } = useQuery<{ id: string; created_at: string; job_title?: string | null; company?: string | null }[]>({
-    queryKey: ["history"],
-    queryFn: () => getJson("/api/backend/generate"),
-  })
+  } = useHistorySummary()
 
   const isLoading = loadingProfile || loadingExp || loadingProjects || loadingEducation || loadingExtra
   const missing = [
@@ -157,9 +155,8 @@ export function DashboardClient() {
     )
   }
 
-  const latest = history?.[0]
-  const latestDate = latest
-    ? new Date(latest.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  const latestDate = history?.latest_created_at
+    ? new Date(history.latest_created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : null
 
   const tiles = [
@@ -184,9 +181,9 @@ export function DashboardClient() {
       icon: History,
       stats: (history
         ? [
-            [history.length, history.length === 1 ? "résumé" : "résumés"],
+            [history.total, history.total === 1 ? "résumé" : "résumés"],
             ...(latestDate ? [[latestDate, "latest"] as [string, string]] : []),
-            ...(latest?.company ? [[latest.company, "company"] as [string, string]] : []),
+            ...(history.latest_company ? [[history.latest_company, "company"] as [string, string]] : []),
           ]
         : [["—", "résumés"]]) as [number | string, string][],
     },
