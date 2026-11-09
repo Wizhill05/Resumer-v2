@@ -88,8 +88,9 @@ def _get_params(client_id: str, redirect_uri: str, **extra) -> dict:
     return {"response_type": "code", **_form(client_id, redirect_uri, **extra)}
 
 
-def _signed(email: str) -> str:
-    return jwt.encode({"email": email}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+def _signed(user: User) -> str:
+    # Same shape as the frontend's backend JWT: `sub` is the user id (required once lookups are id-based).
+    return jwt.encode({"sub": str(user.id), "email": user.email}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 # ── The takeover itself ──────────────────────────────────────────────────────
@@ -152,18 +153,18 @@ async def test_forged_token_is_rejected(client: AsyncClient, async_db: AsyncSess
 
 
 async def test_consent_page_has_no_user_id_field(client: AsyncClient, async_db: AsyncSession):
-    await _make_user(async_db)
-    res = await client.get("/oauth/authorize", params=_get_params("chatgpt", GOOD, token=_signed("victim@example.com")))
+    user = await _make_user(async_db)
+    res = await client.get("/oauth/authorize", params=_get_params("chatgpt", GOOD, token=_signed(user)))
     assert res.status_code == 200
     assert 'name="user_id"' not in res.text
 
 
 async def test_consent_page_escapes_user_controlled_values(client: AsyncClient, async_db: AsyncSession):
-    await _make_user(async_db)
+    user = await _make_user(async_db)
     cid = await _make_client(async_db, [GOOD])
     res = await client.get(
         "/oauth/authorize",
-        params=_get_params(cid, GOOD, state='"><script>alert(1)</script>', token=_signed("victim@example.com")),
+        params=_get_params(cid, GOOD, state='"><script>alert(1)</script>', token=_signed(user)),
     )
     assert res.status_code == 200
     assert "<script>alert(1)</script>" not in res.text
@@ -177,7 +178,7 @@ async def test_signed_token_with_registered_redirect_succeeds(client: AsyncClien
 
     res = await client.post(
         "/oauth/authorize",
-        data=_form(client_id, "https://app.example/cb", token=_signed(user.email)),
+        data=_form(client_id, "https://app.example/cb", token=_signed(user)),
         follow_redirects=False,
     )
     assert res.status_code == 302
@@ -193,7 +194,7 @@ async def test_signed_token_with_registered_redirect_succeeds(client: AsyncClien
 async def test_existing_client_unregistered_redirect_rejected_on_get_and_post(client: AsyncClient, async_db: AsyncSession):
     user = await _make_user(async_db)
     client_id = await _make_client(async_db, ["https://app.example/cb"])
-    token = _signed(user.email)
+    token = _signed(user)
 
     get_res = await client.get(
         "/oauth/authorize", params=_get_params(client_id, EVIL, token=token), follow_redirects=False
@@ -223,12 +224,12 @@ async def test_substring_and_localhost_redirects_not_accepted(client: AsyncClien
     # existing client with an allowlisted URI must not be extended with lookalikes
     client_id = await _make_client(async_db, [GOOD])
     res = await client.post(
-        "/oauth/authorize", data=_form(client_id, evil_uri, token=_signed(user.email)), follow_redirects=False
+        "/oauth/authorize", data=_form(client_id, evil_uri, token=_signed(user)), follow_redirects=False
     )
     assert res.status_code == 400
     # nor may a brand-new client_id use them
     res = await client.post(
-        "/oauth/authorize", data=_form("fresh", evil_uri, token=_signed(user.email)), follow_redirects=False
+        "/oauth/authorize", data=_form("fresh", evil_uri, token=_signed(user)), follow_redirects=False
     )
     assert res.status_code == 400
     assert await _count(async_db, OAuthAuthorizationCode) == 0
@@ -237,7 +238,7 @@ async def test_substring_and_localhost_redirects_not_accepted(client: AsyncClien
 
 async def test_unknown_client_non_allowlisted_redirect_rejected(client: AsyncClient, async_db: AsyncSession):
     user = await _make_user(async_db)
-    token = _signed(user.email)
+    token = _signed(user)
 
     get_res = await client.get("/oauth/authorize", params=_get_params("attacker", EVIL, token=token), follow_redirects=False)
     assert get_res.status_code == 400
@@ -253,7 +254,7 @@ async def test_unknown_client_allowlisted_connector_callback_still_works(
     client: AsyncClient, async_db: AsyncSession, redirect_uri: str
 ):
     user = await _make_user(async_db)
-    token = _signed(user.email)
+    token = _signed(user)
 
     get_res = await client.get("/oauth/authorize", params=_get_params("chatgpt", redirect_uri, token=token))
     assert get_res.status_code == 200
@@ -272,7 +273,7 @@ async def _issue_code(client: AsyncClient, async_db: AsyncSession, redirect_uri:
     user = await _make_user(async_db)
     client_id = await _make_client(async_db, [redirect_uri])
     res = await client.post(
-        "/oauth/authorize", data=_form(client_id, redirect_uri, token=_signed(user.email)), follow_redirects=False
+        "/oauth/authorize", data=_form(client_id, redirect_uri, token=_signed(user)), follow_redirects=False
     )
     assert res.status_code == 302
     return client_id, parse_qs(urlparse(res.headers["location"]).query)["code"][0]
