@@ -547,10 +547,7 @@ async def test_guest_generation_rejects_incomplete_entries(monkeypatch):
     from src.schemas.guest import GuestGenerationCreate
     from src.schemas.profile import ExperienceCreate, ProjectCreate
 
-    async def noop(*args, **kwargs):
-        pass
     monkeypatch.setattr("src.api.guest._guest_token", lambda *args: "guest-token")
-    monkeypatch.setattr("src.api.guest._check_guest_rate_limit", noop)
     data = GuestGenerationCreate(
         job_description="Engineer",
         projects=[ProjectCreate(name="Incomplete"), ProjectCreate(name="Incomplete 2")],
