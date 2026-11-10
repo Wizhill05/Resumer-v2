@@ -249,6 +249,17 @@ async def _fetch_user_email(user_id) -> str | None:
         return user.email if user else None
 
 
+async def _notify_email_for(gen) -> str | None:
+    """Where to send this run's completion email.
+
+    Guest runs use the optional address typed on /try. A guest run claimed by a
+    signed-in user mid-run is no longer a guest run, so it goes to the account.
+    """
+    if gen.is_guest:
+        return (gen.render_metadata or {}).get("_guest_notify_email")
+    return await _fetch_user_email(gen.user_id)
+
+
 async def run_generation(gen_id: str) -> None:
     """Execute one generation to completion. Safe to call from a Job or in-process."""
     gen_uuid = uuid.UUID(gen_id)
@@ -277,8 +288,7 @@ async def run_generation(gen_id: str) -> None:
                         g.error_message = "Profile not found; complete onboarding first."
                         await fail_db.commit()
                         capture_generation(g, "failed")
-                        email = await _fetch_user_email(gen.user_id)
-                        send_completion_email(email, g)
+                        send_completion_email(await _notify_email_for(g), g)
                 return
 
             is_pro = bool(initial_state.get("is_pro"))
@@ -287,7 +297,7 @@ async def run_generation(gen_id: str) -> None:
             await db.commit()
 
             # The generations row has no email; fetch the user's email for notifications.
-            user_email = await _fetch_user_email(gen.user_id)
+            user_email = await _notify_email_for(gen)
 
         # 2. Run the graph in its own session.
         async with AsyncSessionLocal() as pipeline_db:
@@ -349,6 +359,8 @@ async def run_generation(gen_id: str) -> None:
                 await update_db.commit()
                 capture_generation(g, "completed")
                 if should_notify:
+                    # Re-resolve: a guest may have signed in and claimed the run meanwhile.
+                    user_email = await _notify_email_for(g)
                     send_completion_email(user_email, g, result.get("pdf_bytes"))
 
     except Exception as e:
@@ -363,7 +375,7 @@ async def run_generation(gen_id: str) -> None:
                     g.completed_at = datetime.now(timezone.utc)
                     await fail_db.commit()
                     capture_generation(g, "failed")
-                    send_completion_email(user_email, g)
+                    send_completion_email(await _notify_email_for(g), g)
         except Exception as inner:
             print(f"[job_runner] could not persist failure for {gen_id}: {inner!r}")
         await log_progress(None, gen_id, "system", f"Pipeline error: {e}", "error")

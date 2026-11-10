@@ -94,7 +94,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   session: { strategy: "jwt" },
-  pages: { error: "/" },
+  pages: { error: "/auth/error" },
   events: {
     async signIn({ user, account }) {
       await captureSignIn(user.email, account?.provider)
@@ -107,7 +107,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (provider !== "google" && provider !== "github") return true
 
       const email = (profile?.email || user.email || "").toString().trim().toLowerCase()
-      if (!email || !account.providerAccountId) return `/?auth_error=email_not_verified&provider=${encodeURIComponent(provider)}`
+      if (!email || !account.providerAccountId) return `/auth/error?auth_error=email_not_verified&provider=${encodeURIComponent(provider)}`
 
       let emailVerified = false
       if (provider === "google") {
@@ -145,11 +145,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             if (detail.error) error = detail.error
             if (detail.provider) owner = detail.provider
           } catch {}
-          return `/?auth_error=${encodeURIComponent(error)}&provider=${encodeURIComponent(owner)}`
+          return `/auth/error?auth_error=${encodeURIComponent(error)}&provider=${encodeURIComponent(owner)}`
         }
 
         if (!res.ok) {
-          return "/?auth_error=unavailable"
+          return "/auth/error?auth_error=unavailable"
         }
 
         const data = (await res.json()) as { uid: string; provider: string; needs_welcome: boolean }
@@ -159,7 +159,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         user.id = data.uid
         return true
       } catch {
-        return "/?auth_error=unavailable"
+        return "/auth/error?auth_error=unavailable"
       }
     },
     async redirect({ url, baseUrl }) {

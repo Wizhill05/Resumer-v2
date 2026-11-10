@@ -65,7 +65,13 @@ async def client(monkeypatch):
             yield db
 
         app.dependency_overrides[get_db] = get_session
-        trigger = AsyncMock(return_value=None)
+        # Guests may only have one run in flight, so the fake pipeline
+        # finishes each run instantly to let tests start the next one.
+        async def finish_run(gen_id):
+            await db.execute(update(Generation).where(Generation.id == uuid.UUID(gen_id)).values(status="completed"))
+            await db.commit()
+
+        trigger = AsyncMock(side_effect=finish_run)
         monkeypatch.setattr("src.api.guest.trigger_pipeline", trigger)
         monkeypatch.setattr("src.api.guest.extract_upload_text", AsyncMock(return_value="fake resume text"))
         monkeypatch.setattr("src.api.guest.run_guest_import_task", AsyncMock(return_value=None))
@@ -135,13 +141,13 @@ async def test_failed_generations_dont_count(client):
 async def test_pipeline_start_failure_does_not_consume_credit(client, monkeypatch):
     from unittest.mock import AsyncMock
     test_client, trigger, _db, _engine = client
+    finish_side_effect = trigger.side_effect
     # make next trigger fail once
     trigger.side_effect = Exception("boom")
     r_fail = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
     assert r_fail.status_code == 502, r_fail.text
     # reset to success
-    trigger.side_effect = None
-    trigger.return_value = None
+    trigger.side_effect = finish_side_effect
     # failed row should not count
     q = await test_client.get("/guest/quota")
     assert q.status_code == 200, q.text
@@ -270,3 +276,86 @@ async def test_guest_quota_helper_direct(client):
     # unknown hash
     quota_unknown = await guest_quota(_hash_token("nope"), db)
     assert quota_unknown["used"] == 0
+
+
+async def test_second_generation_blocked_while_first_runs(client):
+    test_client, trigger, db, _engine = client
+    trigger.side_effect = None  # leave the run pending
+    r1 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    assert r1.status_code == 200, r1.text
+    r2 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    assert r2.status_code == 409, r2.text
+    detail = r2.json()["detail"]
+    assert detail["code"] == "guest_generation_running"
+    assert detail["generation_id"] == r1.json()["id"]
+    # Blocked attempt does not use a credit.
+    q = await test_client.get("/guest/quota")
+    assert q.json()["used"] == 1
+
+    # Once the first run finishes, the next one is allowed.
+    await db.execute(update(Generation).where(Generation.id == uuid.UUID(r1.json()["id"])).values(status="completed"))
+    await db.commit()
+    r3 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    assert r3.status_code == 200, r3.text
+
+
+async def test_stale_running_generation_does_not_block(client):
+    test_client, trigger, db, _engine = client
+    trigger.side_effect = None
+    r1 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    assert r1.status_code == 200, r1.text
+    old = datetime.now(timezone.utc) - timedelta(hours=1)
+    await db.execute(update(Generation).where(Generation.id == uuid.UUID(r1.json()["id"])).values(created_at=old))
+    await db.commit()
+    r2 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    assert r2.status_code == 200, r2.text
+
+
+async def test_other_browser_is_not_blocked(client):
+    test_client, trigger, *_ = client
+    trigger.side_effect = None
+    r1 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    assert r1.status_code == 200, r1.text
+    test_client.cookies.clear()
+    r2 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    assert r2.status_code == 200, r2.text
+
+
+async def test_notify_email_is_stored_and_returned(client):
+    test_client, _trigger, db, _engine = client
+    r = await test_client.post("/guest/generate", json={**GENERATE_PAYLOAD, "notify_email": "  Me@Example.com "})
+    assert r.status_code == 200, r.text
+    assert r.json()["notify_email"] == "me@example.com"
+    gen = (await db.execute(select(Generation).where(Generation.id == uuid.UUID(r.json()["id"])))).scalar_one()
+    assert gen.render_metadata["_guest_notify_email"] == "me@example.com"
+
+
+async def test_blank_notify_email_is_ignored(client):
+    test_client, *_ = client
+    r = await test_client.post("/guest/generate", json={**GENERATE_PAYLOAD, "notify_email": "   "})
+    assert r.status_code == 200, r.text
+    assert r.json()["notify_email"] is None
+
+
+async def test_invalid_notify_email_rejected_without_using_credit(client):
+    test_client, *_ = client
+    r = await test_client.post("/guest/generate", json={**GENERATE_PAYLOAD, "notify_email": "not-an-email"})
+    assert r.status_code == 422, r.text
+    q = await test_client.get("/guest/quota")
+    assert q.json()["used"] == 0
+
+
+async def test_latest_returns_newest_run_for_this_browser_only(client):
+    test_client, _trigger, db, _engine = client
+    empty = await test_client.get("/guest/latest")
+    assert empty.status_code == 200 and empty.json() is None
+    r1 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    older = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await db.execute(update(Generation).where(Generation.id == uuid.UUID(r1.json()["id"])).values(created_at=older))
+    await db.commit()
+    r2 = await test_client.post("/guest/generate", json=GENERATE_PAYLOAD)
+    latest = await test_client.get("/guest/latest")
+    assert latest.json()["id"] == r2.json()["id"]
+    test_client.cookies.clear()
+    other = await test_client.get("/guest/latest", cookies={"resumer_guest_token": "someone-else"})
+    assert other.json() is None

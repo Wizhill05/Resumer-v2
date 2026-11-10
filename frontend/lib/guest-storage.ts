@@ -2,6 +2,7 @@ import type { GuestDraft, GuestExperience, GuestProject } from "@/lib/guest-type
 
 const STORAGE_KEY = "resumer_guest_draft_v1"
 const GENERATE_STORAGE_KEY = "resumer_guest_generate_v1"
+const LATEST_RUN_STORAGE_KEY = "resumer_guest_latest_run_v1"
 
 // Browsers that block all cookies also throw on any localStorage access.
 function readStorage(key: string): string | null {
@@ -52,6 +53,7 @@ export type GuestGenerateForm = {
   instructions: string
   focus: string
   creativityMode: string
+  notifyEmail: string
 }
 
 export const emptyGuestGenerate = (): GuestGenerateForm => ({
@@ -60,6 +62,7 @@ export const emptyGuestGenerate = (): GuestGenerateForm => ({
   instructions: "",
   focus: "balanced",
   creativityMode: "proper",
+  notifyEmail: "",
 })
 
 export function loadGuestGenerate(): GuestGenerateForm {
@@ -74,6 +77,29 @@ export function loadGuestGenerate(): GuestGenerateForm {
 
 export function saveGuestGenerate(form: GuestGenerateForm) {
   writeStorage(GENERATE_STORAGE_KEY, JSON.stringify(form))
+}
+
+/** The guest's most recent generation, so /try can show it after any navigation. */
+export type GuestLatestRun = {
+  id: string
+  startedAt: string
+}
+
+export function loadGuestLatestRun(): GuestLatestRun | null {
+  const raw = readStorage(LATEST_RUN_STORAGE_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<GuestLatestRun>
+    return typeof parsed.id === "string" && parsed.id
+      ? { id: parsed.id, startedAt: typeof parsed.startedAt === "string" ? parsed.startedAt : new Date().toISOString() }
+      : null
+  } catch {
+    return null
+  }
+}
+
+export function saveGuestLatestRun(run: GuestLatestRun | null) {
+  writeStorage(LATEST_RUN_STORAGE_KEY, run ? JSON.stringify(run) : null)
 }
 
 function hasText(value: string | null | undefined): boolean {

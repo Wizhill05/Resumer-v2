@@ -14,7 +14,11 @@ function readAuthError(): string | null {
   }
 }
 
-export function AuthErrorBanner() {
+/**
+ * `inline` renders an in-flow strip for app pages (/try) whose top area holds
+ * interactive content; the default floats under the fixed landing nav.
+ */
+export function AuthErrorBanner({ inline = false }: { inline?: boolean } = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const [dismissed, setDismissed] = useState(false)
@@ -45,6 +49,26 @@ export function AuthErrorBanner() {
   }, [message, pathname, router])
 
   if (!message || dismissed) return null
+
+  if (inline) {
+    return (
+      <div
+        role="alert"
+        className="flex shrink-0 items-center gap-2.5 border-b border-amber-300/70 bg-amber-50 px-4 py-2 text-amber-950 md:px-6 dark:border-amber-500/40 dark:bg-amber-950/85 dark:text-amber-50"
+      >
+        <AlertCircle size={15} className="shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+        <p className="flex-1 text-xs font-semibold">{message}</p>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded hover:bg-amber-100 dark:hover:bg-amber-900"
+        >
+          <X size={13} aria-hidden="true" />
+        </button>
+      </div>
+    )
+  }
 
   // The landing nav is fixed (z-50, 44px tall, 16px from the top on md+), so the
   // banner is fixed just below it and above everything else.

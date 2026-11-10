@@ -42,3 +42,9 @@ test("returns pathname and search, not the raw input", () => {
   assert.equal(safeReturnTo(null, requestUrl), "/account")
   assert.equal(safeReturnTo(undefined, requestUrl), "/account")
 })
+
+test("uses the given fallback for unsafe values", () => {
+  assert.equal(safeReturnTo(undefined, requestUrl, "/"), "/")
+  assert.equal(safeReturnTo("//evil.com", requestUrl, "/"), "/")
+  assert.equal(safeReturnTo("/try/result/abc", requestUrl, "/"), "/try/result/abc")
+})

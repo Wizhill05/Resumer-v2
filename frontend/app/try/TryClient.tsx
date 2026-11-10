@@ -1,11 +1,10 @@
 "use client"
 
 import { startTransition, useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
 import {
   AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight,
   Loader2, Plus, Trash2, Upload, X, Pencil, FileText,
-  Briefcase, FolderGit2, GraduationCap, Award, User, Lock,
+  Briefcase, FolderGit2, GraduationCap, Award, User, Lock, Mail,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,13 +13,16 @@ import { Textarea } from "@/components/ui/textarea"
 import { CookieNotice } from "@/components/try/CookieNotice"
 import {
   emptyGuestDraft, incompleteExperienceMessages, incompleteProjectMessages,
-  loadGuestDraft, loadGuestGenerate, mergeGuestDraft, saveGuestDraft,
-  saveGuestGenerate, usableExperiences, usableProjects,
+  loadGuestDraft, loadGuestGenerate, loadGuestLatestRun, mergeGuestDraft, saveGuestDraft,
+  saveGuestGenerate, saveGuestLatestRun, usableExperiences, usableProjects,
+  type GuestLatestRun,
 } from "@/lib/guest-storage"
 import { ReportIssueButton } from "@/components/support/ReportIssueButton"
 import { CreativityModeSelector, type CreativityMode } from "@/components/generation/CreativityModeSelector"
 import { TurnstileHost, useTurnstile } from "@/components/TurnstileWidget"
 import { posthog, ANALYTICS_ENABLED, generationAnalyticsContext } from "@/lib/posthog"
+import { LatestRunCard } from "@/components/try/LatestRunCard"
+import { isGuestRunActive, useGuestRun, type GuestRunState } from "@/lib/use-guest-run"
 import type {
   GuestDraft, GuestEducation, GuestExperience,
   GuestExtracurricular, GuestProject
@@ -88,57 +90,83 @@ const FOCUS_OPTIONS: { id: FocusMode; label: string; desc: string; projects: num
 
 const GUIDE_HIDDEN_KEY = "resumer_guest_guide_hidden_v1"
 
-type GuideStep = { label: string; short: string; done: boolean; section: Section }
+type GuideStep = { label: string; short: string; done: boolean; busy?: boolean; section: Section }
 
-function GuideStrip({
-  steps, tip, onStep, onHide,
+// Top bar: the getting-started steps, plus the guest's latest résumé once one
+// exists. Starting a generation slides the steps to the right and the résumé
+// card takes their place; it stays here (in progress, ready, or failed) until a
+// newer run replaces it.
+function TopBar({
+  steps, tip, onStep, onHide, guideHidden, runId, runState,
 }: {
   steps: GuideStep[]; tip: string; onStep: (section: Section) => void; onHide: () => void
+  guideHidden: boolean; runId: string | null; runState: GuestRunState
 }) {
+  const hasRun = !!runId
+  const showSteps = !guideHidden
+  if (!hasRun && !showSteps) return null
   const currentIndex = steps.findIndex((step) => !step.done)
   return (
-    <div className="shrink-0 border-b border-line bg-paper px-4 py-3 md:px-5" role="region" aria-label="How it works">
-      <div className="flex items-start gap-3">
-        <ol className="flex min-w-0 flex-1 items-center gap-x-1.5 sm:gap-x-2">
-          {steps.map((step, i) => {
-            const current = i === currentIndex
-            return (
-              <li key={step.label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                {i > 0 && <span aria-hidden="true" className="h-px w-2.5 shrink-0 bg-line-strong sm:w-6" />}
-                <button
-                  type="button"
-                  onClick={() => onStep(step.section)}
-                  aria-current={current ? "step" : undefined}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded-full py-0.5 pr-2 pl-0.5 text-xs font-semibold transition-colors ${
-                    current ? "text-ink" : step.done ? "text-ink-muted hover:text-ink" : "text-ink-faint hover:text-ink"
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
-                      step.done ? "border-line-strong text-ok" : current ? "border-ink text-ink" : "border-line"
-                    }`}
-                  >
-                    {step.done ? <Check size={11} strokeWidth={3} /> : i + 1}
-                  </span>
-                  <span className="sm:hidden">{step.short}</span>
-                  <span className="hidden sm:inline">{step.label}</span>
-                  <span className="sr-only">{step.done ? " (done)" : current ? " (next)" : ""}</span>
-                </button>
-              </li>
-            )
-          })}
-        </ol>
-        <button
-          type="button"
-          onClick={onHide}
-          aria-label="Hide guide"
-          className="-mt-0.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-faint hover:bg-ink/5 hover:text-ink"
-        >
-          <X size={14} />
-        </button>
+    <div
+      className="shrink-0 border-b border-line bg-paper px-4 py-3 md:px-5"
+      role="region"
+      aria-label={hasRun ? "Your latest résumé" : "How it works"}
+    >
+      <div
+        className={`grid items-center transition-[grid-template-columns,column-gap] duration-500 ease-out motion-reduce:transition-none ${
+          hasRun && showSteps ? "gap-x-0 sm:gap-x-4" : "gap-x-0"
+        }`}
+        style={{ gridTemplateColumns: hasRun ? "minmax(0,1fr) auto" : "minmax(0,0fr) auto" }}
+      >
+        <div className={`min-w-0 overflow-hidden transition-opacity duration-500 ${hasRun ? "opacity-100" : "opacity-0"}`}>
+          {runId && <LatestRunCard id={runId} state={runState} />}
+        </div>
+        {showSteps && (
+          // On phones the résumé card needs the whole row, so the steps step aside.
+          <div className={`min-w-0 items-center gap-3 ${hasRun ? "hidden sm:flex" : "flex"}`}>
+            <ol className="flex min-w-0 flex-1 items-center gap-x-1.5 sm:gap-x-2">
+              {steps.map((step, i) => {
+                const current = i === currentIndex
+                return (
+                  <li key={step.label} className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                    {i > 0 && <span aria-hidden="true" className={`h-px shrink-0 bg-line-strong ${hasRun ? "w-2.5 lg:w-4" : "w-2.5 sm:w-6"}`} />}
+                    <button
+                      type="button"
+                      onClick={() => onStep(step.section)}
+                      aria-current={current ? "step" : undefined}
+                      title={step.label}
+                      className={`flex cursor-pointer items-center gap-1.5 rounded-full py-0.5 pr-2 pl-0.5 text-xs font-semibold transition-colors ${
+                        current ? "text-ink" : step.done ? "text-ink-muted hover:text-ink" : "text-ink-faint hover:text-ink"
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
+                          step.done ? "border-line-strong text-ok" : current || step.busy ? "border-ink text-ink" : "border-line"
+                        }`}
+                      >
+                        {step.done ? <Check size={11} strokeWidth={3} /> : step.busy ? <Loader2 size={11} className="animate-spin" /> : i + 1}
+                      </span>
+                      <span className={hasRun ? "hidden" : "sm:hidden"}>{step.short}</span>
+                      <span className={hasRun ? "hidden xl:inline" : "hidden sm:inline"}>{step.label}</span>
+                      <span className="sr-only">{step.done ? " (done)" : step.busy ? " (in progress)" : current ? " (next)" : ""}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ol>
+            <button
+              type="button"
+              onClick={onHide}
+              aria-label="Hide guide"
+              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-faint hover:bg-ink/5 hover:text-ink"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
       </div>
-      <p className="mt-2 text-xs leading-snug text-ink-muted">{tip}</p>
+      {showSteps && !hasRun && <p className="mt-2 text-xs leading-snug text-ink-muted">{tip}</p>}
     </div>
   )
 }
@@ -759,12 +787,17 @@ function ExtracurricularsPanel({ draft, updateDraft }: { draft: GuestDraft; upda
   )
 }
 
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const isValidEmail = (v: string) => EMAIL_RE.test(v.trim())
+
 function GeneratePanel({
   draft, cookiesBlocked, focus, setFocus,
   jobDescription, setJobDescription,
   keywords, setKeywords,
   instructions, setInstructions,
   creativityMode, setCreativityMode,
+  notifyEmail, setNotifyEmail,
+  runActive, runLabel,
   error, setError,
 }: {
   draft: GuestDraft
@@ -779,6 +812,10 @@ function GeneratePanel({
   setInstructions: (v: string) => void
   creativityMode: CreativityMode
   setCreativityMode: (v: CreativityMode) => void
+  notifyEmail: string
+  setNotifyEmail: (v: string) => void
+  runActive: boolean
+  runLabel: string
   error: string | null
   setError: (e: string | null) => void
 }) {
@@ -787,12 +824,26 @@ function GeneratePanel({
   const usableProjCount = usableProjects(draft.projects).length
   const incompleteExpMessages = incompleteExperienceMessages(draft.experiences)
   const incompleteProjMessages = incompleteProjectMessages(draft.projects)
+  const profileEmail = draft.profile.email?.trim() ?? ""
+  const emailTrimmed = notifyEmail.trim()
+  const emailInvalid = emailTrimmed !== "" && !isValidEmail(emailTrimmed)
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold text-ink">Generate résumé</h2>
-        <p className="mt-0.5 text-xs text-ink-muted">Choose a focus, paste the job post, and generate.</p>
+        <p className="mt-0.5 text-xs text-ink-muted">Paste the job post, pick a layout, and tell us where to send the PDF.</p>
       </div>
+
+      {runActive && (
+        <div className="flex items-start gap-2.5 rounded border border-line bg-ink/[0.03] px-3 py-2.5 text-xs text-ink-muted">
+          <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin text-ember" />
+          <p>
+            <span className="font-semibold text-ink">Your résumé is being generated ({runLabel}).</span>{" "}
+            Follow it in the bar at the top. You can keep editing your info and the next job post meanwhile;
+            Generate unlocks when this one finishes.
+          </p>
+        </div>
+      )}
 
       {cookiesBlocked && (
         <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2.5">
@@ -824,9 +875,34 @@ function GeneratePanel({
         </div>
       )}
 
-      {/* Focus picker */}
+      {/* 1. Job description */}
       <div className="rounded-lg border border-line bg-paper">
-        <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted">Content focus</p>
+        <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted">
+          <span className="text-ink">1.</span> Job description <span className="font-normal text-red-500">required</span>
+        </p>
+        <div className="space-y-3 p-4">
+          <Textarea
+            rows={10}
+            placeholder="Paste the full job posting here for best keyword matching…"
+            value={jobDescription}
+            onChange={(e) => setJobDescription(e.target.value)}
+            className="resize-none text-sm"
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Field label="Focus keywords (optional)">
+              <Input placeholder="Python, AWS, React" className="h-8 text-sm" value={keywords} onChange={(e) => setKeywords(e.target.value)} />
+            </Field>
+            <Field label="Custom instructions (optional)">
+              <Input placeholder="Emphasise backend work" className="h-8 text-sm" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+            </Field>
+          </div>
+          <CreativityModeSelector value={creativityMode} onChange={setCreativityMode} compact />
+        </div>
+      </div>
+
+      {/* 2. Focus picker */}
+      <div className="rounded-lg border border-line bg-paper">
+        <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted"><span className="text-ink">2.</span> Content focus</p>
         <div className="divide-y divide-line">
           {FOCUS_OPTIONS.map((opt) => {
             const locked = usableExpCount < opt.experience || usableProjCount < opt.projects
@@ -858,28 +934,40 @@ function GeneratePanel({
         </div>
       </div>
 
-      {/* Job description */}
+      {/* 3. Delivery */}
       <div className="rounded-lg border border-line bg-paper">
         <p className="border-b border-line px-4 py-2.5 text-xs font-semibold text-ink-muted">
-          Job description <span className="font-normal text-red-500">required</span>
+          <span className="text-ink">3.</span> Email me the PDF <span className="font-normal text-ink-faint">recommended</span>
         </p>
-        <div className="space-y-3 p-4">
-          <Textarea
-            rows={10}
-            placeholder="Paste the full job posting here for best keyword matching…"
-            value={jobDescription}
-            onChange={(e) => setJobDescription(e.target.value)}
-            className="resize-none text-sm"
-          />
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Field label="Focus keywords (optional)">
-              <Input placeholder="Python, AWS, React" className="h-8 text-sm" value={keywords} onChange={(e) => setKeywords(e.target.value)} />
-            </Field>
-            <Field label="Custom instructions (optional)">
-              <Input placeholder="Emphasise backend work" className="h-8 text-sm" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
-            </Field>
+        <div className="space-y-2 p-4">
+          <div className="flex items-center gap-2">
+            <Mail size={15} className="shrink-0 text-ink-faint" />
+            <Input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              aria-invalid={emailInvalid || undefined}
+              aria-describedby="notify-email-hint"
+              className={`h-8 text-sm ${emailInvalid ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+              value={notifyEmail}
+              onChange={(e) => setNotifyEmail(e.target.value)}
+            />
           </div>
-          <CreativityModeSelector value={creativityMode} onChange={setCreativityMode} compact />
+          {profileEmail && profileEmail.toLowerCase() !== emailTrimmed.toLowerCase() && isValidEmail(profileEmail) && (
+            <button
+              type="button"
+              onClick={() => setNotifyEmail(profileEmail)}
+              className="cursor-pointer text-[11px] font-semibold text-ink-muted underline underline-offset-2 hover:text-ink"
+            >
+              Use {profileEmail}
+            </button>
+          )}
+          <p id="notify-email-hint" className={`text-[11px] leading-snug ${emailInvalid ? "text-red-600" : "text-ink-faint"}`}>
+            {emailInvalid
+              ? "That doesn't look like an email address."
+              : "We send the finished PDF here, so you can close this tab. Only used for this résumé."}
+          </p>
         </div>
       </div>
 
@@ -894,10 +982,16 @@ function GeneratePanel({
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2">
             <span className={item.ok ? "text-emerald-500" : "text-red-400"}>{item.ok ? "✓" : "✗"}</span>
-            <span className={item.ok ? "text-ink-muted" : "text-ink-muted"}>{item.label}</span>
+            <span className="text-ink-muted">{item.label}</span>
             {!item.ok && <span className="text-ink-faint">({item.hint})</span>}
           </div>
         ))}
+        <div className="flex items-center gap-2">
+          <span className={emailTrimmed && !emailInvalid ? "text-emerald-500" : "text-ink-faint"}>{emailTrimmed && !emailInvalid ? "✓" : "–"}</span>
+          <span className="text-ink-muted">
+            {emailTrimmed && !emailInvalid ? `PDF goes to ${emailTrimmed}` : "No email: download it from the bar at the top when it's ready"}
+          </span>
+        </div>
         {incompleteExpMessages.map((message) => (
           <div key={message} className="flex items-center gap-2">
             <span className="text-amber-500">!</span>
@@ -918,7 +1012,6 @@ function GeneratePanel({
 // ── Root ──────────────────────────────────────────────────────────────────────
 
 export function TryClient() {
-  const router = useRouter()
   const turnstile = useTurnstile({ size: "flexible", appearance: "interaction-only" })
 
   const [draft, setDraft] = useState<GuestDraft>(() => emptyGuestDraft())
@@ -932,6 +1025,14 @@ export function TryClient() {
   const [keywords, setKeywords] = useState("")
   const [instructions, setInstructions] = useState("")
   const [creativityMode, setCreativityMode] = useState<CreativityMode>("proper")
+  const [notifyEmail, setNotifyEmail] = useState("")
+  const [latestRun, setLatestRun] = useState<GuestLatestRun | null>(null)
+  // Set once this tab starts a run, so a slow /latest response can't replace it.
+  const startedHere = useRef(false)
+  const runState = useGuestRun(latestRun?.id ?? null)
+  const runMissing = runState.status === "missing"
+  const visibleRunId = latestRun && !runMissing ? latestRun.id : null
+  const runActive = !!visibleRunId && isGuestRunActive(runState.status)
   const [quota, setQuota] = useState<{ limit: number; used: number; remaining: number; resets_at: string | null } | null>(null)
 
   const fetchQuota = async () => {
@@ -952,7 +1053,9 @@ export function TryClient() {
 
   useEffect(() => {
     startTransition(() => {
-      setDraft(loadGuestDraft())
+      const loadedDraft = loadGuestDraft()
+      setDraft(loadedDraft)
+      setLatestRun(loadGuestLatestRun())
       const saved = loadGuestGenerate()
       if (FOCUS_OPTIONS.some((option) => option.id === saved.focus)) {
         setFocus(saved.focus as FocusMode)
@@ -967,6 +1070,7 @@ export function TryClient() {
       setJobDescription(saved.jobDescription ?? "")
       setKeywords(saved.keywords ?? "")
       setInstructions(saved.instructions ?? "")
+      setNotifyEmail(saved.notifyEmail || loadedDraft.profile.email?.trim() || "")
       setCookiesBlocked(detectCookiesBlocked())
       try {
         const tab = new URLSearchParams(window.location.search).get("tab")
@@ -999,10 +1103,30 @@ export function TryClient() {
     }
   }, [])
 
+  // The server knows this browser's latest run even if local storage was
+  // cleared, and drops runs that expired or were claimed by a sign-in.
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/guest/latest", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : undefined))
+      .then((body: { id?: string; created_at?: string } | null | undefined) => {
+        if (cancelled || startedHere.current || body === undefined) return
+        const run = body?.id ? { id: body.id, startedAt: body.created_at ?? new Date().toISOString() } : null
+        saveGuestLatestRun(run)
+        setLatestRun(run)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (runMissing) saveGuestLatestRun(null)
+  }, [runMissing])
+
   useEffect(() => {
     if (!hydrated) return
-    saveGuestGenerate({ jobDescription, keywords, instructions, focus, creativityMode })
-  }, [hydrated, jobDescription, keywords, instructions, focus, creativityMode])
+    saveGuestGenerate({ jobDescription, keywords, instructions, focus, creativityMode, notifyEmail })
+  }, [hydrated, jobDescription, keywords, instructions, focus, creativityMode, notifyEmail])
 
   const hideGuide = () => {
     setGuideHidden(true)
@@ -1016,6 +1140,7 @@ export function TryClient() {
   const usableProjCount = usableProjects(draft.projects).length
 
   const canGenerate = (
+    !runActive &&
     !!draft.profile.full_name?.trim() &&
     !!jobDescription.trim() &&
     usableExpCount >= activeFocus.experience &&
@@ -1049,7 +1174,7 @@ export function TryClient() {
           ? { section: "projects", label: `Next: add ${plural(needProj, "project")}`, tip: `${activeFocus.label} layout uses ${activeFocus.projects} projects. Add ${plural(needProj, "project")}. Education and activities are optional but help.` }
           : !jobDone
             ? { section: "generate", label: "Next: paste the job", tip: "Your info is in. Open Generate and paste the full job post, requirements included." }
-            : { section: "generate", label: "Generate free résumé", tip: "All set. Generation takes a few minutes; keep this tab open to watch it." }
+            : { section: "generate", label: "Generate free résumé", tip: "All set. Generation takes a few minutes. Progress shows up here, and you can keep editing while it runs." }
   // Jump to the section that needs work; if already there, focus its name
   // field or open its "Add" form so the button always does something.
   const goToNext = () => {
@@ -1064,7 +1189,7 @@ export function TryClient() {
   const guideSteps: GuideStep[] = [
     { label: "Your info", short: "Info", done: infoDone, section: !infoDone ? next.section : "profile" },
     { label: "Paste the job", short: "Job", done: jobDone, section: "generate" },
-    { label: "Generate", short: "Generate", done: false, section: "generate" },
+    { label: "Generate", short: "Generate", done: !!visibleRunId && runState.status === "completed", busy: runActive, section: "generate" },
   ]
 
   const submit = async () => {
@@ -1072,6 +1197,8 @@ export function TryClient() {
     if (!jobDescription.trim()) { setError("Paste a job description first."); setActive("generate"); return }
     if (usableExpCount < activeFocus.experience) { setError(`Need ${activeFocus.experience} experience entries for ${activeFocus.label}.`); setActive("experience"); return }
     if (usableProjCount < activeFocus.projects) { setError(`Need ${activeFocus.projects} projects for ${activeFocus.label}.`); setActive("projects"); return }
+    if (runActive) { setError("Your last résumé is still being generated. Wait for it to finish before starting another."); return }
+    if (notifyEmail.trim() && !isValidEmail(notifyEmail)) { setError("Fix the email address, or clear it to skip the email."); setActive("generate"); return }
     setError(null); setSubmitting(true)
     const turnstileToken = await turnstile.getToken()
     if (turnstile.needsTurnstile && !turnstileToken) {
@@ -1097,6 +1224,7 @@ export function TryClient() {
           instructions: instructions || null,
           content_split: { projects: activeFocus.projects, experience: activeFocus.experience },
           creativity_mode: creativityMode,
+          notify_email: notifyEmail.trim() || null,
           ...draft,
           ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
         }),
@@ -1112,8 +1240,16 @@ export function TryClient() {
       }
       if (!res.ok) {
         const b = body as { detail?: unknown } | null
-        const detail = b?.detail as { code?: string; message?: string; resets_at?: string | null } | undefined
-        if (res.status === 429 && detail && typeof detail === "object" && detail.code === "guest_quota_exhausted") {
+        const detail = b?.detail as { code?: string; message?: string; resets_at?: string | null; generation_id?: string } | undefined
+        if (res.status === 409 && detail && typeof detail === "object" && detail.code === "guest_generation_running") {
+          setError(detail.message || "Your last résumé is still being generated.")
+          if (detail.generation_id) {
+            const run = { id: detail.generation_id, startedAt: new Date().toISOString() }
+            startedHere.current = true
+            saveGuestLatestRun(run)
+            setLatestRun(run)
+          }
+        } else if (res.status === 429 && detail && typeof detail === "object" && detail.code === "guest_quota_exhausted") {
           const msg = typeof detail.message === "string" && detail.message ? detail.message : "Daily limit reached."
           const resetLabel = formatResetTime(detail.resets_at)
           setError(resetLabel ? `${msg} Resets at ${resetLabel}.` : msg)
@@ -1124,8 +1260,14 @@ export function TryClient() {
         }
         return
       }
-      const okBody = body as { id?: string }
-      router.push(`/try/result/${okBody.id}`)
+      const okBody = body as { id?: string; created_at?: string }
+      if (!okBody.id) { setError("Generation started, but the server didn't return its id. Refresh the page."); return }
+      // Stay on /try: the run shows in the top bar, and the guest can keep editing.
+      const run = { id: okBody.id, startedAt: okBody.created_at ?? new Date().toISOString() }
+      startedHere.current = true
+      saveGuestLatestRun(run)
+      setLatestRun(run)
+      fetchQuota()
     } catch (err) {
       if (turnstile.needsTurnstile) turnstile.reset()
       setError(err instanceof Error ? err.message : "Failed to start generation")
@@ -1144,9 +1286,10 @@ export function TryClient() {
 
   return (
     <div className="flex h-full flex-col relative bg-ink/[0.03]">
-      {!guideHidden && (
-        <GuideStrip steps={guideSteps} tip={next.tip} onStep={setActive} onHide={hideGuide} />
-      )}
+      <TopBar
+        steps={guideSteps} tip={next.tip} onStep={setActive} onHide={hideGuide}
+        guideHidden={guideHidden} runId={visibleRunId} runState={runState}
+      />
 
       {/* Mobile Top Tabs Header (hidden on desktop) */}
       <div className="flex gap-2 overflow-x-auto pb-2 p-3 bg-ink/5 border-b border-line md:hidden shrink-0">
@@ -1166,7 +1309,7 @@ export function TryClient() {
             >
               <Icon size={12} />
               <span>{shortLabel}</span>
-              {next.section === item.id && !isActive && (
+              {next.section === item.id && !isActive && !runActive && (
                 <span aria-label="next" className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink/50" />
               )}
               {item.count !== undefined && (
@@ -1189,7 +1332,7 @@ export function TryClient() {
               label={item.label}
               count={item.count}
               active={active === item.id}
-              next={next.section === item.id && active !== item.id}
+              next={next.section === item.id && active !== item.id && !runActive}
               onClick={() => setActive(item.id)}
             />
           ))}
@@ -1220,6 +1363,8 @@ export function TryClient() {
                 keywords={keywords} setKeywords={setKeywords}
                 instructions={instructions} setInstructions={setInstructions}
                 creativityMode={creativityMode} setCreativityMode={setCreativityMode}
+                notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail}
+                runActive={runActive} runLabel={`${runState.stepLabel.toLowerCase()}, ${Math.round(runState.percent)}%`}
                 error={error} setError={setError}
               />
             )}
@@ -1243,10 +1388,12 @@ export function TryClient() {
                   size="lg"
                   className="w-full"
                   onClick={canGenerate || (active === "generate" && next.section === "generate") ? submit : () => goToNext()}
-                  disabled={submitting || quota?.remaining === 0}
+                  disabled={submitting || runActive || quota?.remaining === 0}
                 >
                   {submitting
                     ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
+                    : runActive
+                      ? <><Loader2 className="animate-spin" size={16} /> Résumé in progress…</>
                     : quota?.remaining === 0
                       ? "Daily limit reached"
                       : canGenerate
@@ -1256,7 +1403,10 @@ export function TryClient() {
                           : next.label
                   }
                 </Button>
-                {quota?.remaining === 0 && (
+                {runActive && (
+                  <p className="mt-1 text-center text-xs text-ink-muted">One at a time. Keep editing; Generate unlocks when it&apos;s done.</p>
+                )}
+                {!runActive && quota?.remaining === 0 && (
                   <p className="mt-1 text-center text-xs text-ink-muted">
                     {formatResetTime(quota.resets_at) ? `Resets at ${formatResetTime(quota.resets_at)}. Sign in to keep going.` : "Sign in to keep going."}
                   </p>

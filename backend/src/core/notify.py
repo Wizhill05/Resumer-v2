@@ -14,6 +14,9 @@ def send_completion_email(to_email: str | None, gen, pdf_bytes: bytes | None = N
         return
     if not to_email:
         return
+    # The shared guest account uses a placeholder address that can't receive mail.
+    if to_email.endswith("@resumer.local"):
+        return
 
     try:
         import resend  # imported lazily so the dep is optional in dev
@@ -24,7 +27,14 @@ def send_completion_email(to_email: str | None, gen, pdf_bytes: bytes | None = N
         if gen.company and gen.company != "Unknown Company":
             title = f"{title} at {gen.company}"
 
-        history_url = f"{settings.FRONTEND_URL}/dashboard/history"
+        if getattr(gen, "is_guest", False):
+            # Guests have no history page; their result page works in the
+            # browser that started the run, and the PDF is attached anyway.
+            history_url = f"{settings.FRONTEND_URL}/try/result/{gen.id}"
+            done_label = fail_label = "Open Résumer"
+        else:
+            history_url = f"{settings.FRONTEND_URL}/dashboard/history"
+            done_label, fail_label = "Go to Dashboard", "View History"
 
         # ── HTML Email Templates (Responsive, Premium, Anti-Spam Design) ─────
         if gen.status == "completed":
@@ -163,7 +173,7 @@ def send_completion_email(to_email: str | None, gen, pdf_bytes: bytes | None = N
           You can also download past versions or start another generation from your personal dashboard.
         </div>
         <div class="action-container">
-          <a href="{history_url}" class="btn">Go to Dashboard</a>
+          <a href="{history_url}" class="btn">{done_label}</a>
         </div>
       </div>
       <div class="footer">
@@ -303,7 +313,7 @@ def send_completion_email(to_email: str | None, gen, pdf_bytes: bytes | None = N
           Please check your profile details or instructions and try again.
         </div>
         <div class="action-container">
-          <a href="{history_url}" class="btn">View History</a>
+          <a href="{history_url}" class="btn">{fail_label}</a>
         </div>
       </div>
       <div class="footer">
@@ -558,3 +568,4 @@ def send_verification_code_email(to_email: str, name: str, code: str) -> None:
         "html": html_body,
         "text": text_body,
     })
+

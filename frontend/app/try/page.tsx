@@ -2,6 +2,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { TryClient } from "./TryClient"
 import { LoginModal } from "@/components/LoginModal"
+import { AuthErrorBanner } from "@/components/AuthErrorBanner"
 import { auth } from "@/lib/auth"
 import { FluidField } from "@/components/landing/FluidField"
 
@@ -21,9 +22,11 @@ export default async function TryPage() {
           <span className="hidden text-xs text-[var(--fluid-ink-soft)] sm:block dark:text-[#fff2ef]/80">
             Sign in to save your data and résumé history
           </span>
-          <LoginModal callbackUrl="/dashboard?importGuestDraft=1" />
+          <LoginModal callbackUrl="/dashboard?importGuestDraft=1" returnTo="/try" />
         </div>
       </header>
+
+      <AuthErrorBanner inline />
 
       {/* Full-height two-panel builder */}
       <div className="min-h-0 flex-1 overflow-hidden">
