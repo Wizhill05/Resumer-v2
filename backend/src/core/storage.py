@@ -119,6 +119,34 @@ class StorageService:
             logger.error("StorageService: Failed to delete %s: %s", key, e)
             return False
 
+    def delete_files(self, keys: list[str]) -> list[str]:
+        """Delete many keys with DeleteObjects (1000 per request).
+
+        Returns the keys that could NOT be deleted, so an empty list means success.
+        Missing keys count as deleted (S3/R2 semantics). With storage disabled nothing
+        is stored remotely, so there is nothing to fail.
+        """
+        if not keys or not self.enabled or not self.s3_client:
+            return []
+        failed: list[str] = []
+        for start in range(0, len(keys), 1000):
+            chunk = keys[start:start + 1000]
+            try:
+                res = self.s3_client.delete_objects(
+                    Bucket=settings.R2_BUCKET_NAME,
+                    Delete={"Objects": [{"Key": k} for k in chunk], "Quiet": True},
+                )
+                for err in res.get("Errors", []) or []:
+                    logger.error(
+                        "StorageService: failed to delete %s: [%s] %s",
+                        err.get("Key"), err.get("Code"), err.get("Message"),
+                    )
+                    failed.append(err.get("Key") or "")
+            except Exception as e:
+                logger.error("StorageService: DeleteObjects failed for %d keys: %s", len(chunk), e)
+                failed.extend(chunk)
+        return failed
+
     def list_objects(self, prefix: str = "", limit: int = 100, cursor: str | None = None) -> dict:
         if not self.enabled or not self.s3_client:
             return {"objects": [], "next_cursor": None, "enabled": False}

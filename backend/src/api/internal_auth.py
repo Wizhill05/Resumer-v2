@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -8,14 +9,16 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from jose import jwt
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.database import get_db
+from src.core.notify import send_account_restored_email
 from src.core.provider_messages import provider_label, provider_mismatch_message
 from src.models.identity import UserIdentity
 from src.models.user import User
+from src.services.account_deletion import AccountDeletedError, purge_user, restore_if_pending
 from src.services.github_tokens import upsert_github_token
 
 logger = logging.getLogger(__name__)
@@ -113,8 +116,37 @@ def _normalize_scopes(scopes: str | None) -> str:
     return "read:user,user:email"
 
 
+async def _purge_due_accounts_for(db: AsyncSession, payload: ResolveRequest, email: str, now: datetime) -> None:
+    """Delete accounts for this login whose deletion grace period is over.
+
+    Without this, someone signing in after their 7 days would hit the old row until the
+    hourly purge ran. Once it's gone, resolve continues as a brand-new sign-up.
+    """
+    identity_owner = select(UserIdentity.user_id).where(
+        UserIdentity.provider == payload.provider,
+        UserIdentity.provider_account_id == payload.provider_account_id,
+    )
+    result = await db.execute(
+        select(User.id).where(
+            or_(User.id.in_(identity_owner), func.lower(User.email) == email),
+            User.deletion_scheduled_for.is_not(None),
+            User.deletion_scheduled_for <= now,
+        )
+    )
+    for user_id in result.scalars().all():
+        if not await purge_user(db, user_id, now):
+            raise _rejection(503, "unavailable", None, "This account is being deleted. Try again in a few minutes.")
+
+
 async def _succeed(db: AsyncSession, user: User, provider: str, is_new: bool, identity: UserIdentity, payload: ResolveRequest):
     now = datetime.now(timezone.utc)
+    # A real sign-in inside the grace period cancels a pending deletion.
+    try:
+        restored = await restore_if_pending(db, user, now)
+    except AccountDeletedError:
+        # The deadline passed mid-request; the next attempt purges it and signs up fresh.
+        await db.rollback()
+        raise _rejection(503, "unavailable", None, "This account is being deleted. Try again in a few minutes.")
     identity.last_seen_at = now
     if payload.provider_login:
         identity.provider_login = payload.provider_login
@@ -127,8 +159,10 @@ async def _succeed(db: AsyncSession, user: User, provider: str, is_new: bool, id
             await db.commit()
     else:
         await db.commit()
+    if restored:
+        await asyncio.to_thread(send_account_restored_email, user.email, user.name)
     needs_welcome = user.signup_completed_at is None
-    return {"ok": True, "uid": str(user.id), "provider": provider, "is_new": is_new, "needs_welcome": needs_welcome}
+    return {"ok": True, "uid": str(user.id), "provider": provider, "is_new": is_new, "needs_welcome": needs_welcome, "restored": restored}
 
 
 @router.post("/resolve")
@@ -142,6 +176,7 @@ async def resolve_auth(
     email = payload.email.strip().lower()
     now = datetime.now(timezone.utc)
     verification = _EmailVerification(payload, email)
+    await _purge_due_accounts_for(db, payload, email, now)
 
     # Step 1: existing identity
     result = await db.execute(

@@ -18,11 +18,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.analytics import shutdown_analytics
-from src.api import account_welcome, profile, generation, system, imports, guest, admin, feedback, oauth, files, auth, admin_llm, internal_auth, integrations_github
+from src.api import account_deletion, account_welcome, profile, generation, system, imports, guest, admin, feedback, oauth, files, auth, admin_llm, internal_auth, integrations_github
 from src.core.oauth import ensure_oauth_schema
 from src.core.database import AsyncSessionLocal
 from src.services.llm_config import ensure_llm_schema, llm_config_service
 from src.services.guest_cleanup import guest_cleanup_loop
+from src.services.account_deletion import account_deletion_loop
 from src.template_registry import router as template_router
 from src.services.import_jobs import cleanup_old_jobs
 from src.mcp.server import mcp_server, get_mcp_app
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
         logger.warning("[startup] No LLM endpoint configured for role 'default'.")
     cleanup_task = asyncio.create_task(cleanup_old_jobs())
     guest_cleanup_task = asyncio.create_task(guest_cleanup_loop())
+    account_deletion_task = asyncio.create_task(account_deletion_loop())
     try:
         mcp_server.session_manager._has_started = False
         async with mcp_server.session_manager.run():
@@ -62,14 +64,12 @@ async def lifespan(app: FastAPI):
 
     cleanup_task.cancel()
     guest_cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await guest_cleanup_task
-    except asyncio.CancelledError:
-        pass
+    account_deletion_task.cancel()
+    for task in (cleanup_task, guest_cleanup_task, account_deletion_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Resumer API", version="2.0.0", lifespan=lifespan)
@@ -102,6 +102,7 @@ app.include_router(files.router)
 app.include_router(auth.router)
 app.include_router(internal_auth.router)
 app.include_router(account_welcome.router)
+app.include_router(account_deletion.router)
 app.include_router(integrations_github.router)
 
 # Remote MCP Sub-application (Streamable HTTP + SSE)

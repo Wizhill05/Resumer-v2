@@ -383,6 +383,8 @@ async def oauth_authorize_post(
             if tok_email:
                 u_res = await db.execute(select(User).where(User.email == tok_email))
                 user = u_res.scalar_one_or_none()
+                if user is not None and user.is_pending_deletion:
+                    user = None
         except JWTError:
             pass
 
@@ -540,6 +542,11 @@ async def oauth_token(
         user = user_res.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=400, detail="User not found")
+        if user.is_pending_deletion:
+            raise HTTPException(
+                status_code=400,
+                detail="This Résumer account is scheduled for deletion. Sign in at Résumer to restore it, then reconnect the connector.",
+            )
 
         # Generate access token
         access_tok, expires_in = create_oauth_access_token(
@@ -617,6 +624,11 @@ async def oauth_token(
         user = user_res.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=400, detail="User not found")
+        if user.is_pending_deletion:
+            raise HTTPException(
+                status_code=400,
+                detail="This Résumer account is scheduled for deletion. Sign in at Résumer to restore it, then reconnect the connector.",
+            )
 
         # Issue new access token
         effective_scope = scope or refresh_obj.scope
@@ -732,6 +744,12 @@ async def oauth_userinfo(
 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.is_pending_deletion:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This Résumer account is scheduled for deletion.",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
 
     return {
         "sub": str(user.id),

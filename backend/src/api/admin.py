@@ -1036,9 +1036,48 @@ async def list_users(
                 "monthly_cap": override.monthly_cap if override and override.monthly_cap is not None else settings.DEFAULT_MONTHLY_CAP,
                 "monthly_count": monthly_count,
                 "admin_note": override.admin_note if override else None,
+                "deletion_requested_at": u.deletion_requested_at,
+                "deletion_scheduled_for": u.deletion_scheduled_for,
             }
         )
     return output
+
+
+@router.get("/users/pending-deletion", dependencies=[Depends(get_current_admin)])
+async def list_pending_deletions(db: AsyncSession = Depends(get_db)):
+    """Accounts in their deletion grace period (soonest first) and the external cleanup queue."""
+    from src.models.user import AccountCleanupTask
+
+    users = (
+        await db.execute(
+            select(User.id, User.email, User.name, User.provider, User.deletion_requested_at, User.deletion_scheduled_for)
+            .where(User.deletion_scheduled_for.is_not(None))
+            .order_by(User.deletion_scheduled_for.asc())
+        )
+    ).all()
+    tasks = (
+        await db.execute(
+            select(AccountCleanupTask.kind, AccountCleanupTask.status, func.count(), func.max(AccountCleanupTask.last_error))
+            .group_by(AccountCleanupTask.kind, AccountCleanupTask.status)
+        )
+    ).all()
+    return {
+        "accounts": [
+            {
+                "id": row.id,
+                "email": row.email,
+                "name": row.name,
+                "provider": row.provider,
+                "deletion_requested_at": row.deletion_requested_at,
+                "deletion_scheduled_for": row.deletion_scheduled_for,
+            }
+            for row in users
+        ],
+        "cleanup": [
+            {"kind": kind, "status": status, "count": count, "last_error": last_error}
+            for kind, status, count, last_error in tasks
+        ],
+    }
 
 
 @router.get("/users/{id}/credits", dependencies=[Depends(get_current_admin)])

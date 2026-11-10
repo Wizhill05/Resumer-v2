@@ -62,6 +62,17 @@ async def get_resume_pdf(
             detail="Generation record not found.",
         )
 
+    # Shared links stop working as soon as the owner asks to delete their account.
+    if gen.user_id is not None and not gen.is_guest:
+        from src.models.user import User
+
+        owner_pending = await db.scalar(select(User.deletion_scheduled_for).where(User.id == gen.user_id))
+        if owner_pending is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Generation record not found.",
+            )
+
     if gen.status != "completed":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
