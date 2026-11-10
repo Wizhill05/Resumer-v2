@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { ArrowUpRight, History, UserRound } from "lucide-react"
-import { clearGuestDraft, loadGuestDraft } from "@/lib/guest-storage"
+import { importGuestIntoAccount } from "@/lib/guest-import"
 import { useHistorySummary } from "@/components/useGenerationStats"
 import { GettingStarted } from "@/components/onboarding/GettingStarted"
 import { useOnboardingSteps } from "@/lib/onboarding"
@@ -70,84 +70,22 @@ export function DashboardClient() {
   ].filter(Boolean) as string[]
   const profileComplete = !isLoading && missing.length === 0
 
+  // Signed in from /try: bring the trial résumés and details into the account.
+  // Brand-new accounts already did this on /welcome; this covers existing ones.
+  const importRequested = searchParams.get("importGuestDraft") === "1"
   useEffect(() => {
-    if (searchParams.get("importGuestDraft") !== "1" || isLoading) return
-
-    // Always claim guest generations when redirected from /try - safe and idempotent
-    const claimKey = "resumer_guest_claimed_v1"
-    if (!window.sessionStorage.getItem(claimKey)) {
-      window.sessionStorage.setItem(claimKey, "1")
-      fetch("/api/backend/generate/claim-guest", { method: "POST" }).catch(() => {})
-    }
-
-    const key = "resumer_guest_imported_v1"
-    const draft = loadGuestDraft()
-    const hasDraft =
-      Object.values(draft.profile).some(Boolean) ||
-      draft.experiences.length > 0 ||
-      draft.projects.length > 0 ||
-      draft.education.length > 0 ||
-      draft.extracurriculars.length > 0
-    if (!hasDraft || window.sessionStorage.getItem(key) === draft.updatedAt) return
-
-    const importDraft = async () => {
-      window.sessionStorage.setItem(key, draft.updatedAt)
-      const jobs: Promise<Response>[] = []
-      if (!profile?.full_name && Object.values(draft.profile).some(Boolean)) {
-        jobs.push(fetch("/api/backend/profile", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(draft.profile),
-        }))
-      }
-      if (experiences.length === 0) {
-        jobs.push(...draft.experiences.map((item, i) => fetch("/api/backend/profile/experiences", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
-        })))
-      }
-      if (projects.length === 0) {
-        jobs.push(...draft.projects.map((item, i) => fetch("/api/backend/profile/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
-        })))
-      }
-      if (education.length === 0) {
-        jobs.push(...draft.education.map((item, i) => fetch("/api/backend/profile/education", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
-        })))
-      }
-      if (extracurriculars.length === 0) {
-        jobs.push(...draft.extracurriculars.map((item, i) => fetch("/api/backend/profile/extracurriculars", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...item, sort_order: item.sort_order ?? i }),
-        })))
-      }
-      if (jobs.length === 0) return
-      const results = await Promise.all(jobs)
-      const ok = results.every((res) => res.ok)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["profile"] }),
-        queryClient.invalidateQueries({ queryKey: ["experiences"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["education"] }),
-        queryClient.invalidateQueries({ queryKey: ["extracurriculars"] }),
-      ])
-      if (ok) {
-        clearGuestDraft()
-        setImportMessage("Trial data imported into your new account.")
-      } else {
-        setImportMessage("Some trial data could not import. Check Profile.")
-      }
-    }
-
-    importDraft().catch(() => setImportMessage("Trial data import failed. Check Profile."))
-  }, [searchParams, isLoading, profile?.full_name, experiences, projects, education, extracurriculars, queryClient])
+    if (!importRequested) return
+    let cancelled = false
+    importGuestIntoAccount()
+      .then(async ({ claimed, imported, ok }) => {
+        if (cancelled) return
+        await queryClient.invalidateQueries()
+        if (!ok) setImportMessage("Some trial data could not import. Check Profile.")
+        else if (imported || claimed > 0) setImportMessage("Your trial résumés and details are now in your account.")
+      })
+      .catch(() => { if (!cancelled) setImportMessage("Trial data import failed. Check Profile.") })
+    return () => { cancelled = true }
+  }, [importRequested, queryClient])
 
   if (isLoading) {
     return (

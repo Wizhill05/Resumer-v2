@@ -8,6 +8,9 @@ import { z } from "zod"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { Check } from "lucide-react"
+import { hasGuestDraft, importGuestIntoAccount, type GuestImportResult } from "@/lib/guest-import"
+import { loadGuestDraft } from "@/lib/guest-storage"
+import type { GuestProfile } from "@/lib/guest-types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -85,6 +88,30 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
   const { update } = useSession()
   const initialized = useRef(false)
   const [serverError, setServerError] = useState<string | null>(null)
+  // Work done on /try before signing up: read it before the import clears it.
+  const guestProfile = useRef<GuestProfile>({})
+  const guestImport = useRef<Promise<GuestImportResult> | null>(null)
+  const [importNote, setImportNote] = useState<string | null>(null)
+
+  // A brand-new account lands here first, so this is where trial résumés and
+  // details move into it (the dashboard only handles existing accounts).
+  useEffect(() => {
+    guestProfile.current = loadGuestDraft().profile
+    const pending = importGuestIntoAccount()
+    guestImport.current = pending
+    let cancelled = false
+    pending
+      .then(({ claimed, imported }) => {
+        if (cancelled || (!claimed && !imported)) return
+        const parts = [
+          claimed ? `${claimed} trial résumé${claimed === 1 ? "" : "s"}` : null,
+          imported ? "the details you entered" : null,
+        ].filter(Boolean)
+        setImportNote(`We brought over ${parts.join(" and ")} from the free trial.`)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const githubParam = searchParams.get("github")
   const githubConnected = githubParam === "connected"
@@ -128,12 +155,15 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
 
   useEffect(() => {
     if (prefill && !initialized.current) {
+      const guest = guestProfile.current
+      const pick = (...values: (string | null | undefined)[]) => values.find((v) => v && v.trim()) ?? ""
       reset({
-        full_name: prefill.full_name ?? initialName ?? "",
-        subtitle: prefill.subtitle ?? "",
-        location: prefill.location ?? "",
-        phone: prefill.phone ?? "",
-        linkedin_url: prefill.linkedin_url ?? "",
+        // The name typed on /try is the résumé name; prefer it over the sign-in name.
+        full_name: pick(guest.full_name, prefill.full_name, initialName),
+        subtitle: pick(prefill.subtitle, guest.subtitle),
+        location: pick(prefill.location, guest.location),
+        phone: pick(prefill.phone, guest.phone),
+        linkedin_url: pick(prefill.linkedin_url, guest.linkedin_url),
       })
       initialized.current = true
     }
@@ -160,15 +190,20 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
       await (update as unknown as (d: { needsWelcome: boolean }) => Promise<unknown>)({
         needsWelcome: false,
       })
-      router.replace("/dashboard")
+      // If part of the trial import failed, let the dashboard retry it.
+      router.replace(hasGuestDraft() ? "/dashboard?importGuestDraft=1" : "/dashboard")
     },
     onError: (err) => {
       setServerError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
     },
   })
 
-  const onSubmit = (data: FormData) => {
+  // Let the trial import finish first so its profile write can't race this one.
+  const importSettled = () => guestImport.current?.catch(() => undefined) ?? Promise.resolve()
+
+  const onSubmit = async (data: FormData) => {
     setServerError(null)
+    await importSettled()
     mutation.mutate({
       full_name: data.full_name,
       subtitle: data.subtitle,
@@ -182,6 +217,7 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
     setServerError(null)
     const ok = await trigger("full_name")
     if (!ok) return
+    await importSettled()
     mutation.mutate({ full_name: getValues("full_name"), skip: true })
   }
 
@@ -209,6 +245,12 @@ export function WelcomeClient({ initialName, provider }: WelcomeClientProps) {
     <div className="soft-card p-6 md:p-7">
       {isError && (
         <p className="mb-4 text-xs font-semibold text-ink-soft">Couldn&apos;t load saved details.</p>
+      )}
+      {importNote && (
+        <p role="status" className="mb-4 flex items-start gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <Check size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          {importNote}
+        </p>
       )}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <fieldset disabled={mutation.isPending} className="min-w-0 space-y-5">
