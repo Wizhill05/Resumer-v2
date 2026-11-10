@@ -1,9 +1,10 @@
 "use server"
 
-import { headers as nextHeaders } from "next/headers"
+import { cookies, headers as nextHeaders } from "next/headers"
 
 import { signIn, signOut } from "@/lib/auth"
 import { internalToken } from "@/lib/jwt"
+import { AUTH_RETURN_COOKIE } from "@/lib/auth-errors"
 
 async function backendHeaders(): Promise<Record<string, string>> {
   const extra: Record<string, string> = {}
@@ -38,11 +39,26 @@ function callbackUrl(formData?: FormData) {
   return typeof raw === "string" && raw.startsWith("/") ? raw : "/dashboard"
 }
 
+// Remember where an OAuth sign-in started so a failed or cancelled attempt
+// lands back there (see app/auth/error/route.ts) instead of on the homepage.
+async function rememberAuthReturn(formData?: FormData) {
+  const raw = formData?.get("returnTo")
+  const jar = await cookies()
+  // Validated again (same-origin, no escapes) when it's read in /auth/error.
+  if (typeof raw === "string" && raw.startsWith("/") && raw.length <= 512) {
+    jar.set(AUTH_RETURN_COOKIE, raw, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 15 * 60, secure: process.env.NODE_ENV === "production" })
+  } else {
+    jar.delete(AUTH_RETURN_COOKIE)
+  }
+}
+
 export async function signInGithub(formData?: FormData) {
+  await rememberAuthReturn(formData)
   await signIn("github", { redirectTo: callbackUrl(formData) })
 }
 
 export async function signInGoogle(formData?: FormData) {
+  await rememberAuthReturn(formData)
   await signIn("google", { redirectTo: callbackUrl(formData) })
 }
 

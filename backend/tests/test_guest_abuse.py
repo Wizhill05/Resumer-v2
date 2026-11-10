@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 from jose import jwt as jose_jwt
+from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
@@ -85,7 +86,13 @@ async def client(monkeypatch):
             yield db
 
         app.dependency_overrides[get_db] = get_session
-        trigger = AsyncMock(return_value=None)
+        # Guests may only have one run in flight, so the fake pipeline
+        # finishes each run instantly to let tests start the next one.
+        async def finish_run(gen_id):
+            await db.execute(update(Generation).where(Generation.id == uuid.UUID(gen_id)).values(status="completed"))
+            await db.commit()
+
+        trigger = AsyncMock(side_effect=finish_run)
         monkeypatch.setattr("src.api.guest.trigger_pipeline", trigger)
         monkeypatch.setattr("src.api.guest.extract_upload_text", AsyncMock(return_value="fake resume text"))
         monkeypatch.setattr("src.api.guest.run_guest_import_task", AsyncMock(return_value=None))

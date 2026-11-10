@@ -24,10 +24,13 @@ function useAuthError(): string | null {
 export function LoginModal({
   triggerClassName,
   callbackUrl = "/dashboard",
+  returnTo,
   children,
 }: {
   triggerClassName?: string
   callbackUrl?: string
+  /** Page to come back to if sign-in fails or is cancelled. Defaults to the homepage. */
+  returnTo?: string
   /** Custom trigger; when provided, triggerClassName styles the button. */
   children?: React.ReactNode
 }) {
@@ -129,6 +132,7 @@ export function LoginModal({
                 <div className="flex flex-col gap-3">
                   <form action={signInGithub}>
                     <input type="hidden" name="callbackUrl" value={callbackUrl} />
+                    {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
                     <button
                       type="submit"
                       className="flex min-h-14 w-full items-center gap-3 border border-line-strong bg-paper px-5 py-4 text-left text-base font-bold dark:text-ink transition-colors hover:bg-ink/5 dark:hover:bg-ink/10 active:bg-ink/5 dark:active:bg-ink/10 cursor-pointer rounded-md"
@@ -143,6 +147,7 @@ export function LoginModal({
 
                   <form action={signInGoogle}>
                     <input type="hidden" name="callbackUrl" value={callbackUrl} />
+                    {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
                     <button
                       type="submit"
                       className="flex min-h-14 w-full items-center gap-3 border border-line-strong bg-paper px-5 py-4 text-left text-base font-bold dark:text-ink transition-colors hover:bg-ink/5 dark:hover:bg-ink/10 active:bg-ink/5 dark:active:bg-ink/10 cursor-pointer rounded-md"

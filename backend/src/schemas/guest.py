@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 
 from src.schemas.generation import AnalyticsContext, ContentSplitRequest, CreativityMode
 from src.schemas.profile import (
@@ -8,6 +10,9 @@ from src.schemas.profile import (
     ProfileUpdate,
     ProjectCreate,
 )
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class GuestGenerationCreate(BaseModel):
@@ -20,11 +25,26 @@ class GuestGenerationCreate(BaseModel):
     content_split: ContentSplitRequest | None = None
     creativity_mode: CreativityMode = "proper"
     turnstile_token: str | None = None
+    # Optional address to email the finished PDF to.
+    notify_email: str | None = Field(default=None, max_length=254)
     profile: ProfileUpdate = ProfileUpdate()
     experiences: list[ExperienceCreate] = Field(default_factory=list)
     projects: list[ProjectCreate] = Field(default_factory=list)
     education: list[EducationCreate] = Field(default_factory=list)
     extracurriculars: list[ExtracurricularCreate] = Field(default_factory=list)
+
+
+    @field_validator("notify_email")
+    @classmethod
+    def _check_notify_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().lower()
+        if not value:
+            return None
+        if not _EMAIL_RE.match(value):
+            raise ValueError("Enter a valid email address, or leave it blank.")
+        return value
 
 
 class GuestGenerationOut(BaseModel):
@@ -41,3 +61,4 @@ class GuestGenerationOut(BaseModel):
     error_message: str | None = None
     section_order: list[str] | None = None
     expires_at: str | None = None
+    notify_email: str | None = None

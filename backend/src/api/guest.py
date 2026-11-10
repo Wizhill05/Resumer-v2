@@ -36,6 +36,9 @@ GUEST_USER_EMAIL = "__guest__@resumer.local"
 GUEST_MAX_DAILY_RUNS = 5
 GUEST_TOKEN_DAYS = 7
 GUEST_ARTIFACT_DAYS = 7
+# A guest run older than this that never reached a terminal status is treated
+# as dead, so it no longer blocks the next generation.
+GUEST_ACTIVE_RUN_MINUTES = 15
 
 
 def _hash_token(token: str) -> str:
@@ -117,6 +120,33 @@ def _quota_exhausted(quota: dict) -> HTTPException:
     )
 
 
+async def _active_guest_run(token_hash: str, db: AsyncSession) -> Generation | None:
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=GUEST_ACTIVE_RUN_MINUTES)
+    result = await db.execute(
+        select(Generation)
+        .where(
+            Generation.is_guest == True,  # noqa: E712
+            Generation.guest_token_hash == token_hash,
+            Generation.status.in_(("pending", "in_progress")),
+            Generation.created_at > cutoff,
+        )
+        .order_by(Generation.created_at.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+def _run_in_progress(gen: Generation) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "guest_generation_running",
+            "message": "Your last résumé is still being generated. Wait for it to finish before starting another.",
+            "generation_id": str(gen.id),
+        },
+    )
+
+
 def _dialect_name(db: AsyncSession) -> str:
     try:
         return db.get_bind().dialect.name
@@ -153,6 +183,7 @@ def _out(gen: Generation) -> GuestGenerationOut:
         error_message=gen.error_message,
         section_order=gen.section_order,
         expires_at=gen.expires_at.isoformat() if gen.expires_at else None,
+        notify_email=(gen.render_metadata or {}).get("_guest_notify_email"),
     )
 
 
@@ -349,6 +380,9 @@ async def start_guest_generation(
     pre_quota = await guest_quota(token_hash, db)
     if pre_quota["remaining"] <= 0:
         raise _quota_exhausted(pre_quota)
+    running = await _active_guest_run(token_hash, db)
+    if running:
+        raise _run_in_progress(running)
 
     # Per-IP daily limit. Skipped when no trusted IP is available (direct
     # backend hit or missing INTERNAL_API_SECRET), since the IP would not be
@@ -374,6 +408,13 @@ async def start_guest_generation(
         except Exception:
             pass
         raise _quota_exhausted(quota)
+    running = await _active_guest_run(token_hash, db)
+    if running:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        raise _run_in_progress(running)
     snapshot = jsonable_encoder(
         {
             "profile": data.profile,
@@ -402,7 +443,12 @@ async def start_guest_generation(
         creativity_mode=data.creativity_mode or "proper",
         guest_token_hash=token_hash,
         guest_input_snapshot=snapshot,
-        render_metadata={"_analytics": data.analytics_context.model_dump() if data.analytics_context else None},
+        render_metadata={
+            "_analytics": data.analytics_context.model_dump() if data.analytics_context else None,
+            # Guest-typed and unverified. Only used to mail this run's PDF; the
+            # row (and this address) is deleted when the run expires.
+            "_guest_notify_email": data.notify_email,
+        },
         expires_at=datetime.now(timezone.utc) + timedelta(days=GUEST_ARTIFACT_DAYS),
     )
     db.add(gen)
@@ -421,6 +467,29 @@ async def start_guest_generation(
         capture_generation(gen, "failed")
         raise HTTPException(status_code=502, detail=f"Failed to start pipeline: {e}")
     return _out(gen)
+
+
+@router.get("/latest", response_model=GuestGenerationOut | None)
+async def get_latest_guest_generation(
+    resumer_guest_token: str | None = Cookie(default=None, alias=GUEST_COOKIE),
+    db: AsyncSession = Depends(get_db),
+):
+    """This browser's most recent guest run that hasn't expired, or null."""
+    if not resumer_guest_token:
+        return None
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(Generation)
+        .where(
+            Generation.is_guest == True,  # noqa: E712
+            Generation.guest_token_hash == _hash_token(resumer_guest_token),
+            (Generation.expires_at.is_(None)) | (Generation.expires_at > now),
+        )
+        .order_by(Generation.created_at.desc())
+        .limit(1)
+    )
+    gen = result.scalars().first()
+    return _out(gen) if gen else None
 
 
 @router.get("/generate/{gen_id}", response_model=GuestGenerationOut)

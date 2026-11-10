@@ -1,3 +1,6 @@
+/** Cookie holding the page an OAuth sign-in started from, for failure redirects. */
+export const AUTH_RETURN_COOKIE = "resumer_auth_return"
+
 export function authErrorMessage(error: string | null, provider: string | null): string | null {
   if (!error) return null
   if (error === "provider_mismatch") {
@@ -14,6 +17,9 @@ export function authErrorMessage(error: string | null, provider: string | null):
   if (error === "email_not_verified") {
     const label = provider === "github" ? "GitHub" : "Google"
     return `Your ${label} email isn't verified.`
+  }
+  if (error === "sign_in_failed") {
+    return "Sign-in didn't finish. Try again, or pick another sign-in option."
   }
   if (error === "unavailable") {
     return "Sign-in is unavailable right now. Try again."
