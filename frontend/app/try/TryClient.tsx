@@ -1,6 +1,7 @@
 "use client"
 
 import { startTransition, useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   AlertCircle, Check, CheckCircle2, ChevronDown, ChevronRight,
   Loader2, Plus, Trash2, Upload, X, Pencil, FileText,
@@ -797,7 +798,6 @@ function GeneratePanel({
   instructions, setInstructions,
   creativityMode, setCreativityMode,
   notifyEmail, setNotifyEmail,
-  runActive, runLabel,
   error, setError,
 }: {
   draft: GuestDraft
@@ -814,8 +814,6 @@ function GeneratePanel({
   setCreativityMode: (v: CreativityMode) => void
   notifyEmail: string
   setNotifyEmail: (v: string) => void
-  runActive: boolean
-  runLabel: string
   error: string | null
   setError: (e: string | null) => void
 }) {
@@ -833,17 +831,6 @@ function GeneratePanel({
         <h2 className="text-base font-semibold text-ink">Generate résumé</h2>
         <p className="mt-0.5 text-xs text-ink-muted">Paste the job post, pick a layout, and tell us where to send the PDF.</p>
       </div>
-
-      {runActive && (
-        <div className="flex items-start gap-2.5 rounded border border-line bg-ink/[0.03] px-3 py-2.5 text-xs text-ink-muted">
-          <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin text-ember" />
-          <p>
-            <span className="font-semibold text-ink">Your résumé is being generated ({runLabel}).</span>{" "}
-            Follow it in the bar at the top. You can keep editing your info and the next job post meanwhile;
-            Generate unlocks when this one finishes.
-          </p>
-        </div>
-      )}
 
       {cookiesBlocked && (
         <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2.5">
@@ -1012,6 +999,7 @@ function GeneratePanel({
 // ── Root ──────────────────────────────────────────────────────────────────────
 
 export function TryClient() {
+  const router = useRouter()
   const turnstile = useTurnstile({ size: "flexible", appearance: "interaction-only" })
 
   const [draft, setDraft] = useState<GuestDraft>(() => emptyGuestDraft())
@@ -1262,12 +1250,12 @@ export function TryClient() {
       }
       const okBody = body as { id?: string; created_at?: string }
       if (!okBody.id) { setError("Generation started, but the server didn't return its id. Refresh the page."); return }
-      // Stay on /try: the run shows in the top bar, and the guest can keep editing.
+      // The run also shows in /try's top bar, so the guest can come back and keep editing.
       const run = { id: okBody.id, startedAt: okBody.created_at ?? new Date().toISOString() }
       startedHere.current = true
       saveGuestLatestRun(run)
       setLatestRun(run)
-      fetchQuota()
+      router.push(`/try/result/${run.id}`)
     } catch (err) {
       if (turnstile.needsTurnstile) turnstile.reset()
       setError(err instanceof Error ? err.message : "Failed to start generation")
@@ -1364,7 +1352,6 @@ export function TryClient() {
                 instructions={instructions} setInstructions={setInstructions}
                 creativityMode={creativityMode} setCreativityMode={setCreativityMode}
                 notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail}
-                runActive={runActive} runLabel={`${runState.stepLabel.toLowerCase()}, ${Math.round(runState.percent)}%`}
                 error={error} setError={setError}
               />
             )}
@@ -1393,7 +1380,7 @@ export function TryClient() {
                   {submitting
                     ? <><Loader2 className="animate-spin" size={16} /> Starting…</>
                     : runActive
-                      ? <><Loader2 className="animate-spin" size={16} /> Résumé in progress…</>
+                      ? "Wait for current résumé"
                     : quota?.remaining === 0
                       ? "Daily limit reached"
                       : canGenerate
@@ -1403,9 +1390,6 @@ export function TryClient() {
                           : next.label
                   }
                 </Button>
-                {runActive && (
-                  <p className="mt-1 text-center text-xs text-ink-muted">One at a time. Keep editing; Generate unlocks when it&apos;s done.</p>
-                )}
                 {!runActive && quota?.remaining === 0 && (
                   <p className="mt-1 text-center text-xs text-ink-muted">
                     {formatResetTime(quota.resets_at) ? `Resets at ${formatResetTime(quota.resets_at)}. Sign in to keep going.` : "Sign in to keep going."}
