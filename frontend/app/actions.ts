@@ -66,6 +66,11 @@ export async function signOutAction() {
   await signOut({ redirectTo: "/" })
 }
 
+/** Sign out after the account was scheduled for deletion, landing on a banner that explains it. */
+export async function signOutAfterDeletionAction() {
+  await signOut({ redirectTo: "/?auth_error=account_deletion_scheduled" })
+}
+
 export async function precheckEmailLoginAction({
   email,
   password,

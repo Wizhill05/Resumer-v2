@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { UserItem } from "../api-types"
 import { FIELD_CLASS, Note, Pill, Skeleton, fetchJson, sendJson } from "../shared"
+import { DeletionOverlay, DeletionPill, PendingDeletionsPanel } from "../PendingDeletions"
 
 type UserActions = {
   editingId: string | null
@@ -100,6 +101,7 @@ export function UsersTab() {
       <div className="border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search users by email or name" aria-label="Search users" className={FIELD_CLASS} />
       </div>
+      <PendingDeletionsPanel />
       {(tier.isError || rateLimit.isError || credits.isError) && <Note tone="error">That change could not be saved. Try again.</Note>}
 
       {isLoading ? (
@@ -110,12 +112,14 @@ export function UsersTab() {
         <>
           <ul className="space-y-3 lg:hidden">
             {users.map((u) => (
-              <li key={u.id} className="panel-strong p-3">
+              <li key={u.id} className="panel-strong relative p-3">
+                {u.deletion_scheduled_for && <DeletionOverlay />}
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-bold text-black dark:text-white">
                       <span className="break-words">{u.name || "No name"}</span>
                       {u.is_admin && <Pill tone="bad">Admin</Pill>}
+                      {u.deletion_scheduled_for && <DeletionPill scheduledFor={u.deletion_scheduled_for} />}
                     </p>
                     <p className="[overflow-wrap:anywhere] text-[11px] text-zinc-500">{u.email}</p>
                   </div>
@@ -150,9 +154,20 @@ export function UsersTab() {
               </thead>
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700">
                 {users.map((u) => (
-                  <tr key={u.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                  <tr
+                    key={u.id}
+                    className={cn(
+                      "relative",
+                      u.deletion_scheduled_for ? "bg-red-50/70 dark:bg-red-950/25" : "hover:bg-zinc-50 dark:hover:bg-zinc-800",
+                    )}
+                  >
                     <td className="p-3">
-                      <p className="flex items-center gap-1.5 font-bold text-black dark:text-white">{u.name || "No name"}{u.is_admin && <Pill tone="bad">Admin</Pill>}</p>
+                      {u.deletion_scheduled_for && <DeletionOverlay />}
+                      <p className="flex flex-wrap items-center gap-1.5 font-bold text-black dark:text-white">
+                        {u.name || "No name"}
+                        {u.is_admin && <Pill tone="bad">Admin</Pill>}
+                        {u.deletion_scheduled_for && <DeletionPill scheduledFor={u.deletion_scheduled_for} />}
+                      </p>
                       <p className="text-[10px] text-zinc-500">{u.email}</p>
                     </td>
                     <td className="p-3"><TierPill user={u} /></td>

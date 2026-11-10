@@ -6,6 +6,7 @@ import { ThemeProvider } from "next-themes"
 import { useState } from "react"
 import { PostHogProvider } from "@/components/providers/PostHogProvider"
 import { DynamicAnnouncementModal } from "@/components/announcements/DynamicAnnouncementModal"
+import { AccountStatusWatcher } from "@/components/AccountStatusWatcher"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -28,6 +29,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         >
           <QueryClientProvider client={queryClient}>
             <DynamicAnnouncementModal />
+            <AccountStatusWatcher />
             {children}
           </QueryClientProvider>
         </ThemeProvider>

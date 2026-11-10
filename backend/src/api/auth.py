@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import re
@@ -12,11 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.internal_token import is_valid_internal_token
-from src.core.notify import send_verification_code_email
+from src.core.notify import send_account_restored_email, send_verification_code_email
 from src.core.provider_messages import provider_mismatch_message
 from src.core.security import hash_password, verify_password
 from src.models.identity import EmailVerification
 from src.models.user import User
+from src.services.account_deletion import AccountDeletedError, is_due, purge_user, restore_if_pending
 
 router = APIRouter(prefix="/auth/email", tags=["auth"])
 
@@ -65,6 +67,7 @@ class AuthUserResponse(BaseModel):
     image: str | None = None
     provider: str | None = None
     needs_welcome: bool = False
+    restored: bool = False
 
 
 class RegisterStartResponse(BaseModel):
@@ -191,11 +194,29 @@ async def _get_pending(db: AsyncSession, email: str) -> EmailVerification | None
     return result.scalar_one_or_none()
 
 
+async def _purge_due_or_503(db: AsyncSession, user: User) -> None:
+    """Delete an account whose grace period is over, so its email is free again right away."""
+    if not await purge_user(db, user.id):
+        # Storage cleanup failed or the purge job holds the row; the hourly job will finish it.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="This account is being deleted. Try again in a few minutes.",
+        )
+
+
 async def _existing_user_or_409(db: AsyncSession, email: str) -> None:
     result = await db.execute(select(User).where(func.lower(User.email) == email))
     existing = result.scalar_one_or_none()
     if not existing:
         return
+    if is_due(existing):
+        await _purge_due_or_503(db, existing)
+        return
+    if existing.is_pending_deletion:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This account is scheduled for deletion. Sign in to restore it instead.",
+        )
     if existing.provider in ("google", "github"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -377,11 +398,16 @@ async def login_email_user(
     result = await db.execute(select(User).where(func.lower(User.email) == email))
     user = result.scalar_one_or_none()
 
+    no_account = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No account found with this email. Please check your email or create an account.",
+    )
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No account found with this email. Please check your email or create an account.",
-        )
+        raise no_account
+    if is_due(user):
+        # Grace period over: the account is gone even if the hourly purge hasn't run yet.
+        await _purge_due_or_503(db, user)
+        raise no_account
 
     if not user.hashed_password:
         raise HTTPException(
@@ -395,6 +421,15 @@ async def login_email_user(
             detail="Incorrect password. Please try again.",
         )
 
+    # Signing in with the right password inside the grace period cancels the deletion.
+    try:
+        restored = await restore_if_pending(db, user)
+    except AccountDeletedError:
+        raise no_account
+    if restored:
+        await db.commit()
+        await asyncio.to_thread(send_account_restored_email, user.email, user.name)
+
     return AuthUserResponse(
         id=str(user.id),
         email=user.email,
@@ -402,4 +437,5 @@ async def login_email_user(
         image=user.image,
         provider=user.provider,
         needs_welcome=user.signup_completed_at is None,
+        restored=restored,
     )

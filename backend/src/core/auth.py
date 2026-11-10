@@ -12,6 +12,20 @@ from src.models.user import User
 
 bearer = HTTPBearer(auto_error=False)
 
+# Sent with the 401 for accounts scheduled for deletion. The frontend proxy keys off it to
+# drop the stale browser session; the detail text is safe to show as-is.
+ACCOUNT_STATUS_HEADER = "X-Account-Status"
+PENDING_DELETION = "pending_deletion"
+PENDING_DELETION_DETAIL = "This account is scheduled for deletion. Sign in again to restore it."
+
+
+def pending_deletion_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=PENDING_DELETION_DETAIL,
+        headers={ACCOUNT_STATUS_HEADER: PENDING_DELETION},
+    )
+
 
 async def _lookup_user(db: AsyncSession, payload: dict) -> User | None:
     """Resolve the user from the token's `sub`, which must be a user UUID.
@@ -59,7 +73,11 @@ async def get_optional_user(
     except JWTError:
         return None
 
-    return await _lookup_user(db, payload)
+    user = await _lookup_user(db, payload)
+    # A pending-deletion account is signed out everywhere until a fresh sign-in restores it.
+    if user is not None and user.is_pending_deletion:
+        return None
+    return user
 
 
 async def get_current_user(
@@ -77,6 +95,8 @@ async def get_current_user(
     user = await _lookup_user(db, payload)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if user.is_pending_deletion:
+        raise pending_deletion_error()
     return user
 
 

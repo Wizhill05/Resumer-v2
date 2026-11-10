@@ -23,7 +23,7 @@ export default function PrivacyPage() {
             <p>Guest generation inputs and PDFs are stored temporarily so the pipeline can finish and you can download the result. They are deleted automatically about 7 days after creation unless you sign in and claim them. Guest artifacts are not saved as account history.</p>
             <p>OAuth providers may share basic account details such as name, email, and avatar depending on provider settings.</p>
             <p>Connecting GitHub stores an encrypted access token that is used only to read your repositories. If you opt in to private repos, GitHub grants full repo access, but Résumer only reads repository details and never writes. README and manifest text from imported repos, including private ones you choose to import, is sent to our AI provider to draft the project. You can disconnect GitHub or remove private repo access at any time from the Account page.</p>
-            <p>You can delete generated history inside app where supported. For account or data removal requests, contact project owner/admin.</p>
+            <p>You can delete generated history inside the app where supported. To delete your account, go to Account and choose Delete account. Your account is locked right away and permanently deleted 7 days later, including your profile, generated résumés, PDFs and support requests. Signing in again within those 7 days cancels the deletion.</p>
             <p>This policy may change as product changes. Continued use means updated policy applies.</p>
           </div>
         </section>

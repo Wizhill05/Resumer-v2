@@ -82,17 +82,27 @@ async def fetch_github_user(access_token: str) -> dict:
     return res.json() if res.status_code == 200 else {}
 
 
+async def delete_github_grant(access_token: str, client_id: str, client_secret: str) -> int:
+    """DELETE /applications/{client_id}/grant: revokes every token the user gave this OAuth app
+    and removes it from their GitHub "Authorized OAuth Apps". Returns the HTTP status
+    (204 revoked, 404 token already invalid). Raises on network errors.
+    """
+    async with httpx.AsyncClient(timeout=10) as client:
+        res = await client.request(
+            "DELETE",
+            f"https://api.github.com/applications/{client_id}/grant",
+            auth=(client_id, client_secret),
+            headers={"Accept": "application/vnd.github+json"},
+            json={"access_token": access_token},
+        )
+    return res.status_code
+
+
 async def revoke_github_grant(access_token: str) -> None:
     if not settings.GITHUB_CONNECT_CLIENT_ID:
         return
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.request(
-                "DELETE",
-                f"https://api.github.com/applications/{settings.GITHUB_CONNECT_CLIENT_ID}/grant",
-                auth=(settings.GITHUB_CONNECT_CLIENT_ID, settings.GITHUB_CONNECT_CLIENT_SECRET),
-                json={"access_token": access_token},
-            )
+        await delete_github_grant(access_token, settings.GITHUB_CONNECT_CLIENT_ID, settings.GITHUB_CONNECT_CLIENT_SECRET)
     except Exception as exc:  # noqa: BLE001 - revoke is best effort
         logger.warning("[github-link] revoke failed (%s)", type(exc).__name__)
 

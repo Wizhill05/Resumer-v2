@@ -712,19 +712,24 @@ class MCPAuthMiddleware:
         # Resolve user in database
         async with AsyncSessionLocal() as db:
             user: User | None = None
+            bound_to_id = False
             if sub:
                 try:
                     user_uuid = uuid.UUID(sub)
+                    bound_to_id = True
                     res = await db.execute(select(User).where(User.id == user_uuid))
                     user = res.scalar_one_or_none()
                 except ValueError:
                     pass
 
-            if not user and email:
+            # A token that names a user id is bound to that account. If the id no longer
+            # resolves (e.g. the account was deleted), never fall back to the email: that
+            # would silently re-create a deleted account from a still-valid token.
+            if not user and email and not bound_to_id:
                 res = await db.execute(select(User).where(User.email == email))
                 user = res.scalar_one_or_none()
 
-            if not user and email:
+            if not user and email and not bound_to_id:
                 # Auto-provision user on verified token
                 user = User(
                     email=email,
@@ -744,6 +749,19 @@ class MCPAuthMiddleware:
                     "message": "Could not identify your Resumer account from this session.",
                     "hint": "Please reconnect the connector in ChatGPT to refresh your account details.",
                 },
+            )
+            await response(scope, receive, send)
+            return
+
+        if user.is_pending_deletion:
+            response = JSONResponse(
+                status_code=401,
+                content={
+                    "error": "Unauthorized: Account scheduled for deletion.",
+                    "message": "This Résumer account is scheduled for deletion. Sign in at Résumer to restore it, then reconnect the connector.",
+                    "hint": "Sign in at Résumer to restore the account, then reconnect the connector.",
+                },
+                headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
             )
             await response(scope, receive, send)
             return

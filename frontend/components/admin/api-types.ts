@@ -143,6 +143,22 @@ export type UserItem = {
   monthly_cap?: number
   monthly_count?: number
   admin_note?: string
+  /** Set while the account is in its 7-day deletion grace period. */
+  deletion_requested_at?: string | null
+  deletion_scheduled_for?: string | null
+}
+
+export type PendingDeletions = {
+  accounts: {
+    id: string
+    email: string
+    name?: string | null
+    provider?: string | null
+    deletion_requested_at?: string | null
+    deletion_scheduled_for: string
+  }[]
+  /** External cleanup still owed for already-deleted accounts, grouped by kind and status. */
+  cleanup: { kind: string; status: "pending" | "failed"; count: number; last_error?: string | null }[]
 }
 
 export type LogItem = {

@@ -1,4 +1,4 @@
-from src.models.user import Base, User
+from src.models.user import AccountCleanupTask, Base, User
 from src.models.profile import Profile, UserProject, UserExperience, UserEducation, UserExtracurricular
 from src.models.generation import Generation, GenerationLog, UserRateLimit, PromptConfig, GenerationNodeMetric
 from src.models.llm import LlmEndpoint, LlmRoleAssignment
@@ -8,6 +8,7 @@ from src.models.oauth import OAuthClient, OAuthAuthorizationCode, OAuthRefreshTo
 __all__ = [
     "Base",
     "User",
+    "AccountCleanupTask",
     "Profile",
     "UserProject",
     "UserExperience",

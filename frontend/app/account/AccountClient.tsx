@@ -9,6 +9,7 @@ import { clearResumePdfCache } from "@/lib/resume-pdf-cache"
 import { DAILY_GENERATION_CAP, useGenerationStats } from "@/components/useGenerationStats"
 import { useIsAdmin } from "@/components/useIsAdmin"
 import { GithubConnectionCard } from "@/components/github/GithubConnectionCard"
+import { DeleteAccountSection } from "./DeleteAccountSection"
 
 interface AccountClientProps {
   name: string | null
@@ -190,6 +191,8 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
             </nav>
           </div>
         </div>
+
+        <DeleteAccountSection email={email} provider={provider} />
       </div>
     </>
   )

@@ -21,6 +21,12 @@ export function authErrorMessage(error: string | null, provider: string | null):
   if (error === "sign_in_failed") {
     return "Sign-in didn't finish. Try again, or pick another sign-in option."
   }
+  if (error === "account_deletion_scheduled") {
+    return "Your account is scheduled for deletion in 7 days. Sign in before then to keep it."
+  }
+  if (error === "account_pending_deletion") {
+    return "This account is scheduled for deletion, so you were signed out. Sign in again to restore it."
+  }
   if (error === "unavailable") {
     return "Sign-in is unavailable right now. Try again."
   }

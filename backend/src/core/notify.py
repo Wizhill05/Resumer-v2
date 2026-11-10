@@ -569,3 +569,78 @@ def send_verification_code_email(to_email: str, name: str, code: str) -> None:
         "text": text_body,
     })
 
+
+def _send_simple_account_email(to_email: str | None, subject: str, heading: str, paragraphs: list[str], cta_label: str, cta_url: str) -> None:
+    """Small transactional email for account lifecycle notices. Non-fatal."""
+    if not settings.RESEND_API_KEY or not to_email or to_email.endswith("@resumer.local"):
+        return
+    try:
+        import resend
+
+        resend.api_key = settings.RESEND_API_KEY
+        body = "".join(
+            f'<p style="font-size:15px;color:#334155;margin:0 0 16px;">{p}</p>' for p in paragraphs
+        )
+        html_body = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>{html.escape(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.6;color:#0f172a;">
+  <div style="padding:40px 0;">
+    <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <div style="padding:32px;">
+        <h1 style="font-size:20px;margin:0 0 20px;color:#230a04;">{html.escape(heading)}</h1>
+        {body}
+        <a href="{html.escape(cta_url, quote=True)}" style="display:inline-block;margin-top:8px;background:#ff4e26;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:6px;">{html.escape(cta_label)}</a>
+      </div>
+      <div style="padding:16px 32px;background:#f1f5f9;border-top:1px solid #e2e8f0;font-size:12px;color:#64748b;">
+        You're getting this because of a change to your Résumer account.
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+        resend.Emails.send({
+            "from": settings.NOTIFICATION_FROM_EMAIL,
+            "to": to_email,
+            "subject": subject,
+            "html": html_body,
+        })
+    except Exception as e:  # noqa: BLE001 - account emails must never break the request
+        print(f"[notify] account email '{subject}' failed: {e}")
+
+
+def send_account_deletion_scheduled_email(to_email: str | None, name: str | None, scheduled_for) -> None:
+    """Tell the owner their account will be deleted, and how to stop it."""
+    greeting = html.escape((name or "").strip() or "there")
+    when = scheduled_for.strftime("%B %-d, %Y at %H:%M UTC")
+    _send_simple_account_email(
+        to_email,
+        subject="Your Résumer account is scheduled for deletion",
+        heading="Your account will be deleted in 7 days",
+        paragraphs=[
+            f"Hi {greeting},",
+            f"We received a request to delete your Résumer account. It's now locked and will be permanently deleted on <strong>{html.escape(when)}</strong>, along with your profile, generated résumés and files.",
+            "Changed your mind? Sign in before then and your account comes back exactly as it was.",
+            "If you didn't ask for this, sign in now to cancel it, then change your password or check your Google/GitHub account.",
+        ],
+        cta_label="Sign in to keep my account",
+        cta_url=settings.FRONTEND_URL,
+    )
+
+
+def send_account_restored_email(to_email: str | None, name: str | None) -> None:
+    """Confirm that a sign-in cancelled a pending deletion."""
+    greeting = html.escape((name or "").strip() or "there")
+    _send_simple_account_email(
+        to_email,
+        subject="Your Résumer account deletion was cancelled",
+        heading="Your account is back",
+        paragraphs=[
+            f"Hi {greeting},",
+            "You signed in to Résumer, so we cancelled the scheduled deletion of your account. Everything is where you left it.",
+            "AI connectors (ChatGPT, Claude and others) were disconnected when the deletion was requested. Reconnect them if you use them.",
+            "If this wasn't you, change your password or check your Google/GitHub account right away.",
+        ],
+        cta_label="Open Résumer",
+        cta_url=f"{settings.FRONTEND_URL}/dashboard",
+    )

@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     GITHUB_TOKEN_KEY: str = ""
     GITHUB_CONNECT_CLIENT_ID: str = ""
     GITHUB_CONNECT_CLIENT_SECRET: str = ""
+    # The frontend's Auth.js GitHub sign-in app (same values as AUTH_GITHUB_ID / AUTH_GITHUB_SECRET
+    # on Vercel). Only used to revoke that app's grant when an account is permanently deleted.
+    GITHUB_LOGIN_CLIENT_ID: str = ""
+    GITHUB_LOGIN_CLIENT_SECRET: str = ""
     GITHUB_CONNECT_REDIRECT_URI: str = "https://resumer.buzz/api/integrations/github/callback"
 
     R2_ENDPOINT_URL: str = ""
@@ -91,6 +95,9 @@ class Settings(BaseSettings):
     POSTHOG_PERSONAL_API_KEY: str = ""
     POSTHOG_PROJECT_ID: str = ""
     POSTHOG_API_HOST: str = ""
+    # Personal API key with person:write, used to erase a deleted account's PostHog person,
+    # events and recordings. Falls back to POSTHOG_PERSONAL_API_KEY (add the scope to it).
+    POSTHOG_DELETION_API_KEY: str = ""
 
     # Feature flags
     ENABLE_RESUME_EDITOR: bool = True
