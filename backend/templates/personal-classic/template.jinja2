@@ -1,3 +1,4 @@
+{% autoescape true -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -124,7 +125,7 @@
     <dt><strong>{{ exp.role }} | {{ exp.organization }}{% if exp.location %} | {{ exp.location }}{% endif %}</strong></dt>
     <dd>
       {% if exp.start_date %}{{ exp.start_date | format_date }}{% endif %}
-      {% if exp.start_date and exp.end_date %} – {% endif %}
+      {% if exp.start_date %} – {% endif %}
       {% if exp.end_date %}{{ exp.end_date | format_date }}{% else %}Present{% endif %}
     </dd>
   </dl>
@@ -150,3 +151,4 @@
 
 </body>
 </html>
+{%- endautoescape %}

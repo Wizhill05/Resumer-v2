@@ -34,6 +34,12 @@ def get_current_mcp_user() -> User:
     return user
 
 
+def account_unavailable() -> dict[str, str | bool]:
+    message = "This Resumer account is unavailable. Sign in again before reconnecting."
+    return {"success": False, "status": "error", "error_code": "ACCOUNT_UNAVAILABLE", "error": message,
+            "message": message}
+
+
 @asynccontextmanager
 async def get_mcp_db() -> AsyncGenerator[AsyncSession, None]:
     """Yield an active async database session for MCP tool execution."""

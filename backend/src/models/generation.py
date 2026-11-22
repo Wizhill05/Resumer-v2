@@ -30,6 +30,8 @@ class Generation(Base):
     keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     instructions: Mapped[str | None] = mapped_column(Text)
     model_used: Mapped[str] = mapped_column(String, default="unknown")
+    inference_source: Mapped[str] = mapped_column(String, nullable=False, default="server", server_default="server")
+    client_model: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, default="pending")
     error_message: Mapped[str | None] = mapped_column(Text)
     pdf_storage_key: Mapped[str | None] = mapped_column(String)

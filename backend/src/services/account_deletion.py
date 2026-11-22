@@ -35,7 +35,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.storage import StorageService
+from src.core.storage import StorageService, generation_artifact_keys
 from src.models.generation import Generation, ReportAttachment, SupportReport
 from src.models.identity import GithubLinkState, GithubToken, UserIdentity
 from src.models.oauth import OAuthAuthorizationCode, OAuthRefreshToken
@@ -52,6 +52,7 @@ _RUN_FILENAMES = ("resume.pdf", "resume.md", "thumb.webp")
 
 KIND_POSTHOG = "posthog_person"
 KIND_GITHUB = "github_grant"
+KIND_STORAGE = "storage_objects"
 # Hourly retries for ~3 days, then the task is parked as "failed" for the admin to see.
 MAX_CLEANUP_ATTEMPTS = 72
 
@@ -61,6 +62,20 @@ _INTERVAL_SECONDS = 3600
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+async def delete_generation_artifacts(db: AsyncSession, generation: Generation) -> None:
+    keys = list(dict.fromkeys(key for key in (
+        *generation_artifact_keys(generation.id),
+        generation.pdf_storage_key, generation.md_storage_key, generation.thumb_storage_key,
+    ) if key))
+    try:
+        failed = await asyncio.to_thread(lambda: StorageService().delete_files(keys))
+    except Exception:
+        logger.exception("Could not delete artifacts for generation %s", generation.id)
+        failed = keys
+    if failed:
+        db.add(AccountCleanupTask(kind=KIND_STORAGE, payload={"keys": failed}))
 
 
 def _aware(dt: datetime) -> datetime:
@@ -313,6 +328,19 @@ async def _revoke_github_grant(payload: dict[str, Any]) -> None:
 _HANDLERS = {KIND_POSTHOG: _erase_posthog_person, KIND_GITHUB: _revoke_github_grant}
 
 
+async def _retry_storage_objects(task: AccountCleanupTask) -> None:
+    def delete_objects() -> list[str]:
+        storage = StorageService()
+        if not storage.enabled:
+            raise _NotConfigured("Object storage is unavailable")
+        return storage.delete_files(task.payload["keys"])
+
+    failed = await asyncio.to_thread(delete_objects)
+    if failed:
+        task.payload = {"keys": failed}
+        raise RuntimeError(f"Could not delete {len(failed)} storage objects")
+
+
 async def run_cleanup_tasks(db: AsyncSession, limit: int = 200) -> dict:
     """Run pending external cleanup. Done tasks are deleted; failures are retried later."""
     query = select(AccountCleanupTask).where(AccountCleanupTask.status == "pending")
@@ -322,7 +350,9 @@ async def run_cleanup_tasks(db: AsyncSession, limit: int = 200) -> dict:
     for task in tasks:
         handler = _HANDLERS.get(task.kind)
         try:
-            if handler is not None:
+            if task.kind == KIND_STORAGE:
+                await _retry_storage_objects(task)
+            elif handler is not None:
                 await handler(task.payload or {})
         except _NotConfigured as exc:
             counts["waiting"] += 1

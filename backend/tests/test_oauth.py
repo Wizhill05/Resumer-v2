@@ -52,9 +52,13 @@ async def _signed_token_for(async_db: AsyncSession, email: str) -> str:
     """Create a user and return a backend JWT for it (what the frontend bridge sends)."""
     from jose import jwt
 
-    async_db.add(User(id=uuid.uuid4(), email=email, name=email.split("@")[0].capitalize()))
+    user = User(id=uuid.uuid4(), email=email, name=email.split("@")[0].capitalize())
+    async_db.add(user)
     await async_db.commit()
-    return jwt.encode({"email": email}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(
+        {"sub": str(user.id), "email": email, "provider": "google"},
+        settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM,
+    )
 
 
 # ── PKCE Unit Tests ──────────────────────────────────────────────────────────
@@ -311,7 +315,7 @@ async def test_oauth_authorize_with_signed_token(client: AsyncClient, async_db: 
     await async_db.commit()
 
     user_token = jwt.encode(
-        {"sub": str(user.id), "email": "bridge_user@example.com", "name": "Bridge User"},
+        {"sub": str(user.id), "email": "bridge_user@example.com", "name": "Bridge User", "provider": "google"},
         settings.JWT_SECRET,
         algorithm=settings.JWT_ALGORITHM,
     )

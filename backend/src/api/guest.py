@@ -583,5 +583,9 @@ async def preview_guest_generation(
 
     from src.core.config import settings
 
-    pdf_bytes = HTML(string=html_rendered, base_url=str(settings.TEMPLATES_DIR / gen.template_id)).write_pdf()
+    from src.services.resume_render import safe_url_fetcher
+
+    pdf_bytes = HTML(
+        string=html_rendered, base_url=str(settings.TEMPLATES_DIR / gen.template_id), url_fetcher=safe_url_fetcher
+    ).write_pdf()
     return Response(content=pdf_bytes, media_type="application/pdf")

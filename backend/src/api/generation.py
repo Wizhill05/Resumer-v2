@@ -8,10 +8,11 @@ import uuid
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.files import get_client_pdf_settings
 from src.core.auth import get_current_user
 from src.core.config import settings
 from src.core.analytics import capture_generation
@@ -22,6 +23,7 @@ from src.core.notify import send_completion_email
 from src.core.storage import StorageService
 from src.models.generation import Generation, UserRateLimit, GenerationLog, UserCreditOverride
 from src.models.user import User
+from src.services.account_deletion import delete_generation_artifacts
 from src.schemas.generation import (
     GenerationCreate,
     GenerationListItem,
@@ -31,6 +33,7 @@ from src.schemas.generation import (
 )
 from src.schemas.template import DEFAULT_SECTION_ORDER
 from src.services.content_split import resolve_default_split, resolve_default_mode, is_valid_mode
+from src.services.resume_render import safe_url_fetcher
 from src.services.template_layout import get_generation_section_order, resolve_section_order
 from src.schemas.generation import (
     EditorManifest,
@@ -51,6 +54,7 @@ from src.template_registry.service import TemplateRegistryService
 router = APIRouter(prefix="/generate", tags=["generation"])
 
 STUCK_TIMEOUT_MINUTES = 15
+CLIENT_DRAFT_CLAIM_TTL = timedelta(minutes=5)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -62,25 +66,99 @@ async def _user_email(db: AsyncSession, user_id) -> str | None:
     return u.email if u else None
 
 
+def is_quota_exempt(user: User) -> bool:
+    return "*" in settings.admin_emails or user.email in settings.admin_emails
+
+
+async def generation_caps(user: User, db: AsyncSession) -> tuple[int, int]:
+    if is_quota_exempt(user):
+        return 0, 0
+    override = await db.get(UserCreditOverride, user.id)
+    daily = override.daily_cap if override else None
+    monthly = override.monthly_cap if override else None
+    return (
+        settings.DEFAULT_DAILY_CAP if daily is None else daily,
+        settings.DEFAULT_MONTHLY_CAP if monthly is None else monthly,
+    )
+
+
+async def daily_generation_quota(user: User, db: AsyncSession, limit: int) -> dict:
+    bucket = await db.get(UserRateLimit, user.id, populate_existing=True)
+    reset = bucket.reset_at if bucket else None
+    if reset and reset.tzinfo is None:
+        reset = reset.replace(tzinfo=timezone.utc)
+    active = reset is not None and reset > datetime.now(timezone.utc)
+    used = bucket.request_count if active else 0
+    return {
+        "limit": limit or None,
+        "used": used,
+        "remaining": max(0, limit - used) if limit else None,
+        "resets_at": reset.isoformat() if active else None,
+    }
+
+
+def client_terminal_metadata(metadata: dict) -> dict:
+    snapshot = metadata.get("client_brief") or {}
+    return {
+        "_analytics": metadata.get("_analytics"),
+        "inference_source": "client",
+        "client_submissions": metadata.get("client_submissions", 0),
+        "client_draft_revision": metadata.get("client_draft_revision", 0),
+        "quality": {"requirements": snapshot.get("requirements", {})},
+    }
+
+
+async def reap_abandoned_drafts(db: AsyncSession) -> None:
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=24)
+    claim_at = Generation.render_metadata["client_claim"]["at"].as_string()
+    conditions = (
+        Generation.status == "drafting",
+        Generation.inference_source == "client",
+        Generation.updated_at < cutoff,
+        or_(claim_at.is_(None), claim_at <= (now - CLIENT_DRAFT_CLAIM_TTL).isoformat()),
+    )
+    drafts = (await db.scalars(select(Generation).where(*conditions))).all()
+    abandoned = []
+    for draft in drafts:
+        statement = (
+            update(Generation)
+            .where(*conditions, Generation.id == draft.id, Generation.updated_at == draft.updated_at)
+            .values(
+                status="failed",
+                completed_at=now,
+                error_message="Draft abandoned before submission.",
+                render_metadata=client_terminal_metadata(draft.render_metadata or {}),
+            )
+            .returning(Generation)
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+        changed = await db.scalar(statement)
+        if changed is not None:
+            abandoned.append(changed)
+    for draft in abandoned:
+        await delete_generation_artifacts(db, draft)
+    if drafts:
+        await db.commit()
+    for draft in abandoned:
+        capture_generation(draft, "abandoned")
+
+
 async def check_rate_limit(user: User, db: AsyncSession) -> None:
     """Atomic upsert-and-increment. Row-level lock prevents the TOCTOU race
     where two concurrent requests both read the same count and bypass the cap."""
-    if "*" in settings.admin_emails or user.email in settings.admin_emails:
-        return  # Admin bypass
+    if is_quota_exempt(user):
+        return
 
     now = datetime.now(timezone.utc)
     reset_at = now + timedelta(hours=24)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    override_result = await db.execute(
-        select(UserCreditOverride).where(UserCreditOverride.user_id == user.id)
-    )
-    override = override_result.scalar_one_or_none()
-    daily_cap = override.daily_cap if override and override.daily_cap is not None else settings.DEFAULT_DAILY_CAP
-    monthly_cap = override.monthly_cap if override and override.monthly_cap is not None else settings.DEFAULT_MONTHLY_CAP
+    daily_cap, monthly_cap = await generation_caps(user, db)
 
     monthly_result = await db.execute(
         select(func.count(Generation.id)).where(
             Generation.user_id == user.id,
+            Generation.inference_source == "server",
             Generation.created_at >= month_start,
         )
     )
@@ -128,10 +206,12 @@ async def reap_stuck_generations(db: AsyncSession) -> None:
     """Mark in_progress runs older than the timeout as failed + notify.
     Covers Job executions that died (OOM, preemption) without reaching a
     terminal status. Runs lazily on each POST /generate — zero infra."""
+    await reap_abandoned_drafts(db)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=STUCK_TIMEOUT_MINUTES)
     result = await db.execute(
         select(Generation).where(
             Generation.status == "in_progress",
+            Generation.inference_source == "server",
             Generation.updated_at < cutoff,
         )
     )
@@ -420,7 +500,13 @@ async def list_generations_page(
     )
 
 
-@router.get("/summary", response_model=GenerationSummary)
+class GenerationQuotaSummary(GenerationSummary):
+    daily_cap: int | None
+    monthly_cap: int | None
+    resets_at: str | None
+
+
+@router.get("/summary", response_model=GenerationQuotaSummary)
 async def generation_summary(
     month_start: datetime | None = Query(
         None, description="Start of the caller's current month (ISO 8601); defaults to the UTC month start"
@@ -430,7 +516,6 @@ async def generation_summary(
 ):
     """Aggregates only (count/max); never loads generation rows' content."""
     now = datetime.now(timezone.utc)
-    day_ago = now - timedelta(hours=24)
     if month_start is None:
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     elif month_start.tzinfo is None:
@@ -440,9 +525,15 @@ async def generation_summary(
         await db.execute(
             select(
                 func.count(Generation.id),
-                func.count(Generation.id).filter(Generation.created_at >= day_ago),
-                func.count(Generation.id).filter(Generation.created_at >= month_start),
-                func.count(Generation.id).filter(Generation.status != "failed"),
+                func.count(Generation.id).filter(
+                    Generation.inference_source == "server", Generation.created_at >= month_start
+                ),
+                func.count(Generation.id).filter(
+                    or_(
+                        and_(Generation.inference_source == "server", Generation.status != "failed"),
+                        and_(Generation.inference_source == "client", Generation.status == "completed"),
+                    )
+                ),
             ).where(Generation.user_id == current_user.id)
         )
     ).one()
@@ -454,11 +545,16 @@ async def generation_summary(
             .limit(1)
         )
     ).first()
-    return GenerationSummary(
+    daily_cap, monthly_cap = await generation_caps(current_user, db)
+    quota = await daily_generation_quota(current_user, db, daily_cap)
+    return GenerationQuotaSummary(
         total=agg[0],
-        usable_total=agg[3],
-        used_today=agg[1],
-        this_month=agg[2],
+        usable_total=agg[2],
+        used_today=quota["used"],
+        this_month=agg[1],
+        daily_cap=quota["limit"],
+        monthly_cap=monthly_cap or None,
+        resets_at=quota["resets_at"],
         latest_created_at=latest.created_at if latest else None,
         latest_company=latest.company if latest else None,
         latest_job_title=latest.job_title if latest else None,
@@ -547,7 +643,9 @@ async def preview_generation(
         raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
     from src.models.profile import Profile
-    if gen.is_guest and gen.guest_input_snapshot:
+    if gen.inference_source == "client":
+        profile_data, font_size = get_client_pdf_settings(metadata)
+    elif gen.is_guest and gen.guest_input_snapshot:
         profile_data = gen.guest_input_snapshot.get("profile") or {}
     else:
         profile_data = metadata.get("profile")
@@ -595,7 +693,7 @@ async def preview_generation(
             detail=f"PDF rendering is not configured on this host (missing Pango/Cairo system libraries): {e}"
         )
 
-    pdf_bytes = HTML(string=html_rendered, base_url=font_base_url).write_pdf()
+    pdf_bytes = HTML(string=html_rendered, base_url=font_base_url, url_fetcher=safe_url_fetcher).write_pdf()
     return Response(content=pdf_bytes, media_type="application/pdf")
 
 
@@ -732,7 +830,9 @@ async def get_generation_pdf_pages(
             raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
         from src.models.profile import Profile
-        if gen.is_guest and gen.guest_input_snapshot:
+        if gen.inference_source == "client":
+            profile_data, font_size = get_client_pdf_settings(metadata)
+        elif gen.is_guest and gen.guest_input_snapshot:
             profile_data = gen.guest_input_snapshot.get("profile") or {}
         else:
             profile_data = metadata.get("profile")
@@ -757,17 +857,27 @@ async def get_generation_pdf_pages(
         if not manifest_obj:
             raise HTTPException(status_code=500, detail="Template manifest missing.")
 
-        from src.services.resume_render import fit_and_render_pdf
+        from src.services.resume_render import fit_and_render_pdf, render_resume_pdf
+
+        section_order = get_generation_section_order(gen.section_order, gen.template_id)
         try:
-            pdf_bytes, _ = fit_and_render_pdf(
-                template_id=gen.template_id,
-                profile=profile_data,
-                resume=tailored_resume,
-                manifest=manifest_obj.model_dump(),
-                section_order=get_generation_section_order(
-                    gen.section_order, gen.template_id
-                ),
-            )
+            if gen.inference_source == "client":
+                pdf_bytes, _ = render_resume_pdf(
+                    template_id=gen.template_id,
+                    profile=profile_data,
+                    resume=tailored_resume,
+                    font_size=font_size,
+                    page_margin_mm=manifest_obj.page_margin_mm,
+                    section_order=section_order,
+                )
+            else:
+                pdf_bytes, _ = fit_and_render_pdf(
+                    template_id=gen.template_id,
+                    profile=profile_data,
+                    resume=tailored_resume,
+                    manifest=manifest_obj.model_dump(),
+                    section_order=section_order,
+                )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"PDF rendering failed: {e}")
 
@@ -813,17 +923,15 @@ async def delete_generation(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Generation).where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
+        select(Generation)
+        .where(Generation.id == uuid.UUID(gen_id), Generation.user_id == current_user.id)
+        .with_for_update()
     )
     gen = result.scalar_one_or_none()
     if not gen:
         raise HTTPException(status_code=404, detail="Generation not found")
 
-    # Delete R2 artifacts (best-effort; log failures so orphaned objects are visible)
-    storage = StorageService()
-    for key in [gen.pdf_storage_key, gen.md_storage_key, gen.thumb_storage_key]:
-        if key and not storage.delete_file(key):
-            print(f"[delete_generation] failed to delete R2 object: {key}")
+    await delete_generation_artifacts(db, gen)
 
     # Delete DB row (logs cascade via FK ondelete=CASCADE)
     await db.delete(gen)
@@ -886,7 +994,9 @@ async def download_generation(
         raise HTTPException(status_code=404, detail="Resume data missing from generation record.")
 
     profile_data = metadata.get("profile")
-    if not profile_data:
+    if gen.inference_source == "client":
+        profile_data, font_size = get_client_pdf_settings(metadata)
+    elif not profile_data:
         profile_res = await db.execute(select(Profile).where(Profile.user_id == current_user.id))
         profile = profile_res.scalar_one_or_none()
         if not profile:
@@ -927,7 +1037,7 @@ async def download_generation(
     except (OSError, ImportError) as e:
         raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {e}")
 
-    pdf_bytes = HTML(string=html_rendered, base_url=font_base_url).write_pdf()
+    pdf_bytes = HTML(string=html_rendered, base_url=font_base_url, url_fetcher=safe_url_fetcher).write_pdf()
     username = resolve_resume_username(
         (profile_data or {}).get("full_name"), _username
     )
@@ -946,6 +1056,8 @@ async def _get_completed_gen_for_editor(
     gen_id: str,
     current_user,
     db: AsyncSession,
+    *,
+    requires_server_inference: bool = False,
 ):
     """Shared ownership + status guard for all editor routes."""
     if not settings.ENABLE_RESUME_EDITOR:
@@ -964,6 +1076,15 @@ async def _get_completed_gen_for_editor(
     gen = result.scalar_one_or_none()
     if not gen:
         raise HTTPException(status_code=404, detail="Generation not found")
+    if requires_server_inference and gen.inference_source == "client":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "client_built_resume",
+                "message": "This résumé was written by your assistant's model. Ask your assistant to swap the project.",
+            },
+        )
+
     if gen.status != "completed":
         raise HTTPException(status_code=400, detail="Generation is not completed yet.")
     metadata = gen.render_metadata or {}
@@ -1378,8 +1499,7 @@ async def replace_project_for_editor(
 
     Edits are unlimited and free. Re-tailors the projects with LLM and runs orphan repair.
     """
-    gen = await _get_completed_gen_for_editor(gen_id, current_user, db)
-
+    gen = await _get_completed_gen_for_editor(gen_id, current_user, db, requires_server_inference=True)
     # 1. Fetch replacement project from UserProject, verifying ownership
     from src.models.profile import UserProject
 

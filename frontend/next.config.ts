@@ -14,6 +14,15 @@ const nextConfig: NextConfig = {
     "localhost",
     "100.122.152.101",
   ],
+  async headers() {
+    return [
+      {
+        // Agent confirmation links carry a one-time token; never leak the page URL to other sites.
+        source: "/connect/own-model",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

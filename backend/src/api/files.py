@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
+import math
 import uuid
 from typing import Any
 
+from anyio import to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.services.resume_render import safe_url_fetcher
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.file_links import format_resume_filename, resolve_resume_username, verify_file_token
@@ -21,8 +24,17 @@ from src.services.template_layout import get_generation_section_order
 from src.template_registry.service import TemplateRegistryService
 
 logger = logging.getLogger(__name__)
+open_artifact_stream = StorageService.get_stream
 
 router = APIRouter(prefix="/files", tags=["files"])
+
+
+def get_client_pdf_settings(metadata: dict) -> tuple[dict, float]:
+    profile = metadata.get("profile")
+    font_size = metadata.get("font_size")
+    if not isinstance(profile, dict) or type(font_size) not in (int, float) or not 0 < font_size < math.inf:
+        raise HTTPException(status_code=404, detail="Saved resume layout is unavailable.")
+    return profile, font_size
 
 
 @router.get("/gen/{gen_id}/resume.pdf")
@@ -116,31 +128,18 @@ async def get_resume_pdf(
         "Cache-Control": "private, no-cache, no-store, must-revalidate",
     }
 
-    # 5. Primary strategy: Stream bytes from Cloudflare R2
-    storage = StorageService()
-    if storage.enabled and gen.pdf_storage_key and storage.file_exists(gen.pdf_storage_key):
-        try:
-            s3_response = storage.s3_client.get_object(
-                Bucket=settings.R2_BUCKET_NAME,
-                Key=gen.pdf_storage_key,
-            )
-            body = s3_response["Body"]
+    if gen.pdf_storage_key:
+        body = await to_thread.run_sync(open_artifact_stream, StorageService(), gen.pdf_storage_key)
+        if body is not None:
+            def iter_chunks():
+                try:
+                    yield from iter(lambda: body.read(64 * 1024), b"")
+                finally:
+                    close = getattr(body, "close", None)
+                    if close is not None:
+                        close()
 
-            def _iter_chunks():
-                for chunk in iter(lambda: body.read(64 * 1024), b""):
-                    yield chunk
-
-            return StreamingResponse(
-                _iter_chunks(),
-                media_type="application/pdf",
-                headers=common_headers,
-            )
-        except Exception as err:
-            logger.warning(
-                "files.py: R2 streaming failed for key '%s', falling back to on-the-fly render: %s",
-                gen.pdf_storage_key,
-                err,
-            )
+            return StreamingResponse(iter_chunks(), media_type="application/pdf", headers=common_headers)
 
     # 6. Fallback strategy: Re-compile and render PDF on-the-fly via WeasyPrint
     metadata = gen.render_metadata or {}
@@ -153,7 +152,9 @@ async def get_resume_pdf(
             detail="Tailored resume data is missing from generation record.",
         )
 
-    if gen.is_guest and gen.guest_input_snapshot:
+    if gen.inference_source == "client":
+        profile_data, font_size = get_client_pdf_settings(metadata)
+    elif gen.is_guest and gen.guest_input_snapshot:
         profile_data = gen.guest_input_snapshot.get("profile") or {}
     else:
         profile_data = metadata.get("profile")
@@ -203,7 +204,7 @@ async def get_resume_pdf(
         from weasyprint import HTML
 
         font_base_url = str(settings.TEMPLATES_DIR / gen.template_id)
-        pdf_bytes = HTML(string=html_rendered, base_url=font_base_url).write_pdf()
+        pdf_bytes = HTML(string=html_rendered, base_url=font_base_url, url_fetcher=safe_url_fetcher).write_pdf()
     except Exception as render_err:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

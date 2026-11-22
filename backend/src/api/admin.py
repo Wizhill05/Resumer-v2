@@ -13,12 +13,14 @@ from sqlalchemy import select, func, delete, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from langchain_core.prompts import ChatPromptTemplate
 
+from src.services.resume_render import safe_url_fetcher
 from src.core.auth import get_current_admin
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal, get_db
 from src.core.executor import trigger_pipeline
 from src.core.file_links import format_resume_filename, resolve_resume_username
 from src.core.storage import StorageService
+from src.services.account_deletion import delete_generation_artifacts
 from src.models.generation import (
     Generation,
     GenerationLog,
@@ -165,7 +167,11 @@ async def get_analytics(db: AsyncSession = Depends(get_db)):
     # 4. Latency Analysis (Average, Percentiles, and Distribution for completed generations)
     durations_query = select(
         func.extract("epoch", Generation.completed_at) - func.extract("epoch", Generation.created_at)
-    ).where(Generation.status == "completed", Generation.completed_at.isnot(None))
+    ).where(
+        Generation.status == "completed",
+        Generation.completed_at.isnot(None),
+        Generation.inference_source == "server",
+    )
     durations_res = await db.execute(durations_query)
     all_durations = sorted([float(d) for d in durations_res.scalars().all() if d is not None])
 
@@ -450,7 +456,7 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
             Generation.status,
             Generation.created_at,
             Generation.completed_at,
-        ).where(Generation.created_at.isnot(None))
+        ).where(Generation.inference_source == "server", Generation.created_at.isnot(None))
     )
     all_gens = gens_res.all()
 
@@ -531,7 +537,11 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
             func.count(Generation.id),
             func.avg(func.extract("epoch", Generation.completed_at) - func.extract("epoch", Generation.created_at)),
         )
-        .where(Generation.status == "completed", Generation.completed_at.isnot(None))
+        .where(
+            Generation.status == "completed",
+            Generation.completed_at.isnot(None),
+            Generation.inference_source == "server",
+        )
         .group_by(Generation.template_id)
         .order_by(desc(func.count(Generation.id)))
     )
@@ -587,7 +597,11 @@ async def get_timing_by_model(db: AsyncSession = Depends(get_db)):
             (func.extract("epoch", Generation.completed_at) - func.extract("epoch", Generation.created_at)).label("dur_sec"),
         )
         .outerjoin(User, Generation.user_id == User.id)
-        .where(Generation.status == "completed", Generation.completed_at.isnot(None))
+        .where(
+            Generation.status == "completed",
+            Generation.completed_at.isnot(None),
+            Generation.inference_source == "server",
+        )
         .order_by(desc("dur_sec"))
         .limit(10)
     )
@@ -740,7 +754,7 @@ async def _render_generation_pdf(
     except (OSError, ImportError) as exc:
         raise HTTPException(status_code=500, detail=f"PDF rendering unavailable: {exc}")
 
-    pdf = HTML(string=html, base_url=str(settings.TEMPLATES_DIR / gen.template_id)).write_pdf()
+    pdf = HTML(string=html, base_url=str(settings.TEMPLATES_DIR / gen.template_id), url_fetcher=safe_url_fetcher).write_pdf()
     username = resolve_resume_username((profile_data or {}).get("full_name"))
     filename = format_resume_filename(username=username, job_title=gen.job_title)
     return Response(
@@ -871,19 +885,12 @@ async def download_final_resume(id: uuid.UUID, db: AsyncSession = Depends(get_db
 
 @router.delete("/generations/{id}", dependencies=[Depends(get_current_admin)])
 async def delete_generation(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    gen_res = await db.execute(select(Generation).where(Generation.id == id))
+    gen_res = await db.execute(select(Generation).where(Generation.id == id).with_for_update())
     gen = gen_res.scalar_one_or_none()
     if not gen:
         raise HTTPException(status_code=404, detail="Generation not found")
 
-    # Clean up storage first
-    storage = StorageService()
-    if gen.pdf_storage_key:
-        storage.delete_file(gen.pdf_storage_key)
-    if gen.md_storage_key:
-        storage.delete_file(gen.md_storage_key)
-    if gen.thumb_storage_key:
-        storage.delete_file(gen.thumb_storage_key)
+    await delete_generation_artifacts(db, gen)
 
     await db.execute(delete(Generation).where(Generation.id == id))
     await db.commit()
@@ -950,6 +957,11 @@ async def retry_generation(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     gen = gen_res.scalar_one_or_none()
     if not gen:
         raise HTTPException(status_code=404, detail="Generation not found")
+    if gen.inference_source == "client":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "client_built_resume", "message": "Client-built resumes cannot be retried by the server."},
+        )
     if gen.status != "failed":
         raise HTTPException(status_code=409, detail="Only failed generations can be retried")
 
@@ -1015,6 +1027,7 @@ async def list_users(
         monthly_result = await db.execute(
             select(func.count(Generation.id)).where(
                 Generation.user_id == u.id,
+                Generation.inference_source == "server",
                 Generation.created_at >= month_start,
             )
         )
@@ -1092,7 +1105,11 @@ async def get_user_credits(id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     override = override_result.scalar_one_or_none()
     month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     monthly_result = await db.execute(
-        select(func.count(Generation.id)).where(Generation.user_id == id, Generation.created_at >= month_start)
+        select(func.count(Generation.id)).where(
+            Generation.user_id == id,
+            Generation.inference_source == "server",
+            Generation.created_at >= month_start,
+        )
     )
     request_count, reset_at = _active_usage(limit.request_count, limit.reset_at) if limit else (0, None)
     return {

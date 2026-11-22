@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from weasyprint import HTML
 from src.core.config import settings
-from src.services.resume_render import render_resume_html, fit_and_render_pdf
+from src.services.resume_render import render_resume_html, fit_and_render_pdf, safe_url_fetcher
 from src.template_registry.service import TemplateRegistryService
 
 OUT = Path('/tmp/resumer-sans-design')
@@ -84,7 +84,9 @@ for name,data in cases.items():
     for fs in (9,9.5,10,10.5,11,11.5,12):
         html = render_resume_html(template_id='professional-sans',profile=data['profile'],resume=data['resume'],font_size=fs,page_margin_mm=14)
         assert html
-        doc = HTML(string=html,base_url=str(settings.TEMPLATES_DIR/'professional-sans')).render()
+        doc = HTML(
+            string=html, base_url=str(settings.TEMPLATES_DIR / 'professional-sans'), url_fetcher=safe_url_fetcher,
+        ).render()
         doc.write_pdf(OUT/f'{name}-{fs:g}pt.pdf')
         textboxes = [b for page in doc.pages for b in page._page_box.descendants() if type(b).__name__=='TextBox']
         page=doc.pages[-1]._page_box

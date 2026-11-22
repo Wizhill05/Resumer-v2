@@ -6,9 +6,11 @@ import itertools
 import json
 import re
 import time
+import unicodedata
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable, Iterable
 
 from jinja2 import Template
 from langchain_core.prompts import ChatPromptTemplate
@@ -28,6 +30,8 @@ from src.services.resume_render import (
     build_resume_markdown,
     check_horizontal_overflow,
     detect_orphans_in_weasyprint,
+    measure_page_fill,
+    safe_url_fetcher,
     ORPHAN_FILL_FLOOR,
     REPAIR_TARGET_LINES_MAX,
     REPAIR_TARGET_LINES_MIN,
@@ -285,11 +289,36 @@ def _apply_professional_sans_skill_budget(skills: dict[str, list[str]]) -> dict[
     return budgeted
 
 
+SkillCovered = Callable[[str, Iterable[str]], bool]
+
+
+def drop_covered_additions(
+    skills: dict[str, list[str]], original: Iterable[str], covered: SkillCovered
+) -> dict[str, list[str]]:
+    """Remove skills added after ``original`` (enrichment / coverage) that ``covered`` says another kept
+    skill already names. Skills the writer produced are never removed. Own-model merge only."""
+    original_keys = {s.casefold().strip() for s in original}
+    kept_all = [s for items in skills.values() for s in items]
+    out: dict[str, list[str]] = {}
+    for category, items in skills.items():
+        kept: list[str] = []
+        for s in items:
+            if s.casefold().strip() not in original_keys:
+                others = [o for o in kept_all if o is not s and o.casefold().strip() != s.casefold().strip()]
+                if covered(s, others):
+                    kept_all = [o for o in kept_all if o is not s]
+                    continue
+            kept.append(s)
+        out[category] = kept
+    return {k: v for k, v in out.items() if v or not skills.get(k)}
+
+
 def _ensure_jd_skill_coverage(
     skills: dict[str, list[str]],
     jd_skills: list[str],
     mode: str,
     template_id: str | None = None,
+    covered: SkillCovered | None = None,
 ) -> dict[str, list[str]]:
     """In LARP modes guarantee JD skills appear in the skills section.
 
@@ -297,6 +326,7 @@ def _ensure_jd_skill_coverage(
     LARP/Super-LARP append any missing JD extracted_skills (case-insensitive)
     to the first non-soft category, creating one if needed.
     Caps injected skills to avoid unbounded stuffing.
+    ``covered`` (own-model merge only) replaces the exact match with a broader duplicate rule.
     When template_id is 'professional-sans', respects the layout budget:
     at most 4 categories and roughly 20 skills/320 chars total.
     """
@@ -305,13 +335,21 @@ def _ensure_jd_skill_coverage(
 
     if mode not in ("larp", "super_larp") or not jd_skills:
         return skills
-    existing_lower = {s.lower() for items in skills.values() for s in items}
     missing = []
-    for s in jd_skills:
-        name = (s or "").strip()
-        if name and name.lower() not in existing_lower:
-            missing.append(name)
-            existing_lower.add(name.lower())
+    if covered is None:  # server pipeline: exact, case-insensitive match only
+        existing_lower = {s.lower() for items in skills.values() for s in items}
+        for s in jd_skills:
+            name = (s or "").strip()
+            if name and name.lower() not in existing_lower:
+                missing.append(name)
+                existing_lower.add(name.lower())
+    else:  # own-model merge: the caller's alias / product-token rule
+        existing = [s for items in skills.values() for s in items]
+        for s in jd_skills:
+            name = (s or "").strip()
+            if name and not covered(name, existing):
+                missing.append(name)
+                existing.append(name)
     if not missing:
         return skills
 
@@ -608,6 +646,12 @@ def _validate_selection(result, experience_count, project_count, max_exp, max_pr
                 raise InvalidSelection(f"out_of_bounds: {label} index {i} (available={available})")
 
 
+_SELECTION_RANKING_RULES = (
+    "- Order each list by relevance, strongest first.\n"
+    "- Prefer entries with direct skill overlap, domain similarity, measurable impact, recent work, and seniority match.\n"
+)
+
+
 async def selection_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -655,8 +699,7 @@ async def selection_node(
             "- Select EXACTLY {max_exp} experience indices and EXACTLY {max_proj} project indices when enough entries exist.\n"
             "- If fewer entries exist than requested, select all valid entries of that type.\n"
             "- Use 0-based indices only. Never invent, duplicate, or use out-of-range indices.\n"
-            "- Order each list by relevance, strongest first.\n"
-            "- Prefer entries with direct skill overlap, domain similarity, measurable impact, recent work, and seniority match.\n"
+            + _SELECTION_RANKING_RULES +
             "- Do not rewrite content here. Only select indices.\n"
             "- No prose outside the structured output."
         ),
@@ -821,17 +864,11 @@ def _professional_sans_policy(state_or_id: Any, section: str) -> str:
     return prefix + instruction
 
 
-async def summary_skills_node(
-    state: ResumeGraphState, db: AsyncSession, gen_id: str
-) -> dict[str, Any]:
-    await log_progress(
-        db,
-        gen_id,
-        "summary_skills",
-        "Generating tailored summary & categorizing skills...",
-    )
+_SUMMARY_FORMAT_RULE = "- summary: exactly 1-2 sentences, maximum 30 words, no first person, no fluff.\n"
 
-    mode = _creativity_mode(state)
+
+def summary_skills_rules(mode: str) -> tuple[str, str]:
+    """(summary_rule, skills_rule) for a creativity mode; shared by summary_skills_node and the own-model brief."""
     skills_fill = (
         "- Fill every category: at least 3 skills per category (Soft Skills 3-4) and 15-22 skills in total, so the section never looks sparse.\n"
         "- Build skills from ALL candidate evidence: profile skills, technologies used in the candidate's projects, and tools named in their experience. "
@@ -857,6 +894,63 @@ async def summary_skills_node(
             "- Write a vivid, varied summary anchored in job priorities; mirror the job's language and foreground its top 2-3 requirements. "
             "You may imply familiarity with job-required tools even when candidate evidence is thin."
         )
+    return summary_rule, skills_rule
+
+
+def postprocess_generated_skills(
+    skills_raw: Any,
+    *,
+    evidence: dict[str, Any],
+    project_names: list[str],
+    job_analysis: dict[str, Any],
+    keywords: list[str],
+    mode: str,
+    template_id: str | None,
+    manifest: dict[str, Any],
+    covered: SkillCovered | None = None,
+) -> tuple[dict[str, list[str]], int, int]:
+    """Normalize -> enrich from candidate evidence -> professional-sans budget -> JD coverage.
+
+    Returns (skills, count before enrichment, count after enrichment). Shared by summary_skills_node and
+    the own-model merge. The server pipeline passes no ``covered`` and gets exactly its original
+    behaviour (exact, case-insensitive JD matching). The own-model merge passes its duplicate rule
+    (aliases, product tokens): JD coverage skips covered skills and covered additions are dropped.
+    """
+    skills = _normalize_skills(skills_raw)
+    written = {k: list(v) for k, v in skills.items()}
+    jd_skills = job_analysis.get("extracted_skills") or []
+    compact = template_id == "professional-sans"
+    job_terms = [*jd_skills, *(job_analysis.get("key_requirements") or []), *(keywords or [])]
+    before = sum(len(v) for v in skills.values())
+    skills = enrich_skills(
+        skills,
+        collect_evidence_skills(evidence, project_names),
+        job_terms,
+        floor_total=14 if compact else 16,
+        max_total=20 if compact else 24,
+        max_categories=manifest.get("max_skills_categories") or 6,
+    )
+    after = sum(len(v) for v in skills.values())
+    if compact:
+        skills = _apply_professional_sans_skill_budget(skills)
+    skills = _ensure_jd_skill_coverage(skills, jd_skills, mode, template_id=template_id, covered=covered)
+    if covered is not None:
+        skills = drop_covered_additions(skills, [s for items in written.values() for s in items], covered)
+    return skills, before, after
+
+
+async def summary_skills_node(
+    state: ResumeGraphState, db: AsyncSession, gen_id: str
+) -> dict[str, Any]:
+    await log_progress(
+        db,
+        gen_id,
+        "summary_skills",
+        "Generating tailored summary & categorizing skills...",
+    )
+
+    mode = _creativity_mode(state)
+    summary_rule, skills_rule = summary_skills_rules(mode)
     sys_prompt, usr_prompt = await get_prompt_config(
         db,
         _prompt_name("summary_skills", mode),
@@ -865,7 +959,7 @@ async def summary_skills_node(
             "TASK: Write a concise targeted summary and categorized skills from candidate material and job analysis.\n"
             "OUTPUT CONTRACT: Return only the structured TailoredSummaryAndSkills object with summary and categories.\n"
             "RULES:\n"
-            "- summary: exactly 1-2 sentences, maximum 30 words, no first person, no fluff.\n"
+            + _SUMMARY_FORMAT_RULE +
             f"{summary_rule}\n"
             f"{skills_rule}\n"
             "- No prose outside the structured output."
@@ -911,31 +1005,22 @@ async def summary_skills_node(
             for c in summary_draft["categories"]
             if isinstance(c, dict) and c.get("category")
         }
-    summary_draft["skills"] = _normalize_skills(skills_dict)
-    jd_skills = (state.get("job_analysis") or {}).get("extracted_skills") or []
     tmpl_id = (state.get("template_manifest") or {}).get("id") or state.get("template_id")
-    manifest = state.get("template_manifest") or {}
-    compact = tmpl_id == "professional-sans"
-    job_analysis = state.get("job_analysis") or {}
-    job_terms = [*jd_skills, *(job_analysis.get("key_requirements") or []), *(state.get("keywords") or [])]
-    before = sum(len(v) for v in summary_draft["skills"].values())
-    summary_draft["skills"] = enrich_skills(
-        summary_draft["skills"],
-        collect_evidence_skills(evidence, [p.get("name", "") for p in state.get("projects") or []]),
-        job_terms,
-        floor_total=14 if compact else 16,
-        max_total=20 if compact else 24,
-        max_categories=manifest.get("max_skills_categories") or 6,
+    summary_draft["skills"], before, after = postprocess_generated_skills(
+        skills_dict,
+        evidence=evidence,
+        project_names=[p.get("name", "") for p in state.get("projects") or []],
+        job_analysis=state.get("job_analysis") or {},
+        keywords=state.get("keywords") or [],
+        mode=mode,
+        template_id=tmpl_id,
+        manifest=state.get("template_manifest") or {},
     )
-    after = sum(len(v) for v in summary_draft["skills"].values())
     if after > before:
         await log_progress(
             db, gen_id, "summary_skills",
             f"Skills: added {after - before} skill(s) from your projects and experience ({before} -> {after} across {len(summary_draft['skills'])} categories).",
         )
-    if tmpl_id == "professional-sans":
-        summary_draft["skills"] = _apply_professional_sans_skill_budget(summary_draft["skills"])
-    summary_draft["skills"] = _ensure_jd_skill_coverage(summary_draft["skills"], jd_skills, mode, template_id=tmpl_id)
     return {"summary_draft": summary_draft}
 
 
@@ -1020,7 +1105,8 @@ def _density_summary(bullets: list[str]) -> str:
     )
 
 
-def experience_writer_default_prompts(mode: str) -> tuple[str, str]:
+def experience_writer_rules(mode: str) -> str:
+    """Editorial rules for experience bullets ("- " lines, no braces); shared with the own-model brief."""
     if mode == "proper":
         truth_rule = "- Do not invent employers, products, metrics, users, revenue, or credentials. You may reframe existing evidence.\n"
         variety_rule = "- Emphasize job-relevant technologies, scope, outcomes, collaboration, ownership, and measurable impact.\n"
@@ -1037,23 +1123,30 @@ def experience_writer_default_prompts(mode: str) -> tuple[str, str]:
             "Foreground exact JD keywords and technologies.\n"
         )
         metric_rules = _LARP_METRIC_RULES
+    return (
+        "- Preserve role, organization, dates, and location unless input is missing.\n"
+        "- Each entry must contain 2-3 bullet_points (hard limit: never more than 3), limited by available source material.\n"
+        "- Start every bullet with a strong past-tense action verb.\n"
+        + variety_rule + truth_rule + metric_rules + _BULLET_STYLE_RULES
+    )
+
+
+def experience_writer_default_prompts(mode: str) -> tuple[str, str]:
     system = (
         "ROLE: Senior technical resume writer.\n"
         "TASK: Rewrite selected experience entries to prove fit for the target job while preserving truth.\n"
         "OUTPUT CONTRACT: Return only the structured TailoredExperienceBatch object with entries. "
         "Return EXACTLY {batch_len} entries in input order.\n"
         "RULES:\n"
-        "- Preserve role, organization, dates, and location unless input is missing.\n"
-        "- Each entry must contain 2-3 bullet_points (hard limit: never more than 3), limited by available source material.\n"
-        "- Start every bullet with a strong past-tense action verb.\n"
-        + variety_rule + truth_rule + metric_rules + _BULLET_STYLE_RULES +
+        + experience_writer_rules(mode) +
         "- No prose outside the structured output."
     )
     user = "INPUT: Job Analysis\n{job_analysis}\n\nINPUT: Experience Entries To Rewrite\n{entries}"
     return system, user
 
 
-def projects_writer_default_prompts(mode: str) -> tuple[str, str]:
+def projects_writer_rules(mode: str) -> str:
+    """Editorial rules for project entries ("- " lines, no braces); shared with the own-model brief."""
     if mode == "proper":
         tech_rule = "- technologies: normalized list of technologies from input plus clearly supported technologies only.\n"
         depth_rule = "- Emphasize architecture, implementation depth, job-relevant tools, measurable performance, users, scale, or impact when supported.\n"
@@ -1068,30 +1161,33 @@ def projects_writer_default_prompts(mode: str) -> tuple[str, str]:
             "that is reserved for Super LARP slot 1 — but do not be afraid to stretch details.\n"
         )
         metric_rules = _LARP_METRIC_RULES
+    return (
+        "- Preserve project name unless spelling cleanup is needed.\n"
+        "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
+        "- description: one concise sentence explaining what the project does and why it matters.\n"
+        + tech_rule +
+        "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
+        + depth_rule + invent_rule + metric_rules + _BULLET_STYLE_RULES
+    )
+
+
+def projects_writer_default_prompts(mode: str) -> tuple[str, str]:
     system = (
         "ROLE: Senior technical resume writer specializing in project sections.\n"
         "TASK: Rewrite selected project entries so they map clearly to target job requirements.\n"
         "OUTPUT CONTRACT: Return only the structured TailoredProjectBatch object with entries. "
         "Return EXACTLY {batch_len} entries in input order.\n"
         "RULES:\n"
-        "- Preserve project name unless spelling cleanup is needed.\n"
-        "- project_summary: 2-4 words describing the project category, e.g. 'API Automation Platform'.\n"
-        "- description: one concise sentence explaining what the project does and why it matters.\n"
-        + tech_rule +
-        "- bullet_points: 2-3 achievement bullets (hard limit: never more than 3), each starting with a strong action verb.\n"
-        + depth_rule + invent_rule + metric_rules + _BULLET_STYLE_RULES +
+        + projects_writer_rules(mode) +
         "- No prose outside the structured output."
     )
     user = "INPUT: Job Analysis\n{job_analysis}\n\nINPUT: Project Entries To Rewrite\n{entries}"
     return system, user
 
 
-def synthetic_project_default_prompts() -> tuple[str, str]:
-    system = (
-        "ROLE: Senior engineer inventing a single hyper-relevant portfolio project for a resume.\n"
-        "TASK: Invent ONE project that mirrors the target job description as closely as possible.\n"
-        "OUTPUT CONTRACT: Return only the structured TailoredProject object.\n"
-        "RULES:\n"
+def synthetic_project_rules() -> str:
+    """Rules for the Super-LARP invented project ("- " lines, no braces); shared with the own-model brief."""
+    return (
         "- Name: realistic, specific, not a copy of the job title (e.g. 'Realtime Fraud Scoring API').\n"
         "- project_summary: 2-4 words, e.g. 'ML Scoring Service'.\n"
         "- description: one sentence on what it does and why it matters for this job.\n"
@@ -1100,6 +1196,16 @@ def synthetic_project_default_prompts() -> tuple[str, str]:
         "each embedding JD keywords and plausible architecture.\n"
         + _LARP_METRIC_RULES + _BULLET_STYLE_RULES +
         "- Keep it believable as a personal project; no employer claims, no awards.\n"
+    )
+
+
+def synthetic_project_default_prompts() -> tuple[str, str]:
+    system = (
+        "ROLE: Senior engineer inventing a single hyper-relevant portfolio project for a resume.\n"
+        "TASK: Invent ONE project that mirrors the target job description as closely as possible.\n"
+        "OUTPUT CONTRACT: Return only the structured TailoredProject object.\n"
+        "RULES:\n"
+        + synthetic_project_rules() +
         "- No prose outside the structured output."
     )
     user = "INPUT: Job Analysis\n{job_analysis}\n\nInvent the single most job-aligned project for this role."
@@ -1368,6 +1474,21 @@ async def project_node(
     return {"projects_draft": tailored_projs}
 
 
+_EXTRACURRICULAR_RULES = (
+    "- Each description must be exactly one sentence.\n"
+    "- Start with a strong action verb when possible.\n"
+    "- Include organization, event, award, scope, or measurable impact if present in input.\n"
+    "- Do not output section headers such as Achievements, Activities, Awards, or Honors.\n"
+    "- Do not copy raw title verbatim; rewrite into natural resume language.\n"
+    "- Do not invent rankings, attendance, dates, awards, or impact.\n"
+    "- Keep sentence concise enough for one resume bullet.\n"
+)
+EXTRACURRICULAR_HEADER_TITLES = frozenset({
+    "achievements", "activities", "extra-curricular",
+    "extracurricular", "awards", "honors",
+})
+
+
 async def extracurricular_node(
     state: ResumeGraphState, db: AsyncSession, gen_id: str
 ) -> dict[str, Any]:
@@ -1383,10 +1504,7 @@ async def extracurricular_node(
     # Filter out entries that are just section headers (e.g. "Achievements")
     valid_entries = [
         ex for ex in extracurriculars
-        if ex.get("title", "").strip().lower() not in {
-            "achievements", "activities", "extra-curricular",
-            "extracurricular", "awards", "honors",
-        }
+        if ex.get("title", "").strip().lower() not in EXTRACURRICULAR_HEADER_TITLES
     ]
 
     if not valid_entries:
@@ -1418,13 +1536,7 @@ async def extracurricular_node(
             "TASK: Convert each input entry into one polished resume sentence.\n"
             "OUTPUT CONTRACT: Return only the structured TailoredExtracurricularBatch object with entries. Return EXACTLY {batch_len} entries in input order.\n"
             "RULES:\n"
-            "- Each description must be exactly one sentence.\n"
-            "- Start with a strong action verb when possible.\n"
-            "- Include organization, event, award, scope, or measurable impact if present in input.\n"
-            "- Do not output section headers such as Achievements, Activities, Awards, or Honors.\n"
-            "- Do not copy raw title verbatim; rewrite into natural resume language.\n"
-            "- Do not invent rankings, attendance, dates, awards, or impact.\n"
-            "- Keep sentence concise enough for one resume bullet.\n"
+            + _EXTRACURRICULAR_RULES +
             "- No prose outside the structured output."
         ),
         default_user=(
@@ -1454,6 +1566,38 @@ async def extracurricular_node(
 
     await log_progress(db, gen_id, "extracurricular_writer", "Finished tailoring extracurricular entries.")
     return {"extracurriculars_draft": tailored}
+
+
+def clamp_assembled_skills(skills: Any, manifest: dict[str, Any]) -> dict[str, list[str]]:
+    """Final skills clamp at assembly: category limit from the manifest, professional-sans item cap."""
+    max_skills_cat = manifest.get("max_skills_categories")
+    skills_assembled = _normalize_skills(skills)
+    if max_skills_cat and len(skills_assembled) > max_skills_cat:
+        skills_assembled = {k: v for k, v in list(skills_assembled.items())[:max_skills_cat]}
+    if manifest.get("id") == "professional-sans":
+        total_items = sum(len(v) for v in skills_assembled.values())
+        if total_items > 22:
+            capped_skills: dict[str, list[str]] = {}
+            for cat, items in skills_assembled.items():
+                capped_skills[cat] = items[:max(1, 20 // len(skills_assembled))]
+            skills_assembled = capped_skills
+    return skills_assembled
+
+
+def map_education(education: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Education entries exactly as assembly_node maps them (rendered as-is)."""
+    return [
+        {
+            "institution": edu.get("institution"),
+            "degree": edu.get("degree"),
+            "location": edu.get("location"),
+            "start_date": edu.get("start_date"),
+            "end_date": edu.get("end_date"),
+            "gpa": edu.get("gpa"),
+            "coursework": edu.get("coursework") or [],
+        }
+        for edu in education or []
+    ]
 
 
 async def assembly_node(
@@ -1491,35 +1635,13 @@ async def assembly_node(
             proj["bullet_points"] = proj["bullet_points"][:max_proj_bullets]
 
     # Map education directly
-    education = []
-    for edu in state["education"]:
-        education.append(
-            {
-                "institution": edu.get("institution"),
-                "degree": edu.get("degree"),
-                "location": edu.get("location"),
-                "start_date": edu.get("start_date"),
-                "end_date": edu.get("end_date"),
-                "gpa": edu.get("gpa"),
-                "coursework": edu.get("coursework") or [],
-            }
-        )
+    education = map_education(state["education"])
 
     # Map extracurriculars — use LLM-tailored descriptive sentences.
     extracurriculars = state.get("extracurriculars_draft") or []
 
     manifest = state.get("template_manifest") or {}
-    max_skills_cat = manifest.get("max_skills_categories")
-    skills_assembled = _normalize_skills(summary_draft.get("skills"))
-    if max_skills_cat and len(skills_assembled) > max_skills_cat:
-        skills_assembled = {k: v for k, v in list(skills_assembled.items())[:max_skills_cat]}
-    if manifest.get("id") == "professional-sans":
-        total_items = sum(len(v) for v in skills_assembled.values())
-        if total_items > 22:
-            capped_skills: dict[str, list[str]] = {}
-            for cat, items in skills_assembled.items():
-                capped_skills[cat] = items[:max(1, 20 // len(skills_assembled))]
-            skills_assembled = capped_skills
+    skills_assembled = clamp_assembled_skills(summary_draft.get("skills"), manifest)
 
     tailored_resume = {
         "summary": summary_draft.get("summary"),
@@ -1588,7 +1710,7 @@ async def render_node(
         html_rendered = TemplateRegistryService.render_template(
             template_id, {**render_context, "font_size": font_size}
         )
-        doc = HTML(string=html_rendered, base_url=font_base_url).render()
+        doc = HTML(string=html_rendered, base_url=font_base_url, url_fetcher=safe_url_fetcher).render()
         pages = len(doc.pages)
         margin_mm = float(template_manifest.get("page_margin_mm", 15.0))
         has_h_overflow = check_horizontal_overflow(doc, margin_mm)
@@ -1635,18 +1757,20 @@ async def render_node(
         html_rendered = TemplateRegistryService.render_template(
             template_id, {**render_context, "font_size": best_font_size}
         )
-        best_doc = HTML(string=html_rendered, base_url=font_base_url).render()
+        best_doc = HTML(string=html_rendered, base_url=font_base_url, url_fetcher=safe_url_fetcher).render()
         best_pdf_bytes = best_doc.write_pdf()
         best_page_count = len(best_doc.pages)
 
     # Force GC to reclaim WeasyPrint/Cairo objects from discarded render iterations
     gc.collect()
 
+    page_fill_percent = _page_fill_percent(best_doc, template_manifest.get("page_margin_mm", 15.0))
     await log_progress(
         db,
         gen_id,
         "renderer",
-        f"Render successful: font_size={best_font_size:.2f}pt, page_count={best_page_count}",
+        f"Render successful: font_size={best_font_size:.2f}pt, page_count={best_page_count}"
+        + (f", page fill={page_fill_percent:.1f}%" if page_fill_percent is not None else ""),
     )
 
     # Detect orphans
@@ -1709,7 +1833,16 @@ async def render_node(
         "orphans": orphans if orphans else None,
         "fits_target": fit_result.fits_target,
         "has_horizontal_overflow": fit_result.has_horizontal_overflow,
+        "page_fill_percent": page_fill_percent,
     }
+
+
+def _page_fill_percent(doc: Any, page_margin_mm: float) -> float | None:
+    """Page-1 fill of the usable area as a percentage (one decimal), None when it cannot be measured."""
+    try:
+        return round(measure_page_fill(doc, float(page_margin_mm)) * 100, 1)
+    except Exception:
+        return None
 
 
 # ── Layout guard: no bullet may be saved on 3+ lines ──────────────────────────
@@ -1789,11 +1922,112 @@ def _trim_bullet(text: str, max_visible: int) -> str:
         while words and _visible_len(" ".join(words)) > max_visible:
             words.pop()
         out = _tidy_trimmed(" ".join(words))
+    # Word and clause cuts assume space-separated words. Unspaced scripts (CJK) and long tokens (URLs)
+    # leave nothing or a stub: cut at a script-aware boundary instead.
+    if _needs_unicode_cut(text) and _visible_len(out) < max_visible * 0.6:
+        cut = unicode_cut(text, max_visible)
+        if _visible_len(cut) > _visible_len(out):
+            out = cut
     return out
 
 
-def _render_pdf_at(state: ResumeGraphState, resume: dict[str, Any], font_size: float) -> tuple[bytes, int, list[dict[str, Any]]]:
-    """Render at a fixed font size (no re-fit): (pdf bytes, page count, detector findings)."""
+_BREAK_PUNCT = set(",.;:!?)]}/-–—、。，．；：！？）」』】〉》")
+_LONG_WORD = re.compile(r"[^\s]{30,}")
+
+
+def _is_wide(ch: str) -> bool:
+    """East Asian wide/fullwidth characters: each one is a line-break opportunity and ~1em wide."""
+    return unicodedata.east_asian_width(ch) in ("W", "F")
+
+
+def _attaches_to_previous(ch: str) -> bool:
+    """True for code points that must stay with the previous character (same grapheme cluster)."""
+    cp = ord(ch)
+    return (
+        unicodedata.combining(ch) != 0
+        or unicodedata.category(ch) in ("Mn", "Me", "Mc")
+        or 0xFE00 <= cp <= 0xFE0F or 0xE0100 <= cp <= 0xE01EF  # variation selectors
+        or 0x1F3FB <= cp <= 0x1F3FF  # emoji skin-tone modifiers
+        or cp == 0x200D
+    )
+
+
+def _needs_unicode_cut(text: str) -> bool:
+    plain = text.replace("**", "")
+    return any(_is_wide(c) for c in plain) or bool(_LONG_WORD.search(plain))
+
+
+def unicode_cut(text: str, max_visible: int) -> str:
+    """Longest prefix of ``text`` with at most ``max_visible`` visible characters (``**`` not counted).
+
+    Cuts at a line-break opportunity when one is near the limit (a space, punctuation, or either side of
+    a CJK character), otherwise at a grapheme boundary (never between a base character and its
+    combining marks or modifiers). Never cuts inside a ``**bold**`` pair: the cut moves before the pair.
+    Only when the text opens with a bold span longer than the limit (no other non-empty cut exists) is
+    the pair closed at the cut, so the markers stay balanced. Always terminates and always returns at
+    most ``max_visible`` visible chars.
+    """
+    max_visible = max(int(max_visible), 0)
+    if _visible_len(text) <= max_visible:
+        return text
+    points: list[tuple[int, int, bool]] = []  # (index into text, visible chars before, inside bold)
+    in_bold, vis, i, n = False, 0, 0, len(text)
+    while i < n:
+        points.append((i, vis, in_bold))
+        if text.startswith("**", i):
+            in_bold = not in_bold
+            i += 2
+            continue
+        vis += 1
+        i += 1
+    points.append((n, vis, in_bold))
+    plain = text.replace("**", "")
+
+    def visible_before(v: int) -> str:
+        return plain[v - 1] if v > 0 else ""
+
+    def visible_next(v: int) -> str:
+        return plain[v] if v < len(plain) else ""
+
+    def grapheme_ok(v: int) -> bool:
+        nxt, prev = visible_next(v), visible_before(v)
+        return not (nxt and _attaches_to_previous(nxt)) and prev != "\u200d"
+
+    def good_break(v: int) -> bool:
+        prev, nxt = visible_before(v), visible_next(v)
+        return (
+            prev.isspace() or nxt.isspace() or prev in _BREAK_PUNCT
+            or (prev and _is_wide(prev)) or (nxt and _is_wide(nxt))
+        )
+
+    fitting = [p for p in points if p[1] <= max_visible and grapheme_ok(p[1])]
+    outside = [p for p in fitting if not p[2]]
+    window = max(4, min(12, max_visible // 8))
+
+    def pick(cands: list[tuple[int, int, bool]]) -> tuple[int, int, bool] | None:
+        if not cands:
+            return None
+        top = max(p[1] for p in cands)
+        good = [p for p in cands if p[1] >= top - window and good_break(p[1])]
+        return max(good or cands, key=lambda p: (p[1], p[0]))
+
+    choice = pick(outside)
+    if choice is None or choice[1] == 0:
+        inside = pick([p for p in fitting if p[2]])
+        if inside is not None and inside[1] > 0:
+            out = text[: inside[0]].rstrip() + "**"
+            if out.endswith("****"):
+                out = out[:-4]
+            return out.rstrip(" ,;:-–—、，；：")
+    if choice is None:
+        return ""
+    return text[: choice[0]].rstrip().rstrip(" ,;:-–—、，；：")
+
+
+def _render_measured_at(
+    state: ResumeGraphState, resume: dict[str, Any], font_size: float
+) -> tuple[bytes, int, list[dict[str, Any]], float | None]:
+    """Render at a fixed font size (no re-fit): (pdf bytes, page count, detector findings, page fill %)."""
     from weasyprint import HTML
 
     manifest = state["template_manifest"]
@@ -1808,12 +2042,25 @@ def _render_pdf_at(state: ResumeGraphState, resume: dict[str, Any], font_size: f
             "section_order": state.get("section_order"),
         },
     )
-    doc = HTML(string=html, base_url=str(settings.TEMPLATES_DIR / template_id)).render()
+    doc = HTML(
+        string=html, base_url=str(settings.TEMPLATES_DIR / template_id), url_fetcher=safe_url_fetcher
+    ).render()
     try:
-        return doc.write_pdf(), len(doc.pages), detect_orphans_in_weasyprint(doc)
+        return (
+            doc.write_pdf(),
+            len(doc.pages),
+            detect_orphans_in_weasyprint(doc),
+            _page_fill_percent(doc, manifest.get("page_margin_mm", 15)),
+        )
     finally:
         del doc
         gc.collect()
+
+
+def _render_pdf_at(state: ResumeGraphState, resume: dict[str, Any], font_size: float) -> tuple[bytes, int, list[dict[str, Any]]]:
+    """Render at a fixed font size (no re-fit): (pdf bytes, page count, detector findings)."""
+    pdf_bytes, pages, found, _ = _render_measured_at(state, resume, font_size)
+    return pdf_bytes, pages, found
 
 
 def _resume_bullet_ref(resume: dict[str, Any], finding: dict[str, Any]) -> tuple[list, int, str] | None:
@@ -1832,67 +2079,172 @@ def _resume_bullet_ref(resume: dict[str, Any], finding: dict[str, Any]) -> tuple
         return None
 
 
+@dataclass
+class OversizeTrimResult:
+    """Outcome of trim_oversize_bullets. ``rendered`` is False when nothing was re-rendered."""
+
+    resume: dict[str, Any]
+    rendered: bool = False
+    pdf_bytes: bytes = b""
+    page_count: int = 0
+    findings: list[dict[str, Any]] = field(default_factory=list)
+    page_fill_percent: float | None = None
+    trimmed: dict[tuple, tuple[str, str]] = field(default_factory=dict)
+    remaining_oversize: list[dict[str, Any]] = field(default_factory=list)
+    error: Exception | None = None
+    hard_truncated: set[tuple] = field(default_factory=set)
+
+    @property
+    def chars_removed(self) -> int:
+        return sum(_visible_len(a) - _visible_len(b) for a, b in self.trimmed.values())
+
+
+# Last-resort hard truncation (own-model finalize): successive caps in rendered lines' worth of
+# characters. The last one is under a single line, so the loop always ends with every bullet on <= 2.
+HARD_TRUNCATE_LINE_FACTORS = (1.7, 1.4, 1.0, 0.8)
+
+
+def _finding_chars_per_line(finding: dict[str, Any], text: str) -> float:
+    cpl = finding.get("charsPerLine")
+    if isinstance(cpl, (int, float)) and cpl > 0:
+        return float(cpl)
+    target = finding.get("targetCharsMax")
+    if isinstance(target, (int, float)) and target > 0:
+        return float(target) / REPAIR_TARGET_LINES_MAX
+    lines = finding.get("renderedLines") or 3
+    return _visible_len(text) / max(float(lines), 1.0)
+
+
+def trim_oversize_bullets(
+    resume_in: dict[str, Any],
+    oversize: list[dict[str, Any]],
+    render: Callable[[dict[str, Any]], tuple[bytes, int, list[dict[str, Any]], float | None]],
+    *,
+    hard_truncate: bool = False,
+) -> OversizeTrimResult:
+    """Deterministic layout guard: trim every bullet the render shows on 3+ lines, re-render, repeat.
+
+    ``render(resume)`` renders at the final (fixed) font size and returns (pdf bytes, page count,
+    detector findings, page fill %). The input resume is not mutated. Shared by finalize_layout_node
+    (server pipeline) and the own-model finalize step so both apply the same trimming.
+
+    With ``hard_truncate`` (own-model finalize), bullets still on 3+ lines after the grammatical trims
+    are cut to HARD_TRUNCATE_LINE_FACTORS x their chars-per-line at a safe boundary (``unicode_cut``),
+    re-rendering after each step; the last factor is below one line, so the loop is bounded and ends
+    verified unless measurement itself is wrong.
+    """
+    resume = copy.deepcopy(resume_in)
+    result = OversizeTrimResult(resume=resume)
+    if not oversize:
+        return result
+    shrink = 1.0
+    current = oversize
+
+    def replace(finding: dict[str, Any], make: Callable[[str], str]) -> bool:
+        ref = _resume_bullet_ref(resume, finding)
+        if ref is None:
+            return False
+        container, index, key = ref
+        try:
+            original = container[index][key] if key else container[index]
+        except (IndexError, KeyError, TypeError):
+            return False
+        shorter = make(original)
+        if not shorter or shorter == original:
+            return False
+        if key:
+            container[index][key] = shorter
+        else:
+            container[index] = shorter
+        ident = (finding.get("section"), finding.get("entry_idx"), finding.get("bullet_idx"))
+        result.trimmed[ident] = (result.trimmed.get(ident, (original, shorter))[0], shorter)
+        return True
+
+    def rerender() -> bool:
+        try:
+            pdf_bytes, pages, found, fill = render(resume)
+        except Exception as exc:
+            result.error = exc
+            return False
+        result.rendered = True
+        result.pdf_bytes, result.page_count, result.findings, result.page_fill_percent = pdf_bytes, pages, found, fill
+        return True
+
+    for _ in range(FINAL_TRIM_MAX_ITER):
+        for finding in current:
+            limit_base = finding.get("targetCharsMax")
+            replace(finding, lambda t, b=limit_base: _trim_bullet(t, int((b or _visible_len(t)) * shrink)))
+        if not rerender():
+            return result
+        current = [o for o in result.findings if o.get("fix_type") == "oversize"]
+        if not current:
+            break
+        shrink *= 0.93
+
+    if hard_truncate and current:
+        for factor in HARD_TRUNCATE_LINE_FACTORS:
+            changed = False
+            for finding in current:
+                ident = (finding.get("section"), finding.get("entry_idx"), finding.get("bullet_idx"))
+
+                def cut(t: str, f: dict[str, Any] = finding) -> str:
+                    return unicode_cut(t, int(_finding_chars_per_line(f, t) * factor))
+
+                if replace(finding, cut):
+                    result.hard_truncated.add(ident)
+                    changed = True
+            if not changed:
+                continue
+            if not rerender():
+                return result
+            current = [o for o in result.findings if o.get("fix_type") == "oversize"]
+            if not current:
+                break
+
+    result.remaining_oversize = current
+    return result
+
+
 async def finalize_layout_node(state: ResumeGraphState, db: AsyncSession, gen_id: str) -> dict[str, Any]:
     oversize = [o for o in (state.get("orphans") or []) if o.get("fix_type") == "oversize"]
     resume_in = state.get("tailored_resume")
     if not oversize or not resume_in:
         return {}
 
-    resume = copy.deepcopy(resume_in)
     font_size = state.get("font_size") or state["template_manifest"].get("max_font_size", 10.0)
-    shrink = 1.0
-    trimmed: dict[tuple, tuple[str, str]] = {}
-    pdf_bytes, pages, found = b"", state.get("page_count", 1), oversize
-    current = oversize
+    outcome = trim_oversize_bullets(resume_in, oversize, lambda r: _render_measured_at(state, r, font_size))
+    if outcome.error is not None:
+        await log_progress(
+            db, gen_id, "renderer", f"Layout guard could not re-render ({outcome.error}); keeping previous render.", "warning"
+        )
+        return {}
 
-    for _ in range(FINAL_TRIM_MAX_ITER):
-        for finding in current:
-            ref = _resume_bullet_ref(resume, finding)
-            if ref is None:
-                continue
-            container, index, key = ref
-            original = container[index][key] if key else container[index]
-            limit = int((finding.get("targetCharsMax") or _visible_len(original)) * shrink)
-            shorter = _trim_bullet(original, limit)
-            if shorter and shorter != original:
-                if key:
-                    container[index][key] = shorter
-                else:
-                    container[index] = shorter
-                ident = (finding.get("section"), finding.get("entry_idx"), finding.get("bullet_idx"))
-                trimmed[ident] = (trimmed.get(ident, (original, shorter))[0], shorter)
-        try:
-            pdf_bytes, pages, found = _render_pdf_at(state, resume, font_size)
-        except Exception as exc:
-            await log_progress(db, gen_id, "renderer", f"Layout guard could not re-render ({exc}); keeping previous render.", "warning")
-            return {}
-        current = [o for o in found if o.get("fix_type") == "oversize"]
-        if not current:
-            break
-        shrink *= 0.93
-
-    if current:
+    if outcome.remaining_oversize:
         await log_progress(
             db, gen_id, "renderer",
-            f"Layout guard: {len(current)} bullet(s) still render on 3+ lines after trimming.",
+            f"Layout guard: {len(outcome.remaining_oversize)} bullet(s) still render on 3+ lines after trimming.",
             "warning",
         )
     await log_progress(
         db, gen_id, "renderer",
-        f"Layout guard: trimmed {len(trimmed)} bullet(s) that wrapped onto 3+ lines "
-        f"(removed {sum(_visible_len(a) - _visible_len(b) for a, b in trimmed.values())} characters).",
+        f"Layout guard: trimmed {len(outcome.trimmed)} bullet(s) that wrapped onto 3+ lines "
+        f"(removed {outcome.chars_removed} characters).",
         "warning",
     )
-    remaining = [o for o in found if o.get("fix_type") == "expand"]
-    return {
+    resume = outcome.resume
+    remaining = [o for o in outcome.findings if o.get("fix_type") == "expand"]
+    out = {
         "tailored_resume": resume,
-        "pdf_bytes": pdf_bytes,
-        "page_count": pages,
+        "pdf_bytes": outcome.pdf_bytes,
+        "page_count": outcome.page_count,
         "markdown": build_resume_markdown(
             profile=state["profile"], resume=resume, section_order=state.get("section_order")
         ),
         "orphans": remaining or None,
     }
+    if outcome.page_fill_percent is not None:
+        out["page_fill_percent"] = outcome.page_fill_percent
+    return out
 
 
 async def content_reduction_node(
@@ -2306,7 +2658,9 @@ def _render_for_verification(
     )
     if not html:
         raise _VerifyUnavailable("verification render is empty")
-    doc = _VerifyHTML(string=html, base_url=str(settings.TEMPLATES_DIR / template_id)).render()
+    doc = _VerifyHTML(
+        string=html, base_url=str(settings.TEMPLATES_DIR / template_id), url_fetcher=safe_url_fetcher
+    ).render()
     try:
         return len(doc.pages), detect_orphans_in_weasyprint(doc)
     finally:

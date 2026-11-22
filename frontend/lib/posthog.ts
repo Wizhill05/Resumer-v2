@@ -21,7 +21,7 @@ export function analyticsUrl(value: string): string {
 }
 
 export function privateAnalyticsPage(pathname: string): boolean {
-  return /^\/(support|admin|dashboard|try|profile|onboarding|oauth|account)(\/|$)/.test(pathname)
+  return /^\/(support|admin|dashboard|try|profile|onboarding|oauth|account|connect)(\/|$)/.test(pathname)
 }
 
 function sanitizeAnalyticsProperties(properties: object) {

@@ -114,6 +114,18 @@ export function ConnectClient({ mcpUrl }: ConnectClientProps) {
           </p>
         </section>
 
+        <section aria-labelledby="own-model-heading" className="border-t border-zinc-200 py-8 dark:border-zinc-800">
+          <h2 id="own-model-heading" className="text-sm font-bold">Let your agent&apos;s model write the résumé</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+            By default Résumer&apos;s AI writes résumés your agent asks for, and each one counts toward your daily
+            limit. You can switch so your agent&apos;s own model writes the text instead, while Résumer still fills
+            in your real history, fits everything on one page and checks every line. Those builds don&apos;t count
+            toward the daily limit. Ask your agent to switch and open the confirmation link it gives you, or change
+            it on your{" "}
+            <Link href="/account" className="font-bold underline underline-offset-4 hover:text-[#ff4e26]">account page</Link>.
+          </p>
+        </section>
+
         {/* Small print at the very end of the page - what "agent" means here. */}
         <section aria-labelledby="agent-meaning-heading" className="border-t border-zinc-200 py-8 dark:border-zinc-800">
           <h2 id="agent-meaning-heading" className="text-sm font-bold">What “agent” means here</h2>

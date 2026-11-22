@@ -7,10 +7,11 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from jose import JWTError, jwt
+from jose import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.auth import decode_api_token
 from src.core.config import settings
 from src.models.oauth import OAuthClient, OAuthAuthorizationCode, OAuthRefreshToken
 from src.models.user import User
@@ -73,11 +74,7 @@ def create_oauth_access_token(
 
 def decode_oauth_token(token: str) -> dict | None:
     """Decode and validate an OAuth access token."""
-    try:
-        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-        return payload
-    except JWTError:
-        return None
+    return decode_api_token(token)
 
 
 def get_oauth_metadata(base_url: str) -> dict:

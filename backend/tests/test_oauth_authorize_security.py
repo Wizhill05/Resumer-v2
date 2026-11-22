@@ -7,6 +7,7 @@ import base64
 import hashlib
 import sqlite3
 import uuid
+from time import time
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -90,7 +91,60 @@ def _get_params(client_id: str, redirect_uri: str, **extra) -> dict:
 
 def _signed(user: User) -> str:
     # Same shape as the frontend's backend JWT: `sub` is the user id (required once lookups are id-based).
-    return jwt.encode({"sub": str(user.id), "email": user.email}, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(
+        {"sub": str(user.id), "email": user.email, "provider": "google"},
+        settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM,
+    )
+
+
+@pytest.mark.parametrize("audience", [{}, {"aud": "resumer-oauth-authorize"}])
+async def test_handoff_authorizes_by_subject_and_cookie_expires_with_token(client, async_db, audience):
+    authorize = "https://test/oauth/authorize"
+    user = await _make_user(async_db, "new-address@example.com")
+    old_email_owner = await _make_user(async_db, "old-address@example.com")
+    now = int(time())
+    token = jwt.encode(
+        {"sub": str(user.id), "email": old_email_owner.email, "token_use": "oauth_handoff",
+         "iat": now - 267, "exp": now + 33, **audience},
+        settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM,
+    )
+    cid = await _make_client(async_db, [GOOD])
+    consent = await client.get(authorize, params=_get_params(cid, GOOD, token=token))
+    assert consent.status_code == 200
+    assert user.email in consent.text
+    assert consent.headers["cache-control"] == "no-store"
+    assert consent.headers["referrer-policy"] == "no-referrer"
+    cookie = consent.headers["set-cookie"]
+    assert 0 < int(cookie.partition("Max-Age=")[2].split(";")[0]) <= 33
+    assert (await client.get(authorize, params=_get_params(cid, GOOD))).status_code == 200
+    assert (await client.post(authorize, data=_form(cid, GOOD))).status_code == 302
+    client.cookies.clear()
+    assert (await client.post(authorize, data=_form(cid, GOOD, token=token))).status_code == 302
+    codes = (await async_db.scalars(select(OAuthAuthorizationCode))).all()
+    assert [str(code.user_id) for code in codes] == [str(user.id), str(user.id)]
+
+
+@pytest.mark.parametrize("claims", [
+    {"token_use": "oauth_handoff", "exp": None},
+    {"token_use": "oauth_handoff", "aud": None},
+    {"token_use": "oauth_handoff", "aud": "other"},
+    {"token_use": "oauth_handoff", "aud": ["resumer-oauth-authorize"]},
+    {"token_use": "oauth_handoff", "aud": "resumer-oauth-authorize", "exp": 1},
+    {"token_use": "oauth_handoff", "aud": "resumer-oauth-authorize", "exp": None},
+    {"aud": "resumer-oauth-authorize"},
+    {"sub": None},
+])
+async def test_authorize_rejects_incomplete_or_mismatched_claims(client, async_db, claims):
+    user = await _make_user(async_db)
+    cid = await _make_client(async_db, [GOOD])
+    payload = {"sub": str(user.id), "email": user.email, "exp": int(time()) + 300, **claims}
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    consent = await client.get("/oauth/authorize", params=_get_params(cid, GOOD, token=token))
+    assert consent.status_code == 302
+    assert "token" not in parse_qs(urlparse(consent.headers["location"]).query)
+    assert "set-cookie" not in consent.headers
+    assert (await client.post("/oauth/authorize", data=_form(cid, GOOD, token=token))).status_code == 401
+    assert await _count(async_db, OAuthAuthorizationCode) == 0
 
 
 # ── The takeover itself ──────────────────────────────────────────────────────

@@ -153,7 +153,14 @@ export function EditorClient({ payload }: Props) {
         let errDetail = "Failed to replace project"
         try {
           const errJson = await res.json()
-          errDetail = errJson.detail || errJson.error || errDetail
+          const detail = errJson.detail
+          // Agent-built résumés answer 409 {code: "client_built_resume", message}: their text was
+          // written by the agent's model, so swapping a project has to happen in the agent too.
+          errDetail =
+            (typeof detail === "string" && detail) ||
+            (detail && typeof detail === "object" && typeof detail.message === "string" && detail.message) ||
+            (typeof errJson.error === "string" && errJson.error) ||
+            errDetail
         } catch {
           const text = await res.text()
           if (text) errDetail = text

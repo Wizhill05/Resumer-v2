@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -9,10 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.file_links import build_resume_file_link
-from src.core.storage import StorageService
-from src.mcp.context import get_current_mcp_user, get_mcp_db
+from src.core.storage import StorageService, generation_artifact_keys
+from src.mcp.context import account_unavailable, get_current_mcp_user, get_mcp_db
 from src.models.generation import Generation
 from src.models.profile import Profile
+from src.models.user import User
 from src.services.template_layout import get_generation_section_order
 from src.services.resume_render import (
     build_resume_markdown,
@@ -21,6 +24,39 @@ from src.services.resume_render import (
     render_resume_html,
 )
 from src.template_registry.service import TemplateRegistryService
+
+
+logger = logging.getLogger(__name__)
+
+
+def _upload_edited_artifacts(
+    storage: StorageService, generation_id: uuid.UUID, pdf: bytes, markdown: bytes, thumbnail: bytes | None,
+) -> list[str]:
+    """Upload the re-rendered files; returns the keys that were written."""
+    written = []
+    pdf_key, md_key, thumb_key = generation_artifact_keys(generation_id)
+    for data, key, content_type in (
+        (pdf, pdf_key, "application/pdf"),
+        (markdown, md_key, "text/markdown"),
+        (thumbnail, thumb_key, "image/webp"),
+    ):
+        if not data:
+            continue
+        try:
+            if storage.upload_bytes(data, key, content_type):
+                written.append(key)
+        except Exception:
+            logger.exception("Could not upload edited artifact %s", key)
+    return written
+
+
+def _remove_artifacts(storage: StorageService, keys: list[str]) -> None:
+    for key in keys:
+        try:
+            if not storage.delete_file(key):
+                logger.warning("Could not remove edited artifact %s", key)
+        except Exception:
+            logger.exception("Could not remove edited artifact %s", key)
 
 
 def _apply_json_patch(target: dict[str, Any], path: str, operation: str, value: Any) -> None:
@@ -155,6 +191,7 @@ async def edit_resume_section_handler(
     async with get_mcp_db() as db:
         res = await db.execute(
             select(Generation).where(Generation.id == gen_uuid, Generation.user_id == user.id)
+            .with_for_update()
         )
         gen = res.scalar_one_or_none()
         if not gen:
@@ -231,6 +268,14 @@ async def preview_resume_handler(generation_id: str) -> dict[str, Any]:
                 "success": False,
                 "error": f"Generation '{generation_id}' not found.",
                 "hint": "Generate a resume first via generate_resume before previewing.",
+            }
+
+        if gen.status != "completed":
+            return {
+                "success": False,
+                "status": gen.status,
+                "error": "This resume must be completed before it can be rendered.",
+                "hint": "Call get_generation_status to check the generation state.",
             }
 
         metadata = gen.render_metadata or {}
@@ -335,8 +380,17 @@ async def render_resume_handler(
                 "hint": "Generate a resume first via generate_resume before rendering changes.",
             }
 
+        if gen.status != "completed":
+            return {
+                "success": False,
+                "status": gen.status,
+                "error": "This resume must be completed before it can be rendered.",
+                "hint": "Call get_generation_status to check the generation state.",
+            }
+
         metadata = dict(gen.render_metadata or {})
         current_revision = metadata.get("editor_revision", 0)
+        edited_at = metadata.get("edited_at")
         if expected_revision is not None and expected_revision != current_revision:
             return {
                 "success": False,
@@ -426,36 +480,65 @@ async def render_resume_handler(
     except Exception:
         pass
 
-    # 4. Upload to Cloudflare R2
-    pdf_key = f"runs/{gen.id}/resume.pdf"
-    md_key = f"runs/{gen.id}/resume.md"
-    thumb_key = f"runs/{gen.id}/thumb.webp"
-
-    storage = StorageService()
-    pdf_uploaded = storage.upload_bytes(pdf_bytes, pdf_key, "application/pdf")
-    storage.upload_bytes(md_text.encode("utf-8"), md_key, "text/markdown")
-    thumb_uploaded = thumb_bytes and storage.upload_bytes(thumb_bytes, thumb_key, "image/webp")
-
-    # 5. Snapshot & update revision
     new_revision = current_revision + 1
+    if gen.inference_source == "client":
+        metadata["profile"] = profile_data
     metadata["font_size"] = effective_font_size
     metadata["page_count"] = page_count
     metadata["fit_warning"] = not fits_target
     metadata["editor_revision"] = new_revision
     metadata["edited_at"] = datetime.now(timezone.utc).isoformat()
 
-    async with get_mcp_db() as db:
-        res = await db.execute(
-            select(Generation).where(Generation.id == gen_uuid, Generation.user_id == user.id)
-        )
-        db_gen = res.scalar_one_or_none()
-        if db_gen:
+    async def _publish() -> dict[str, Any] | None:
+        """Lock, revalidate, upload and commit as one unit (None on success, else the error)."""
+        async with get_mcp_db() as db:
+            # Match draft publication's lock order and hold both locks through upload.
+            owner = await db.get(User, user.id, with_for_update=True)
+            if owner is None or owner.is_pending_deletion:
+                return account_unavailable()
+            res = await db.execute(
+                select(Generation)
+                .where(Generation.id == gen_uuid, Generation.user_id == user.id)
+                .with_for_update()
+            )
+            db_gen = res.scalar_one_or_none()
+            if db_gen is None or db_gen.status != "completed":
+                return {"success": False, "error": "This completed generation is no longer available."}
+
+            saved_metadata = db_gen.render_metadata or {}
+            saved_revision = saved_metadata.get("editor_revision", 0)
+            if saved_revision != current_revision or saved_metadata.get("edited_at") != edited_at:
+                return {
+                    "success": False,
+                    "error_code": "REVISION_CONFLICT",
+                    "error": "The resume changed while it was rendering. Fetch the latest resume and retry.",
+                    "current_revision": saved_revision,
+                }
+
+            storage = StorageService()
+            uploaded = await asyncio.to_thread(
+                _upload_edited_artifacts, storage, gen_uuid, pdf_bytes, md_text.encode("utf-8"), thumb_bytes,
+            )
+            pdf_key, md_key, thumb_key = generation_artifact_keys(gen_uuid)
             db_gen.render_metadata = metadata
-            if pdf_uploaded:
-                db_gen.pdf_storage_key = pdf_key
-            if thumb_uploaded:
-                db_gen.thumb_storage_key = thumb_key
-            await db.commit()
+            # A failed upload leaves the previous revision's object behind; drop the key so downloads
+            # render the saved metadata instead of serving the stale file.
+            db_gen.pdf_storage_key = pdf_key if pdf_key in uploaded else None
+            db_gen.md_storage_key = md_key if md_key in uploaded else None
+            db_gen.thumb_storage_key = thumb_key if thumb_key in uploaded else None
+            try:
+                await db.commit()
+            except Exception:
+                # The row keeps the previous revision; don't leave this render's bytes at its keys.
+                await asyncio.to_thread(_remove_artifacts, storage, uploaded)
+                raise
+        return None
+
+    # Shielded: if the MCP call is cancelled mid-upload, publication still finishes (or cleans up)
+    # with both row locks held, so a concurrent deletion waits instead of being undone.
+    problem = await asyncio.shield(asyncio.ensure_future(_publish()))
+    if problem is not None:
+        return problem
 
     download_url = build_resume_file_link(gen.id)
     role_title = gen.job_title or "Target Role"

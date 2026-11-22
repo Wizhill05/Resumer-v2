@@ -12,11 +12,73 @@ from __future__ import annotations
 
 import gc
 import re
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from src.core.config import settings
 from src.services.font_fit import FontFitResult, find_best_font_size
 from src.template_registry.service import TemplateRegistryService
+
+
+# ── WeasyPrint resource fetching (SSRF guard) ────────────────────────────────
+
+
+def _inside_templates_dir(path: Path) -> bool:
+    root = Path(settings.TEMPLATES_DIR).resolve()
+    try:
+        path.resolve().relative_to(root)
+    except (ValueError, OSError, RuntimeError):
+        return False
+    return True
+
+
+def safe_url_fetcher(url: str, *args: Any, **kwargs: Any) -> Any:
+    """WeasyPrint ``url_fetcher`` that only loads template assets.
+
+    Résumé text can come from users and from MCP clients, so a stray ``<img src="http://...">`` or a
+    CSS ``url()`` must never make the server fetch a network or local file. Allowed: ``data:`` URIs and
+    ``file://`` URLs that resolve inside ``settings.TEMPLATES_DIR`` (fonts, icons). Everything else
+    raises, which WeasyPrint reports as a warning and skips the resource. Pass it to every ``HTML(...)``.
+    """
+    from weasyprint.urls import URLFetcher  # type: ignore[import-untyped]
+
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme == "file":
+        if parts.netloc not in ("", "localhost") or not _inside_templates_dir(Path(unquote(parts.path))):
+            raise ValueError(f"Blocked resource outside the template directory: {url[:200]}")
+    elif scheme != "data":
+        raise ValueError(f"Blocked resource URL scheme {scheme or 'none'!r}: {url[:200]}")
+    return URLFetcher(allowed_protocols=("file", "data"), allow_redirects=False).fetch(url)
+
+
+def render_document_at(
+    *,
+    template_id: str,
+    profile: dict[str, Any],
+    resume: dict[str, Any],
+    font_size: float,
+    page_margin_mm: float,
+    section_order: list[str] | None = None,
+) -> Any:
+    """Render to a laid-out WeasyPrint document at a fixed font size (no PDF written)."""
+    from weasyprint import HTML  # type: ignore[import-untyped]
+
+    html = render_resume_html(
+        template_id=template_id,
+        profile=profile,
+        resume=resume,
+        font_size=font_size,
+        page_margin_mm=page_margin_mm,
+        section_order=section_order,
+    )
+    if html is None:
+        raise ValueError(f"Template '{template_id}' render failed at {font_size}pt.")
+    return HTML(
+        string=html, base_url=str(settings.TEMPLATES_DIR / template_id), url_fetcher=safe_url_fetcher
+    ).render()
 
 
 # ── HTML rendering ─────────────────────────────────────────────────────────────
@@ -75,7 +137,7 @@ def render_resume_pdf(
         raise ValueError(f"Template '{template_id}' not found or render failed.")
 
     font_base_url = str(settings.TEMPLATES_DIR / template_id)
-    doc = HTML(string=html, base_url=font_base_url).render()
+    doc = HTML(string=html, base_url=font_base_url, url_fetcher=safe_url_fetcher).render()
     pdf_bytes = doc.write_pdf()
     page_count = len(doc.pages)
     del doc
@@ -100,6 +162,113 @@ def check_horizontal_overflow(doc: Any, page_margin_mm: float = 14.0) -> bool:
     return False
 
 
+@dataclass
+class FittedRender:
+    """The font-fitted WeasyPrint document plus the fit result (no PDF written yet).
+
+    ``doc`` is the document at ``font_size``: the largest size that fits, or the minimum size when
+    nothing fits. Callers measure it (orphans, page fill) and/or call ``doc.write_pdf()``.
+    """
+
+    doc: Any
+    font_size: float
+    page_count: int
+    fits_target: bool
+    has_horizontal_overflow: bool
+
+    @property
+    def fit_result(self) -> FontFitResult:
+        return FontFitResult(
+            font_size=self.font_size,
+            page_count=self.page_count,
+            fits_target=self.fits_target,
+            has_horizontal_overflow=self.has_horizontal_overflow,
+        )
+
+
+def render_fitted_document(
+    *,
+    template_id: str,
+    profile: dict[str, Any],
+    resume: dict[str, Any],
+    manifest: dict[str, Any],
+    section_order: list[str] | None = None,
+    min_font_size: float | None = None,
+    max_font_size: float | None = None,
+    stats: dict[str, Any] | None = None,
+) -> FittedRender:
+    """Same discrete binary search as render_node, keeping the fitted doc so it is rendered once.
+
+    The minimum-size probe is kept too, so the all-overflow case needs no extra render.
+    ``min_font_size`` / ``max_font_size`` narrow the search inside the manifest range (a caller that
+    already knows a size fits, or does not, searches only the remaining side). ``stats["renders"]`` is
+    incremented once per WeasyPrint layout.
+    """
+    min_fs: float = manifest.get("min_font_size", 8.0)
+    max_fs: float = manifest.get("max_font_size", 12.0)
+    if min_font_size is not None:
+        min_fs = max(min_fs, min_font_size)
+    if max_font_size is not None:
+        max_fs = max(min(max_fs, max_font_size), min_fs)
+    target_pages: int = manifest.get("target_pages", 1)
+    page_margin_mm: float = manifest.get("page_margin_mm", 15.0)
+
+    kept: dict[str, Any] = {"fit": None, "fit_fs": None, "min": None}
+
+    def _count() -> None:
+        if stats is not None:
+            stats["renders"] = stats.get("renders", 0) + 1
+
+    def _page_count(font_size: float) -> tuple[int, bool]:
+        _count()
+        doc = render_document_at(
+            template_id=template_id,
+            profile=profile,
+            resume=resume,
+            font_size=font_size,
+            page_margin_mm=page_margin_mm,
+            section_order=section_order,
+        )
+        pages = len(doc.pages)
+        has_h_overflow = check_horizontal_overflow(doc, page_margin_mm)
+        if pages <= target_pages and not has_h_overflow:
+            kept["fit"], kept["fit_fs"] = doc, font_size  # replaces previous; old doc freed by refcount
+        elif abs(font_size - min_fs) < 1e-6:
+            kept["min"] = doc
+        else:
+            del doc
+        return pages, has_h_overflow
+
+    fit_result = find_best_font_size(
+        render_page_count=_page_count,
+        min_font_size=min_fs,
+        max_font_size=max_fs,
+        target_pages=target_pages,
+    )
+    if fit_result.fits_target:
+        doc = kept["fit"] if kept["fit_fs"] == fit_result.font_size else None
+    else:
+        doc = kept["min"]
+    if doc is None:
+        _count()
+        doc = render_document_at(
+            template_id=template_id,
+            profile=profile,
+            resume=resume,
+            font_size=fit_result.font_size,
+            page_margin_mm=page_margin_mm,
+            section_order=section_order,
+        )
+    kept.clear()
+    return FittedRender(
+        doc=doc,
+        font_size=fit_result.font_size,
+        page_count=len(doc.pages),
+        fits_target=fit_result.fits_target,
+        has_horizontal_overflow=fit_result.has_horizontal_overflow,
+    )
+
+
 def fit_and_render_pdf(
     *,
     template_id: str,
@@ -113,60 +282,114 @@ def fit_and_render_pdf(
     Returns (pdf_bytes, FontFitResult). Uses font_fit.find_best_font_size
     so behavior is identical to pipeline render_node.
     """
-    from weasyprint import HTML  # type: ignore[import-untyped]
-
-    min_fs: float = manifest.get("min_font_size", 8.0)
-    max_fs: float = manifest.get("max_font_size", 12.0)
-    target_pages: int = manifest.get("target_pages", 1)
-    page_margin_mm: float = manifest.get("page_margin_mm", 15.0)
-    font_base_url = str(settings.TEMPLATES_DIR / template_id)
-
-    _last_fit_doc: list = [None]
-
-    def _page_count(font_size: float) -> tuple[int, bool]:
-        html = render_resume_html(
-            template_id=template_id,
-            profile=profile,
-            resume=resume,
-            font_size=font_size,
-            page_margin_mm=page_margin_mm,
-            section_order=section_order,
-        )
-        if html is None:
-            raise ValueError(f"Template '{template_id}' render failed at {font_size}pt.")
-        doc = HTML(string=html, base_url=font_base_url).render()
-        pages = len(doc.pages)
-        has_h_overflow = check_horizontal_overflow(doc, page_margin_mm)
-        if pages <= target_pages and not has_h_overflow:
-            _last_fit_doc[0] = doc  # replaces previous; old doc freed by refcount
-        else:
-            del doc
-        return pages, has_h_overflow
-
-    fit_result = find_best_font_size(
-        render_page_count=_page_count,
-        min_font_size=min_fs,
-        max_font_size=max_fs,
-        target_pages=target_pages,
+    fitted = render_fitted_document(
+        template_id=template_id,
+        profile=profile,
+        resume=resume,
+        manifest=manifest,
+        section_order=section_order,
     )
-
-    best_doc = _last_fit_doc[0]
-    if best_doc is not None:
-        pdf_bytes = best_doc.write_pdf()
-        del best_doc
-    else:
-        # All sizes overflowed — render at min for caller to store + warn
-        pdf_bytes, _ = render_resume_pdf(
-            template_id=template_id,
-            profile=profile,
-            resume=resume,
-            font_size=fit_result.font_size,
-            page_margin_mm=page_margin_mm,
-            section_order=section_order,
-        )
-
+    pdf_bytes = fitted.doc.write_pdf()
+    fit_result = fitted.fit_result
+    fitted.doc = None
     gc.collect()
     return pdf_bytes, fit_result
+
+
+# ── Page fill ─────────────────────────────────────────────────────────────────
+
+_CONTENT_BOX_TYPES = ("LineBox", "BlockReplacedBox", "InlineReplacedBox")
+
+
+def measure_page_fill(doc: Any, page_margin_mm: float = 15.0, page_index: int = 0) -> float:
+    """How much of the page's usable height the content fills, 0..1 (page 1 by default).
+
+    Usable height = page height minus the top and bottom page margins; fill = (bottom of the lowest
+    line or image on the page - top margin) / usable height. The margins are read from the laid-out
+    page box (templates use asymmetric bottom margins); ``page_margin_mm`` is the fallback when the
+    box does not expose them. Raises ValueError when the document has no such page.
+    """
+    pages = getattr(doc, "pages", None) or []
+    if page_index >= len(pages):
+        raise ValueError(f"document has no page {page_index + 1}")
+    page = pages[page_index]
+    page_box = getattr(page, "_page_box", None)
+    if page_box is None:
+        raise ValueError("page has no layout box")
+    fallback_px = page_margin_mm * 96 / 25.4
+    top = getattr(page_box, "margin_top", None)
+    bottom = getattr(page_box, "margin_bottom", None)
+    top = float(top) if isinstance(top, (int, float)) else fallback_px
+    bottom = float(bottom) if isinstance(bottom, (int, float)) else fallback_px
+    usable = float(page.height) - top - bottom
+    if usable <= 0:
+        raise ValueError("page has no usable height")
+    lowest = top
+    for box in page_box.descendants():
+        if type(box).__name__ in _CONTENT_BOX_TYPES:
+            lowest = max(lowest, float(box.position_y) + float(box.margin_height()))
+    return max(0.0, min(1.0, (lowest - top) / usable))
+
+
+def _is_marker(box: Any) -> bool:
+    tag = getattr(box, "element_tag", "") or ""
+    return "marker" in tag.lower() or "marker" in type(box).__name__.lower() or bool(getattr(box, "is_marker", False))
+
+
+def _line_text(box: Any) -> str:
+    if _is_marker(box):
+        return ""
+    if hasattr(box, "text"):
+        return box.text or ""
+    return "".join(_line_text(c) for c in getattr(box, "children", []))
+
+
+def measure_bullet_lines(doc: Any) -> dict[tuple[str, int, int], dict[str, Any]]:
+    """Rendered shape of every addressable bullet (``<li data-section data-entry-idx data-bullet-idx>``).
+
+    Returns {(section, entry_idx, bullet_idx): {lines, first_line_chars, last_line_fill_percent,
+    line_height, line_chars, line_widths, line_texts}} for all bullets, including clean one- and two-line ones (the
+    orphan detector only reports problem bullets). ``line_chars`` are visible characters per rendered
+    line (wrap spaces excluded). A bullet split across pages is counted once with all its lines.
+    """
+    out: dict[tuple[str, int, int], dict[str, Any]] = {}
+    widths: dict[tuple[str, int, int], list[float]] = {}
+    for page in getattr(doc, "pages", None) or []:
+        page_box = getattr(page, "_page_box", None)
+        if page_box is None:
+            continue
+        for block in page_box.descendants():
+            if type(block).__name__ != "BlockBox":
+                continue
+            elem = getattr(block, "element", None)
+            if elem is None or getattr(elem, "tag", None) != "li" or not hasattr(elem, "get"):
+                continue
+            section, entry, bullet = elem.get("data-section"), elem.get("data-entry-idx"), elem.get("data-bullet-idx")
+            if not section or not str(entry or "").isdigit() or not str(bullet or "").isdigit():
+                continue
+            key = (str(section), int(entry), int(bullet))
+            info = out.setdefault(key, {
+                "lines": 0, "first_line_chars": None, "last_line_fill_percent": None, "line_height": None,
+                "line_chars": [], "line_widths": [], "line_texts": [],
+            })
+            for line in block.children:
+                if type(line).__name__ != "LineBox":
+                    continue
+                text = _line_text(line).strip()
+                if not text:
+                    continue
+                info["lines"] += 1
+                if info["first_line_chars"] is None:
+                    info["first_line_chars"] = len(text)
+                    info["line_height"] = float(line.margin_height())
+                widths.setdefault(key, []).append(float(line.width))
+                info["line_chars"].append(len(text))
+                info["line_texts"].append(text)
+                info["line_widths"].append(round(float(line.width), 2))
+    for key, w in widths.items():
+        if len(w) >= 2 and max(w[:-1]) > 0:
+            out[key]["last_line_fill_percent"] = round(w[-1] / max(w[:-1]) * 100, 1)
+    return out
 
 
 # ── Orphan Detection ──────────────────────────────────────────────────────────
@@ -180,11 +403,14 @@ REPAIR_TARGET_LINES_MIN = 1.84
 REPAIR_TARGET_LINES_MAX = 1.95
 
 
-def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
+def detect_orphans_in_weasyprint(doc: Any, *, strict: bool = False) -> list[dict[str, Any]]:
     """Inspect WeasyPrint formatted line boxes to detect awkward single-word terminal line breaks.
 
     Identifies 2-line bullets where the second line has < ORPHAN_FILL_FLOOR (80%) of the first line's width,
     indicating an 'orphan' word or short fragment that wastes vertical space.
+
+    By default a detector failure is logged and reported as "no findings"; ``strict=True`` re-raises it
+    so callers that must not mistake a failure for a clean layout can surface it.
     """
     if not doc or not getattr(doc, "pages", None):
         return []
@@ -420,6 +646,8 @@ def detect_orphans_in_weasyprint(doc: Any) -> list[dict[str, Any]]:
                         ),
                     })
     except Exception as e:
+        if strict:
+            raise
         import logging
         logging.getLogger("resumer.resume_render").warning(f"Error in WeasyPrint orphan detection: {e}")
         return []
@@ -472,7 +700,7 @@ def detect_resume_orphans(
             )
             if html is None:
                 return {"success": False, "error": f"Template '{template_id}' render failed at {font_size}pt."}
-            doc = HTML(string=html, base_url=font_base_url).render()
+            doc = HTML(string=html, base_url=font_base_url, url_fetcher=safe_url_fetcher).render()
             page_count = len(doc.pages)
             has_horizontal_overflow = check_horizontal_overflow(doc, page_margin_mm)
             fits_target = page_count <= target_pages and not has_horizontal_overflow
@@ -492,7 +720,7 @@ def detect_resume_orphans(
                 )
                 if h is None:
                     raise ValueError(f"Template '{template_id}' render failed at {fs}pt.")
-                d = HTML(string=h, base_url=font_base_url).render()
+                d = HTML(string=h, base_url=font_base_url, url_fetcher=safe_url_fetcher).render()
                 p = len(d.pages)
                 has_h = check_horizontal_overflow(d, page_margin_mm)
                 if p <= target_pages and not has_h:
@@ -524,7 +752,7 @@ def detect_resume_orphans(
                     section_order=section_order,
                 )
                 if h is not None:
-                    doc = HTML(string=h, base_url=font_base_url).render()
+                    doc = HTML(string=h, base_url=font_base_url, url_fetcher=safe_url_fetcher).render()
                     has_horizontal_overflow = check_horizontal_overflow(doc, page_margin_mm)
                     if has_horizontal_overflow:
                         fits_target = False

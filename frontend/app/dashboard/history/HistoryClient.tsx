@@ -585,7 +585,9 @@ function GridCard({ run, onDelete, onPreview }: { run: HistoryRun; onDelete: (id
             <FileText size={28} className="text-ink-faint" />
             {failed && <span className="text-xs text-red-400 font-medium">Failed</span>}
             {!completed && !failed && (
-              <span className="text-xs text-amber-500 font-medium">Processing…</span>
+              <span className="text-xs text-amber-500 font-medium">
+                {run.status === "drafting" ? "Your agent is writing…" : "Processing…"}
+              </span>
             )}
           </div>
         )}
@@ -723,7 +725,7 @@ export function HistoryClient() {
   const remaining = Math.max(0, total - runs.length)
   const isRefreshing = isFetching && !isFetchingNextPage
 
-  const hasActive = runs.some((r) => r.status === "pending" || r.status === "in_progress")
+  const hasActive = runs.some((r) => r.status === "pending" || r.status === "in_progress" || r.status === "drafting")
   useEffect(() => {
     if (!hasActive) return
     const timer = setInterval(() => {
@@ -967,6 +969,9 @@ export function HistoryClient() {
                         {run.template_id}
                         {failed && (
                           <><span className="dot-span mx-1 text-ink-faint transition-colors duration-150">·</span><span className="text-red-400 font-medium">Failed</span></>
+                        )}
+                        {run.status === "drafting" && (
+                          <><span className="dot-span mx-1 text-ink-faint transition-colors duration-150">·</span><span className="text-amber-600 font-medium">Your agent is writing</span></>
                         )}
                       </p>
                       <div className="mt-1.5"><JobDescriptionPeek runId={run.id} /></div>
