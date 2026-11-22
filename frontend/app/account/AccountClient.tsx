@@ -9,6 +9,7 @@ import { clearResumePdfCache } from "@/lib/resume-pdf-cache"
 import { DAILY_GENERATION_CAP, useGenerationStats } from "@/components/useGenerationStats"
 import { useIsAdmin } from "@/components/useIsAdmin"
 import { GithubConnectionCard } from "@/components/github/GithubConnectionCard"
+import { AgentModelCard } from "@/components/account/AgentModelCard"
 import { DeleteAccountSection } from "./DeleteAccountSection"
 
 interface AccountClientProps {
@@ -149,7 +150,9 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
             <p className="mt-4 text-xs text-ink-muted">
               {isAdmin
                 ? "Admin account: daily and monthly caps bypassed."
-                : `${DAILY_GENERATION_CAP} free generations per rolling 24 hours.`}
+                : stats?.cap === null
+                  ? "No daily limit on this account."
+                  : `${stats?.cap ?? DAILY_GENERATION_CAP} free generations per rolling 24 hours. Résumés your agent writes with its own model don't count.`}
             </p>
           </section>
 
@@ -191,6 +194,8 @@ export function AccountClient({ name, email, image, provider }: AccountClientPro
             </nav>
           </div>
         </div>
+
+        <AgentModelCard />
 
         <DeleteAccountSection email={email} provider={provider} />
       </div>

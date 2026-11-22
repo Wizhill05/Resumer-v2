@@ -268,16 +268,19 @@ async def run_generation(gen_id: str) -> None:
     try:
         # 1. Fetch + claim the generation. Skip if already terminal.
         async with AsyncSessionLocal() as db:
-            await llm_config_service.load_from_db()
             gen_res = await db.execute(select(Generation).where(Generation.id == gen_uuid))
             gen = gen_res.scalar_one_or_none()
             if not gen:
                 print(f"[job_runner] generation {gen_id} not found")
                 return
+            if gen.inference_source != "server":
+                print(f"[job_runner] generation {gen_id} uses {gen.inference_source} inference; skipping")
+                return
             if gen.status in ("completed", "failed"):
                 print(f"[job_runner] generation {gen_id} already {gen.status}; skipping")
                 return
 
+            await llm_config_service.load_from_db()
             initial_state = await _load_initial_state(db, gen)
             if initial_state is None:
                 async with AsyncSessionLocal() as fail_db:
@@ -334,6 +337,7 @@ async def run_generation(gen_id: str) -> None:
                     "tailored_resume": result.get("tailored_resume"),
                     "font_size": font_size,
                     "page_count": page_count,
+                    "page_fill_percent": result.get("page_fill_percent"),
                     "fit_warning": fit_warning,
                     "has_horizontal_overflow": has_h_overflow,
                     "editor_revision": 0,

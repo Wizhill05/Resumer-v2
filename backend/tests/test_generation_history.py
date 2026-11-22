@@ -35,7 +35,7 @@ from src.api import generation as generation_api
 from src.core.config import settings
 from src.core.database import get_db
 from src.main import app
-from src.models.generation import Generation
+from src.models.generation import Generation, UserCreditOverride, UserRateLimit
 from src.models.user import Base, User
 
 JOB_DESCRIPTION = ("We are hiring a senior engineer to build distributed systems. " * 50)[:3000]
@@ -48,7 +48,7 @@ HEAVY_FIELDS = {
 @pytest.fixture
 async def async_db():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    tables = [User.__table__, Generation.__table__]
+    tables = [User.__table__, Generation.__table__, UserRateLimit.__table__, UserCreditOverride.__table__]
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
     async with sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as session:
@@ -111,6 +111,8 @@ async def test_summary_values(client, async_db):
     await add_gen(async_db, user, created_at=NOW - timedelta(hours=1), company="Newest Co", job_title="Newest")
     await add_gen(async_db, other, created_at=NOW, company="Other Co")
 
+    async_db.add(UserRateLimit(user_id=user.id, request_count=1, reset_at=NOW + timedelta(hours=23)))
+    await async_db.commit()
     month_start = (NOW - timedelta(days=60)).isoformat()
     res = await client.get("/generate/summary", params={"month_start": month_start}, headers=auth(user))
     assert res.status_code == 200
@@ -140,6 +142,8 @@ async def test_summary_empty_user(client, async_db):
     assert res.json() == {
         "total": 0, "usable_total": 0, "latest_created_at": None, "latest_company": None,
         "latest_job_title": None, "used_today": 0, "this_month": 0,
+        "daily_cap": settings.DEFAULT_DAILY_CAP, "monthly_cap": settings.DEFAULT_MONTHLY_CAP,
+        "resets_at": None,
     }
 
 

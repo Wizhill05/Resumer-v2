@@ -5,20 +5,24 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
-from src.api.generation import check_rate_limit, reap_stuck_generations
-from src.core.config import settings
+from sqlalchemy import select
+
+from src.api.generation import (
+    check_rate_limit,
+    daily_generation_quota,
+    generation_caps,
+    reap_stuck_generations,
+)
 from src.core.analytics import capture_generation
 from src.core.executor import trigger_pipeline
 from src.core.file_links import build_resume_file_link
 from src.core.storage import StorageService
-from src.mcp.context import get_current_mcp_user, get_mcp_db
+from src.mcp.context import account_unavailable, get_current_mcp_user, get_mcp_db
+from src.mcp.tools.client_generation import drafting_status, start_client_generation
 from src.mcp.tools.readiness import check_readiness_handler
 from src.models.generation import Generation, GenerationLog
 from src.models.user import User
-from src.models.profile import Profile, UserEducation, UserExperience, UserExtracurricular, UserProject
 from src.services.content_split import (
     is_valid_mode,
     resolve_default_mode,
@@ -27,6 +31,12 @@ from src.services.content_split import (
 )
 from src.services.template_layout import resolve_section_order
 from src.template_registry.service import TemplateRegistryService
+
+OWN_MODEL_NOTICE = (
+    "Your assistant can write a resume in own-model mode without using your Resumer daily quota. "
+    "Ask to switch if you want to use it."
+)
+
 
 async def generate_resume_handler(
     job_description: str,
@@ -39,6 +49,7 @@ async def generate_resume_handler(
     wait_for_completion: bool = True,
     timeout_seconds: int = 60,
     ctx: Any = None,
+    client_model: str | None = None,
 ) -> dict[str, Any]:
     """Start resume generation pipeline tailored to a job description.
 
@@ -104,22 +115,6 @@ async def generate_resume_handler(
         content_split=explicit_split,
         job_description=job_description,
     )
-    if not readiness["is_ready"]:
-        return {
-            "success": False,
-            "status": "blocked",
-            "error_code": "INSUFFICIENT_PROFILE_DATA",
-            "error": "Cannot start resume generation: profile does not have enough data to satisfy template requirements.",
-            "message": "Cannot start resume generation: profile does not have enough data to satisfy template requirements.",
-            "hint": "Add your work history and projects first via add_project or add_experience.",
-            "blocking_reasons": readiness["blocking_reasons"],
-            "missing_sections": readiness["blocking_reasons"],
-            "required_split": readiness.get("required_split"),
-            "default_split": readiness.get("default_split"),
-            "available_splits": readiness.get("available_splits", []),
-            "ai_steering": readiness["ai_steering"],
-        }
-
     required_split = readiness.get("required_split") or {}
     effective_split = {
         "projects": required_split.get("projects"),
@@ -127,20 +122,49 @@ async def generate_resume_handler(
     }
     split_auto_selected = bool(readiness.get("split_auto_selected")) and explicit_split is None
 
-    # 4. Create Generation record and trigger pipeline
+    # 4. Create the generation using the current account preference.
+    awareness = {"inference_mode": "resumer"}
     try:
         async with get_mcp_db() as db:
-            await reap_stuck_generations(db)
-            await check_rate_limit(user, db)
+            if readiness["is_ready"]:
+                await reap_stuck_generations(db)
+            fresh_user = await db.get(User, user.id)
+            if fresh_user is None or fresh_user.is_pending_deletion:
+                return account_unavailable()
+            if not readiness["is_ready"]:
+                return {
+                    "success": False,
+                    "status": "blocked",
+                    "error_code": "INSUFFICIENT_PROFILE_DATA",
+                    "error": "Cannot start resume generation: profile does not have enough data to satisfy template requirements.",
+                    "message": "Cannot start resume generation: profile does not have enough data to satisfy template requirements.",
+                    "hint": "Add your work history and projects first via add_project or add_experience.",
+                    "blocking_reasons": readiness["blocking_reasons"],
+                    "missing_sections": readiness["blocking_reasons"],
+                    "required_split": readiness.get("required_split"),
+                    "default_split": readiness.get("default_split"),
+                    "available_splits": readiness.get("available_splits", []),
+                    "ai_steering": readiness["ai_steering"],
+                }
 
-            if explicit_split is not None:
+            own_model = fresh_user.inference_mode == "own_model"
+            if not own_model:
+                daily_cap, _ = await generation_caps(fresh_user, db)
+                try:
+                    await check_rate_limit(fresh_user, db)
+                except HTTPException:
+                    awareness["daily_quota"] = await daily_generation_quota(fresh_user, db, daily_cap)
+                    awareness["user_notice"] = OWN_MODEL_NOTICE
+                    raise
+
+            if explicit_split is not None and not own_model:
                 await save_user_split_preference(
-                    db, user.id, explicit_split["projects"], explicit_split["experience"]
+                    db, fresh_user.id, explicit_split["projects"], explicit_split["experience"]
                 )
 
             resolved_order = resolve_section_order(
                 explicit_order=None,
-                user=user,
+                user=fresh_user,
                 template_id=template_id,
                 manifest=template,
             )
@@ -160,14 +184,21 @@ async def generate_resume_handler(
                 send_email=False,
                 render_metadata={"_analytics": {"distinct_id": user.email.strip().lower(), "source": "mcp"}},
             )
+            if own_model:
+                return await start_client_generation(db, fresh_user, gen, client_model, explicit_split)
             db.add(gen)
             await db.commit()
             await db.refresh(gen)
             gen_id = gen.id
             capture_generation(gen, "accepted")
+            awareness["daily_quota"] = await daily_generation_quota(fresh_user, db, daily_cap)
+            remaining = awareness["daily_quota"]["remaining"]
+            if remaining is not None and remaining <= 1:
+                awareness["user_notice"] = OWN_MODEL_NOTICE
     except HTTPException as e:
         detail_msg = e.detail if isinstance(e.detail, str) else "Rate limit reached."
         return {
+            **awareness,
             "success": False,
             "status": "error",
             "error_code": "RATE_LIMIT_EXCEEDED",
@@ -181,6 +212,7 @@ async def generate_resume_handler(
 
     if not wait_for_completion:
         return {
+            **awareness,
             "success": True,
             "generation_id": str(gen_id),
             "status": "in_progress",
@@ -232,6 +264,7 @@ async def generate_resume_handler(
         await asyncio.sleep(poll_interval)
     if not latest_gen:
         return {
+            **awareness,
             "success": False,
             "status": "error",
             "error_code": "GENERATION_NOT_FOUND",
@@ -248,6 +281,7 @@ async def generate_resume_handler(
         company_name = latest_gen.company or ""
         label = f"{company_name} {role_title}".strip() + " Resume (PDF)"
         return {
+            **awareness,
             "success": True,
             "generation_id": str(gen_id),
             "status": "completed",
@@ -271,6 +305,7 @@ async def generate_resume_handler(
 
     if latest_gen.status == "failed":
         return {
+            **awareness,
             "success": False,
             "generation_id": str(gen_id),
             "status": "failed",
@@ -282,6 +317,7 @@ async def generate_resume_handler(
 
     # Timed out while still in progress
     return {
+        **awareness,
         "success": True,
         "generation_id": str(gen_id),
         "status": latest_gen.status,
@@ -301,6 +337,7 @@ async def get_generation_status_handler(
     generation_id: str,
     wait_for_completion: bool = True,
     timeout_seconds: int = 45,
+    include_brief: bool = False,
 ) -> dict[str, Any]:
     """Check progress, logs, and results of a resume generation run."""
     user = get_current_mcp_user()
@@ -330,6 +367,9 @@ async def get_generation_status_handler(
                     "error": f"Generation '{generation_id}' not found.",
                     "hint": "Generate a resume first via generate_resume to receive a valid generation_id.",
                 }
+
+            if gen.status == "drafting" and gen.inference_source == "client":
+                return drafting_status(gen, include_brief)
 
             # Fetch step logs
             log_res = await db.execute(
@@ -379,7 +419,6 @@ async def get_generation_status_handler(
         "font_size": render_meta.get("font_size") if gen.status == "completed" else None,
         "editor_revision": render_meta.get("editor_revision", 0) if gen.status == "completed" else None,
         "resume_json": tailored_resume,
-        "render_metadata": gen.render_metadata,
         "recent_logs": [
             {
                 "node": l.node_name,
@@ -389,6 +428,13 @@ async def get_generation_status_handler(
             for l in logs[-10:]
         ],
     }
+    if gen.inference_source == "client":
+        response_data["inference_mode"] = "own_model"
+        if gen.status == "completed":
+            response_data["quality"] = render_meta.get("quality")
+            response_data["warnings"] = render_meta.get("warnings", [])
+    else:
+        response_data["render_metadata"] = gen.render_metadata
     if gen.status == "completed" and download_url:
         response_data["message"] = f"Resume generation completed for '{role_title}'! Download link: [{label}]({download_url})"
     return response_data
@@ -471,14 +517,9 @@ async def set_generation_defaults_handler(
             }
 
     async with get_mcp_db() as db:
-        res = await db.execute(select(User).where(User.id == user.id))
-        db_user = res.scalar_one_or_none()
-        if not db_user:
-            return {
-                "success": False,
-                "error": "User not found.",
-                "hint": "Your Resumer session may have expired. Reconnect the connector to continue.",
-            }
+        db_user = await db.get(User, user.id)
+        if db_user is None or db_user.is_pending_deletion:
+            return account_unavailable()
         if creativity_mode is not None:
             db_user.preferred_creativity_mode = creativity_mode
         if projects is not None:

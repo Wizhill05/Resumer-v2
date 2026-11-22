@@ -41,6 +41,8 @@ class ResumeGraphState(TypedDict):
     font_size: float
     fits_target: Optional[bool]
     has_horizontal_overflow: Optional[bool]
+    # Page-1 content height / usable page height (minus top+bottom margins), percent, one decimal.
+    page_fill_percent: Optional[float]
 
     # Fallback status flags
     experience_fallback: Optional[bool]

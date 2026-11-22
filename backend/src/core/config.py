@@ -1,7 +1,8 @@
 import json
+import os
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,7 +24,7 @@ BACKEND_DIR: Path = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(BACKEND_DIR / ".env", ".env"),
+        env_file=None if os.environ.get("RESUMER_NO_DOTENV") == "1" else (BACKEND_DIR / ".env", ".env"),
         extra="ignore"
     )
 
@@ -45,6 +46,12 @@ class Settings(BaseSettings):
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
     R2_BUCKET_NAME: str = "resumer-artifacts"
+    LOCAL_STORAGE_DIR: Path | None = None
+
+    @field_validator("LOCAL_STORAGE_DIR", mode="before")
+    @classmethod
+    def empty_local_storage_is_disabled(cls, value):
+        return None if value == "" else value
 
     LLM_SECRET_KEY: str = ""
     LLM_BOOTSTRAP_NAME: str = "Primary"
@@ -59,6 +66,10 @@ class Settings(BaseSettings):
     ADMIN_EMAILS: str = "admin@example.com,user@example.com"
     DEFAULT_DAILY_CAP: int = 5
     DEFAULT_MONTHLY_CAP: int = 150
+    OWN_MODEL_DAILY_DRAFT_CAP: int = Field(default=20, ge=1)
+    OWN_MODEL_MAX_SUBMISSIONS: int = Field(default=6, ge=1)
+    # Structurally invalid submissions never render; this many per draft don't use a render submission.
+    OWN_MODEL_MAX_INVALID_SUBMISSIONS: int = Field(default=10, ge=0)
 
     @property
     def admin_emails(self) -> list[str]:

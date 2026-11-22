@@ -1,4 +1,7 @@
 import logging
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from uuid import UUID
 
 import boto3
 from botocore.config import Config
@@ -9,6 +12,11 @@ from src.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def generation_artifact_keys(generation_id: UUID) -> tuple[str, str, str]:
+    prefix = f"runs/{generation_id}"
+    return f"{prefix}/resume.pdf", f"{prefix}/resume.md", f"{prefix}/thumb.webp"
+
+
 class StorageService:
     def __init__(self):
         self.enabled = bool(
@@ -16,6 +24,7 @@ class StorageService:
             and settings.R2_ACCESS_KEY_ID
             and settings.R2_SECRET_ACCESS_KEY
         )
+        self.local_root = settings.LOCAL_STORAGE_DIR.resolve() if settings.LOCAL_STORAGE_DIR and not self.enabled else None
         if self.enabled:
             self.s3_client = boto3.client(
                 "s3",
@@ -28,9 +37,45 @@ class StorageService:
             logger.info("StorageService: R2 client initialized for bucket '%s'", settings.R2_BUCKET_NAME)
         else:
             self.s3_client = None
-            logger.warning("StorageService: R2 not configured — uploads will be skipped.")
+            self.enabled = self.local_root is not None
+            if not self.enabled:
+                logger.warning("StorageService: R2 not configured — uploads will be skipped.")
+
+    def _local_path(self, key: str) -> Path:
+        path = (self.local_root / key).resolve()
+        if not path.is_relative_to(self.local_root) or path == self.local_root or Path(key).is_absolute():
+            raise ValueError("Storage key escapes the local storage directory")
+        return path
+
+    def get_stream(self, key: str):
+        """Open an artifact body for streaming. The caller closes the body."""
+        if not self.enabled:
+            return None
+        try:
+            if self.s3_client is not None:
+                return self.s3_client.get_object(Bucket=settings.R2_BUCKET_NAME, Key=key)["Body"]
+            return self._local_path(key).open("rb")
+        except Exception as exc:
+            logger.warning("StorageService: could not open %s: %s", key, exc)
+            return None
 
     def upload_bytes(self, data: bytes, key: str, content_type: str = "application/pdf") -> bool:
+        if self.local_root is not None:
+            temporary = None
+            try:
+                path = self._local_path(key)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with NamedTemporaryFile(dir=path.parent, delete=False) as output:
+                    temporary = Path(output.name)
+                    output.write(data)
+                temporary.replace(path)
+                return True
+            except (OSError, ValueError):
+                logger.warning("StorageService: could not write local object %s", key, exc_info=True)
+                return False
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
         if not self.enabled or not self.s3_client:
             logger.warning("StorageService: R2 not configured. Skipping upload of %s.", key)
             return False
@@ -57,17 +102,25 @@ class StorageService:
         except Exception as e:
             logger.error("StorageService: Unexpected error uploading %s: %s", key, e)
             return False
+
     def download_bytes(self, key: str) -> bytes | None:
-        if not self.enabled or not self.s3_client:
+        body = self.get_stream(key)
+        if body is None:
             return None
         try:
-            res = self.s3_client.get_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
-            return res["Body"].read()
-        except Exception as e:
-            logger.error("StorageService: Error downloading %s: %s", key, e)
+            return body.read()
+        except Exception as exc:
+            logger.error("StorageService: Error downloading %s: %s", key, exc)
             return None
+        finally:
+            body.close()
 
     def file_exists(self, key: str) -> bool:
+        if self.local_root is not None:
+            try:
+                return self._local_path(key).is_file()
+            except (OSError, ValueError):
+                return False
         if not self.enabled or not self.s3_client:
             return False
         try:
@@ -105,6 +158,12 @@ class StorageService:
             return None
 
     def delete_file(self, key: str) -> bool:
+        if self.local_root is not None:
+            try:
+                self._local_path(key).unlink(missing_ok=True)
+                return True
+            except (OSError, ValueError):
+                return False
         if not self.enabled or not self.s3_client:
             return False
         try:
@@ -126,6 +185,8 @@ class StorageService:
         Missing keys count as deleted (S3/R2 semantics). With storage disabled nothing
         is stored remotely, so there is nothing to fail.
         """
+        if self.local_root is not None:
+            return [key for key in keys if not self.delete_file(key)]
         if not keys or not self.enabled or not self.s3_client:
             return []
         failed: list[str] = []
@@ -141,11 +202,14 @@ class StorageService:
                         "StorageService: failed to delete %s: [%s] %s",
                         err.get("Key"), err.get("Code"), err.get("Message"),
                     )
-                    failed.append(err.get("Key") or "")
+                    if not err.get("Key"):
+                        failed.extend(chunk)
+                        break
+                    failed.append(err["Key"])
             except Exception as e:
                 logger.error("StorageService: DeleteObjects failed for %d keys: %s", len(chunk), e)
                 failed.extend(chunk)
-        return failed
+        return list(dict.fromkeys(failed))
 
     def list_objects(self, prefix: str = "", limit: int = 100, cursor: str | None = None) -> dict:
         if not self.enabled or not self.s3_client:

@@ -33,7 +33,8 @@ async def async_db():
             __import__("sqlalchemy").text(
                 "CREATE TABLE IF NOT EXISTS generations ("
                 "id VARCHAR(36) PRIMARY KEY, user_id VARCHAR(36), template_id VARCHAR,"
-                "status VARCHAR, is_guest BOOLEAN, created_at DATETIME, completed_at DATETIME)"
+                "status VARCHAR, is_guest BOOLEAN, created_at DATETIME, completed_at DATETIME,"
+                "inference_source VARCHAR NOT NULL DEFAULT 'server')"
             )
         )
         await conn.execute(

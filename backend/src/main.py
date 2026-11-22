@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.analytics import shutdown_analytics
+from src.api import inference_mode
 from src.api import account_deletion, account_welcome, profile, generation, system, imports, guest, admin, feedback, oauth, files, auth, admin_llm, internal_auth, integrations_github
 from src.core.oauth import ensure_oauth_schema
 from src.core.database import AsyncSessionLocal
@@ -92,6 +93,7 @@ app.include_router(system.router)
 app.include_router(profile.router)
 app.include_router(imports.router)
 app.include_router(generation.router)
+app.include_router(inference_mode.router)
 app.include_router(guest.router)
 app.include_router(template_router)
 app.include_router(admin.router)

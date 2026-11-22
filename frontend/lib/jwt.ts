@@ -41,3 +41,25 @@ export async function internalToken() {
     .setExpirationTime("60s")
     .sign(encoded)
 }
+
+/**
+ * Short-lived token that only the backend's OAuth authorize endpoints accept. The bridge at
+ * /oauth/authorize hands it to the backend in a redirect, so it must not be a general web
+ * credential: it carries `token_use: "oauth_handoff"` and no `provider` claim, and the backend
+ * rejects it everywhere else (including the web-session-only own-model confirmation).
+ * No `aud` claim on purpose: backends from before this token existed decode without an audience
+ * and would reject one, so a frontend deployed ahead of the backend keeps MCP sign-in working.
+ */
+export async function oauthHandoffToken(session: SessionLike) {
+  const uid = session.user?.id ?? ""
+  if (!NEXTAUTH_SECRET) {
+    throw new Error("AUTH_SECRET or NEXTAUTH_SECRET is not set in environment.")
+  }
+  const payload: Record<string, string> = { email: session.user?.email ?? "", token_use: "oauth_handoff" }
+  if (UUID_RE.test(uid)) payload.sub = uid
+  return await new SignJWT(payload)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(new TextEncoder().encode(NEXTAUTH_SECRET))
+}

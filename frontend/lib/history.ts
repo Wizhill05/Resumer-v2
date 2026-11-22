@@ -29,8 +29,13 @@ export type HistorySummary = {
   latest_created_at: string | null
   latest_company: string | null
   latest_job_title: string | null
+  /** Résumer-AI builds in the current daily window (agent-model builds never count). */
   used_today: number
   this_month: number
+  /** Effective daily cap for Résumer-AI builds; null means unlimited. Older backends omit it. */
+  daily_cap?: number | null
+  monthly_cap?: number | null
+  resets_at?: string | null
 }
 
 /** Query-key roots. Everything lives under ["history"] so one invalidate

@@ -66,7 +66,7 @@ def _install_fake_weasyprint(monkeypatch, page_count: int):
         pages = [object()] * page_count
 
     class _FakeHTML:
-        def __init__(self, string=None, base_url=None):
+        def __init__(self, string=None, base_url=None, **kwargs):
             pass
 
         def render(self):

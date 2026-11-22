@@ -808,7 +808,7 @@ async def test_regression_orphan_repair_rollback_on_missing_verification_render(
 
     # Case A: Verification render returns None
     class MockHTMLReturningNone:
-        def __init__(self, string, base_url):
+        def __init__(self, string, base_url, **kwargs):
             pass
 
         def render(self):
@@ -821,7 +821,7 @@ async def test_regression_orphan_repair_rollback_on_missing_verification_render(
 
     # Case B: Verification render raises an Exception
     class MockHTMLRaisingException:
-        def __init__(self, string, base_url):
+        def __init__(self, string, base_url, **kwargs):
             pass
 
         def render(self):

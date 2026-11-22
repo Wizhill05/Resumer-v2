@@ -41,7 +41,8 @@ export function useHistorySummary<T = HistorySummary>(select?: (summary: History
 export function useGenerationStats() {
   const isAdmin = useIsAdmin()
   return useHistorySummary((summary): GenerationStats => {
-    const cap = isAdmin ? null : DAILY_GENERATION_CAP
+    // The backend knows the real cap (per-user overrides, admin bypass); fall back for older backends.
+    const cap = summary.daily_cap !== undefined ? summary.daily_cap : isAdmin ? null : DAILY_GENERATION_CAP
     return {
       usedToday: summary.used_today,
       cap,

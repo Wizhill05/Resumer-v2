@@ -11,7 +11,7 @@ from src.core.config import settings
 from src.models.generation import Generation
 
 logger = logging.getLogger(__name__)
-GenerationEvent = Literal["accepted", "completed", "failed"]
+GenerationEvent = Literal["accepted", "completed", "failed", "abandoned"]
 
 
 @lru_cache(maxsize=1)
@@ -37,6 +37,8 @@ def capture_generation(gen: Generation, outcome: GenerationEvent) -> None:
         context = context or {}
         properties = {
             "run_id": str(gen.id),
+            "inference_source": gen.inference_source or "server",
+            "client_model": gen.client_model,
             "template_id": gen.template_id,
             "is_guest": bool(gen.is_guest),
             "source": context.get("source", "website") if context else "api",
@@ -63,3 +65,16 @@ def capture_generation(gen: Generation, outcome: GenerationEvent) -> None:
 def shutdown_analytics() -> None:
     if _client.cache_info().currsize:
         _client().shutdown()
+
+
+def capture_inference_mode_changed(distinct_id: str, previous: str, mode: str, via: str) -> None:
+    if not settings.POSTHOG_PROJECT_TOKEN or settings.POSTHOG_ENVIRONMENT != "production":
+        return
+    try:
+        _client().capture(
+            "inference_mode_changed",
+            distinct_id=distinct_id,
+            properties={"from": previous, "to": mode, "via": via, "$process_person_profile": False},
+        )
+    except Exception:
+        logger.warning("Could not queue inference mode analytics", exc_info=True)

@@ -535,6 +535,27 @@ async def test_cleanup_failures_retry_then_park_as_failed(async_db, cleanup_cred
     assert (await account_deletion.run_cleanup_tasks(async_db))["failed"] == 0
 
 
+async def test_storage_cleanup_retries_only_keys_that_remain(async_db, monkeypatch):
+    task = AccountCleanupTask(kind="storage_objects", payload={"keys": ["ok.pdf", "retry.pdf"]})
+    async_db.add(task)
+    await async_db.commit()
+    delete = FakeStorage.delete_files
+
+    def partially_delete(self, keys):
+        delete(self, [key for key in keys if key != "retry.pdf"])
+        return ["retry.pdf"]
+
+    monkeypatch.setattr(FakeStorage, "delete_files", partially_delete)
+    assert (await account_deletion.run_cleanup_tasks(async_db))["retry"] == 1
+    await async_db.refresh(task)
+    assert task.payload == {"keys": ["retry.pdf"]}
+    assert task.attempts == 1
+    monkeypatch.setattr(FakeStorage, "delete_files", delete)
+    assert (await account_deletion.run_cleanup_tasks(async_db))["done"] == 1
+    assert await async_db.get(AccountCleanupTask, task.id) is None
+    assert FakeStorage.deleted == ["ok.pdf", "retry.pdf"]
+
+
 # ── Admin view ────────────────────────────────────────────────────────────────
 
 

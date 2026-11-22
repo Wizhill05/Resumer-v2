@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.auth import get_optional_user
+from src.core.auth import OAUTH_HANDOFF_USE, _lookup_user
 from src.core.config import settings
 from src.core.database import get_db
 from src.core.oauth import (
@@ -229,6 +229,38 @@ async def register_oauth_client(
 
 # --- Authorization Endpoint (RFC 6749 + RFC 7636 PKCE) ---
 
+_HANDOFF_AUDIENCE = "resumer-oauth-authorize"
+
+
+async def get_oauth_authorize_user(
+    request: Request, db: AsyncSession, token: str | None,
+) -> tuple[User | None, int]:
+    token = token or request.cookies.get("auth_token")
+    if not token:
+        return None, 0
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM], audience=_HANDOFF_AUDIENCE,
+        )
+    except (JWTError, ValueError, TypeError, OverflowError):
+        return None, 0
+
+    exp = payload.get("exp")
+    if payload.get("token_use") == OAUTH_HANDOFF_USE:
+        if payload.get("aud", _HANDOFF_AUDIENCE) != _HANDOFF_AUDIENCE or type(exp) is not int:
+            return None, 0
+    elif any(claim in payload for claim in ("token_use", "client_id", "aud")):
+        return None, 0
+
+    user = await _lookup_user(db, payload)
+    remaining = 3600
+    if exp is not None:
+        remaining = min(remaining, int(int(exp) - datetime.now(timezone.utc).timestamp()))
+    if user is None or user.is_pending_deletion or remaining <= 0:
+        return None, 0
+    return user, remaining
+
+
 @router.get("/oauth/authorize")
 async def oauth_authorize_get(
     request: Request,
@@ -239,7 +271,6 @@ async def oauth_authorize_get(
     state: str = Query(...),
     code_challenge: str = Query(...),
     code_challenge_method: str = Query("S256"),
-    current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     """OAuth 2.1 Authorization Code Flow with PKCE."""
@@ -257,18 +288,22 @@ async def oauth_authorize_get(
     base_url = get_base_url(request)
     frontend_url = settings.FRONTEND_URL.rstrip("/")
 
-    # If unauthenticated, redirect to frontend OAuth bridge
+    token_param = request.query_params.get("token")
+    current_user, max_age = await get_oauth_authorize_user(request, db, token_param)
+    response_headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
     if not current_user:
         query_dict = dict(request.query_params)
+        query_dict.pop("token", None)
         query_dict["backend_url"] = base_url
         encoded_query = urlencode(query_dict)
         return RedirectResponse(
             url=f"{frontend_url}/oauth/authorize?{encoded_query}",
             status_code=status.HTTP_302_FOUND,
+            headers=response_headers,
         )
     # If user is authenticated
     provider_name = html.escape((current_user.provider or "Account").capitalize())
-    token_param = request.query_params.get("token") or ""
+    consent_token = token_param or request.cookies.get("auth_token", "")
     esc = lambda v: html.escape(v, quote=True)  # noqa: E731
     e_client_name = esc(client.client_name)
     e_user_label = esc(current_user.name or current_user.email)
@@ -333,20 +368,20 @@ async def oauth_authorize_get(
             <input type="hidden" name="state" value="{esc(state)}">
             <input type="hidden" name="code_challenge" value="{esc(code_challenge)}">
             <input type="hidden" name="code_challenge_method" value="{esc(code_challenge_method)}">
-            <input type="hidden" name="token" value="{esc(token_param)}">
+            <input type="hidden" name="token" value="{esc(consent_token)}">
             <button type="submit" class="btn-submit">Authorize {e_client_name}</button>
             <a href="{cancel_url}" class="btn-cancel">Cancel</a>
         </form>
     </div>
 </body>
 </html>"""
-    response = HTMLResponse(content=consent_html)
+    response = HTMLResponse(content=consent_html, headers=response_headers)
     if token_param:
         is_secure = not ("localhost" in base_url or "127.0.0.1" in base_url)
         response.set_cookie(
             key="auth_token",
             value=token_param,
-            max_age=3600,
+            max_age=max_age,
             httponly=True,
             secure=is_secure,
             samesite="lax",
@@ -365,7 +400,6 @@ async def oauth_authorize_post(
     code_challenge: str = Form(...),
     code_challenge_method: str = Form("S256"),
     token: str | None = Form(None),
-    current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     # 1. Validate client and redirect_uri (plain 400 on failure, never a redirect)
@@ -373,20 +407,7 @@ async def oauth_authorize_post(
         raise _bad_request("code_challenge_method must be S256.")
     await _resolve_client(db, client_id, redirect_uri, scope)
 
-    # 2. Resolve authenticated user: ONLY from a verified session or a signed token.
-    user: User | None = current_user
-
-    if not user and token:
-        try:
-            payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-            tok_email = payload.get("email")
-            if tok_email:
-                u_res = await db.execute(select(User).where(User.email == tok_email))
-                user = u_res.scalar_one_or_none()
-                if user is not None and user.is_pending_deletion:
-                    user = None
-        except JWTError:
-            pass
+    user, _ = await get_oauth_authorize_user(request, db, token)
 
     if not user:
         raise HTTPException(

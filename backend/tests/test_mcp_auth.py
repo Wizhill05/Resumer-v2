@@ -1,8 +1,10 @@
 import json
 import sqlite3
 import uuid
+from time import time
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 sqlite3.register_adapter(uuid.UUID, lambda u: str(u))
@@ -74,6 +76,30 @@ async def test_mcp_invalid_token_returns_401(client: AsyncClient):
     )
     assert res.status_code == 401
     assert 'error="invalid_token"' in res.headers["WWW-Authenticate"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("claims", [
+    {"token_use": "oauth_handoff", "aud": "resumer-oauth-authorize"},
+    {"token_use": "oauth_handoff"},
+    {"aud": "resumer-oauth-authorize"},
+    {"aud": None},
+])
+async def test_mcp_rejects_handoff_or_audience_tokens(client, async_db, claims):
+    user = User(email="handoff@example.com")
+    async_db.add(user)
+    await async_db.commit()
+    now = int(time())
+    token = jwt.encode(
+        {"sub": str(user.id), "email": user.email, "iat": now, "exp": now + 300, **claims},
+        settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM,
+    )
+    response = await client.post(
+        "/mcp", headers={"Authorization": f"Bearer {token}"},
+        json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+    )
+    assert response.status_code == 401
+    assert 'error="invalid_token"' in response.headers["WWW-Authenticate"]
 
 
 @pytest.mark.asyncio
